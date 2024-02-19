@@ -1,0 +1,602 @@
+#include <bzlib.h>
+#include <omp.h>
+#include <stdio.h>
+#include <unistd.h>
+
+#include <algorithm>
+#include <cassert>
+#include <climits>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <set>
+
+#include "3rdparty/interval_tree.hpp"
+#include "BoxIds.h"
+#include "Sweeper.h"
+#include "util/Misc.h"
+#include "util/log/Log.h"
+
+using lib_interval_tree::interval_tree_t;
+using sj::GeomType;
+using sj::Sweeper;
+using sj::boxids::boxIdIsect;
+using sj::boxids::getBoxId;
+using sj::boxids::getBoxIds;
+using sj::boxids::packBoxIds;
+using util::geo::I32XSortedPolygon;
+using util::geo::webMercToLatLng;
+
+// _____________________________________________________________________________
+void Sweeper::add(const util::geo::I32MultiPolygon& a, size_t gid) {
+  uint16_t subid = 0;
+  for (const auto& poly : a) {
+    const auto& box = util::geo::getBoundingBox(poly);
+    const I32XSortedPolygon spoly(poly);
+    double areaSize = util::geo::area(poly) / 10.0;
+    const auto& boxIds = packBoxIds(getBoxIds(spoly, poly, box, areaSize));
+
+    size_t id = _areaCache.add(Area{spoly, box, gid, subid, areaSize, boxIds});
+
+    diskAdd({id, _curSweepId, box.getLowerLeft().getY(),
+             box.getUpperRight().getY(), box.getLowerLeft().getX(), false,
+             POLYGON});
+    diskAdd({id, _curSweepId, box.getLowerLeft().getY(),
+             box.getUpperRight().getY(), box.getUpperRight().getX(), true,
+             POLYGON});
+    _curSweepId++;
+    subid++;
+  }
+
+  if (_curSweepId % 1000000 == 0) LOG(INFO) << "@ " << _curSweepId;
+}
+
+// _____________________________________________________________________________
+void Sweeper::add(const util::geo::I32Polygon& poly, size_t gid) {
+  const auto& box = util::geo::getBoundingBox(poly);
+  const I32XSortedPolygon spoly(poly);
+  double areaSize = util::geo::area(poly) / 10.0;
+  const auto& boxIds = packBoxIds(getBoxIds(spoly, poly, box, areaSize));
+
+  size_t id = _areaCache.add(Area{spoly, box, gid, 0, areaSize, boxIds});
+
+  diskAdd({id, _curSweepId, box.getLowerLeft().getY(),
+           box.getUpperRight().getY(), box.getLowerLeft().getX(), false,
+           POLYGON});
+  diskAdd({id, _curSweepId, box.getLowerLeft().getY(),
+           box.getUpperRight().getY(), box.getUpperRight().getX(), true,
+           POLYGON});
+  _curSweepId++;
+
+  if (_curSweepId % 1000000 == 0) LOG(INFO) << "@ " << _curSweepId;
+}
+
+// _____________________________________________________________________________
+void Sweeper::add(const util::geo::I32Line& l, size_t gid) {
+  const auto& box = util::geo::getBoundingBox(l);
+  const auto& boxIds = packBoxIds(getBoxIds(l, box));
+
+  if (l.size() == 2 && boxIds.front().first == 1) {
+    // simple line
+    size_t id = _simpleLineCache.add(SimpleLine{l.front(), l.back(), gid});
+
+    diskAdd({id, _curSweepId, box.getLowerLeft().getY(),
+             box.getUpperRight().getY(), box.getLowerLeft().getX(), false,
+             SIMPLE_LINE});
+    diskAdd({id, _curSweepId, box.getLowerLeft().getY(),
+             box.getUpperRight().getY(), box.getUpperRight().getX(), true,
+             SIMPLE_LINE});
+  } else {
+    const util::geo::I32XSortedLine sline(l);
+
+    size_t id = _lineCache.add(Line{sline, box, gid, 0, boxIds});
+
+    diskAdd({id, _curSweepId, box.getLowerLeft().getY(),
+             box.getUpperRight().getY(), box.getLowerLeft().getX(), false,
+             LINE});
+    diskAdd({id, _curSweepId, box.getLowerLeft().getY(),
+             box.getUpperRight().getY(), box.getUpperRight().getX(), true,
+             LINE});
+  }
+  _curSweepId++;
+
+  if (_curSweepId % 1000000 == 0) LOG(INFO) << "@ " << _curSweepId;
+}
+
+// _____________________________________________________________________________
+void Sweeper::add(const util::geo::I32Point& p, size_t gid) {
+  diskAdd({gid, _curSweepId, p.getY(), p.getY(), p.getX(), false, POINT});
+  diskAdd({gid, _curSweepId, p.getY(), p.getY(), p.getX(), true, POINT});
+  _curSweepId++;
+
+  if (_curSweepId % 1000000 == 0) LOG(INFO) << "@ " << _curSweepId;
+}
+
+// _____________________________________________________________________________
+void Sweeper::flush() {
+  write(_file, _outBuffer, _obufpos);
+
+  _areaCache.flush();
+  _lineCache.flush();
+  _simpleLineCache.flush();
+  LOG(INFO) << "Sorting...";
+  _file = util::externalSort(_file, sizeof(BoxVal), _curSweepId * 2, boxCmp);
+  LOG(INFO) << "...done";
+}
+
+// _____________________________________________________________________________
+void Sweeper::diskAdd(const BoxVal& bv) {
+  memcpy(_outBuffer + _obufpos, &bv, sizeof(BoxVal));
+  _obufpos += sizeof(BoxVal);
+
+  if (_obufpos >= BUFFER_S) {
+    write(_file, _outBuffer, BUFFER_S);
+    _obufpos = 0;
+  }
+}
+
+// _____________________________________________________________________________
+void Sweeper::sweepLine() {
+  // start at beginning of _file
+  lseek(_file, 0, SEEK_SET);
+
+  const size_t batchSize = 100000;
+  JobBatch curBatch;
+
+  const size_t RBUF_SIZE = 100000;
+  char* buf = new char[sizeof(BoxVal) * RBUF_SIZE];
+
+  std::vector<interval_tree_t<int32_t>> actives;
+  std::vector<std::multimap<std::pair<int32_t, int32_t>, SweepVal>> activeVals;
+
+  _rawFiles = {}, _files = {}, _outBufPos = {}, _outBuffers = {};
+
+  _files.resize(_numThrds);
+  _rawFiles.resize(_numThrds);
+  _outBufPos.resize(_numThrds);
+  _outBuffers.resize(_numThrds);
+
+  actives.resize(_numSweepThreads);
+  activeVals.resize(_numSweepThreads);
+
+  size_t counts = 0, checkCount = 0, jj = 0, checkPairs = 0;
+  auto t = TIME();
+
+  prepareOutputFiles();
+
+  // fire up worker threads for geometry checking
+  std::vector<std::thread> thrds(_numThrds);
+  for (size_t i = 0; i < thrds.size(); i++)
+    thrds[i] = std::thread(&Sweeper::processQueue, this, i);
+
+  size_t len;
+  while ((len = read(_file, buf, sizeof(BoxVal) * RBUF_SIZE)) != 0) {
+    for (size_t i = 0; i < len; i += sizeof(BoxVal)) {
+      auto cur = reinterpret_cast<const BoxVal*>(buf + i);
+
+      if (!cur->out) {
+        // dont add POINTs to active - immediately treat them as "out" (keeps
+        // active set smaller)
+        if (cur->type != POINT) {
+          size_t myThr = cur->sweepId % _numSweepThreads;
+          SweepVal newSv{cur->id, cur->sweepId, cur->type};
+          auto newIt = activeVals[myThr].insert({{cur->loY, cur->upY}, newSv});
+
+          // check if this was the first value inserted with this key without
+          // calling find - elements with same keys are in same range in
+          // multimap
+          if (!(++newIt != activeVals[myThr].end() &&
+                newIt->first.first == cur->loY &&
+                newIt->first.second == cur->upY) &&
+              !(--newIt != activeVals[myThr].begin() &&
+                (--newIt)->first.first == cur->loY &&
+                newIt->first.second == cur->upY)) {
+            actives[myThr].insert({cur->loY, cur->upY});
+          }
+        }
+
+        if (++jj % 100000 == 0) {
+          size_t totSweepTreeSize = 0;
+          for (size_t t = 0; t < _numSweepThreads; t++) {
+            totSweepTreeSize += actives[t].size();
+          }
+
+          auto lon = webMercToLatLng<double>((1.0 * cur->val) / PREC, 0).getX();
+          checkCount += checkPairs;
+          LOG(INFO) << jj << " / " << _curSweepId << " ("
+                    << (((1.0 * jj) / (1.0 * _curSweepId)) * 100) << "%, "
+                    << (100000.0 / TOOK(t, TIME())) * 1000.0 << " geoms/s), "
+                    << (checkPairs / TOOK(t, TIME())) * 1000.0
+                    << " pairs/s), avg. "
+                    << ((1.0 * checkCount) / (1.0 * counts))
+                    << " checks/geom, sweepLon=" << lon
+                    << "°, |A|=" << totSweepTreeSize << " (avg/thr "
+                    << ((double)totSweepTreeSize) / ((double)_numSweepThreads)
+                    << ")"
+                    << ", |JQ|=" << _jobs.size() << " (x" << batchSize << ")";
+          t = TIME();
+          checkPairs = 0;
+        }
+      } else {
+        size_t myThr = cur->sweepId % _numSweepThreads;
+
+        // POINTs are never put onto active, so we don't have to remove them
+        if (cur->type != POINT) {
+          size_t count = 0;
+
+          auto range = activeVals[myThr].equal_range({cur->loY, cur->upY});
+
+          for (auto i = range.first; i != range.second; i++) {
+            if (i->second.sweepId == cur->sweepId) {
+              if (count == 0) {
+                auto j = i;
+                if (++j != range.second) continue;
+
+                // this was actually the last element with this key, delete it
+                // from intervall tree
+                actives[myThr].erase(actives[myThr].find({cur->loY, cur->upY}));
+              }
+
+              activeVals[myThr].erase(i);
+              break;
+            }
+            count++;
+          }
+        }
+
+        counts++;
+
+        std::vector<JobBatch> batches(_numSweepThreads);
+
+#pragma omp parallel for num_threads(_numSweepThreads) \
+    schedule(static, 1) default(none)                  \
+        shared(cur, actives, activeVals, t, _numSweepThreads, batches)
+        for (size_t t = 0; t < _numSweepThreads; t++) {
+          fillBatch(t, &batches[t], &actives, cur, &activeVals);
+        }
+
+        for (const auto& b : batches) {
+          curBatch.insert(curBatch.end(), b.begin(), b.end());
+          checkPairs += b.size();
+        }
+
+        if (curBatch.size() > batchSize) {
+          _jobs.add(std::move(curBatch));
+          curBatch.clear();  // AFAIK, std doesnt guarantee that after move
+          curBatch.reserve(batchSize + 100);
+        }
+      }
+    }
+  }
+
+  delete[] buf;
+
+  if (curBatch.size()) _jobs.add(std::move(curBatch));
+
+  // the DONE element on the job queue to signal all threads to shut down
+  _jobs.add({});
+
+  // wait for all workers to finish
+  for (auto& thr : thrds) thr.join();
+
+  flushOutputFiles();
+}
+
+// _____________________________________________________________________________
+std::pair<bool, bool> Sweeper::check(const Area* a, const Area* b) const {
+  auto r = boxIdIsect(a->boxIds, b->boxIds);
+
+  // all boxes of a are fully contained in b, we intersect and we are contained
+  if (r.first == a->boxIds.front().first) return {1, 1};
+
+  // no box shared, we cannot contain or intersect
+  if (r.first + r.second == 0) return {0, 0};
+
+  // at least one box is fully contained, so we intersect
+  // but the number of fully and partially contained boxed is smaller
+  // than the number of boxes of A, so we cannot possible by contained
+  if (r.first + r.second < a->boxIds.front().first && r.second > 0) {
+    return {1, 0};
+  }
+
+  return util::geo::intersectsContains(a->geom, a->box, a->area, b->geom,
+                                       b->box, b->area);
+}
+
+// _____________________________________________________________________________
+std::pair<bool, bool> Sweeper::check(const Line* a, const Area* b) const {
+  auto r = boxIdIsect(a->boxIds, b->boxIds);
+
+  // all boxes of a are fully contained in b, we intersect and we are contained
+  if (r.first == a->boxIds.front().first) return {1, 1};
+
+  // no box shared, we cannot contain or intersect
+  if (r.first + r.second == 0) return {0, 0};
+
+  // at least one box is fully contained, so we intersect
+  // but the number of fully and partially contained boxed is smaller
+  // than the number of boxes of A, so we cannot possible by contained
+  if (r.first + r.second < a->boxIds.front().first && r.second > 0) {
+    return {1, 0};
+  }
+
+  return util::geo::intersectsContains(a->geom, a->box, b->geom, b->box);
+}
+
+// _____________________________________________________________________________
+bool Sweeper::check(const Line* a, const Line* b) const {
+  // TODO: does this has any positive effect?
+  auto r = boxIdIsect(a->boxIds, b->boxIds);
+
+  // no box shared, we cannot contain or intersect
+  if (r.first + r.second == 0) return false;
+
+  return util::geo::intersects(a->geom, b->geom, a->box, b->box);
+}
+
+// _____________________________________________________________________________
+std::pair<bool, bool> Sweeper::check(const SimpleLine* a, const Area* b) const {
+  auto r = boxIdIsect({{1, 0}, {getBoxId(a->a), 0}}, b->boxIds);
+
+  // all boxes of a are fully contained in b, we intersect and we are contained
+  if (r.first == 1) return {1, 1};
+
+  // no box shared, we cannot contain or intersect
+  if (r.first + r.second == 0) return {0, 0};
+
+  return util::geo::intersectsContains(
+      util::geo::I32XSortedLine(util::geo::LineSegment<int32_t>(a->a, a->b)),
+      util::geo::getBoundingBox(util::geo::LineSegment<int32_t>(a->a, a->b)),
+      b->geom, b->box);
+}
+
+// _____________________________________________________________________________
+bool Sweeper::check(const Line* a, const SimpleLine* b) const {
+  // TODO: does this has any positive effect?
+  auto r = boxIdIsect(a->boxIds, {{1, 0}, {getBoxId(b->a), 0}});
+
+  // no box shared, we cannot contain or intersect
+  if (r.first + r.second == 0) return false;
+
+  return util::geo::intersects(
+      a->geom,
+      util::geo::I32XSortedLine(util::geo::LineSegment<int32_t>(b->a, b->b)),
+      a->box,
+      util::geo::getBoundingBox(util::geo::LineSegment<int32_t>(b->a, b->b)));
+}
+
+// _____________________________________________________________________________
+bool Sweeper::check(const util::geo::I32Point& a, const Area* b) const {
+  // TODO: does this has any positive effect?
+  auto r = boxIdIsect({{1, 0}, {getBoxId(a), 0}}, b->boxIds);
+
+  // all boxes of a are fully contained in b, we are contained
+  if (r.first) return true;
+
+  // no box shared, we cannot contain or intersect
+  if (r.first + r.second == 0) return false;
+
+  return util::geo::contains(a, b->geom);
+}
+
+// ____________________________________________________________________________
+void Sweeper::writeContains(size_t t, size_t a, size_t b) {
+  writeRel(t, a, b, _sepContains);
+}
+
+// ____________________________________________________________________________
+void Sweeper::writeRel(size_t t, size_t a, size_t b, const std::string& pred) {
+  std::string out =
+      _pairStart + std::to_string(a) + pred + std::to_string(b) + _pairEnd;
+
+  if (_outBufPos[t] + out.size() >= BUFFER_S_PAIRS) {
+    int err = 0;
+    BZ2_bzWrite(&err, _files[t], _outBuffers[t], _outBufPos[t]);
+    if (err == BZ_IO_ERROR) {
+      BZ2_bzWriteClose(&err, _files[t], 0, 0, 0);
+      throw std::runtime_error("Could not write to file.");
+    }
+    _outBufPos[t] = 0;
+  }
+
+  memcpy(_outBuffers[t] + _outBufPos[t], out.c_str(), out.size());
+  _outBufPos[t] += out.size();
+}
+
+// ____________________________________________________________________________
+void Sweeper::writeIntersect(size_t t, size_t a, size_t b) {
+  writeRel(t, a, b, _sepIsect);
+}
+
+// ____________________________________________________________________________
+void Sweeper::doCheck(const BoxVal cur, const SweepVal sv, size_t t) {
+  if (cur.type == POLYGON && sv.type == POLYGON) {
+    auto a = _areaCache.get(cur.id, t);
+    auto b = _areaCache.get(sv.id, t);
+
+    auto res = check(a.get(), b.get());
+
+    if (res.first) {
+      writeIntersect(t, a->id, b->id);
+      writeIntersect(t, b->id, a->id);
+    }
+
+    if (res.second) {
+      writeContains(t, b->id, a->id);
+    }
+  } else if (cur.type == LINE && sv.type == POLYGON) {
+    auto a = _lineCache.get(cur.id, t);
+    auto b = _areaCache.get(sv.id, t);
+
+    auto res = check(a.get(), b.get());
+
+    if (res.first) {
+      writeIntersect(t, a->id, b->id);
+      writeIntersect(t, b->id, a->id);
+    }
+
+    if (res.second) {
+      writeContains(t, b->id, a->id);
+    }
+  } else if (cur.type == SIMPLE_LINE && sv.type == POLYGON) {
+    auto a = _simpleLineCache.get(cur.id, t);
+    auto b = _areaCache.get(sv.id, t);
+
+    auto res = check(a.get(), b.get());
+
+    if (res.first) {
+      writeIntersect(t, a->id, b->id);
+      writeIntersect(t, b->id, a->id);
+    }
+
+    if (res.second) {
+      writeContains(t, b->id, a->id);
+    }
+  } else if (cur.type == POLYGON && sv.type == LINE) {
+    auto a = _areaCache.get(cur.id, t);
+    auto b = _lineCache.get(sv.id, t);
+
+    auto res = check(b.get(), a.get());
+
+    if (res.first) {
+      writeIntersect(t, a->id, b->id);
+      writeIntersect(t, b->id, a->id);
+    }
+
+    if (res.second) {
+      writeContains(t, a->id, b->id);
+    }
+  } else if (cur.type == POLYGON && sv.type == SIMPLE_LINE) {
+    auto a = _areaCache.get(cur.id, t);
+    auto b = _simpleLineCache.get(sv.id, t);
+
+    auto res = check(b.get(), a.get());
+
+    if (res.first) {
+      writeIntersect(t, a->id, b->id);
+      writeIntersect(t, b->id, a->id);
+    }
+
+    if (res.second) {
+      writeContains(t, a->id, b->id);
+    }
+  } else if (cur.type == LINE && sv.type == LINE) {
+    auto a = _lineCache.get(cur.id, t);
+    auto b = _lineCache.get(sv.id, t);
+
+    auto res = check(a.get(), b.get());
+
+    if (res) {
+      writeIntersect(t, a->id, b->id);
+      writeIntersect(t, b->id, a->id);
+    }
+  } else if (cur.type == LINE && sv.type == SIMPLE_LINE) {
+    auto a = _lineCache.get(cur.id, t);
+    auto b = _simpleLineCache.get(sv.id, t);
+
+    auto res = check(a.get(), b.get());
+
+    if (res) {
+      writeIntersect(t, a->id, b->id);
+      writeIntersect(t, b->id, a->id);
+    }
+  } else if (cur.type == SIMPLE_LINE && sv.type == LINE) {
+    auto a = _simpleLineCache.get(cur.id, t);
+    auto b = _lineCache.get(sv.id, t);
+
+    auto res = check(b.get(), a.get());
+
+    if (res) {
+      writeIntersect(t, a->id, b->id);
+      writeIntersect(t, b->id, a->id);
+    }
+  } else if (cur.type == SIMPLE_LINE && sv.type == SIMPLE_LINE) {
+    auto a = _simpleLineCache.get(cur.id, t);
+    auto b = _simpleLineCache.get(sv.id, t);
+
+    if (util::geo::intersects(util::geo::LineSegment<int32_t>(a->a, a->b),
+                              util::geo::LineSegment<int32_t>(b->a, b->b))) {
+      writeIntersect(t, a->id, b->id);
+      writeIntersect(t, b->id, a->id);
+    }
+  } else if (cur.type == POINT && sv.type == POLYGON) {
+    auto a = util::geo::I32Point(cur.val, cur.loY);
+    auto b = _areaCache.get(sv.id, t);
+
+    auto res = check(a, b.get());
+
+    if (res) {
+      writeContains(t, b->id, cur.id);
+      writeIntersect(t, cur.id, b->id);
+      writeIntersect(t, b->id, cur.id);
+    }
+  }
+}
+
+// _____________________________________________________________________________
+void Sweeper::flushOutputFiles() {
+  for (size_t i = 0; i < _numThrds; i++) {
+    int err = 0;
+    BZ2_bzWrite(&err, _files[i], _outBuffers[i], _outBufPos[i]);
+    if (err == BZ_IO_ERROR) {
+      BZ2_bzWriteClose(&err, _files[i], 0, 0, 0);
+      throw std::runtime_error("Could not write to file.");
+    }
+    BZ2_bzWriteClose(&err, _files[i], 0, 0, 0);
+    fclose(_rawFiles[i]);
+  }
+
+  // merge files into first file
+  std::ofstream out(".rels0", std::ios_base::binary | std::ios_base::app |
+                                  std::ios_base::ate);
+  for (size_t i = 1; i < _numThrds; i++) {
+    std::string fName = ".rels" + std::to_string(i);
+    std::ifstream ifCur(fName, std::ios_base::binary);
+    out << ifCur.rdbuf();
+    std::remove(fName.c_str());
+  }
+
+  // move first file to output file
+  std::rename(".rels0", "rels.out.bz2");
+}
+
+// _____________________________________________________________________________
+void Sweeper::prepareOutputFiles() {
+  for (size_t i = 0; i < _numThrds; i++) {
+    _rawFiles[i] = fopen((".rels" + std::to_string(i)).c_str(), "w");
+    int err = 0;
+    _files[i] = BZ2_bzWriteOpen(&err, _rawFiles[i], 6, 0, 30);
+    if (err != BZ_OK) {
+      throw std::runtime_error("Could not open bzip file for writing.");
+    }
+    _outBuffers[i] = new unsigned char[BUFFER_S_PAIRS];
+  }
+}
+
+// _____________________________________________________________________________
+void Sweeper::processQueue(size_t t) {
+  JobBatch batch;
+  while ((batch = _jobs.get()).size()) {
+    for (const auto& job : batch) doCheck(job.first, job.second, t);
+  }
+}
+
+// _____________________________________________________________________________
+void Sweeper::fillBatch(
+    size_t t, JobBatch* batch,
+    const std::vector<interval_tree_t<int32_t>>* actives, const BoxVal* cur,
+    const std::vector<std::multimap<std::pair<int32_t, int32_t>, SweepVal>>*
+        activeVals) {
+  batch->reserve(20);
+
+  (*actives)[t].overlap_find_all(
+      {cur->loY, cur->upY}, [this, cur, activeVals, t, batch](auto i) {
+        const auto& r = (*activeVals)[t].equal_range({i->low(), i->high()});
+
+        for (auto i = r.first; i != r.second; i++) {
+          batch->push_back({*cur, i->second});
+        }
+
+        return true;
+      });
+}
