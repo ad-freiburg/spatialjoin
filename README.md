@@ -4,7 +4,7 @@ Compute a spatial self-join (intersects and contains) on line-separated WKT geom
 
 Relations are written into a file `rels.out.bz2`.
 
-Example:
+## Example
 
 ```
 $ cat example.txt
@@ -30,6 +30,6 @@ $ ./spatialjoin < example.txt
 ```
 $ bzcat rels.out.bz2
 1 contains 9
-9 contains 1
+9 intersects 1
 [...]
 ```
