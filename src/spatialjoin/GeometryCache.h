@@ -109,7 +109,6 @@ class GeometryCache {
     _idMap.resize(numthreads);
 
     if (reuse) {
-      _geomsF.open(getFName(), std::ios::in | std::ios::binary);
       flush();
     } else {
       _geomsF.open(getFName(), std::ios::out | std::ios::in | std::ios::binary |

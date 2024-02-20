@@ -59,9 +59,11 @@ static const size_t BUFFER_S_PAIRS = 1024 * 1024 * 10;
 class Sweeper {
  public:
   explicit Sweeper(size_t numThreads, size_t numSweepThreads,
-                   const std::string& pairStart, const std::string& sepIsect,
-                   const std::string& sepContains, const std::string& pairEnd,
-                   bool reUse)
+                         const std::string& pairStart,
+                         const std::string& sepIsect,
+                         const std::string& sepContains,
+                         const std::string& pairEnd,
+                         bool reUse)
       : _obufpos(0),
         _numThrds(numThreads),
         _numSweepThreads(numSweepThreads),
@@ -72,17 +74,17 @@ class Sweeper {
         _sepContains(sepContains),
         _pairStart(pairStart),
         _pairEnd(pairEnd),
-        _jobs(1000) {
+        _jobs(100) {
     std::string fname = ".spatialjoins";
 
     std::cout << numThreads << ", " << numSweepThreads << std::endl;
 
     if (reUse) {
-      _file = open(fname.c_str(), O_RDWR, 0666);
+      _file = open(fname.c_str(), O_RDONLY);
       _curSweepId = (lseek(_file, 0, SEEK_END) + 1) / (2 * sizeof(BoxVal));
       lseek(_file, 0, SEEK_SET);
     } else {
-      _file = open(fname.c_str(), O_RDWR | O_CREAT, 0666);
+      _file = open(fname.c_str(), O_RDWR | O_CREAT | O_TRUNC, 0666);
     }
 
     if (_file < 0) {

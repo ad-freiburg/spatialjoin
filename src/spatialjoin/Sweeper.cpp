@@ -12,20 +12,20 @@
 #include <set>
 
 #include "3rdparty/interval_tree.hpp"
-#include "BoxIds.h"
 #include "Sweeper.h"
 #include "util/Misc.h"
 #include "util/log/Log.h"
+#include "BoxIds.h"
 
 using lib_interval_tree::interval_tree_t;
-using sj::GeomType;
 using sj::Sweeper;
-using sj::boxids::boxIdIsect;
-using sj::boxids::getBoxId;
-using sj::boxids::getBoxIds;
-using sj::boxids::packBoxIds;
+using sj::GeomType;
 using util::geo::I32XSortedPolygon;
-using util::geo::webMercToLatLng;
+using sj::boxids::packBoxIds;
+using sj::boxids::getBoxIds;
+using sj::boxids::getBoxId;
+using sj::boxids::boxIdIsect;
+using  util::geo::webMercToLatLng;
 
 // _____________________________________________________________________________
 void Sweeper::add(const util::geo::I32MultiPolygon& a, size_t gid) {
@@ -36,7 +36,14 @@ void Sweeper::add(const util::geo::I32MultiPolygon& a, size_t gid) {
     double areaSize = util::geo::area(poly) / 10.0;
     const auto& boxIds = packBoxIds(getBoxIds(spoly, poly, box, areaSize));
 
-    size_t id = _areaCache.add(Area{spoly, box, gid, subid, areaSize, boxIds});
+    size_t id = _areaCache.add(Area{
+        spoly,
+        box,
+        gid,
+        subid,
+        areaSize,
+        boxIds,
+    });
 
     diskAdd({id, _curSweepId, box.getLowerLeft().getY(),
              box.getUpperRight().getY(), box.getLowerLeft().getX(), false,
@@ -58,7 +65,14 @@ void Sweeper::add(const util::geo::I32Polygon& poly, size_t gid) {
   double areaSize = util::geo::area(poly) / 10.0;
   const auto& boxIds = packBoxIds(getBoxIds(spoly, poly, box, areaSize));
 
-  size_t id = _areaCache.add(Area{spoly, box, gid, 0, areaSize, boxIds});
+  size_t id = _areaCache.add(Area{
+      spoly,
+      box,
+      gid,
+      0,
+      areaSize,
+      boxIds,
+  });
 
   diskAdd({id, _curSweepId, box.getLowerLeft().getY(),
            box.getUpperRight().getY(), box.getLowerLeft().getX(), false,
@@ -72,13 +86,14 @@ void Sweeper::add(const util::geo::I32Polygon& poly, size_t gid) {
 }
 
 // _____________________________________________________________________________
-void Sweeper::add(const util::geo::I32Line& l, size_t gid) {
-  const auto& box = util::geo::getBoundingBox(l);
-  const auto& boxIds = packBoxIds(getBoxIds(l, box));
+void Sweeper::add(const util::geo::I32Line& line, size_t gid) {
+  const auto& box = util::geo::getBoundingBox(line);
+  const auto& boxIds = packBoxIds(getBoxIds(line, box));
 
-  if (l.size() == 2 && boxIds.front().first == 1) {
+  if (line.size() == 2 && boxIds.front().first == 1) {
     // simple line
-    size_t id = _simpleLineCache.add(SimpleLine{l.front(), l.back(), gid});
+    size_t id =
+        _simpleLineCache.add(SimpleLine{line.front(), line.back(), gid});
 
     diskAdd({id, _curSweepId, box.getLowerLeft().getY(),
              box.getUpperRight().getY(), box.getLowerLeft().getX(), false,
@@ -87,9 +102,11 @@ void Sweeper::add(const util::geo::I32Line& l, size_t gid) {
              box.getUpperRight().getY(), box.getUpperRight().getX(), true,
              SIMPLE_LINE});
   } else {
-    const util::geo::I32XSortedLine sline(l);
+    const util::geo::I32XSortedLine sline(line);
 
-    size_t id = _lineCache.add(Line{sline, box, gid, 0, boxIds});
+    size_t id = _lineCache.add(Line{
+        sline, box, gid, 0, boxIds,  //{}  // dummy
+    });
 
     diskAdd({id, _curSweepId, box.getLowerLeft().getY(),
              box.getUpperRight().getY(), box.getLowerLeft().getX(), false,
@@ -104,9 +121,11 @@ void Sweeper::add(const util::geo::I32Line& l, size_t gid) {
 }
 
 // _____________________________________________________________________________
-void Sweeper::add(const util::geo::I32Point& p, size_t gid) {
-  diskAdd({gid, _curSweepId, p.getY(), p.getY(), p.getX(), false, POINT});
-  diskAdd({gid, _curSweepId, p.getY(), p.getY(), p.getX(), true, POINT});
+void Sweeper::add(const util::geo::I32Point& point, size_t gid) {
+  diskAdd({gid, _curSweepId, point.getY(), point.getY(), point.getX(), false,
+           POINT});
+  diskAdd({gid, _curSweepId, point.getY(), point.getY(), point.getX(), true,
+           POINT});
   _curSweepId++;
 
   if (_curSweepId % 1000000 == 0) LOG(INFO) << "@ " << _curSweepId;
@@ -120,7 +139,31 @@ void Sweeper::flush() {
   _lineCache.flush();
   _simpleLineCache.flush();
   LOG(INFO) << "Sorting...";
-  _file = util::externalSort(_file, sizeof(BoxVal), _curSweepId * 2, boxCmp);
+
+  // now the individial parts are sorted
+  std::string newFName = ".sortTmp";
+  int newFile = open(newFName.c_str(), O_RDWR | O_CREAT, 0666);
+
+  if (newFile < 0) {
+    throw std::runtime_error("Could not open temporary file " + newFName);
+    exit(1);
+  }
+
+#ifdef __unix__
+  posix_fadvise(newFile, 0, 0, POSIX_FADV_SEQUENTIAL);
+#endif
+  util::externalSort(_file, newFile, sizeof(BoxVal), _curSweepId * 2, boxCmp);
+
+  // remove old file
+  std::remove(".spatialjoins");
+  std::rename(".sortTmp", ".spatialjoins");
+
+  _file = open(".spatialjoins", O_RDONLY);
+
+#ifdef __unix__
+  posix_fadvise(newFile, 0, 0, POSIX_FADV_SEQUENTIAL);
+#endif
+
   LOG(INFO) << "...done";
 }
 
@@ -151,13 +194,15 @@ void Sweeper::sweepLine() {
 
   _rawFiles = {}, _files = {}, _outBufPos = {}, _outBuffers = {};
 
+  size_t numTrees = _numSweepThreads * 4;
+
   _files.resize(_numThrds);
   _rawFiles.resize(_numThrds);
   _outBufPos.resize(_numThrds);
   _outBuffers.resize(_numThrds);
 
-  actives.resize(_numSweepThreads);
-  activeVals.resize(_numSweepThreads);
+  actives.resize(numTrees);
+  activeVals.resize(numTrees);
 
   size_t counts = 0, checkCount = 0, jj = 0, checkPairs = 0;
   auto t = TIME();
@@ -175,10 +220,12 @@ void Sweeper::sweepLine() {
       auto cur = reinterpret_cast<const BoxVal*>(buf + i);
 
       if (!cur->out) {
+        // IN event
+
         // dont add POINTs to active - immediately treat them as "out" (keeps
         // active set smaller)
         if (cur->type != POINT) {
-          size_t myThr = cur->sweepId % _numSweepThreads;
+          size_t myThr = cur->sweepId % numTrees;
           SweepVal newSv{cur->id, cur->sweepId, cur->type};
           auto newIt = activeVals[myThr].insert({{cur->loY, cur->upY}, newSv});
 
@@ -197,7 +244,7 @@ void Sweeper::sweepLine() {
 
         if (++jj % 100000 == 0) {
           size_t totSweepTreeSize = 0;
-          for (size_t t = 0; t < _numSweepThreads; t++) {
+          for (size_t t = 0; t < numTrees; t++) {
             totSweepTreeSize += actives[t].size();
           }
 
@@ -210,15 +257,15 @@ void Sweeper::sweepLine() {
                     << " pairs/s), avg. "
                     << ((1.0 * checkCount) / (1.0 * counts))
                     << " checks/geom, sweepLon=" << lon
-                    << "°, |A|=" << totSweepTreeSize << " (avg/thr "
-                    << ((double)totSweepTreeSize) / ((double)_numSweepThreads)
-                    << ")"
+                    << "°, |A|=" << totSweepTreeSize << " (avg/tree " << ((double)totSweepTreeSize) / ((double)numTrees) << ")"
                     << ", |JQ|=" << _jobs.size() << " (x" << batchSize << ")";
           t = TIME();
           checkPairs = 0;
         }
       } else {
-        size_t myThr = cur->sweepId % _numSweepThreads;
+        // OUT event
+
+        size_t myThr = cur->sweepId % numTrees;
 
         // POINTs are never put onto active, so we don't have to remove them
         if (cur->type != POINT) {
@@ -246,12 +293,14 @@ void Sweeper::sweepLine() {
 
         counts++;
 
-        std::vector<JobBatch> batches(_numSweepThreads);
+        std::vector<JobBatch> batches(numTrees);
 
-#pragma omp parallel for num_threads(_numSweepThreads) \
-    schedule(static, 1) default(none)                  \
-        shared(cur, actives, activeVals, t, _numSweepThreads, batches)
-        for (size_t t = 0; t < _numSweepThreads; t++) {
+        size_t threads = _jobs.size() < 10 ? _numSweepThreads : 1;
+
+#pragma omp parallel for num_threads(threads) \
+    schedule(static, numTrees / threads) default(none)                  \
+        shared(cur, actives, activeVals, t, _numSweepThreads, numTrees, batches, threads)
+        for (size_t t = 0; t < numTrees; t++) {
           fillBatch(t, &batches[t], &actives, cur, &activeVals);
         }
 
@@ -335,7 +384,8 @@ bool Sweeper::check(const Line* a, const Line* b) const {
 }
 
 // _____________________________________________________________________________
-std::pair<bool, bool> Sweeper::check(const SimpleLine* a, const Area* b) const {
+std::pair<bool, bool> Sweeper::check(const SimpleLine* a,
+                                           const Area* b) const {
   auto r = boxIdIsect({{1, 0}, {getBoxId(a->a), 0}}, b->boxIds);
 
   // all boxes of a are fully contained in b, we intersect and we are contained
@@ -385,7 +435,8 @@ void Sweeper::writeContains(size_t t, size_t a, size_t b) {
 }
 
 // ____________________________________________________________________________
-void Sweeper::writeRel(size_t t, size_t a, size_t b, const std::string& pred) {
+void Sweeper::writeRel(size_t t, size_t a, size_t b,
+                             const std::string& pred) {
   std::string out =
       _pairStart + std::to_string(a) + pred + std::to_string(b) + _pairEnd;
 

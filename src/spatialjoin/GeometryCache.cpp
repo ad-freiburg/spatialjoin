@@ -334,6 +334,7 @@ template <typename W>
 void sj::GeometryCache<W>::flush() {
   if (_geomsF.is_open()) {
     _geomsF.flush();
+    _geomsF.close();
   }
 
   for (size_t i = 0; i < _geomsFReads.size(); i++) {

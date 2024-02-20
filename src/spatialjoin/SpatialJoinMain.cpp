@@ -62,7 +62,6 @@ util::geo::I32Point parsePoint(const std::string& a, size_t p) {
 
   return {point.getX() * PREC, point.getY() * PREC};
 }
-
 // _____________________________________________________________________________
 void parse(const char* c, size_t size, std::string& dangling, size_t* gid,
            Sweeper& idx) {
@@ -175,8 +174,8 @@ int main(int argc, char** argv) {
   size_t NUM_THREADS = std::thread::hardware_concurrency();
 
   Sweeper sweeper(
-      std::max(1, (int)NUM_THREADS - std::max(2, (int)NUM_THREADS / 4)),
-      std::max(2, (int)NUM_THREADS / 4), "", " intersects ", " contains ", "\n",
+      std::max(1, (int)NUM_THREADS - 1),
+      std::max(1, (int)NUM_THREADS / 2), "", " intersects ", " contains ", "\n",
       useCache);
 
   size_t gid = 0;

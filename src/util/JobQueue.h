@@ -17,7 +17,11 @@ class JobQueue {
  public:
   JobQueue() : _maxSize(std::numeric_limits<size_t>::max()) {}
   JobQueue(size_t maxSize) : _maxSize(maxSize) {}
-  size_t size() { return _jobs.size(); }
+
+  size_t size() {
+    std::unique_lock<std::mutex> lock(_mut);
+    return _jobs.size();
+  }
 
   void add(const T& job) {
     std::unique_lock<std::mutex> lockWait(_mutWait);

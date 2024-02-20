@@ -342,7 +342,7 @@ inline std::string readableSize(double size) {
 }
 
 // _____________________________________________________________________________
-inline int externalSort(int file, size_t size, size_t numobjs,
+inline void externalSort(int file, int newFile, size_t size, size_t numobjs,
                         int (*cmpf)(const void*, const void*)) {
   // sort a file via an external merge sort
 
@@ -382,31 +382,12 @@ inline int externalSort(int file, size_t size, size_t numobjs,
     partsize[i] = n;
   }
 
-  // now the individial parts are sorted
-  std::string newFName = ".sortTmp";
-  int newFile = open(newFName.c_str(), O_RDWR | O_CREAT, 0666);
-
-  if (newFile < 0) {
-    throw std::runtime_error("Could not open temporary file " + newFName);
-    exit(1);
-  }
-
-#ifdef __unix__
-  posix_fadvise(newFile, 0, 0, POSIX_FADV_SEQUENTIAL);
-#endif
-
-  // immediately unlink
-  unlink(newFName.c_str());
-
   for (size_t j = 0; j < parts; j++) {
     if (partpos[j] == partsize[j]) continue;  // bucket already empty
     pq.push({&partbufs[j][partpos[j] % partsBufSize], j});
   }
 
   for (size_t i = 0; i < fsize; i += size) {
-    // if (i % 100000000 == 0)
-      // LOG(INFO) << "@ " << ((1.0 * i) / (1.0 * fsize)) * 100 << "%";
-
     auto top = pq.top();
     pq.pop();
 
@@ -436,8 +417,6 @@ inline int externalSort(int file, size_t size, size_t numobjs,
   delete[] partbufs;
   delete[] partpos;
   delete[] partsize;
-
-  return newFile;
 }
 
 // _____________________________________________________________________________
