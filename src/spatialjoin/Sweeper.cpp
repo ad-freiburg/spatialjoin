@@ -12,6 +12,7 @@
 #include <set>
 
 #include "3rdparty/interval_tree.hpp"
+#include "IntervalIdx.h"
 #include "BoxIds.h"
 #include "Sweeper.h"
 #include "util/Misc.h"
@@ -189,19 +190,26 @@ void Sweeper::sweepLine() {
   const size_t RBUF_SIZE = 100000;
   char* buf = new char[sizeof(BoxVal) * RBUF_SIZE];
 
-  std::vector<interval_tree_t<int32_t>> actives;
+  size_t numTrees = 1;
+
+  // std::vector<interval_tree_t<int32_t>> actives;
+  std::vector<sj::IntervalIdx<int32_t>> actives;
+
+  for (size_t i = 0; i < numTrees;i++) {
+    // tree step size: 10 km
+    actives.push_back({20037508.3427892 * PREC * 2, 10000 * PREC * 2});
+  }
+
+
   std::vector<std::multimap<std::pair<int32_t, int32_t>, SweepVal>> activeVals;
 
   _rawFiles = {}, _files = {}, _outBufPos = {}, _outBuffers = {};
-
-  size_t numTrees = _numSweepThreads * 4;
 
   _files.resize(_numThrds);
   _rawFiles.resize(_numThrds);
   _outBufPos.resize(_numThrds);
   _outBuffers.resize(_numThrds);
 
-  actives.resize(numTrees);
   activeVals.resize(numTrees);
 
   size_t counts = 0, checkCount = 0, jj = 0, checkPairs = 0;
@@ -214,6 +222,8 @@ void Sweeper::sweepLine() {
   for (size_t i = 0; i < thrds.size(); i++)
     thrds[i] = std::thread(&Sweeper::processQueue, this, i);
 
+  size_t in = 0;
+
   size_t len;
   while ((len = read(_file, buf, sizeof(BoxVal) * RBUF_SIZE)) != 0) {
     for (size_t i = 0; i < len; i += sizeof(BoxVal)) {
@@ -225,8 +235,10 @@ void Sweeper::sweepLine() {
         // dont add POINTs to active - immediately treat them as "out" (keeps
         // active set smaller)
         if (cur->type != POINT) {
+          in++;
           size_t myThr = cur->sweepId % numTrees;
           SweepVal newSv{cur->id, cur->sweepId, cur->type};
+
           auto newIt = activeVals[myThr].insert({{cur->loY, cur->upY}, newSv});
 
           // check if this was the first value inserted with this key without
@@ -257,7 +269,7 @@ void Sweeper::sweepLine() {
                     << " pairs/s), avg. "
                     << ((1.0 * checkCount) / (1.0 * counts))
                     << " checks/geom, sweepLon=" << lon
-                    << "°, |A|=" << totSweepTreeSize << " (avg/tree "
+                    << "°, |A|=" << totSweepTreeSize << " " << activeVals[0].size() << " (avg/tree "
                     << ((double)totSweepTreeSize) / ((double)numTrees) << ")"
                     << ", |JQ|=" << _jobs.size() << " (x" << batchSize << ")";
           t = TIME();
@@ -270,6 +282,7 @@ void Sweeper::sweepLine() {
 
         // POINTs are never put onto active, so we don't have to remove them
         if (cur->type != POINT) {
+          in--;
           size_t count = 0;
 
           auto range = activeVals[myThr].equal_range({cur->loY, cur->upY});
@@ -278,11 +291,12 @@ void Sweeper::sweepLine() {
             if (i->second.sweepId == cur->sweepId) {
               if (count == 0) {
                 auto j = i;
-                if (++j != range.second) continue;
-
-                // this was actually the last element with this key, delete it
-                // from intervall tree
-                actives[myThr].erase(actives[myThr].find({cur->loY, cur->upY}));
+                if (++j == range.second) {
+                  // this was actually the last element with this key, delete it
+                  // from intervall tree
+                  // actives[myThr].erase(actives[myThr].find({cur->loY, cur->upY}));
+                  actives[myThr].erase({cur->loY, cur->upY});
+                }
               }
 
               activeVals[myThr].erase(i);
@@ -292,16 +306,17 @@ void Sweeper::sweepLine() {
           }
         }
 
+
         counts++;
 
         std::vector<JobBatch> batches(numTrees);
 
         size_t threads = _jobs.size() < 10 ? _numSweepThreads : 1;
 
-#pragma omp parallel for num_threads(threads)                           \
-    schedule(static, numTrees / threads) default(none)                  \
-        shared(cur, actives, activeVals, t, _numSweepThreads, numTrees, \
-               batches, threads)
+// #pragma omp parallel for num_threads(threads)                           \
+    // schedule(static, numTrees / threads) default(none)                  \
+        // shared(cur, actives, activeVals, t, _numSweepThreads, numTrees, \
+               // batches, threads)
         for (size_t t = 0; t < numTrees; t++) {
           fillBatch(t, &batches[t], &actives, cur, &activeVals);
         }
@@ -635,19 +650,31 @@ void Sweeper::processQueue(size_t t) {
 // _____________________________________________________________________________
 void Sweeper::fillBatch(
     size_t t, JobBatch* batch,
-    const std::vector<interval_tree_t<int32_t>>* actives, const BoxVal* cur,
+    // const std::vector<interval_tree_t<int32_t>>* actives,
+    const std::vector<IntervalIdx<int32_t>>* actives,
+    const BoxVal* cur,
     const std::vector<std::multimap<std::pair<int32_t, int32_t>, SweepVal>>*
         activeVals) {
   batch->reserve(20);
 
-  (*actives)[t].overlap_find_all(
-      {cur->loY, cur->upY}, [this, cur, activeVals, t, batch](auto i) {
-        const auto& r = (*activeVals)[t].equal_range({i->low(), i->high()});
+  const auto& overlaps = (*actives)[t].overlap_find_all({cur->loY, cur->upY});
 
-        for (auto i = r.first; i != r.second; i++) {
-          batch->push_back({*cur, i->second});
-        }
+  for (auto p : overlaps) {
+    const auto& r = (*activeVals)[t].equal_range(p);
 
-        return true;
-      });
+    for (auto i = r.first; i != r.second; i++) {
+      batch->push_back({*cur, i->second});
+    }
+  }
+
+  // (*actives)[t].overlap_find_all(
+      // {cur->loY, cur->upY}, [this, cur, activeVals, t, batch](auto i) {
+        // const auto& r = (*activeVals)[t].equal_range({i->low(), i->high()});
+
+        // for (auto i = r.first; i != r.second; i++) {
+          // batch->push_back({*cur, i->second});
+        // }
+
+        // return true;
+      // });
 }

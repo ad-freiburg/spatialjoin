@@ -14,6 +14,7 @@
 
 #include "3rdparty/interval_tree.hpp"
 #include "GeometryCache.h"
+#include "IntervalIdx.h"
 #include "util/JobQueue.h"
 #include "util/geo/Geo.h"
 
@@ -59,11 +60,9 @@ static const size_t BUFFER_S_PAIRS = 1024 * 1024 * 10;
 class Sweeper {
  public:
   explicit Sweeper(size_t numThreads, size_t numSweepThreads,
-                         const std::string& pairStart,
-                         const std::string& sepIsect,
-                         const std::string& sepContains,
-                         const std::string& pairEnd,
-                         bool reUse)
+                   const std::string& pairStart, const std::string& sepIsect,
+                   const std::string& sepContains, const std::string& pairEnd,
+                   bool reUse)
       : _obufpos(0),
         _numThrds(numThreads),
         _numSweepThreads(numSweepThreads),
@@ -155,8 +154,7 @@ class Sweeper {
 
   void fillBatch(
       size_t t, JobBatch* batch,
-      const std::vector<lib_interval_tree::interval_tree_t<int32_t>>* actives,
-      const BoxVal* cur,
+      const std::vector<sj::IntervalIdx<int32_t>>* actives, const BoxVal* cur,
       const std::vector<std::multimap<std::pair<int32_t, int32_t>, SweepVal>>*
           activeVals);
 
