@@ -344,7 +344,7 @@ inline std::string readableSize(double size) {
 // _____________________________________________________________________________
 inline void externalSort(int file, int newFile, size_t size, size_t numobjs,
                         int (*cmpf)(const void*, const void*)) {
-  // sort a file via an external merge sort
+  // sort a file via an external sort
 
   size_t fsize = size * numobjs;
 

@@ -12,20 +12,20 @@
 #include <set>
 
 #include "3rdparty/interval_tree.hpp"
+#include "BoxIds.h"
 #include "Sweeper.h"
 #include "util/Misc.h"
 #include "util/log/Log.h"
-#include "BoxIds.h"
 
 using lib_interval_tree::interval_tree_t;
-using sj::Sweeper;
 using sj::GeomType;
-using util::geo::I32XSortedPolygon;
-using sj::boxids::packBoxIds;
-using sj::boxids::getBoxIds;
-using sj::boxids::getBoxId;
+using sj::Sweeper;
 using sj::boxids::boxIdIsect;
-using  util::geo::webMercToLatLng;
+using sj::boxids::getBoxId;
+using sj::boxids::getBoxIds;
+using sj::boxids::packBoxIds;
+using util::geo::I32XSortedPolygon;
+using util::geo::webMercToLatLng;
 
 // _____________________________________________________________________________
 void Sweeper::add(const util::geo::I32MultiPolygon& a, size_t gid) {
@@ -252,12 +252,13 @@ void Sweeper::sweepLine() {
           checkCount += checkPairs;
           LOG(INFO) << jj << " / " << _curSweepId << " ("
                     << (((1.0 * jj) / (1.0 * _curSweepId)) * 100) << "%, "
-                    << (100000.0 / TOOK(t, TIME())) * 1000.0 << " geoms/s), "
+                    << (100000.0 / TOOK(t, TIME())) * 1000.0 << " geoms/s, "
                     << (checkPairs / TOOK(t, TIME())) * 1000.0
                     << " pairs/s), avg. "
                     << ((1.0 * checkCount) / (1.0 * counts))
                     << " checks/geom, sweepLon=" << lon
-                    << "°, |A|=" << totSweepTreeSize << " (avg/tree " << ((double)totSweepTreeSize) / ((double)numTrees) << ")"
+                    << "°, |A|=" << totSweepTreeSize << " (avg/tree "
+                    << ((double)totSweepTreeSize) / ((double)numTrees) << ")"
                     << ", |JQ|=" << _jobs.size() << " (x" << batchSize << ")";
           t = TIME();
           checkPairs = 0;
@@ -297,9 +298,10 @@ void Sweeper::sweepLine() {
 
         size_t threads = _jobs.size() < 10 ? _numSweepThreads : 1;
 
-#pragma omp parallel for num_threads(threads) \
+#pragma omp parallel for num_threads(threads)                           \
     schedule(static, numTrees / threads) default(none)                  \
-        shared(cur, actives, activeVals, t, _numSweepThreads, numTrees, batches, threads)
+        shared(cur, actives, activeVals, t, _numSweepThreads, numTrees, \
+               batches, threads)
         for (size_t t = 0; t < numTrees; t++) {
           fillBatch(t, &batches[t], &actives, cur, &activeVals);
         }
@@ -310,7 +312,7 @@ void Sweeper::sweepLine() {
         }
 
         if (curBatch.size() > batchSize) {
-          _jobs.add(std::move(curBatch));
+          // _jobs.add(std::move(curBatch));
           curBatch.clear();  // AFAIK, std doesnt guarantee that after move
           curBatch.reserve(batchSize + 100);
         }
@@ -384,8 +386,7 @@ bool Sweeper::check(const Line* a, const Line* b) const {
 }
 
 // _____________________________________________________________________________
-std::pair<bool, bool> Sweeper::check(const SimpleLine* a,
-                                           const Area* b) const {
+std::pair<bool, bool> Sweeper::check(const SimpleLine* a, const Area* b) const {
   auto r = boxIdIsect({{1, 0}, {getBoxId(a->a), 0}}, b->boxIds);
 
   // all boxes of a are fully contained in b, we intersect and we are contained
@@ -435,8 +436,7 @@ void Sweeper::writeContains(size_t t, size_t a, size_t b) {
 }
 
 // ____________________________________________________________________________
-void Sweeper::writeRel(size_t t, size_t a, size_t b,
-                             const std::string& pred) {
+void Sweeper::writeRel(size_t t, size_t a, size_t b, const std::string& pred) {
   std::string out =
       _pairStart + std::to_string(a) + pred + std::to_string(b) + _pairEnd;
 
