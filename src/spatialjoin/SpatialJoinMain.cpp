@@ -173,10 +173,8 @@ int main(int argc, char** argv) {
 
   size_t NUM_THREADS = std::thread::hardware_concurrency();
 
-  Sweeper sweeper(
-      std::max(1, (int)NUM_THREADS - 1),
-      std::max(1, (int)NUM_THREADS / 2), "", " intersects ", " contains ", "\n",
-      useCache);
+  Sweeper sweeper(NUM_THREADS, "", " intersects ", " contains ", "\n",
+                  useCache);
 
   size_t gid = 0;
 

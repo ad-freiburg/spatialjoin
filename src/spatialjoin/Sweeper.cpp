@@ -11,14 +11,12 @@
 #include <cstring>
 #include <set>
 
-#include "3rdparty/interval_tree.hpp"
-#include "IntervalIdx.h"
 #include "BoxIds.h"
+#include "IntervalIdx.h"
 #include "Sweeper.h"
 #include "util/Misc.h"
 #include "util/log/Log.h"
 
-using lib_interval_tree::interval_tree_t;
 using sj::GeomType;
 using sj::Sweeper;
 using sj::boxids::boxIdIsect;
@@ -46,12 +44,10 @@ void Sweeper::add(const util::geo::I32MultiPolygon& a, size_t gid) {
         boxIds,
     });
 
-    diskAdd({id, _curSweepId, box.getLowerLeft().getY(),
-             box.getUpperRight().getY(), box.getLowerLeft().getX(), false,
-             POLYGON});
-    diskAdd({id, _curSweepId, box.getLowerLeft().getY(),
-             box.getUpperRight().getY(), box.getUpperRight().getX(), true,
-             POLYGON});
+    diskAdd({id, box.getLowerLeft().getY(), box.getUpperRight().getY(),
+             box.getLowerLeft().getX(), false, POLYGON});
+    diskAdd({id, box.getLowerLeft().getY(), box.getUpperRight().getY(),
+             box.getUpperRight().getX(), true, POLYGON});
     _curSweepId++;
     subid++;
   }
@@ -75,12 +71,10 @@ void Sweeper::add(const util::geo::I32Polygon& poly, size_t gid) {
       boxIds,
   });
 
-  diskAdd({id, _curSweepId, box.getLowerLeft().getY(),
-           box.getUpperRight().getY(), box.getLowerLeft().getX(), false,
-           POLYGON});
-  diskAdd({id, _curSweepId, box.getLowerLeft().getY(),
-           box.getUpperRight().getY(), box.getUpperRight().getX(), true,
-           POLYGON});
+  diskAdd({id, box.getLowerLeft().getY(), box.getUpperRight().getY(),
+           box.getLowerLeft().getX(), false, POLYGON});
+  diskAdd({id, box.getLowerLeft().getY(), box.getUpperRight().getY(),
+           box.getUpperRight().getX(), true, POLYGON});
   _curSweepId++;
 
   if (_curSweepId % 1000000 == 0) LOG(INFO) << "@ " << _curSweepId;
@@ -96,12 +90,10 @@ void Sweeper::add(const util::geo::I32Line& line, size_t gid) {
     size_t id =
         _simpleLineCache.add(SimpleLine{line.front(), line.back(), gid});
 
-    diskAdd({id, _curSweepId, box.getLowerLeft().getY(),
-             box.getUpperRight().getY(), box.getLowerLeft().getX(), false,
-             SIMPLE_LINE});
-    diskAdd({id, _curSweepId, box.getLowerLeft().getY(),
-             box.getUpperRight().getY(), box.getUpperRight().getX(), true,
-             SIMPLE_LINE});
+    diskAdd({id, box.getLowerLeft().getY(), box.getUpperRight().getY(),
+             box.getLowerLeft().getX(), false, SIMPLE_LINE});
+    diskAdd({id, box.getLowerLeft().getY(), box.getUpperRight().getY(),
+             box.getUpperRight().getX(), true, SIMPLE_LINE});
   } else {
     const util::geo::I32XSortedLine sline(line);
 
@@ -109,12 +101,10 @@ void Sweeper::add(const util::geo::I32Line& line, size_t gid) {
         sline, box, gid, 0, boxIds,  //{}  // dummy
     });
 
-    diskAdd({id, _curSweepId, box.getLowerLeft().getY(),
-             box.getUpperRight().getY(), box.getLowerLeft().getX(), false,
-             LINE});
-    diskAdd({id, _curSweepId, box.getLowerLeft().getY(),
-             box.getUpperRight().getY(), box.getUpperRight().getX(), true,
-             LINE});
+    diskAdd({id, box.getLowerLeft().getY(), box.getUpperRight().getY(),
+             box.getLowerLeft().getX(), false, LINE});
+    diskAdd({id, box.getLowerLeft().getY(), box.getUpperRight().getY(),
+             box.getUpperRight().getX(), true, LINE});
   }
   _curSweepId++;
 
@@ -123,10 +113,8 @@ void Sweeper::add(const util::geo::I32Line& line, size_t gid) {
 
 // _____________________________________________________________________________
 void Sweeper::add(const util::geo::I32Point& point, size_t gid) {
-  diskAdd({gid, _curSweepId, point.getY(), point.getY(), point.getX(), false,
-           POINT});
-  diskAdd({gid, _curSweepId, point.getY(), point.getY(), point.getX(), true,
-           POINT});
+  diskAdd({gid, point.getY(), point.getY(), point.getX(), false, POINT});
+  diskAdd({gid, point.getY(), point.getY(), point.getX(), true, POINT});
   _curSweepId++;
 
   if (_curSweepId % 1000000 == 0) LOG(INFO) << "@ " << _curSweepId;
@@ -190,18 +178,7 @@ void Sweeper::sweepLine() {
   const size_t RBUF_SIZE = 100000;
   char* buf = new char[sizeof(BoxVal) * RBUF_SIZE];
 
-  size_t numTrees = 1;
-
-  // std::vector<interval_tree_t<int32_t>> actives;
-  std::vector<sj::IntervalIdx<int32_t>> actives;
-
-  for (size_t i = 0; i < numTrees;i++) {
-    // tree step size: 10 km
-    actives.push_back({20037508.3427892 * PREC * 2, 10000 * PREC * 2});
-  }
-
-
-  std::vector<std::multimap<std::pair<int32_t, int32_t>, SweepVal>> activeVals;
+  sj::IntervalIdx<int32_t, SweepVal> actives;
 
   _rawFiles = {}, _files = {}, _outBufPos = {}, _outBuffers = {};
 
@@ -209,8 +186,6 @@ void Sweeper::sweepLine() {
   _rawFiles.resize(_numThrds);
   _outBufPos.resize(_numThrds);
   _outBuffers.resize(_numThrds);
-
-  activeVals.resize(numTrees);
 
   size_t counts = 0, checkCount = 0, jj = 0, checkPairs = 0;
   auto t = TIME();
@@ -221,8 +196,6 @@ void Sweeper::sweepLine() {
   std::vector<std::thread> thrds(_numThrds);
   for (size_t i = 0; i < thrds.size(); i++)
     thrds[i] = std::thread(&Sweeper::processQueue, this, i);
-
-  size_t in = 0;
 
   size_t len;
   while ((len = read(_file, buf, sizeof(BoxVal) * RBUF_SIZE)) != 0) {
@@ -235,31 +208,10 @@ void Sweeper::sweepLine() {
         // dont add POINTs to active - immediately treat them as "out" (keeps
         // active set smaller)
         if (cur->type != POINT) {
-          in++;
-          size_t myThr = cur->sweepId % numTrees;
-          SweepVal newSv{cur->id, cur->sweepId, cur->type};
-
-          auto newIt = activeVals[myThr].insert({{cur->loY, cur->upY}, newSv});
-
-          // check if this was the first value inserted with this key without
-          // calling find - elements with same keys are in same range in
-          // multimap
-          if (!(++newIt != activeVals[myThr].end() &&
-                newIt->first.first == cur->loY &&
-                newIt->first.second == cur->upY) &&
-              !(--newIt != activeVals[myThr].begin() &&
-                (--newIt)->first.first == cur->loY &&
-                newIt->first.second == cur->upY)) {
-            actives[myThr].insert({cur->loY, cur->upY});
-          }
+          actives.insert({cur->loY, cur->upY}, {cur->id, cur->type});
         }
 
         if (++jj % 100000 == 0) {
-          size_t totSweepTreeSize = 0;
-          for (size_t t = 0; t < numTrees; t++) {
-            totSweepTreeSize += actives[t].size();
-          }
-
           auto lon = webMercToLatLng<double>((1.0 * cur->val) / PREC, 0).getX();
           checkCount += checkPairs;
           LOG(INFO) << jj << " / " << _curSweepId << " ("
@@ -269,66 +221,27 @@ void Sweeper::sweepLine() {
                     << " pairs/s), avg. "
                     << ((1.0 * checkCount) / (1.0 * counts))
                     << " checks/geom, sweepLon=" << lon
-                    << "°, |A|=" << totSweepTreeSize << " " << activeVals[0].size() << " (avg/tree "
-                    << ((double)totSweepTreeSize) / ((double)numTrees) << ")"
-                    << ", |JQ|=" << _jobs.size() << " (x" << batchSize << ")";
+                    << "°, |A|=" << actives.size() << ", |JQ|=" << _jobs.size()
+                    << " (x" << batchSize << ")";
           t = TIME();
           checkPairs = 0;
         }
       } else {
         // OUT event
 
-        size_t myThr = cur->sweepId % numTrees;
-
         // POINTs are never put onto active, so we don't have to remove them
         if (cur->type != POINT) {
-          in--;
-          size_t count = 0;
-
-          auto range = activeVals[myThr].equal_range({cur->loY, cur->upY});
-
-          for (auto i = range.first; i != range.second; i++) {
-            if (i->second.sweepId == cur->sweepId) {
-              if (count == 0) {
-                auto j = i;
-                if (++j == range.second) {
-                  // this was actually the last element with this key, delete it
-                  // from intervall tree
-                  // actives[myThr].erase(actives[myThr].find({cur->loY, cur->upY}));
-                  actives[myThr].erase({cur->loY, cur->upY});
-                }
-              }
-
-              activeVals[myThr].erase(i);
-              break;
-            }
-            count++;
-          }
+          actives.erase({cur->loY, cur->upY}, {cur->id, cur->type});
         }
-
 
         counts++;
 
-        std::vector<JobBatch> batches(numTrees);
-
-        size_t threads = _jobs.size() < 10 ? _numSweepThreads : 1;
-
-// #pragma omp parallel for num_threads(threads)                           \
-    // schedule(static, numTrees / threads) default(none)                  \
-        // shared(cur, actives, activeVals, t, _numSweepThreads, numTrees, \
-               // batches, threads)
-        for (size_t t = 0; t < numTrees; t++) {
-          fillBatch(t, &batches[t], &actives, cur, &activeVals);
-        }
-
-        for (const auto& b : batches) {
-          curBatch.insert(curBatch.end(), b.begin(), b.end());
-          checkPairs += b.size();
-        }
+        fillBatch(&curBatch, &actives, cur);
 
         if (curBatch.size() > batchSize) {
-          // _jobs.add(std::move(curBatch));
-          curBatch.clear();  // AFAIK, std doesnt guarantee that after move
+          checkPairs += curBatch.size();
+          _jobs.add(std::move(curBatch));
+          curBatch.clear();  // std doesnt guarantee that after move
           curBatch.reserve(batchSize + 100);
         }
       }
@@ -648,33 +561,12 @@ void Sweeper::processQueue(size_t t) {
 }
 
 // _____________________________________________________________________________
-void Sweeper::fillBatch(
-    size_t t, JobBatch* batch,
-    // const std::vector<interval_tree_t<int32_t>>* actives,
-    const std::vector<IntervalIdx<int32_t>>* actives,
-    const BoxVal* cur,
-    const std::vector<std::multimap<std::pair<int32_t, int32_t>, SweepVal>>*
-        activeVals) {
+void Sweeper::fillBatch(JobBatch* batch,
+                        const IntervalIdx<int32_t, SweepVal>* actives,
+                        const BoxVal* cur) const {
   batch->reserve(20);
 
-  const auto& overlaps = (*actives)[t].overlap_find_all({cur->loY, cur->upY});
+  const auto& overlaps = actives->overlap_find_all({cur->loY, cur->upY});
 
-  for (auto p : overlaps) {
-    const auto& r = (*activeVals)[t].equal_range(p);
-
-    for (auto i = r.first; i != r.second; i++) {
-      batch->push_back({*cur, i->second});
-    }
-  }
-
-  // (*actives)[t].overlap_find_all(
-      // {cur->loY, cur->upY}, [this, cur, activeVals, t, batch](auto i) {
-        // const auto& r = (*activeVals)[t].equal_range({i->low(), i->high()});
-
-        // for (auto i = r.first; i != r.second; i++) {
-          // batch->push_back({*cur, i->second});
-        // }
-
-        // return true;
-      // });
+  for (auto p : overlaps) batch->push_back({*cur, p.v});
 }

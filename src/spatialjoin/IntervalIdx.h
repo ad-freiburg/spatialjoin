@@ -15,96 +15,93 @@
 
 namespace sj {
 
-template <typename V>
+template <typename K, typename V>
+struct IntervalVal {
+  K l;
+  K r;
+  V v;
+};
+
+template <typename K, typename V>
+inline bool operator<(const IntervalVal<K, V>& l, const IntervalVal<K, V>& r) {
+  return l.l < r.l || (l.l == r.l && l.r < r.r) ||
+         (l.l == r.l && l.r == r.r && l.v < r.v);
+}
+
+template <typename K, typename V>
 class IntervalIdx {
  public:
-  IntervalIdx() {}
-
-  IntervalIdx(V len, V step) : _len(len), _step(step) {
+  IntervalIdx() {
     _ts = {10, 100, 1000, 10000, 100000, 1000000, 10000000, 100000000};
     _ivals.resize(_ts.size() + 1);
-
   }
 
-  void insert(std::pair<V, V> val) {
-    V span = val.second - val.first;
+  void insert(const std::pair<K, K> s, const V val) {
+    const K span = s.second - s.first;
 
     for (size_t i = 0; i < _ts.size(); i++) {
       if (span < _ts[i]) {
-        _ivals[i].insert(val);
+        _ivals[i].insert({s.first, s.second, val});
         return;
       }
     }
 
     // largest
-    _ivals.back().insert(val);
+    _ivals.back().insert({s.first, s.second, val});
     if (span > _maxSpan) _maxSpan = span;
   }
 
-  void erase(std::pair<V, V> val) {
-    V span = val.second - val.first;
+  void erase(const std::pair<K, K> s, const V val) {
+    const K span = s.second - s.first;
 
     for (size_t i = 0; i < _ts.size(); i++) {
       if (span < _ts[i]) {
-        _ivals[i].erase(val);
+        _ivals[i].erase({s.first, s.second, val});
         return;
       }
     }
 
     // largest
-    _ivals.back().erase(val);
+    _ivals.back().erase({s.first, s.second, val});
   }
 
-  std::vector<std::pair<V, V>> overlap_find_all(std::pair<V, V> val) const {
-    std::vector<std::pair<V, V>> ret;
-    ret.reserve(50);
+  std::vector<IntervalVal<K, V>> overlap_find_all(const std::pair<K, K> s) const {
+    std::vector<IntervalVal<K, V>> ret;
 
     for (size_t j = 0; j < _ts.size(); j++) {
-      auto i = _ivals[j].lower_bound({val.first - _ts[j], 0});
-
-      while (i != _ivals[j].end() && i->first < val.second) {
-        if ((val.first >= i->first && val.first <= i->second) ||
-            (val.second >= i->first && val.second <= i->second) ||
-            (i->first >= val.first && i->first <= val.second) ||
-            (i->second >= val.first && i->second <= val.second)) {
-          ret.push_back(*i);
-        }
-        i++;
-      }
+      get(s, _ivals[j], _ts[j], ret);
     }
-
-    auto i = _ivals.back().lower_bound({val.first - _maxSpan, 0});
-
-    while (i != _ivals.back().end() && i->first < val.second) {
-      if ((val.first >= i->first && val.first <= i->second) ||
-          (val.second >= i->first && val.second <= i->second) ||
-          (i->first >= val.first && i->first <= val.second) ||
-          (i->second >= val.first && i->second <= val.second)) {
-        ret.push_back(*i);
-      }
-      i++;
-    }
+    get(s, _ivals.back(), _maxSpan, ret);
 
     return ret;
   }
 
   size_t size() {
-    size_t res = 0 ;
-
+    size_t res = 0;
     for (const auto& ival : _ivals) res += ival.size();
-
     return res;
   }
 
  private:
-  V _len;
-  V _step;
+  std::vector<K> _ts;
+  std::vector<std::set<IntervalVal<K, V>>> _ivals;
 
-  std::vector<V> _ts;
+  K _maxSpan = 0;
 
-  std::vector<std::set<std::pair<V, V>>> _ivals;
+  void get(const std::pair<K, K> val, const std::set<IntervalVal<K, V>>& idx, K t,
+           std::vector<IntervalVal<K, V>>& ret) const {
+    auto i = idx.lower_bound({val.first - t, 0, {}});
 
-  V _maxSpan = 0;
+    while (i != idx.end() && i->l <= val.second) {
+      if ((val.first >= i->l && val.first <= i->r) ||
+          (val.second <= i->r) ||
+          (i->l >= val.first) ||
+          (i->r >= val.first && i->r <= val.second)) {
+        ret.push_back(*i);
+      }
+      i++;
+    }
+  }
 };
 
 }  // namespace sj

@@ -12,7 +12,6 @@
 #include <queue>
 #include <thread>
 
-#include "3rdparty/interval_tree.hpp"
 #include "GeometryCache.h"
 #include "IntervalIdx.h"
 #include "util/JobQueue.h"
@@ -27,8 +26,7 @@ namespace sj {
 enum GeomType : uint8_t { POLYGON = 0, LINE = 1, POINT = 2, SIMPLE_LINE = 3 };
 
 struct BoxVal {
-  size_t id;
-  size_t sweepId : 60;
+  size_t id : 60;
   int32_t loY;
   int32_t upY;
   int32_t val;
@@ -37,18 +35,24 @@ struct BoxVal {
 };
 
 inline bool operator==(const BoxVal& a, const BoxVal& b) {
-  return a.id == b.id && a.sweepId == b.sweepId && a.loY == b.loY &&
+  return a.id == b.id && a.loY == b.loY &&
          a.upY == b.upY && a.type == b.type;
 }
 
 struct SweepVal {
-  size_t id;
-  size_t sweepId : 60;
+  SweepVal(size_t id,  GeomType type)
+      : id(id),  type(type) {}
+  SweepVal() : id(0), type(POLYGON) {}
+  size_t id : 60;
   GeomType type : 2;
 };
 
 inline bool operator==(const SweepVal& a, const SweepVal& b) {
-  return a.id == b.id && a.sweepId == b.sweepId && a.type == b.type;
+  return a.id == b.id && a.type == b.type;
+}
+
+inline bool operator<(const SweepVal& a, const SweepVal& b) {
+  return a.id < b.id || (a.id == b.id  && a.type < b.type);
 }
 
 typedef std::vector<std::pair<BoxVal, SweepVal>> JobBatch;
@@ -59,13 +63,12 @@ static const size_t BUFFER_S_PAIRS = 1024 * 1024 * 10;
 
 class Sweeper {
  public:
-  explicit Sweeper(size_t numThreads, size_t numSweepThreads,
+  explicit Sweeper(size_t numThreads,
                    const std::string& pairStart, const std::string& sepIsect,
                    const std::string& sepContains, const std::string& pairEnd,
                    bool reUse)
       : _obufpos(0),
         _numThrds(numThreads),
-        _numSweepThreads(numSweepThreads),
         _areaCache(100000, numThreads, reUse),
         _lineCache(100000, numThreads, reUse),
         _simpleLineCache(100000, numThreads, reUse),
@@ -75,8 +78,6 @@ class Sweeper {
         _pairEnd(pairEnd),
         _jobs(100) {
     std::string fname = ".spatialjoins";
-
-    std::cout << numThreads << ", " << numSweepThreads << std::endl;
 
     if (reUse) {
       _file = open(fname.c_str(), O_RDONLY);
@@ -114,7 +115,6 @@ class Sweeper {
   unsigned char* _outBufferPairs;
   size_t _obufpos;
   size_t _numThrds;
-  size_t _numSweepThreads;
 
   std::vector<FILE*> _rawFiles;
   std::vector<BZFILE*> _files;
@@ -152,11 +152,9 @@ class Sweeper {
   void prepareOutputFiles();
   void flushOutputFiles();
 
-  void fillBatch(
-      size_t t, JobBatch* batch,
-      const std::vector<sj::IntervalIdx<int32_t>>* actives, const BoxVal* cur,
-      const std::vector<std::multimap<std::pair<int32_t, int32_t>, SweepVal>>*
-          activeVals);
+  void fillBatch(JobBatch* batch,
+                 const sj::IntervalIdx<int32_t, SweepVal>* actives,
+                 const BoxVal* cur) const;
 
   static int boxCmp(const void* a, const void* b) {
     if (static_cast<const BoxVal*>(a)->val < static_cast<const BoxVal*>(b)->val)
