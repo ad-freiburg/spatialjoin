@@ -125,12 +125,17 @@ class Sweeper {
   GeometryCache<Line> _lineCache;
   GeometryCache<SimpleLine> _simpleLineCache;
 
+  std::map<size_t, std::map<size_t, std::set<size_t>>> _subContains;
+  std::map<size_t, size_t> _subSizes;
+
   std::string _sepIsect;
   std::string _sepContains;
   std::string _pairStart;
   std::string _pairEnd;
 
   util::JobQueue<JobBatch> _jobs;
+
+  std::mutex _mut;
 
   std::pair<bool, bool> check(const Area* a, const Area* b) const;
   std::pair<bool, bool> check(const Line* a, const Area* b) const;
@@ -143,6 +148,7 @@ class Sweeper {
 
   void writeIntersect(size_t t, size_t a, size_t b);
   void writeContains(size_t t, size_t a, size_t b);
+  void writeContainsMulti(size_t t, size_t a, size_t b, size_t bSub);
   void writeRel(size_t t, size_t a, size_t b, const std::string& pred);
 
   void doCheck(const BoxVal cur, const SweepVal sv, size_t t);

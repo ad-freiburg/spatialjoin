@@ -113,11 +113,11 @@ void parse(const char* c, size_t size, std::string& dangling, size_t* gid,
       } else if ((p = dangling.rfind("MULTIPOLYGON(", 2)) !=
                  std::string::npos) {
         p += 12;
-        size_t i = 0;
         I32MultiPolygon mp;
         while (p != std::string::npos &&
                (p = dangling.find("(", p + 1)) != std::string::npos) {
           I32Polygon poly;
+          size_t i = 0;
           while ((p = dangling.find("(", p + 1)) != std::string::npos) {
             const auto& line = parseLineString(dangling, p + 1);
             if (i == 0) {
@@ -126,6 +126,16 @@ void parse(const char* c, size_t size, std::string& dangling, size_t* gid,
             } else {
               poly.getInners().push_back(line);
             }
+
+            // check if multipolygon is closed
+            auto q = dangling.find(")", p + 1);  // this is the closing of the linestring
+            auto q2 = dangling.find(")", q + 1);
+            auto q3 = dangling.find(",", q + 1);
+            if (q2 != std::string::npos && q3 != std::string::npos && q2 < q3) {
+              p = q3;
+              break;
+            }
+
             i++;
           }
           mp.push_back(poly);

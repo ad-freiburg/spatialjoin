@@ -166,7 +166,6 @@ class GeometryCache {
       _idMap;
 
   size_t _maxSize;
-  mutable std::mutex _mut;
 };
 }  // namespace sj
 

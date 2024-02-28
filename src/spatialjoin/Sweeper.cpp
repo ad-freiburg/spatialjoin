@@ -28,7 +28,11 @@ using util::geo::webMercToLatLng;
 
 // _____________________________________________________________________________
 void Sweeper::add(const util::geo::I32MultiPolygon& a, size_t gid) {
-  uint16_t subid = 0;
+  uint16_t subid = 0;  // a subid of 0 means "single polygon"
+  if (a.size() > 1) {
+    _subSizes[gid] = a.size();
+    subid = 1;
+  }
   for (const auto& poly : a) {
     const auto& box = util::geo::getBoundingBox(poly);
     const I32XSortedPolygon spoly(poly);
@@ -66,7 +70,7 @@ void Sweeper::add(const util::geo::I32Polygon& poly, size_t gid) {
       spoly,
       box,
       gid,
-      0,
+      0,  // a subid of 0 means "single polygon"
       areaSize,
       boxIds,
   });
@@ -398,10 +402,26 @@ void Sweeper::doCheck(const BoxVal cur, const SweepVal sv, size_t t) {
     if (res.first) {
       writeIntersect(t, a->id, b->id);
       writeIntersect(t, b->id, a->id);
+
+      // check for contains in other direction
+      // NOTE: this is not necessary if we assume that "lying on the border"
+      // does not mean contain, then we can always be sure that if a came out
+      // first of the sweep line process, b cannot be contained in a
+      // auto resOther = check(b.get(), a.get());
+      // if (res.second) {
+      // writeContains(t, b->id, a->id);
+      // }
     }
 
     if (res.second) {
-      writeContains(t, b->id, a->id);
+      if (a->subId > 0) {
+        // a is a multigeometry, *all* its parts must be contained.
+        // we cache them, and write them as soon as we know that yes,
+        // they are all contained
+        writeContainsMulti(t, b->id, a->id, a->subId);
+      } else {
+        writeContains(t, b->id, a->id);
+      }
     }
   } else if (cur.type == LINE && sv.type == POLYGON) {
     auto a = _lineCache.get(cur.id, t);
@@ -569,4 +589,19 @@ void Sweeper::fillBatch(JobBatch* batch,
   const auto& overlaps = actives->overlap_find_all({cur->loY, cur->upY});
 
   for (auto p : overlaps) batch->push_back({*cur, p.v});
+}
+
+// _____________________________________________________________________________
+void Sweeper::writeContainsMulti(size_t t, size_t a, size_t b, size_t bSub) {
+  {
+    std::unique_lock<std::mutex> lock(_mut);
+
+    _subContains[b][a].insert(bSub);
+
+    if (_subContains[b][a].size() != _subSizes[b]) return;
+
+    _subContains[b].erase(a);
+  }
+
+  writeContains(t, a, b);
 }
