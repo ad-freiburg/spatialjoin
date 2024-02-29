@@ -13,6 +13,7 @@
 #include <thread>
 
 #include "GeometryCache.h"
+#include "Stats.h"
 #include "IntervalIdx.h"
 #include "util/JobQueue.h"
 #include "util/geo/Geo.h"
@@ -106,7 +107,7 @@ class Sweeper {
   void add(const util::geo::I32Point& a, size_t gid);
   void flush();
 
-  void sweepLine();
+  void sweep();
 
  private:
   size_t _curSweepId = 0;
@@ -120,6 +121,8 @@ class Sweeper {
   std::vector<BZFILE*> _files;
   std::vector<size_t> _outBufPos;
   std::vector<unsigned char*> _outBuffers;
+
+  mutable std::vector<Stats> _stats;
 
   GeometryCache<Area> _areaCache;
   GeometryCache<Line> _lineCache;
@@ -137,12 +140,12 @@ class Sweeper {
 
   std::mutex _mut;
 
-  std::pair<bool, bool> check(const Area* a, const Area* b) const;
-  std::pair<bool, bool> check(const Line* a, const Area* b) const;
-  std::pair<bool, bool> check(const SimpleLine* a, const Area* b) const;
-  bool check(const Line* a, const Line* b) const;
-  bool check(const Line* a, const SimpleLine* b) const;
-  bool check(const util::geo::I32Point& a, const Area* b) const;
+  std::pair<bool, bool> check(const Area* a, const Area* b, size_t t) const;
+  std::pair<bool, bool> check(const Line* a, const Area* b, size_t t) const;
+  std::pair<bool, bool> check(const SimpleLine* a, const Area* b, size_t t) const;
+  bool check(const Line* a, const Line* b, size_t t) const;
+  bool check(const Line* a, const SimpleLine* b, size_t t) const;
+  bool check(const util::geo::I32Point& a, const Area* b, size_t t) const;
 
   void diskAdd(const BoxVal& bv);
 

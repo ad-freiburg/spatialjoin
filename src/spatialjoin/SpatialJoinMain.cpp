@@ -201,6 +201,6 @@ int main(int argc, char** argv) {
   LOG(INFO) << "done.";
 
   LOG(INFO) << "Sweeping...";
-  sweeper.sweepLine();
+  sweeper.sweep();
   LOG(INFO) << "done.";
 }

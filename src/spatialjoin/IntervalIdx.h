@@ -36,6 +36,7 @@ class IntervalIdx {
     _ivals.resize(_ts.size() + 1);
   }
 
+  // insert an interval s = [a, b] with value val
   void insert(const std::pair<K, K> s, const V val) {
     const K span = s.second - s.first;
 
@@ -51,6 +52,7 @@ class IntervalIdx {
     if (span > _maxSpan) _maxSpan = span;
   }
 
+  // erase an interval s = [a, b] with value val
   void erase(const std::pair<K, K> s, const V val) {
     const K span = s.second - s.first;
 
@@ -65,17 +67,21 @@ class IntervalIdx {
     _ivals.back().erase({s.first, s.second, val});
   }
 
-  std::vector<IntervalVal<K, V>> overlap_find_all(const std::pair<K, K> s) const {
+  // find all intervals, with their values, which overlap s= [a, b]
+  std::vector<IntervalVal<K, V>> overlap_find_all(
+      const std::pair<K, K> s) const {
     std::vector<IntervalVal<K, V>> ret;
 
-    for (size_t j = 0; j < _ts.size(); j++) {
-      get(s, _ivals[j], _ts[j], ret);
-    }
+    // retrieve from each sub-list
+    for (size_t j = 0; j < _ts.size(); j++) get(s, _ivals[j], _ts[j], ret);
+
+    // also retrieve from largest sub-list
     get(s, _ivals.back(), _maxSpan, ret);
 
     return ret;
   }
 
+  // returns the size of the interval index
   size_t size() {
     size_t res = 0;
     for (const auto& ival : _ivals) res += ival.size();
@@ -88,15 +94,23 @@ class IntervalIdx {
 
   K _maxSpan = 0;
 
-  void get(const std::pair<K, K> val, const std::set<IntervalVal<K, V>>& idx, K t,
-           std::vector<IntervalVal<K, V>>& ret) const {
+  // retrieve all overlapping intervals from an set of intervals, sorted by
+  // left interval boundary, with a parameter t which specifies the guaranteed
+  // maximum interval range in the set
+  void get(const std::pair<K, K> val, const std::set<IntervalVal<K, V>>& idx,
+           K t, std::vector<IntervalVal<K, V>>& ret) const {
+    // search for the first interval that might overlap with the queried one
+    // we can do binary search here by exploiting the fact that we know that
+    // no interval in the set is longer than t, so each interval with a
+    // left bound < val[0] - t canno overlap with val
     auto i = idx.lower_bound({val.first - t, 0, {}});
 
+    // explicitly check for overlaps as long as the left bound is not larger
+    // than the right bound of val (from then on, no intersects are possible
+    // any more)
     while (i != idx.end() && i->l <= val.second) {
-      if ((val.first >= i->l && val.first <= i->r) ||
-          (val.second <= i->r) ||
-          (i->l >= val.first) ||
-          (i->r >= val.first && i->r <= val.second)) {
+      if ((val.first >= i->l && val.first <= i->r) || (val.second <= i->r) ||
+          (i->l >= val.first) || (i->r >= val.first && i->r <= val.second)) {
         ret.push_back(*i);
       }
       i++;
