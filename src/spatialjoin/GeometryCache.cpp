@@ -63,7 +63,11 @@ sj::SimpleLine sj::GeometryCache<sj::SimpleLine>::getFromDisk(
                          sizeof(util::geo::I32Point));
 
   // id
-  _geomsFReads[tid].read(reinterpret_cast<char*>(&ret.id), sizeof(size_t));
+  size_t len;
+  _geomsFReads[tid].read(reinterpret_cast<char*>(&len), sizeof(size_t));
+  ret.id.resize(len);
+  _geomsFReads[tid].read(reinterpret_cast<char*>(&ret.id[0]),
+                         len * sizeof(char));
 
   return ret;
 }
@@ -77,14 +81,12 @@ sj::Point sj::GeometryCache<sj::Point>::getFromDisk(size_t off,
 
   _geomsFReads[tid].seekg(off);
 
-  // geom
-  _geomsFReads[tid].read(reinterpret_cast<char*>(&ret.geom),
-                         sizeof(util::geo::I32Point));
-
-  // TODO: careful, resize initializes entire vector!
-
   // id
-  _geomsFReads[tid].read(reinterpret_cast<char*>(&ret.id), sizeof(size_t));
+  size_t len;
+  _geomsFReads[tid].read(reinterpret_cast<char*>(&len), sizeof(size_t));
+  ret.id.resize(len);
+  _geomsFReads[tid].read(reinterpret_cast<char*>(&ret.id[0]),
+                         len * sizeof(char));
 
   // sub id
   _geomsFReads[tid].read(reinterpret_cast<char*>(&ret.subId), sizeof(uint16_t));
@@ -109,7 +111,11 @@ sj::Line sj::GeometryCache<sj::Line>::getFromDisk(size_t off,
                          sizeof(util::geo::I32Box));
 
   // id
-  _geomsFReads[tid].read(reinterpret_cast<char*>(&ret.id), sizeof(size_t));
+  size_t len;
+  _geomsFReads[tid].read(reinterpret_cast<char*>(&len), sizeof(size_t));
+  ret.id.resize(len);
+  _geomsFReads[tid].read(reinterpret_cast<char*>(&ret.id[0]),
+                         len * sizeof(char));
 
   // sub id
   _geomsFReads[tid].read(reinterpret_cast<char*>(&ret.subId), sizeof(uint16_t));
@@ -148,7 +154,11 @@ sj::Area sj::GeometryCache<sj::Area>::getFromDisk(size_t off,
                          sizeof(util::geo::I32Box));
 
   // id
-  _geomsFReads[tid].read(reinterpret_cast<char*>(&ret.id), sizeof(size_t));
+  size_t len;
+  _geomsFReads[tid].read(reinterpret_cast<char*>(&len), sizeof(size_t));
+  ret.id.resize(len);
+  _geomsFReads[tid].read(reinterpret_cast<char*>(&ret.id[0]),
+                         len * sizeof(char));
 
   // sub id
   _geomsFReads[tid].read(reinterpret_cast<char*>(&ret.subId), sizeof(uint16_t));
@@ -193,14 +203,13 @@ template <>
 size_t sj::GeometryCache<sj::Point>::add(const sj::Point& val) {
   size_t ret = _geomsOffset;
 
-  // geoms
-  _geomsF.write(reinterpret_cast<const char*>(&val.geom),
-                sizeof(util::geo::I32Point));
-  _geomsOffset += sizeof(util::geo::I32Point);
-
   // id
-  _geomsF.write(reinterpret_cast<const char*>(&val.id), sizeof(size_t));
+  size_t s = val.id.size();
+  _geomsF.write(reinterpret_cast<const char*>(&s), sizeof(size_t));
   _geomsOffset += sizeof(size_t);
+  _geomsF.write(reinterpret_cast<const char*>(val.id.c_str()),
+                val.id.size() * sizeof(char));
+  _geomsOffset += sizeof(char) * val.id.size();
 
   // sub id
   _geomsF.write(reinterpret_cast<const char*>(&val.subId), sizeof(uint16_t));
@@ -222,8 +231,12 @@ size_t sj::GeometryCache<sj::SimpleLine>::add(const sj::SimpleLine& val) {
   _geomsOffset += sizeof(util::geo::I32Point) * 2;
 
   // id
-  _geomsF.write(reinterpret_cast<const char*>(&val.id), sizeof(size_t));
+  size_t s = val.id.size();
+  _geomsF.write(reinterpret_cast<const char*>(&s), sizeof(size_t));
   _geomsOffset += sizeof(size_t);
+  _geomsF.write(reinterpret_cast<const char*>(val.id.c_str()),
+                val.id.size() * sizeof(char));
+  _geomsOffset += sizeof(char) * val.id.size();
 
   return ret;
 }
@@ -242,8 +255,12 @@ size_t sj::GeometryCache<sj::Line>::add(const sj::Line& val) {
   _geomsOffset += sizeof(util::geo::I32Box);
 
   // id
-  _geomsF.write(reinterpret_cast<const char*>(&val.id), sizeof(size_t));
+  size_t s = val.id.size();
+  _geomsF.write(reinterpret_cast<const char*>(&s), sizeof(size_t));
   _geomsOffset += sizeof(size_t);
+  _geomsF.write(reinterpret_cast<const char*>(val.id.c_str()),
+                val.id.size() * sizeof(char));
+  _geomsOffset += sizeof(char) * val.id.size();
 
   // sub id
   _geomsF.write(reinterpret_cast<const char*>(&val.subId), sizeof(uint16_t));
@@ -281,8 +298,12 @@ size_t sj::GeometryCache<sj::Area>::add(const sj::Area& val) {
   _geomsOffset += sizeof(util::geo::I32Box);
 
   // id
-  _geomsF.write(reinterpret_cast<const char*>(&val.id), sizeof(size_t));
+  size_t s = val.id.size();
+  _geomsF.write(reinterpret_cast<const char*>(&s), sizeof(size_t));
   _geomsOffset += sizeof(size_t);
+  _geomsF.write(reinterpret_cast<const char*>(val.id.c_str()),
+                val.id.size() * sizeof(char));
+  _geomsOffset += sizeof(char) * val.id.size();
 
   // sub id
   _geomsF.write(reinterpret_cast<const char*>(&val.subId), sizeof(uint16_t));

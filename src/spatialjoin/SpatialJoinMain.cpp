@@ -67,24 +67,35 @@ void parse(const char* c, size_t size, std::string& dangling, size_t* gid,
            Sweeper& idx) {
   const char* start = c;
   while (c < start + size) {
-    if (*c == '\t' || *c == '\n') {
+    if (*c == '\n') {
       (*gid)++;
 
-      auto p = dangling.rfind("POINT(", 2);
+      auto idp = dangling.find("\t");
+
+      std::string id = std::to_string(*gid);
+
+      size_t start = 2;
+
+      if (idp != std::string::npos) {
+        id = dangling.substr(0, idp);
+        start = idp + 2;
+      }
+
+      auto p = dangling.rfind("POINT(", start);
 
       if (p != std::string::npos) {
         p += 6;
         auto point = parsePoint(dangling, p);
-        idx.add(point, *gid);
-      } else if ((p = dangling.rfind("LINESTRING(", 2)) !=
+        idx.add(point, id);
+      } else if ((p = dangling.rfind("LINESTRING(", start)) !=
 
                  std::string::npos) {
         p += 11;
         const auto& line = parseLineString(dangling, p);
         if (line.size() != 0) {
-          idx.add(line, *gid);
+          idx.add(line, id);
         }
-      } else if ((p = dangling.rfind("MULTILINESTRING(", 2)) !=
+      } else if ((p = dangling.rfind("MULTILINESTRING(", start)) !=
                  std::string::npos) {
         p += 16;
         size_t i = 0;
@@ -95,7 +106,7 @@ void parse(const char* c, size_t size, std::string& dangling, size_t* gid,
           }
           i++;
         }
-      } else if ((p = dangling.rfind("POLYGON(", 2)) != std::string::npos) {
+      } else if ((p = dangling.rfind("POLYGON(", start)) != std::string::npos) {
         p += 7;
         size_t i = 0;
         I32Polygon poly;
@@ -109,8 +120,8 @@ void parse(const char* c, size_t size, std::string& dangling, size_t* gid,
           }
           i++;
         }
-        idx.add(poly, *gid);
-      } else if ((p = dangling.rfind("MULTIPOLYGON(", 2)) !=
+        idx.add(poly, id);
+      } else if ((p = dangling.rfind("MULTIPOLYGON(", start)) !=
                  std::string::npos) {
         p += 12;
         I32MultiPolygon mp;
@@ -128,7 +139,8 @@ void parse(const char* c, size_t size, std::string& dangling, size_t* gid,
             }
 
             // check if multipolygon is closed
-            auto q = dangling.find(")", p + 1);  // this is the closing of the linestring
+            auto q = dangling.find(
+                ")", p + 1);  // this is the closing of the linestring
             auto q2 = dangling.find(")", q + 1);
             auto q3 = dangling.find(",", q + 1);
             if (q2 != std::string::npos && q3 != std::string::npos && q2 < q3) {
@@ -140,7 +152,7 @@ void parse(const char* c, size_t size, std::string& dangling, size_t* gid,
           }
           mp.push_back(poly);
         }
-        idx.add(mp, *gid);
+        idx.add(mp, id);
       }
 
       dangling.clear();
@@ -148,7 +160,7 @@ void parse(const char* c, size_t size, std::string& dangling, size_t* gid,
       continue;
     }
 
-    dangling += toupper(*c);
+    dangling += *c;
 
     c++;
   }
@@ -183,8 +195,8 @@ int main(int argc, char** argv) {
 
   size_t NUM_THREADS = std::thread::hardware_concurrency();
 
-  Sweeper sweeper(NUM_THREADS, "", " intersects ", " contains ", "\n",
-                  useCache);
+  Sweeper sweeper(NUM_THREADS, "", " ogc:_intersects ", " ogc:_contains ",
+                  " .\n", useCache);
 
   size_t gid = 0;
 

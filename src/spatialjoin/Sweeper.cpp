@@ -27,7 +27,7 @@ using util::geo::I32XSortedPolygon;
 using util::geo::webMercToLatLng;
 
 // _____________________________________________________________________________
-void Sweeper::add(const util::geo::I32MultiPolygon& a, size_t gid) {
+void Sweeper::add(const util::geo::I32MultiPolygon& a, const std::string& gid) {
   uint16_t subid = 0;  // a subid of 0 means "single polygon"
   if (a.size() > 1) {
     _subSizes[gid] = a.size();
@@ -60,7 +60,7 @@ void Sweeper::add(const util::geo::I32MultiPolygon& a, size_t gid) {
 }
 
 // _____________________________________________________________________________
-void Sweeper::add(const util::geo::I32Polygon& poly, size_t gid) {
+void Sweeper::add(const util::geo::I32Polygon& poly, const std::string& gid) {
   const auto& box = util::geo::getBoundingBox(poly);
   const I32XSortedPolygon spoly(poly);
   double areaSize = util::geo::area(poly) / 10.0;
@@ -85,7 +85,7 @@ void Sweeper::add(const util::geo::I32Polygon& poly, size_t gid) {
 }
 
 // _____________________________________________________________________________
-void Sweeper::add(const util::geo::I32Line& line, size_t gid) {
+void Sweeper::add(const util::geo::I32Line& line, const std::string& gid) {
   const auto& box = util::geo::getBoundingBox(line);
   const auto& boxIds = packBoxIds(getBoxIds(line, box));
 
@@ -116,9 +116,10 @@ void Sweeper::add(const util::geo::I32Line& line, size_t gid) {
 }
 
 // _____________________________________________________________________________
-void Sweeper::add(const util::geo::I32Point& point, size_t gid) {
-  diskAdd({gid, point.getY(), point.getY(), point.getX(), false, POINT});
-  diskAdd({gid, point.getY(), point.getY(), point.getX(), true, POINT});
+void Sweeper::add(const util::geo::I32Point& point, const std::string& gid) {
+  size_t id = _pointCache.add(Point{gid, 0});
+  diskAdd({id, point.getY(), point.getY(), point.getX(), false, POINT});
+  diskAdd({id, point.getY(), point.getY(), point.getX(), true, POINT});
   _curSweepId++;
 
   if (_curSweepId % 1000000 == 0) LOG(INFO) << "@ " << _curSweepId;
@@ -128,6 +129,7 @@ void Sweeper::add(const util::geo::I32Point& point, size_t gid) {
 void Sweeper::flush() {
   write(_file, _outBuffer, _obufpos);
 
+  _pointCache.flush();
   _areaCache.flush();
   _lineCache.flush();
   _simpleLineCache.flush();
@@ -408,15 +410,16 @@ bool Sweeper::check(const util::geo::I32Point& a, const Area* b,
 }
 
 // ____________________________________________________________________________
-void Sweeper::writeContains(size_t t, size_t a, size_t b) {
+void Sweeper::writeContains(size_t t, const std::string& a,
+                            const std::string& b) {
   writeRel(t, a, b, _sepContains);
 }
 
 // ____________________________________________________________________________
-void Sweeper::writeRel(size_t t, size_t a, size_t b, const std::string& pred) {
+void Sweeper::writeRel(size_t t, const std::string& a, const std::string& b,
+                       const std::string& pred) {
   auto ts = TIME();
-  std::string out =
-      _pairStart + std::to_string(a) + pred + std::to_string(b) + _pairEnd;
+  std::string out = _pairStart + a + pred + b + _pairEnd;
 
   if (_outBufPos[t] + out.size() >= BUFFER_S_PAIRS) {
     int err = 0;
@@ -435,7 +438,8 @@ void Sweeper::writeRel(size_t t, size_t a, size_t b, const std::string& pred) {
 }
 
 // ____________________________________________________________________________
-void Sweeper::writeIntersect(size_t t, size_t a, size_t b) {
+void Sweeper::writeIntersect(size_t t, const std::string& a,
+                             const std::string& b) {
   writeRel(t, a, b, _sepIsect);
 }
 
@@ -603,9 +607,10 @@ void Sweeper::doCheck(const BoxVal cur, const SweepVal sv, size_t t) {
     auto res = check(a, b.get(), t);
 
     if (res) {
-      writeContains(t, b->id, cur.id);
-      writeIntersect(t, cur.id, b->id);
-      writeIntersect(t, b->id, cur.id);
+      auto a = _pointCache.get(cur.id, t);
+      writeContains(t, b->id, a->id);
+      writeIntersect(t, a->id, b->id);
+      writeIntersect(t, b->id, a->id);
     }
   }
 }
@@ -670,7 +675,8 @@ void Sweeper::fillBatch(JobBatch* batch,
 }
 
 // _____________________________________________________________________________
-void Sweeper::writeContainsMulti(size_t t, size_t a, size_t b, size_t bSub) {
+void Sweeper::writeContainsMulti(size_t t, const std::string& a,
+                                 const std::string& b, size_t bSub) {
   {
     std::unique_lock<std::mutex> lock(_mut);
 

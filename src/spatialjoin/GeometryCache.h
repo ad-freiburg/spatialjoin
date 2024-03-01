@@ -32,7 +32,7 @@ struct Area {
   util::geo::I32Box box;
 
   // id
-  size_t id;
+  std::string id;
 
   // sub id (for multipolygons)
   uint16_t subId;
@@ -62,7 +62,7 @@ struct SimpleLine {
   util::geo::I32Point b;
 
   // id
-  size_t id;
+  std::string id;
 };
 
 struct Line {
@@ -73,7 +73,7 @@ struct Line {
   util::geo::I32Box box;
 
   // id
-  size_t id;
+  std::string id;
 
   // sub id (for multilines)
   uint16_t subId;
@@ -86,11 +86,8 @@ struct Line {
 };
 
 struct Point {
-  // line
-  util::geo::I32Point geom;
-
   // id
-  size_t id;
+  std::string id;
 
   // sub id (for multilines)
   uint16_t subId;

@@ -13,8 +13,8 @@
 #include <thread>
 
 #include "GeometryCache.h"
-#include "Stats.h"
 #include "IntervalIdx.h"
+#include "Stats.h"
 #include "util/JobQueue.h"
 #include "util/geo/Geo.h"
 
@@ -36,13 +36,11 @@ struct BoxVal {
 };
 
 inline bool operator==(const BoxVal& a, const BoxVal& b) {
-  return a.id == b.id && a.loY == b.loY &&
-         a.upY == b.upY && a.type == b.type;
+  return a.id == b.id && a.loY == b.loY && a.upY == b.upY && a.type == b.type;
 }
 
 struct SweepVal {
-  SweepVal(size_t id,  GeomType type)
-      : id(id),  type(type) {}
+  SweepVal(size_t id, GeomType type) : id(id), type(type) {}
   SweepVal() : id(0), type(POLYGON) {}
   size_t id : 60;
   GeomType type : 2;
@@ -53,7 +51,7 @@ inline bool operator==(const SweepVal& a, const SweepVal& b) {
 }
 
 inline bool operator<(const SweepVal& a, const SweepVal& b) {
-  return a.id < b.id || (a.id == b.id  && a.type < b.type);
+  return a.id < b.id || (a.id == b.id && a.type < b.type);
 }
 
 typedef std::vector<std::pair<BoxVal, SweepVal>> JobBatch;
@@ -64,12 +62,12 @@ static const size_t BUFFER_S_PAIRS = 1024 * 1024 * 10;
 
 class Sweeper {
  public:
-  explicit Sweeper(size_t numThreads,
-                   const std::string& pairStart, const std::string& sepIsect,
-                   const std::string& sepContains, const std::string& pairEnd,
-                   bool reUse)
+  explicit Sweeper(size_t numThreads, const std::string& pairStart,
+                   const std::string& sepIsect, const std::string& sepContains,
+                   const std::string& pairEnd, bool reUse)
       : _obufpos(0),
         _numThrds(numThreads),
+        _pointCache(100000, numThreads, reUse),
         _areaCache(100000, numThreads, reUse),
         _lineCache(100000, numThreads, reUse),
         _simpleLineCache(100000, numThreads, reUse),
@@ -101,10 +99,10 @@ class Sweeper {
     _outBuffer = new unsigned char[BUFFER_S];
   };
 
-  void add(const util::geo::I32MultiPolygon& a, size_t gid);
-  void add(const util::geo::I32Polygon& a, size_t gid);
-  void add(const util::geo::I32Line& a, size_t gid);
-  void add(const util::geo::I32Point& a, size_t gid);
+  void add(const util::geo::I32MultiPolygon& a, const std::string& gid);
+  void add(const util::geo::I32Polygon& a, const std::string& gid);
+  void add(const util::geo::I32Line& a, const std::string& gid);
+  void add(const util::geo::I32Point& a, const std::string& gid);
   void flush();
 
   void sweep();
@@ -124,12 +122,13 @@ class Sweeper {
 
   mutable std::vector<Stats> _stats;
 
+  GeometryCache<Point> _pointCache;
   GeometryCache<Area> _areaCache;
   GeometryCache<Line> _lineCache;
   GeometryCache<SimpleLine> _simpleLineCache;
 
-  std::map<size_t, std::map<size_t, std::set<size_t>>> _subContains;
-  std::map<size_t, size_t> _subSizes;
+  std::map<std::string, std::map<std::string, std::set<size_t>>> _subContains;
+  std::map<std::string, size_t> _subSizes;
 
   std::string _sepIsect;
   std::string _sepContains;
@@ -142,17 +141,20 @@ class Sweeper {
 
   std::pair<bool, bool> check(const Area* a, const Area* b, size_t t) const;
   std::pair<bool, bool> check(const Line* a, const Area* b, size_t t) const;
-  std::pair<bool, bool> check(const SimpleLine* a, const Area* b, size_t t) const;
+  std::pair<bool, bool> check(const SimpleLine* a, const Area* b,
+                              size_t t) const;
   bool check(const Line* a, const Line* b, size_t t) const;
   bool check(const Line* a, const SimpleLine* b, size_t t) const;
   bool check(const util::geo::I32Point& a, const Area* b, size_t t) const;
 
   void diskAdd(const BoxVal& bv);
 
-  void writeIntersect(size_t t, size_t a, size_t b);
-  void writeContains(size_t t, size_t a, size_t b);
-  void writeContainsMulti(size_t t, size_t a, size_t b, size_t bSub);
-  void writeRel(size_t t, size_t a, size_t b, const std::string& pred);
+  void writeIntersect(size_t t, const std::string& a, const std::string& b);
+  void writeContains(size_t t, const std::string& a, const std::string& b);
+  void writeRel(size_t t, const std::string& a, const std::string& b,
+                const std::string& pred);
+  void writeContainsMulti(size_t t, const std::string& a, const std::string& b,
+                          size_t bSub);
 
   void doCheck(const BoxVal cur, const SweepVal sv, size_t t);
 
