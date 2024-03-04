@@ -29,38 +29,74 @@ using util::geo::webMercToLatLng;
 // _____________________________________________________________________________
 void Sweeper::add(const util::geo::I32MultiPolygon& a, const std::string& gid) {
   uint16_t subid = 0;  // a subid of 0 means "single polygon"
-  if (a.size() > 1) {
-    _subSizes[gid] = a.size();
-    subid = 1;
-  }
+  if (a.size() > 1) subid = 1;
+
+  add(a, gid, subid);
+}
+
+// _____________________________________________________________________________
+void Sweeper::add(const util::geo::I32MultiLine& a, const std::string& gid) {
+  uint16_t subid = 0;  // a subid of 0 means "single line"
+  if (a.size() > 1) subid = 1;
+
+  add(a, gid, subid);
+}
+
+// _____________________________________________________________________________
+void Sweeper::add(const util::geo::I32MultiPoint& a, const std::string& gid) {
+  uint16_t subid = 0;  // a subid of 0 means "single point"
+  if (a.size() > 1) subid = 1;
+
+  add(a, gid, subid);
+}
+
+// _____________________________________________________________________________
+size_t Sweeper::add(const util::geo::I32MultiPolygon& a, const std::string& gid,
+                    size_t subid) {
+  if (subid > 0) _subSizes[gid] = _subSizes[gid] + a.size();
   for (const auto& poly : a) {
-    const auto& box = util::geo::getBoundingBox(poly);
-    const I32XSortedPolygon spoly(poly);
-    double areaSize = util::geo::area(poly) / 10.0;
-    const auto& boxIds = packBoxIds(getBoxIds(spoly, poly, box, areaSize));
-
-    size_t id = _areaCache.add(Area{
-        spoly,
-        box,
-        gid,
-        subid,
-        areaSize,
-        boxIds,
-    });
-
-    diskAdd({id, box.getLowerLeft().getY(), box.getUpperRight().getY(),
-             box.getLowerLeft().getX(), false, POLYGON});
-    diskAdd({id, box.getLowerLeft().getY(), box.getUpperRight().getY(),
-             box.getUpperRight().getX(), true, POLYGON});
-    _curSweepId++;
+    add(poly, gid, subid);
     subid++;
   }
 
   if (_curSweepId % 1000000 == 0) LOG(INFO) << "@ " << _curSweepId;
+  return subid;
+}
+
+// _____________________________________________________________________________
+size_t Sweeper::add(const util::geo::I32MultiLine& a, const std::string& gid,
+                    size_t subid) {
+  if (subid > 0) _subSizes[gid] = _subSizes[gid] + a.size();
+  for (const auto& line : a) {
+    add(line, gid, subid);
+    subid++;
+  }
+
+  if (_curSweepId % 1000000 == 0) LOG(INFO) << "@ " << _curSweepId;
+  return subid;
+}
+
+// _____________________________________________________________________________
+size_t Sweeper::add(const util::geo::I32MultiPoint& a, const std::string& gid,
+                    size_t subid) {
+  if (subid > 0) _subSizes[gid] = _subSizes[gid] + a.size();
+  for (const auto& point : a) {
+    add(point, gid, subid);
+    subid++;
+  }
+
+  if (_curSweepId % 1000000 == 0) LOG(INFO) << "@ " << _curSweepId;
+  return subid;
 }
 
 // _____________________________________________________________________________
 void Sweeper::add(const util::geo::I32Polygon& poly, const std::string& gid) {
+  add(poly, gid, 0);
+}
+
+// _____________________________________________________________________________
+void Sweeper::add(const util::geo::I32Polygon& poly, const std::string& gid,
+                  size_t subid) {
   const auto& box = util::geo::getBoundingBox(poly);
   const I32XSortedPolygon spoly(poly);
   double areaSize = util::geo::area(poly) / 10.0;
@@ -70,7 +106,7 @@ void Sweeper::add(const util::geo::I32Polygon& poly, const std::string& gid) {
       spoly,
       box,
       gid,
-      0,  // a subid of 0 means "single polygon"
+      subid,
       areaSize,
       boxIds,
   });
@@ -86,10 +122,16 @@ void Sweeper::add(const util::geo::I32Polygon& poly, const std::string& gid) {
 
 // _____________________________________________________________________________
 void Sweeper::add(const util::geo::I32Line& line, const std::string& gid) {
+  add(line, gid, 0);
+}
+
+// _____________________________________________________________________________
+void Sweeper::add(const util::geo::I32Line& line, const std::string& gid,
+                  size_t subid) {
   const auto& box = util::geo::getBoundingBox(line);
   const auto& boxIds = packBoxIds(getBoxIds(line, box));
 
-  if (line.size() == 2 && boxIds.front().first == 1) {
+  if (line.size() == 2 && boxIds.front().first == 1 && subid == 0) {
     // simple line
     size_t id =
         _simpleLineCache.add(SimpleLine{line.front(), line.back(), gid});
@@ -102,7 +144,7 @@ void Sweeper::add(const util::geo::I32Line& line, const std::string& gid) {
     const util::geo::I32XSortedLine sline(line);
 
     size_t id = _lineCache.add(Line{
-        sline, box, gid, 0, boxIds,  //{}  // dummy
+        sline, box, gid, subid, boxIds,  //{}  // dummy
     });
 
     diskAdd({id, box.getLowerLeft().getY(), box.getUpperRight().getY(),
@@ -117,7 +159,13 @@ void Sweeper::add(const util::geo::I32Line& line, const std::string& gid) {
 
 // _____________________________________________________________________________
 void Sweeper::add(const util::geo::I32Point& point, const std::string& gid) {
-  size_t id = _pointCache.add(Point{gid, 0});
+  add(point, gid, 0);
+}
+
+// _____________________________________________________________________________
+void Sweeper::add(const util::geo::I32Point& point, const std::string& gid,
+                  size_t subid) {
+  size_t id = _pointCache.add(Point{gid, subid});
   diskAdd({id, point.getY(), point.getY(), point.getX(), false, POINT});
   diskAdd({id, point.getY(), point.getY(), point.getX(), true, POINT});
   _curSweepId++;

@@ -38,6 +38,12 @@ typedef Point<int> IPoint;
 typedef Point<int32_t> I32Point;
 typedef Point<int64_t> I64Point;
 
+typedef MultiPoint<double> DMultiPoint;
+typedef MultiPoint<float> FMultiPoint;
+typedef MultiPoint<int> IMultiPoint;
+typedef MultiPoint<int32_t> I32MultiPoint;
+typedef MultiPoint<int64_t> I64MultiPoint;
+
 typedef LineSegment<double> DLineSegment;
 typedef LineSegment<float> FLineSegment;
 typedef LineSegment<int> ILineSegment;
@@ -49,6 +55,12 @@ typedef Line<float> FLine;
 typedef Line<int> ILine;
 typedef Line<int32_t> I32Line;
 typedef Line<int64_t> I64Line;
+
+typedef MultiLine<double> DMultiLine;
+typedef MultiLine<float> FMultiLine;
+typedef MultiLine<int> IMultiLine;
+typedef MultiLine<int32_t> I32MultiLine;
+typedef MultiLine<int64_t> I64MultiLine;
 
 typedef XSortedLine<double> DXSortedLine;
 typedef XSortedLine<float> FXSortedLine;
