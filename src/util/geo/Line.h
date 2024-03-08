@@ -68,10 +68,20 @@ bool operator<(const XSortedTuple<T>& a, const XSortedTuple<T>& b) {
 
 template <typename T>
 bool operator<(const LineSegment<T>& a, const LineSegment<T>& b) {
+  // this should be implicitely catched by the comparisons below,
+  // however, because of floating point imprecisions, we might decide
+  // < for equivalent segments. This is a problem, as segments are only
+  // identified via they coordinates, not by some ID, in the active sets
+  if (a.first.getX() == b.first.getX() && a.first.getY() == b.first.getY() &&
+      a.second.getX() == b.second.getX() &&
+      a.second.getY() == b.second.getY()) {
+    return false;
+  }
+
   if (a.first.getX() < b.first.getX() || b.first.getX() == b.second.getX()) {
-		// a was first in active set
+    // a was first in active set
     if (a.first.getX() != a.second.getX()) {
-	    // check whether first point of b is right of or left of a
+      // check whether first point of b is right of or left of a
       double d = -((b.first.getX() - a.first.getX()) *
                        (a.second.getY() - a.first.getY()) -
                    (b.first.getY() - a.first.getY()) *
@@ -79,18 +89,18 @@ bool operator<(const LineSegment<T>& a, const LineSegment<T>& b) {
       if (d < 0) return false;
       if (d > 0) return true;
 
-	    // if we arrive here, first point of b was EXACTLY on a, we have to decide
+      // if we arrive here, first point of b was EXACTLY on a, we have to decide
       // based on the second point of b
       d = -((b.second.getX() - a.first.getX()) *
-                       (a.second.getY() - a.first.getY()) -
-                   (b.second.getY() - a.first.getY()) *
-                       (a.second.getX() - a.first.getX()));
+                (a.second.getY() - a.first.getY()) -
+            (b.second.getY() - a.first.getY()) *
+                (a.second.getX() - a.first.getX()));
       if (d < 0) return false;
       if (d > 0) return true;
     }
 
   } else {
-		// b was first in active set
+    // b was first in active set
     if (b.first.getX() != b.second.getX()) {
       double d = (a.first.getX() - b.first.getX()) *
                      (b.second.getY() - b.first.getY()) -
@@ -99,12 +109,12 @@ bool operator<(const LineSegment<T>& a, const LineSegment<T>& b) {
       if (d < 0) return false;
       if (d > 0) return true;
 
-	    // if we arrive here, first point of a was EXACTLY on b, we have to decide
+      // if we arrive here, first point of a was EXACTLY on b, we have to decide
       // based on the second point of a
       d = (a.second.getX() - b.first.getX()) *
-                     (b.second.getY() - b.first.getY()) -
-                 (a.second.getY() - b.first.getY()) *
-                     (b.second.getX() - b.first.getX());
+              (b.second.getY() - b.first.getY()) -
+          (a.second.getY() - b.first.getY()) *
+              (b.second.getX() - b.first.getX());
       if (d < 0) return false;
       if (d > 0) return true;
     }
@@ -152,14 +162,15 @@ class XSortedLine {
   }
 
   XSortedLine(const LineSegment<T>& line) {
-    _line.reserve(2);
-		if (line.first.getX() < line.second.getX()) {
-        _line[0] = {line.first, {line.first, line.second}, false};
-        _line[1] = {line.second, {line.first, line.second}, true};
-		} else {
-        _line[0] = {line.second, {line.second, line.first}, false};
-        _line[1] = {line.first, {line.second, line.first}, true};
-		}
+    _line.resize(2);
+    if (line.first.getX() < line.second.getX()) {
+      _line[0] = {line.first, {line.first, line.second}, false};
+      _line[1] = {line.second, {line.first, line.second}, true};
+    } else {
+      _line[0] = {line.second, {line.second, line.first}, false};
+      _line[1] = {line.first, {line.second, line.first}, true};
+    }
+    _maxSegLen = fabs(line.first.getX() - line.second.getX());
   }
 
   double getMaxSegLen() const { return _maxSegLen; }

@@ -19,11 +19,31 @@ using util::geo::I32MultiPolygon;
 using util::geo::I32Point;
 using util::geo::I32Polygon;
 
+static const char* YEAR = &__DATE__[7];
+static const char* COPY =
+    "University of Freiburg - Chair of Algorithms and Data Structures";
+static const char* AUTHORS = "Patrick Brosi <brosi@informatik.uni-freiburg.de>";
+
 // _____________________________________________________________________________
 void printHelp(int argc, char** argv) {
   UNUSED(argc);
-  std::cout << "Usage: " << argv[0] << " [--help] [-h] <input>"
-            << "\n";
+  std::cout << "\n"
+            << "(C) " << YEAR << " " << COPY << "\n"
+            << "Authors: " << AUTHORS << "\n\n"
+            << "Usage: " << argv[0] << " [--help] [-h] <input>"
+            << "Allowed options:\n\n"
+            << "General:\n"
+            << std::setw(35) << "  -h [ --help ]"
+            << "show this help message\n"
+            << std::setw(35) << "  --prefix (default: '')"
+            << "a prefix added at the beginning of every relation\n"
+            << std::setw(35) << "  --intersects (default: ' intersects ')"
+            << "separator between intersecting geometry IDs\n"
+            << std::setw(35) << "  --contains (default: ' contains ')"
+            << "separator between containing geometry IDs\n"
+            << std::setw(35) << "  --suffix (default: '\\n')"
+            << "a suffix added at the beginning of every relation\n"
+            << std::endl;
 }
 
 // _____________________________________________________________________________
@@ -176,14 +196,49 @@ int main(int argc, char** argv) {
 
   bool useCache = false;
 
+  int state = 0;
+
+  std::string prefix = "";
+  std::string contains = " ogc:_contains ";
+  std::string intersects = " ogc:_intersects ";
+  std::string suffix = "\n";
+
   for (int i = 1; i < argc; i++) {
     std::string cur = argv[i];
-    if (cur == "-h" || cur == "--help") {
-      printHelp(argc, argv);
-      exit(0);
-    }
-    if (cur == "-c") {
-      useCache = true;
+    switch (state) {
+      case 0:
+        if (cur == "-h" || cur == "--help") {
+          printHelp(argc, argv);
+          exit(0);
+        }
+        if (cur == "-c") {
+          useCache = true;
+        }
+        if (cur == "--prefix") {
+          state = 1;
+        }
+        if (cur == "--contains") {
+          state = 2;
+        }
+        if (cur == "--intersects") {
+          state = 3;
+        }
+        if (cur == "--suffix") {
+          state = 4;
+        }
+        break;
+      case 1:
+        prefix = cur;
+        break;
+      case 2:
+        contains = cur;
+        break;
+      case 3:
+        intersects = cur;
+        break;
+      case 4:
+        suffix = cur;
+        break;
     }
   }
 
@@ -195,8 +250,7 @@ int main(int argc, char** argv) {
 
   size_t NUM_THREADS = std::thread::hardware_concurrency();
 
-  Sweeper sweeper(NUM_THREADS, "", " ogc:_intersects ", " ogc:_contains ",
-                  " .\n", useCache);
+  Sweeper sweeper(NUM_THREADS, prefix, intersects, contains, suffix, useCache);
 
   size_t gid = 0;
 

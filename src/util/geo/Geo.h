@@ -98,7 +98,7 @@ typedef XSortedMultiPolygon<int> IXSortedMultiPolygon;
 typedef XSortedMultiPolygon<int32_t> I32XSortedMultiPolygon;
 typedef XSortedMultiPolygon<int64_t> I64XSortedMultiPolygon;
 
-const static double EPSILON = 0.00001;
+const static double EPSILON = 0.0000001;
 const static double RAD = 0.017453292519943295;  // PI/180
 const static double IRAD = 180.0 / M_PI;         // 180 / PI
 const static double AVERAGING_STEP = 20;
@@ -679,6 +679,7 @@ inline bool intersects(const std::vector<XSortedTuple<T>>& ls1,
                        double maxSegLenA, double maxSegLenB, const Box<T>& boxA,
                        const Box<T>& boxB, size_t* firstRelIn1,
                        size_t* firstRelIn2) {
+
   if (ls1.size() == 0 || ls2.size() == 0) return false;
 
   // shortcuts
@@ -859,10 +860,10 @@ inline bool intersects(const XSortedRing<T>& ls1, const XSortedRing<T>& ls2,
   return intersects(
       ls1.rawRing(), ls2.rawRing(), maxSegLenA, maxSegLenB,
       util::geo::Box<T>(
-          {std::numeric_limits<T>::min(), std::numeric_limits<T>::min()},
+          {std::numeric_limits<T>::lowest(), std::numeric_limits<T>::lowest()},
           {std::numeric_limits<T>::max(), std::numeric_limits<T>::max()}),
       util::geo::Box<T>(
-          {std::numeric_limits<T>::min(), std::numeric_limits<T>::min()},
+          {std::numeric_limits<T>::lowest(), std::numeric_limits<T>::lowest()},
           {std::numeric_limits<T>::max(), std::numeric_limits<T>::max()}),
       0, 0);
 }
@@ -941,7 +942,7 @@ inline bool intersects(const Point<T>& p, const Line<T>& l) {
 // _____________________________________________________________________________
 template <typename T>
 inline bool intersects(const Polygon<T>& l, const Point<T>& p) {
-  return contains(l, p);
+  return contains(p, l);
 }
 
 // _____________________________________________________________________________
@@ -1110,10 +1111,10 @@ inline std::pair<bool, bool> intersectsContains(
   bool borderInt = util::geo::intersects(
       a.rawLine(), b.rawRing(), a.getMaxSegLen(), b.getMaxSegLen(),
       util::geo::Box<T>(
-          {std::numeric_limits<T>::min(), std::numeric_limits<T>::min()},
+          {std::numeric_limits<T>::lowest(), std::numeric_limits<T>::lowest()},
           {std::numeric_limits<T>::max(), std::numeric_limits<T>::max()}),
       util::geo::Box<T>(
-          {std::numeric_limits<T>::min(), std::numeric_limits<T>::min()},
+          {std::numeric_limits<T>::lowest(), std::numeric_limits<T>::lowest()},
           {std::numeric_limits<T>::max(), std::numeric_limits<T>::max()}),
       &firstRel1, &firstRel2);
 
@@ -1140,10 +1141,10 @@ inline std::tuple<bool, bool, bool> intersectsContains(
   bool borderInt = util::geo::intersects(
       a, b, a.getMaxSegLen(), b.getMaxSegLen(),
       util::geo::Box<T>(
-          {std::numeric_limits<T>::min(), std::numeric_limits<T>::min()},
+          {std::numeric_limits<T>::lowest(), std::numeric_limits<T>::lowest()},
           {std::numeric_limits<T>::max(), std::numeric_limits<T>::max()}),
       util::geo::Box<T>(
-          {std::numeric_limits<T>::min(), std::numeric_limits<T>::min()},
+          {std::numeric_limits<T>::lowest(), std::numeric_limits<T>::lowest()},
           {std::numeric_limits<T>::max(), std::numeric_limits<T>::max()}),
       &firstRel1, &firstRel2);
 
@@ -1283,10 +1284,10 @@ inline std::pair<bool, bool> intersectsContains(
       a.getOuter(), b.getOuter(), a.getOuter().getMaxSegLen(),
       b.getOuter().getMaxSegLen(),
       util::geo::Box<T>(
-          {std::numeric_limits<T>::min(), std::numeric_limits<T>::min()},
+          {std::numeric_limits<T>::lowest(), std::numeric_limits<T>::lowest()},
           {std::numeric_limits<T>::max(), std::numeric_limits<T>::max()}),
       util::geo::Box<T>(
-          {std::numeric_limits<T>::min(), std::numeric_limits<T>::min()},
+          {std::numeric_limits<T>::lowest(), std::numeric_limits<T>::lowest()},
           {std::numeric_limits<T>::max(), std::numeric_limits<T>::max()}),
       &firstRel1, &firstRel2);
 
@@ -1360,10 +1361,10 @@ inline std::pair<bool, bool> intersectsContains(
       a.rawLine(), b.getOuter().rawRing(), a.getMaxSegLen(),
       b.getOuter().getMaxSegLen(),
       util::geo::Box<T>(
-          {std::numeric_limits<T>::min(), std::numeric_limits<T>::min()},
+          {std::numeric_limits<T>::lowest(), std::numeric_limits<T>::lowest()},
           {std::numeric_limits<T>::max(), std::numeric_limits<T>::max()}),
       util::geo::Box<T>(
-          {std::numeric_limits<T>::min(), std::numeric_limits<T>::min()},
+          {std::numeric_limits<T>::lowest(), std::numeric_limits<T>::lowest()},
           {std::numeric_limits<T>::max(), std::numeric_limits<T>::max()}),
       &firstRel1, &firstRel2);
 
