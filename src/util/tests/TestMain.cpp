@@ -443,6 +443,67 @@ int main(int argc, char** argv) {
     }
 
     {
+    auto a = polygonFromWKT<double>("POLYGON((1 1, 10 1, 10 10, 1 10, 1 1))");
+    auto aa = polygonFromWKT<double>("POLYGON((1 1, 1 10, 10 10, 10 1, 1 1))");
+    auto aaa = polygonFromWKT<double>("POLYGON((1 1, 1 9, 10 10, 10 1, 1 1))");
+
+    auto bb = polygonFromWKT<double>("POLYGON((1 1, 10 10, 10 1, 1 1))");
+
+    auto b = lineFromWKT<double>("LINESTRING(10 5, 12 5)");
+    auto c = lineFromWKT<double>("LINESTRING(12 5, 10 5)");
+
+    auto bf = lineFromWKT<double>("LINESTRING(0 5, 1 5)");
+    auto cf = lineFromWKT<double>("LINESTRING(1 5, 0 5)");
+
+    auto d = lineFromWKT<double>("LINESTRING(10 10, 12 10)");
+    auto e = lineFromWKT<double>("LINESTRING(12 10, 10 10)");
+
+    auto f = lineFromWKT<double>("LINESTRING(5 5, 12 5)");
+    auto ff = lineFromWKT<double>("LINESTRING(12 5, 5 5)");
+
+    XSortedPolygon<double> ax(a);
+    XSortedPolygon<double> aax(aa);
+    XSortedPolygon<double> aaax(aaa);
+    XSortedPolygon<double> bbx(bb);
+    XSortedLine<double> bx(b);
+    XSortedLine<double> bfx(bf);
+    XSortedLine<double> cfx(cf);
+    XSortedLine<double> cx(c);
+    XSortedLine<double> dx(d);
+    XSortedLine<double> ex(e);
+    XSortedLine<double> fx(f);
+    XSortedLine<double> ffx(ff);
+
+    TEST(!geo::intersectsContains(bx, ax).second);
+    TEST(!geo::intersectsContains(bx, aax).second);
+
+    TEST(!geo::intersectsContains(bx, ax).second);
+    TEST(!geo::intersectsContains(bx, aax).second);
+
+    TEST(!geo::intersectsContains(bfx, ax).second);
+    TEST(!geo::intersectsContains(bfx, aax).second);
+
+    TEST(!geo::intersectsContains(cfx, ax).second);
+    TEST(!geo::intersectsContains(cfx, aax).second);
+
+    TEST(!geo::intersectsContains(cx, ax).second);
+    TEST(!geo::intersectsContains(cx, aax).second);
+
+    TEST(!geo::intersectsContains(dx, ax).second);
+    TEST(!geo::intersectsContains(dx, aax).second);
+
+    TEST(!geo::intersectsContains(ex, ax).second);
+    TEST(!geo::intersectsContains(ex, aax).second);
+
+    TEST(!geo::intersectsContains(dx, aaax).second);
+
+    TEST(!geo::intersectsContains(ex, aaax).second);
+
+    TEST(!geo::intersectsContains(fx, bbx).second);
+    TEST(!geo::intersectsContains(ffx, bbx).second);
+    }
+
+    {
     auto a = polygonFromWKT<double>("POLYGON((0 0, 10 0, 10 10, 0 10, 0 0), (4 4, 5 4, 4 5, 4 4))");
     auto b = pointFromWKT<double>("POINT(4.1 4.1)");
 
