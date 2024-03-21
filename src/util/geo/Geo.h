@@ -1123,7 +1123,7 @@ inline std::pair<bool, bool> intersectsContains(
     return {true, false};
   }
 
-  if (util::geo::ringContains(a.rawLine().front().seg().first, b, firstRel2)) {
+  if (util::geo::ringContains(a.rawLine().front().seg().second, b, firstRel2)) {
     // intersects + contains
     return {true, true};
   }
@@ -1153,12 +1153,12 @@ inline std::tuple<bool, bool, bool> intersectsContains(
     return {true, false, true};
   }
 
-  if (util::geo::ringContains(a.rawRing().front().seg().first, b, firstRel2)) {
+  if (util::geo::ringContains(a.rawRing().front().seg().second, b, firstRel2)) {
     // intersects + contains
     return {true, true, false};
   }
 
-  if (util::geo::ringContains(b.rawRing().front().seg().first, a, firstRel1)) {
+  if (util::geo::ringContains(b.rawRing().front().seg().second, a, firstRel1)) {
     // intersects
     return {true, false, false};
   }
@@ -1185,7 +1185,7 @@ inline std::pair<bool, bool> intersectsContains(
   }
 
   if (areaA <= areaB && util::geo::contains(boxA, boxB) &&
-      util::geo::contains(a.getOuter().rawRing().front().seg().first, b,
+      util::geo::contains(a.getOuter().rawRing().front().seg().second, b,
                           firstRel2)) {
     // the outer hull of A is inside the outer hull of B!
 
@@ -1255,7 +1255,7 @@ inline std::pair<bool, bool> intersectsContains(
   }
 
   if (areaB <= areaA && util::geo::contains(boxB, boxA) &&
-      contains(b.getOuter().rawRing().front().seg().first, a, firstRel1)) {
+      contains(b.getOuter().rawRing().front().seg().second, a, firstRel1)) {
     // the outer of B is inside the outer of A
     //
     // now the only possibility is that A intersects B - but if B is fully
@@ -1296,7 +1296,7 @@ inline std::pair<bool, bool> intersectsContains(
     return {true, false};
   }
 
-  if (util::geo::ringContains(a.getOuter().rawRing().front().seg().first,
+  if (util::geo::ringContains(a.getOuter().rawRing().front().seg().second,
                               b.getOuter(), firstRel2)) {
     // the outer of A is inside the outer of B
 
@@ -1323,7 +1323,7 @@ inline std::pair<bool, bool> intersectsContains(
     return {true, true};
   }
 
-  if (ringContains(b.getOuter().rawRing().front().seg().first, a.getOuter(),
+  if (ringContains(b.getOuter().rawRing().front().seg().second, a.getOuter(),
                    firstRel1)) {
     // the outer of B is inside the outer of A
     //
@@ -1373,7 +1373,7 @@ inline std::pair<bool, bool> intersectsContains(
     return {true, false};
   }
 
-  if (util::geo::contains(a.rawLine().front().seg().first, b, firstRel2)) {
+  if (util::geo::contains(a.rawLine().front().seg().second, b, firstRel2)) {
     // a is inside the outer of B
 
     // check inner polygons
@@ -1408,7 +1408,7 @@ inline std::pair<bool, bool> intersectsContains(
   }
 
   if (util::geo::contains(boxA, boxB) &&
-      util::geo::contains(a.rawLine().front().seg().first, b, firstRel2)) {
+      util::geo::contains(a.rawLine().front().seg().second, b, firstRel2)) {
     // a is inside the outer of B
 
     // check inner polygons
