@@ -1,5 +1,4 @@
 #include <bzlib.h>
-#include <omp.h>
 #include <stdio.h>
 #include <unistd.h>
 
