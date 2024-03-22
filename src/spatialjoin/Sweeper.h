@@ -119,7 +119,6 @@ class Sweeper {
   size_t _curSweepId = 0;
   int _file;
   unsigned char* _outBuffer;
-  unsigned char* _outBufferPairs;
   size_t _obufpos;
   size_t _numThrds;
 

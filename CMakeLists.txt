@@ -62,6 +62,9 @@ endif()
 
 add_subdirectory(src)
 
+# tests
+add_test("utilTest" utilTest)
+
 # install target
 install(
   FILES build/spatialjoin DESTINATION bin
