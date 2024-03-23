@@ -45,13 +45,13 @@ the process for the OSM data for germany.
 ```
 NAME=osm-germany
 wget -O ${NAME}.pbf https://download.geofabrik.de/europe/germany-latest.osm.pbf
-osm2rdf ${NAME}.pbf -o ${NAME}.ttl --no-area-geometric-relations --no-node-geometric-relations --no-relation-geometric-relations --no-way-geometric-relations
+osm2rdf ${NAME}.pbf -o ${NAME}.ttl --simplify-wkt 0 --write-ogc-geo-triples none
 ```
 
-Note: `osm2rdf` by default computes predicates `ogc:sfContains` and
-`ogc:sfIntersects`. The four `--no-...` options skip this computation. To have
-both the `osm2rdf` predicates *and* the `spatiajoin` predicates, just omit
-these four options.
+Note: `osm2rdf` by default computes and outputs the predicates `ogc:sfContains`
+and `ogc:sfIntersects`. The `--write-ogc-geo-triples none` option disables
+this. To have both the `osm2rdf` predicates *and* the `spatiajoin` predicates
+(for comparison or debugging), just omit the option.
 
 ### Step 2: Build a QLever instance, start it, and download the geometries
 
@@ -66,8 +66,8 @@ curl -s localhost:${PORT} -H "Accept: text/tab-separated-values" -H "Content-typ
 Note: The `sed` command replaces the full IRIs by shorter prefixed IRIs. Also
 note that we only get the WKT literals from `geo:gasGeometry/geo:asWKT` here.
 It would be nicer to fetch all WKT literals in the datasets, no matter to which
-predicate they belong (for example, the predicates `osm2rdfgeom:envelope` or 
-`osm2rdfgeom:convex_hull` also have WKT literals as objects) 
+predicate they belong (for example, the predicates `osm2rdfgeom:envelope` or
+`osm2rdfgeom:convex_hull` also have WKT literals as objects)
 
 ### Step 3: Compute the spatial relations
 
@@ -78,7 +78,7 @@ cat spatialjoin.input.tsv | spatialjoin --suffix $' .\n'
 Note that we could feed the geometries directly into `spatialjoin` as follows:
 
 ```
-curl -s https://qlever.cs.uni-freiburg.de/api/osm-germany -H "Accept: text/tab-separated-values" -H "Content-type: application/sparql-query" --data "PREFIX geo: <http://www.opengis.net/ont/geosparql#> SELECT ?osm_id ?geometry WHERE { ?osm_id geo:hasGeometry/geo:asWKT ?geometry }" | sed -E 's#<https://www.openstreetmap.org/(rel|way|node)(ation)?/([0-9]+)>\t"(.+)"\^\^<http:.*wktLiteral>#osm\1:\3\t\4#g' | sed 1d | spatialjoin --suffix $' .\n'
+curl -s localhost:${PORT} -H "Accept: text/tab-separated-values" -H "Content-type: application/sparql-query" --data "PREFIX geo: <http://www.opengis.net/ont/geosparql#> SELECT ?osm_id ?geometry WHERE { ?osm_id geo:hasGeometry/geo:asWKT ?geometry }" | sed -E 's#<https://www.openstreetmap.org/(rel|way|node)(ation)?/([0-9]+)>\t"(.+)"\^\^<http:.*wktLiteral>#osm\1:\3\t\4#g' | sed 1d | spatialjoin --suffix $' .\n'
 ```
 
 ### Step 4: Rebuild the QLever index with the added triples
