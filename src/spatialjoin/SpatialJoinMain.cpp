@@ -42,7 +42,7 @@ void printHelp(int argc, char** argv) {
             << "separator between intersecting geometry IDs\n"
             << std::setw(46) << "  --contains (default: ' ogc:_contains ')"
             << "separator between containing geometry IDs\n"
-            << std::setw(46) << "  --suffix (default: '\\n')"
+            << std::setw(46) << "  --suffix (default: ' .\\n')"
             << "a suffix added at the beginning of every relation\n"
             << std::endl;
 }
@@ -202,7 +202,7 @@ int main(int argc, char** argv) {
   std::string prefix = "";
   std::string contains = " ogc:_contains ";
   std::string intersects = " ogc:_intersects ";
-  std::string suffix = "\n";
+  std::string suffix = " .\n";
 
   for (int i = 1; i < argc; i++) {
     std::string cur = argv[i];
