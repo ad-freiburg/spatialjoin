@@ -4,7 +4,34 @@ Compute a spatial self-join (intersects and contains) on line-separated WKT geom
 
 Relations are written to stdout (or to a BZ2 file specified with `-o`).
 
-## Example
+Can handle massive amounts of input data (for example, all ~1.5 B geometries stored in OpenStreetMap).
+
+## Requirements
+
+ * `cmake`
+ * `gcc >= 5.0` (or `clang >= 3.9`)
+ * `libbz2`
+
+## Building and Installation
+
+Fetch this repository and init submodules:
+
+```
+git clone --recurse-submodules https://github.com/ad-freiburg/spatialjoins
+```
+
+```
+mkdir build && cd build
+cmake ..
+make -j
+```
+
+To install, type
+```
+make install
+```
+
+## Usage
 
 ```
 $ cat example.txt
@@ -24,7 +51,7 @@ $ mkdir build
 $ cd build
 $ cmake ..
 $ make spatialjoin
-$ ./spatialjoin < example.txt
+$ spatialjoin < example.txt
 1 contains 9
 9 intersects 1
 [...]
