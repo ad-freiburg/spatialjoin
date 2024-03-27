@@ -56,27 +56,34 @@ inline bool operator<(const SweepVal& a, const SweepVal& b) {
 
 typedef std::vector<std::pair<BoxVal, SweepVal>> JobBatch;
 
+struct SweeperCfg {
+  size_t numThreads;
+  std::string& pairStart;
+  std::string& sepIsect;
+  std::string& sepContains;
+  std::string& pairEnd;
+  bool useBoxIds;
+  bool useArea;
+};
+
 // buffer sizes _must_ be multiples of sizeof(BoxVal)
 static const size_t BUFFER_S = sizeof(BoxVal) * 64 * 1024 * 1024;
 static const size_t BUFFER_S_PAIRS = 1024 * 1024 * 10;
 
 class Sweeper {
  public:
-  explicit Sweeper(size_t numThreads, const std::string& pairStart,
-                   const std::string& sepIsect, const std::string& sepContains,
-                   const std::string& pairEnd, bool reUse)
-      : _obufpos(0),
-        _numThrds(numThreads),
-        _pointCache(100000, numThreads, reUse),
-        _areaCache(100000, numThreads, reUse),
-        _lineCache(100000, numThreads, reUse),
-        _simpleLineCache(100000, numThreads, reUse),
-        _sepIsect(sepIsect),
-        _sepContains(sepContains),
-        _pairStart(pairStart),
-        _pairEnd(pairEnd),
+  explicit Sweeper(SweeperCfg cfg, bool reUse, const std::string& cache,
+                   const std::string& out)
+      : _cfg(cfg),
+        _obufpos(0),
+        _pointCache(100000, cfg.numThreads, cache, reUse),
+        _areaCache(100000, cfg.numThreads, cache, reUse),
+        _lineCache(100000, cfg.numThreads, cache, reUse),
+        _simpleLineCache(100000, cfg.numThreads, cache, reUse),
+        _cache(cache),
+        _out(out),
         _jobs(100) {
-    std::string fname = ".spatialjoins";
+    std::string fname = _cache + "/events";
 
     if (reUse) {
       _file = open(fname.c_str(), O_RDONLY);
@@ -90,9 +97,6 @@ class Sweeper {
       throw std::runtime_error("Could not open temporary file " + fname);
     }
 
-    // immediately unlink
-    // unlink(fname.c_str());
-
 #ifdef __unix__
     posix_fadvise(_file, 0, 0, POSIX_FADV_SEQUENTIAL);
 #endif
@@ -102,11 +106,13 @@ class Sweeper {
   void add(const util::geo::I32MultiPolygon& a, const std::string& gid);
   void add(const util::geo::I32MultiLine& a, const std::string& gid);
   void add(const util::geo::I32MultiPoint& a, const std::string& gid);
-  size_t add(const util::geo::I32MultiPolygon& a, const std::string& gid, size_t);
+  size_t add(const util::geo::I32MultiPolygon& a, const std::string& gid,
+             size_t);
   size_t add(const util::geo::I32MultiLine& a, const std::string& gid, size_t);
   size_t add(const util::geo::I32MultiPoint& a, const std::string& gid, size_t);
   void add(const util::geo::I32Polygon& a, const std::string& gid);
-  void add(const util::geo::I32Polygon& a, const std::string& gid, size_t subId);
+  void add(const util::geo::I32Polygon& a, const std::string& gid,
+           size_t subId);
   void add(const util::geo::I32Line& a, const std::string& gid);
   void add(const util::geo::I32Line& a, const std::string& gid, size_t subid);
   void add(const util::geo::I32Point& a, const std::string& gid);
@@ -116,11 +122,11 @@ class Sweeper {
   void sweep();
 
  private:
+  const SweeperCfg _cfg;
   size_t _curSweepId = 0;
   int _file;
   unsigned char* _outBuffer;
   size_t _obufpos;
-  size_t _numThrds;
 
   std::vector<FILE*> _rawFiles;
   std::vector<BZFILE*> _files;
@@ -137,10 +143,8 @@ class Sweeper {
   std::map<std::string, std::map<std::string, std::set<size_t>>> _subContains;
   std::map<std::string, size_t> _subSizes;
 
-  std::string _sepIsect;
-  std::string _sepContains;
-  std::string _pairStart;
-  std::string _pairEnd;
+  std::string _cache;
+  std::string _out;
 
   util::JobQueue<JobBatch> _jobs;
 

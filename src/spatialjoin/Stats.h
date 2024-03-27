@@ -21,6 +21,11 @@ struct Stats {
   uint64_t timeFullGeoCheckAreaPoint = 0;
   uint64_t timeFullGeoCheckLineLine = 0;
 
+  size_t fullGeoChecksAreaArea = 0;
+  size_t fullGeoChecksAreaLine = 0;
+  size_t fullGeoChecksAreaPoint = 0;
+  size_t fullGeoChecksLineLine = 0;
+
   std::string toString();
 };
 
@@ -60,19 +65,23 @@ inline std::string Stats::toString() {
      << ((t / sum) * 100.0) << "%)\n";
 
   t = double(timeFullGeoCheckAreaArea) / 1000000000.0;
-  ss << "time for geom check AREA/AREA: " << t << " s (" << ((t / sum) * 100.0)
+  ss << "time for " << fullGeoChecksAreaArea
+     << " full geom checks AREA/AREA: " << t << " s (" << ((t / sum) * 100.0)
      << "%)\n";
 
   t = double(timeFullGeoCheckAreaLine) / 1000000000.0;
-  ss << "time for geom check AREA/LINE: " << t << " s (" << ((t / sum) * 100.0)
+  ss << "time for " << fullGeoChecksAreaLine
+     << " full geom checks AREA/LINE: " << t << " s (" << ((t / sum) * 100.0)
      << "%)\n";
 
   t = double(timeFullGeoCheckAreaPoint) / 1000000000.0;
-  ss << "time for geom check AREA/POINT: " << t << " s (" << ((t / sum) * 100.0)
+  ss << "time for " << fullGeoChecksAreaPoint
+     << " full geom checks AREA/POINT: " << t << " s (" << ((t / sum) * 100.0)
      << "%)\n";
 
   t = double(timeFullGeoCheckLineLine) / 1000000000.0;
-  ss << "time for geom check LINE/LINE: " << t << " s (" << ((t / sum) * 100.0)
+  ss << "time for " << fullGeoChecksLineLine
+     << " full geom checks LINE/LINE: " << t << " s (" << ((t / sum) * 100.0)
      << "%)\n";
 
   t = double(timeWrite) / 1000000000.0;
@@ -94,7 +103,11 @@ inline Stats operator+(const Stats& a, const Stats& b) {
                a.timeFullGeoCheckAreaArea + b.timeFullGeoCheckAreaArea,
                a.timeFullGeoCheckAreaLine + b.timeFullGeoCheckAreaLine,
                a.timeFullGeoCheckAreaPoint + b.timeFullGeoCheckAreaPoint,
-               a.timeFullGeoCheckLineLine + b.timeFullGeoCheckLineLine};
+               a.timeFullGeoCheckLineLine + b.timeFullGeoCheckLineLine,
+               a.fullGeoChecksAreaArea + b.fullGeoChecksAreaArea,
+               a.fullGeoChecksAreaLine + b.fullGeoChecksAreaLine,
+               a.fullGeoChecksAreaPoint + b.fullGeoChecksAreaPoint,
+               a.fullGeoChecksLineLine + b.fullGeoChecksLineLine};
 }
 
 inline void operator+=(Stats& a, const Stats& b) { a = a + b; }

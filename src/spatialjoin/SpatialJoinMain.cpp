@@ -28,22 +28,32 @@ static const char* AUTHORS = "Patrick Brosi <brosi@informatik.uni-freiburg.de>";
 void printHelp(int argc, char** argv) {
   UNUSED(argc);
   std::cout << "\n"
-            << "(C) " << YEAR << " " << COPY << "\n"
+            << "(C) 2023-" << YEAR << " " << COPY << "\n"
             << "Authors: " << AUTHORS << "\n\n"
             << "Usage: " << argv[0] << " [--help] [-h] <input>\n\n"
             << "Allowed options:\n\n"
-            << std::setfill(' ') << std::left
-            << "General:\n"
-            << std::setw(46) << "  -h [ --help ]"
+            << std::setfill(' ') << std::left << "General:\n"
+            << std::setw(41) << "  -h [ --help ]"
             << "show this help message\n"
-            << std::setw(46) << "  --prefix (default: '')"
-            << "a prefix added at the beginning of every relation\n"
-            << std::setw(46) << "  --intersects (default: ' ogc:_intersects ')"
+            << std::setw(41) << "  -o [ --output ] (default: '')"
+            << "output file, empty (default) prints to stdout\n"
+            << std::setw(41) << "  -c [ --cache ] (default: '.')"
+            << "cache directory for intermediate files\n"
+            << std::setw(41) << "  -C"
+            << "don't parse input, re-use intermediate cache files\n"
+            << std::setw(41) << "  --prefix (default: '')"
+            << "prefix added at the beginning of every relation\n"
+            << std::setw(41) << "  --intersects (default: ' intersects ')"
             << "separator between intersecting geometry IDs\n"
-            << std::setw(46) << "  --contains (default: ' ogc:_contains ')"
+            << std::setw(41) << "  --contains (default: ' contains ')"
             << "separator between containing geometry IDs\n"
-            << std::setw(46) << "  --suffix (default: ' .\\n')"
-            << "a suffix added at the beginning of every relation\n"
+            << std::setw(41) << "  --suffix (default: '\\n')"
+            << "suffix added at the beginning of every relation\n\n"
+            << std::setfill(' ') << std::left << "Geometric computation:\n"
+            << std::setw(41) << "  --no-box-ids"
+            << "disable box id criteria for contains/intersect computation\n"
+            << std::setw(41) << "  --no-surface-area"
+            << "disable surface area criteria for polygon contains\n"
             << std::endl;
 }
 
@@ -83,6 +93,7 @@ util::geo::I32Point parsePoint(const std::string& a, size_t p) {
 
   return {point.getX() * PREC, point.getY() * PREC};
 }
+
 // _____________________________________________________________________________
 void parse(const char* c, size_t size, std::string& dangling, size_t* gid,
            Sweeper& idx) {
@@ -200,9 +211,14 @@ int main(int argc, char** argv) {
   int state = 0;
 
   std::string prefix = "";
-  std::string contains = " ogc:_contains ";
-  std::string intersects = " ogc:_intersects ";
-  std::string suffix = " .\n";
+  std::string output = "";
+  std::string cache = ".";
+  std::string contains = " contains ";
+  std::string intersects = " intersects ";
+  std::string suffix = "\n";
+
+  bool useBoxIds = true;
+  bool useArea = true;
 
   for (int i = 1; i < argc; i++) {
     std::string cur = argv[i];
@@ -212,7 +228,7 @@ int main(int argc, char** argv) {
           printHelp(argc, argv);
           exit(0);
         }
-        if (cur == "-c") {
+        if (cur == "-C") {
           useCache = true;
         }
         if (cur == "--prefix") {
@@ -227,18 +243,42 @@ int main(int argc, char** argv) {
         if (cur == "--suffix") {
           state = 4;
         }
+        if (cur == "--output" || cur == "-o") {
+          state = 5;
+        }
+        if (cur == "--cache" || cur == "-c") {
+          state = 6;
+        }
+        if (cur == "--no-box-ids") {
+          useBoxIds = false;
+        }
+        if (cur == "--no-surface-area") {
+          useArea = false;
+        }
         break;
       case 1:
         prefix = cur;
+        state = 0;
         break;
       case 2:
         contains = cur;
+        state = 0;
         break;
       case 3:
         intersects = cur;
+        state = 0;
         break;
       case 4:
         suffix = cur;
+        state = 0;
+        break;
+      case 5:
+        output = cur;
+        state = 0;
+        break;
+      case 6:
+        cache = cur;
+        state = 0;
         break;
     }
   }
@@ -251,12 +291,13 @@ int main(int argc, char** argv) {
 
   size_t NUM_THREADS = std::thread::hardware_concurrency();
 
-  Sweeper sweeper(NUM_THREADS, prefix, intersects, contains, suffix, useCache);
+  Sweeper sweeper({NUM_THREADS, prefix, intersects, contains, suffix, useBoxIds, useArea}, useCache,
+                  cache, output);
 
   size_t gid = 0;
 
   if (!useCache) {
-    LOG(INFO) << "Parsing input geometries...";
+    LOGTO(INFO, std::cerr) << "Parsing input geometries...";
 
     while ((len = read(0, buf, 1024 * 1024 * 100)) > 0) {
       parse(buf, len, dangling, &gid, sweeper);
@@ -265,9 +306,9 @@ int main(int argc, char** argv) {
     sweeper.flush();
   }
 
-  LOG(INFO) << "done.";
+  LOGTO(INFO, std::cerr) << "done.";
 
-  LOG(INFO) << "Sweeping...";
+  LOGTO(INFO, std::cerr) << "Sweeping...";
   sweeper.sweep();
-  LOG(INFO) << "done.";
+  LOGTO(INFO, std::cerr) << "done.";
 }

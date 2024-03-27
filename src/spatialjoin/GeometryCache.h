@@ -96,8 +96,9 @@ struct Point {
 template <typename W>
 class GeometryCache {
  public:
-  GeometryCache(size_t maxSize, size_t numthreads, bool reuse)
-      : _maxSize(maxSize) {
+  GeometryCache(size_t maxSize, size_t numthreads,
+                const std::string& dir, bool reuse)
+      : _maxSize(maxSize), _dir(dir) {
     _geomsFReads.resize(numthreads);
     _accessCount.resize(numthreads);
     _diskAccessCount.resize(numthreads);
@@ -113,8 +114,8 @@ class GeometryCache {
     }
   }
 
-  GeometryCache(size_t maxSize, size_t numthreads)
-      : GeometryCache(maxSize, numthreads, false) {}
+  GeometryCache(size_t maxSize, size_t numthreads, const std::string& dir)
+      : GeometryCache(maxSize, numthreads, dir, false) {}
 
   ~GeometryCache() {
     size_t access = 0;
@@ -163,6 +164,7 @@ class GeometryCache {
       _idMap;
 
   size_t _maxSize;
+  std::string _dir;
 };
 }  // namespace sj
 

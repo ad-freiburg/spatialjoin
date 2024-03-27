@@ -72,13 +72,14 @@ predicate they belong (for example, the predicates `osm2rdfgeom:envelope` or
 ### Step 3: Compute the spatial relations
 
 ```
-cat spatialjoin.input.tsv | spatialjoin
+cat spatialjoin.input.tsv | spatialjoin --contains ' ogc:_contains ' --intersects ' ogc:_intersects ' --suffix $' .\n'
+
 ```
 
 Note that we could feed the geometries directly into `spatialjoin` as follows:
 
 ```
-curl -s localhost:${PORT} -H "Accept: text/tab-separated-values" -H "Content-type: application/sparql-query" --data "PREFIX geo: <http://www.opengis.net/ont/geosparql#> SELECT ?osm_id ?geometry WHERE { ?osm_id geo:hasGeometry/geo:asWKT ?geometry }" | sed -E 's#<https://www.openstreetmap.org/(rel|way|node)(ation)?/([0-9]+)>\t"(.+)"\^\^<http:.*wktLiteral>#osm\1:\3\t\4#g' | sed 1d | spatialjoin
+curl -s localhost:${PORT} -H "Accept: text/tab-separated-values" -H "Content-type: application/sparql-query" --data "PREFIX geo: <http://www.opengis.net/ont/geosparql#> SELECT ?osm_id ?geometry WHERE { ?osm_id geo:hasGeometry/geo:asWKT ?geometry }" | sed -E 's#<https://www.openstreetmap.org/(rel|way|node)(ation)?/([0-9]+)>\t"(.+)"\^\^<http:.*wktLiteral>#osm\1:\3\t\4#g' | sed 1d | spatialjoin --contains ' ogc:_contains ' --intersects ' ogc:_intersects ' --suffix $' .\n'
 ```
 
 ### Step 4: Rebuild the QLever index with the added triples

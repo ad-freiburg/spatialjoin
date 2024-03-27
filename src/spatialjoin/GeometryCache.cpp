@@ -124,8 +124,10 @@ sj::Line sj::GeometryCache<sj::Line>::getFromDisk(size_t off,
   uint32_t numBoxIds;
   _geomsFReads[tid].read(reinterpret_cast<char*>(&numBoxIds), sizeof(uint32_t));
   ret.boxIds.resize(numBoxIds);
-  _geomsFReads[tid].read(reinterpret_cast<char*>(&ret.boxIds[0]),
-                         sizeof(sj::boxids::BoxId) * numBoxIds);
+  if (numBoxIds > 0) {
+    _geomsFReads[tid].read(reinterpret_cast<char*>(&ret.boxIds[0]),
+                           sizeof(sj::boxids::BoxId) * numBoxIds);
+  }
 
   // OBB
   // ret.obb.getOuter().resize(5);
@@ -176,8 +178,10 @@ sj::Area sj::GeometryCache<sj::Area>::getFromDisk(size_t off,
   uint32_t numBoxIds;
   _geomsFReads[tid].read(reinterpret_cast<char*>(&numBoxIds), sizeof(uint32_t));
   ret.boxIds.resize(numBoxIds);
-  _geomsFReads[tid].read(reinterpret_cast<char*>(&ret.boxIds[0]),
-                         sizeof(sj::boxids::BoxId) * numBoxIds);
+  if (numBoxIds > 0) {
+    _geomsFReads[tid].read(reinterpret_cast<char*>(&ret.boxIds[0]),
+                           sizeof(sj::boxids::BoxId) * numBoxIds);
+  }
 
   // cutouts
   // size_t numCutouts;
@@ -601,25 +605,25 @@ void sj::GeometryCache<W>::writeLine(const util::geo::I32XSortedLine& geom) {
 // ____________________________________________________________________________
 template <>
 std::string sj::GeometryCache<sj::Area>::getFName() const {
-  return "areas";
+  return _dir + "/areas";
 }
 
 // ____________________________________________________________________________
 template <>
 std::string sj::GeometryCache<sj::Line>::getFName() const {
-  return "lines";
+  return _dir + "/lines";
 }
 
 // ____________________________________________________________________________
 template <>
 std::string sj::GeometryCache<sj::Point>::getFName() const {
-  return "points";
+  return _dir + "/points";
 }
 
 // ____________________________________________________________________________
 template <>
 std::string sj::GeometryCache<sj::SimpleLine>::getFName() const {
-  return "simplelines";
+  return _dir + "/simplelines";
 }
 
 // ____________________________________________________________________________
