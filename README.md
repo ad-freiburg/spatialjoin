@@ -17,7 +17,7 @@ Can handle massive amounts of input data (for example, all ~1.5 B geometries sto
 Fetch this repository and init submodules:
 
 ```
-git clone --recurse-submodules https://github.com/ad-freiburg/spatialjoins
+git clone --recurse-submodules https://github.com/ad-freiburg/spatialjoin
 ```
 
 ```
