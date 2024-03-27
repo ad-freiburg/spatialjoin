@@ -47,10 +47,6 @@ POINT(0.5 0.5)
 ```
 
 ```
-$ mkdir build
-$ cd build
-$ cmake ..
-$ make spatialjoin
 $ spatialjoin < example.txt
 1 contains 9
 9 intersects 1
