@@ -155,7 +155,6 @@ void Sweeper::add(const util::geo::I32Line& line, const std::string& gid,
     diskAdd({id, box.getLowerLeft().getY(), box.getUpperRight().getY(),
              box.getUpperRight().getX(), true, LINE});
   }
-  std::cerr << "B" << std::endl;
   _curSweepId++;
 
   if (_curSweepId % 1000000 == 0) LOGTO(INFO, std::cerr) << "@ " << _curSweepId;
