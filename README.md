@@ -2,7 +2,7 @@
 
 Compute a spatial self-join (intersects and contains) on line-separated WKT geometries read from stdin.
 
-Relations are written into a file `rels.out.bz2`.
+Relations are written to stdout (or to a BZ2 file specified with `-o`).
 
 ## Example
 
@@ -25,10 +25,6 @@ $ cd build
 $ cmake ..
 $ make spatialjoin
 $ ./spatialjoin < example.txt
-```
-
-```
-$ bzcat rels.out.bz2
 1 contains 9
 9 intersects 1
 [...]
@@ -72,14 +68,14 @@ predicate they belong (for example, the predicates `osm2rdfgeom:envelope` or
 ### Step 3: Compute the spatial relations
 
 ```
-cat spatialjoin.input.tsv | spatialjoin --contains ' ogc:_contains ' --intersects ' ogc:_intersects ' --suffix $' .\n'
+cat spatialjoin.input.tsv | spatialjoin --contains ' ogc:_contains ' --intersects ' ogc:_intersects ' --suffix $' .\n' -o rels.out.bz2
 
 ```
 
 Note that we could feed the geometries directly into `spatialjoin` as follows:
 
 ```
-curl -s localhost:${PORT} -H "Accept: text/tab-separated-values" -H "Content-type: application/sparql-query" --data "PREFIX geo: <http://www.opengis.net/ont/geosparql#> SELECT ?osm_id ?geometry WHERE { ?osm_id geo:hasGeometry/geo:asWKT ?geometry }" | sed -E 's#<https://www.openstreetmap.org/(rel|way|node)(ation)?/([0-9]+)>\t"(.+)"\^\^<http:.*wktLiteral>#osm\1:\3\t\4#g' | sed 1d | spatialjoin --contains ' ogc:_contains ' --intersects ' ogc:_intersects ' --suffix $' .\n'
+curl -s localhost:${PORT} -H "Accept: text/tab-separated-values" -H "Content-type: application/sparql-query" --data "PREFIX geo: <http://www.opengis.net/ont/geosparql#> SELECT ?osm_id ?geometry WHERE { ?osm_id geo:hasGeometry/geo:asWKT ?geometry }" | sed -E 's#<https://www.openstreetmap.org/(rel|way|node)(ation)?/([0-9]+)>\t"(.+)"\^\^<http:.*wktLiteral>#osm\1:\3\t\4#g' | sed 1d | spatialjoin --contains ' ogc:_contains ' --intersects ' ogc:_intersects ' --suffix $' .\n' -o rels.out.bz2
 ```
 
 ### Step 4: Rebuild the QLever index with the added triples
