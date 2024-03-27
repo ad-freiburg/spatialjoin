@@ -58,9 +58,6 @@ size_t Sweeper::add(const util::geo::I32MultiPolygon& a, const std::string& gid,
     add(poly, gid, subid);
     subid++;
   }
-  _curSweepId++;
-
-  if (_curSweepId % 1000000 == 0) LOGTO(INFO, std::cerr) << "@ " << _curSweepId;
   return subid;
 }
 
@@ -72,9 +69,6 @@ size_t Sweeper::add(const util::geo::I32MultiLine& a, const std::string& gid,
     add(line, gid, subid);
     subid++;
   }
-  _curSweepId++;
-
-  if (_curSweepId % 1000000 == 0) LOGTO(INFO, std::cerr) << "@ " << _curSweepId;
   return subid;
 }
 
@@ -86,9 +80,6 @@ size_t Sweeper::add(const util::geo::I32MultiPoint& a, const std::string& gid,
     add(point, gid, subid);
     subid++;
   }
-  _curSweepId++;
-
-  if (_curSweepId % 1000000 == 0) LOGTO(INFO, std::cerr) << "@ " << _curSweepId;
   return subid;
 }
 
