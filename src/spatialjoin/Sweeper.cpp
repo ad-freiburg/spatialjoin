@@ -93,10 +93,11 @@ void Sweeper::add(const util::geo::I32Polygon& poly, const std::string& gid,
                   size_t subid) {
   const auto& box = util::geo::getBoundingBox(poly);
   const I32XSortedPolygon spoly(poly);
-  double areaSize = 0;
-  if (_cfg.useArea) areaSize = util::geo::area(poly) / 10.0;
+  double areaSize = util::geo::area(poly);
   BoxIdList boxIds;
   if (_cfg.useBoxIds) boxIds = packBoxIds(getBoxIds(spoly, poly, box, areaSize));
+
+  if (!_cfg.useArea) areaSize = 0;
 
   size_t id = _areaCache.add(Area{
       spoly,
