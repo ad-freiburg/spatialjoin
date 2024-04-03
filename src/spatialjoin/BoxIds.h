@@ -218,7 +218,7 @@ inline BoxIdList packBoxIds(const BoxIdList& ids) {
 }
 
 // ____________________________________________________________________________
-inline std::pair<size_t, size_t> boxIdIsect(const BoxIdList& idsA,
+inline std::pair<int32_t, int32_t> boxIdIsect(const BoxIdList& idsA,
                                             const BoxIdList& idsB) {
   size_t fullContained = 0;
   size_t partContained = 0;
