@@ -72,38 +72,29 @@ and `ogc:sfIntersects`. The `--write-ogc-geo-triples none` option disables
 this. To have both the `osm2rdf` predicates *and* the `spatiajoin` predicates
 (for comparison or debugging), just omit the option.
 
-### Step 2: Build a QLever instance, start it, and download the geometries
+### Step 2: Extract geometries and feed into spatialjoin
 
 ```
-PORT=7008
-echo '{ "languages-internal": [], "prefixes-external": [""], "ascii-prefixes-only": false, "num-triples-per-batch": 1000000 }' > ${NAME}.settings.json
-ulimit -Sn 1048576; bzcat ${NAME}.ttl.bz2 | IndexBuilderMain -F ttl -f - -i ${NAME} -s ${NAME}.settings.json --stxxl-memory 10G | tee ${NAME}.index-log.txt
+time lbzcat -n 2 ${NAME}.ttl.bz2 | \grep "^osm2rdf" | sed -En 's/^osm2rdf(geom)?:(osm_)?(node|rel|way)[a-z]*_([0-9]+) geo:asWKT "([^\"]+)".*/osm\3:\4\t\5/p' | spatialjoin --contains ' ogc:sfContains ' --intersects ' ogc:sfIntersects ' --suffix $' .\n' -o ${NAME}.spatialjoin-triples.ttl.bz2
+```
+
+Note: This reconstructs the OSM IDs from osm2rdf's geo:asWKT triples, where the
+subject is of one of these forms (note the very confusing inconsistency for
+ways): `osm2rdfgeom:osm_node_(\d+)`, `osm2rdfgeom:osm_rel_(\d+)`,
+`osm2rdf:way_(\d+)`, `osm2rdfgeom:osm_wayarea_(\d+)`,
+`osm2rdfgeom:osm_relarea_(\d+)`.
+
+### Step 4: Create SPARQL endpoint with QLever
+
+```
+ulimit -Sn 1048576; bzcat ${NAME}.ttl.bz2 ${NAME}.spatialjoin-triples.ttl.bz2 | IndexBuilderMain -F ttl -f - -i ${NAME} -s ${NAME}.settings.json --stxxl-memory 10G | tee ${NAME}.index-log.txt
 ServerMain -i ${NAME} -j 8 -p ${PORT} -m 20G -c 10G -e 3G -k 200 -s 300s
-curl -s localhost:${PORT} -H "Accept: text/tab-separated-values" -H "Content-type: application/sparql-query" --data "PREFIX geo: <http://www.opengis.net/ont/geosparql#> SELECT ?osm_id ?geometry WHERE { ?osm_id geo:hasGeometry/geo:asWKT ?geometry }" | sed -E 's#<https://www.openstreetmap.org/(rel|way|node)(ation)?/([0-9]+)>\t"(.+)"\^\^<http:.*wktLiteral>#osm\1:\3\t\4#g' | sed 1d > spatialjoin.input.tsv
 ```
 
-Note: The `sed` command replaces the full IRIs by shorter prefixed IRIs. Also
-note that we only get the WKT literals from `geo:gasGeometry/geo:asWKT` here.
-It would be nicer to fetch all WKT literals in the datasets, no matter to which
-predicate they belong (for example, the predicates `osm2rdfgeom:envelope` or
-`osm2rdfgeom:convex_hull` also have WKT literals as objects)
-
-### Step 3: Compute the spatial relations
+With the right QLeverfile (modify the one obtained via `qlever setup-config
+osm-planet`), it's simply:
 
 ```
-cat spatialjoin.input.tsv | spatialjoin --contains ' ogc:_contains ' --intersects ' ogc:_intersects ' --suffix $' .\n' -o rels.out.bz2
-
-```
-
-Note that we could feed the geometries directly into `spatialjoin` as follows:
-
-```
-curl -s localhost:${PORT} -H "Accept: text/tab-separated-values" -H "Content-type: application/sparql-query" --data "PREFIX geo: <http://www.opengis.net/ont/geosparql#> SELECT ?osm_id ?geometry WHERE { ?osm_id geo:hasGeometry/geo:asWKT ?geometry }" | sed -E 's#<https://www.openstreetmap.org/(rel|way|node)(ation)?/([0-9]+)>\t"(.+)"\^\^<http:.*wktLiteral>#osm\1:\3\t\4#g' | sed 1d | spatialjoin --contains ' ogc:_contains ' --intersects ' ogc:_intersects ' --suffix $' .\n' -o rels.out.bz2
-```
-
-### Step 4: Rebuild the QLever index with the added triples
-
-```
-ulimit -Sn 1048576; bzcat ${NAME}.ttl.bz2 rels.out.bz2 | IndexBuilderMain -F ttl -f - -i ${NAME} -s ${NAME}.settings.json --stxxl-memory 10G | tee ${NAME}.index-log.txt
-ServerMain -i ${NAME} -j 8 -p ${PORT} -m 20G -c 10G -e 3G -k 200 -s 300s
+qlever index
+qlever start
 ```
