@@ -337,7 +337,7 @@ std::pair<bool, bool> Sweeper::check(const Area* a, const Area* b,
     // at least one box is fully contained, so we intersect
     // but the number of fully and partially contained boxed is smaller
     // than the number of boxes of A, so we cannot possible by contained
-    if (r.first + r.second < a->boxIds.front().first && r.second > 0) {
+    if (r.first + r.second < a->boxIds.front().first && r.first > 0) {
       return {1, 0};
     }
   }
@@ -368,7 +368,7 @@ std::pair<bool, bool> Sweeper::check(const Line* a, const Area* b,
     // at least one box is fully contained, so we intersect
     // but the number of fully and partially contained boxed is smaller
     // than the number of boxes of A, so we cannot possible by contained
-    if (r.first + r.second < a->boxIds.front().first && r.second > 0) {
+    if (r.first + r.second < a->boxIds.front().first && r.first > 0) {
       return {1, 0};
     }
   }
