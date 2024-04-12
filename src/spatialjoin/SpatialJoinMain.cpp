@@ -27,34 +27,37 @@ static const char* AUTHORS = "Patrick Brosi <brosi@informatik.uni-freiburg.de>";
 // _____________________________________________________________________________
 void printHelp(int argc, char** argv) {
   UNUSED(argc);
-  std::cout << "\n"
-            << "(C) 2023-" << YEAR << " " << COPY << "\n"
-            << "Authors: " << AUTHORS << "\n\n"
-            << "Usage: " << argv[0] << " [--help] [-h] <input>\n\n"
-            << "Allowed options:\n\n"
-            << std::setfill(' ') << std::left << "General:\n"
-            << std::setw(41) << "  -h [ --help ]"
-            << "show this help message\n"
-            << std::setw(41) << "  -o [ --output ] (default: '')"
-            << "output file, empty (default) prints to stdout\n"
-            << std::setw(41) << "  -c [ --cache ] (default: '.')"
-            << "cache directory for intermediate files\n"
-            << std::setw(41) << "  -C"
-            << "don't parse input, re-use intermediate cache files\n"
-            << std::setw(41) << "  --prefix (default: '')"
-            << "prefix added at the beginning of every relation\n"
-            << std::setw(41) << "  --intersects (default: ' intersects ')"
-            << "separator between intersecting geometry IDs\n"
-            << std::setw(41) << "  --contains (default: ' contains ')"
-            << "separator between containing geometry IDs\n"
-            << std::setw(41) << "  --suffix (default: '\\n')"
-            << "suffix added at the beginning of every relation\n\n"
-            << std::setfill(' ') << std::left << "Geometric computation:\n"
-            << std::setw(41) << "  --no-box-ids"
-            << "disable box id criteria for contains/intersect computation\n"
-            << std::setw(41) << "  --no-surface-area"
-            << "disable surface area criteria for polygon contains\n"
-            << std::endl;
+  std::cout
+      << "\n"
+      << "(C) 2023-" << YEAR << " " << COPY << "\n"
+      << "Authors: " << AUTHORS << "\n\n"
+      << "Usage: " << argv[0] << " [--help] [-h] <input>\n\n"
+      << "Allowed options:\n\n"
+      << std::setfill(' ') << std::left << "General:\n"
+      << std::setw(41) << "  -h [ --help ]"
+      << "show this help message\n"
+      << std::setw(41) << "  -o [ --output ] (default: '')"
+      << "output file, empty (default) prints to stdout\n"
+      << std::setw(41) << "  -c [ --cache ] (default: '.')"
+      << "cache directory for intermediate files\n"
+      << std::setw(41) << "  -C"
+      << "don't parse input, re-use intermediate cache files\n"
+      << std::setw(41) << "  --prefix (default: '')"
+      << "prefix added at the beginning of every relation\n"
+      << std::setw(41) << "  --intersects (default: ' intersects ')"
+      << "separator between intersecting geometry IDs\n"
+      << std::setw(41) << "  --contains (default: ' contains ')"
+      << "separator between containing geometry IDs\n"
+      << std::setw(41) << "  --covers (default: ' covers ')"
+      << "separator between covering geometry IDs\n"
+      << std::setw(41) << "  --suffix (default: '\\n')"
+      << "suffix added at the beginning of every relation\n\n"
+      << std::setfill(' ') << std::left << "Geometric computation:\n"
+      << std::setw(41) << "  --no-box-ids"
+      << "disable box id criteria for contains/covers/intersect computation\n"
+      << std::setw(41) << "  --no-surface-area"
+      << "disable surface area criteria for polygon contains/covers\n"
+      << std::endl;
 }
 
 // _____________________________________________________________________________
@@ -215,6 +218,7 @@ int main(int argc, char** argv) {
   std::string cache = ".";
   std::string contains = " contains ";
   std::string intersects = " intersects ";
+  std::string covers = " covers ";
   std::string suffix = "\n";
 
   bool useBoxIds = true;
@@ -249,6 +253,9 @@ int main(int argc, char** argv) {
         if (cur == "--cache" || cur == "-c") {
           state = 6;
         }
+        if (cur == "--covers") {
+          state = 7;
+        }
         if (cur == "--no-box-ids") {
           useBoxIds = false;
         }
@@ -280,6 +287,10 @@ int main(int argc, char** argv) {
         cache = cur;
         state = 0;
         break;
+      case 7:
+        covers = cur;
+        state = 0;
+        break;
     }
   }
 
@@ -291,8 +302,9 @@ int main(int argc, char** argv) {
 
   size_t NUM_THREADS = std::thread::hardware_concurrency();
 
-  Sweeper sweeper({NUM_THREADS, prefix, intersects, contains, suffix, useBoxIds, useArea}, useCache,
-                  cache, output);
+  Sweeper sweeper({NUM_THREADS, prefix, intersects, contains, covers, suffix,
+                   useBoxIds, useArea},
+                  useCache, cache, output);
 
   size_t gid = 0;
 

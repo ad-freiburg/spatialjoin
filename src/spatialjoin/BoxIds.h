@@ -67,7 +67,7 @@ inline BoxIdList getBoxIds(const util::geo::I32XSortedLine& line,
 
       const util::geo::I32XSortedPolygon boxPoly{util::geo::I32Polygon(box)};
 
-      if (util::geo::intersectsContains(line, envelope, boxPoly, box).first) {
+      if (std::get<0>(util::geo::intersectsContainsCovered(line, envelope, boxPoly, box))) {
         int32_t newId = y * NUM_GRID_CELLS + x + 1;
         if (!boxIds.empty() && boxIds.back().second < 254 &&
             boxIds.back().first + boxIds.back().second == newId - 1) {
@@ -107,10 +107,10 @@ inline void getBoxIds(
 
       const util::geo::I32XSortedPolygon boxPoly{util::geo::I32Polygon(box)};
 
-      auto check = util::geo::intersectsContains(
+      auto check = util::geo::intersectsContainsCovered(
           boxPoly, box, util::geo::area(box), poly, envelope, area);
 
-      if (check.second) {
+      if (std::get<1>(check)) {
         // we can insert all at once
         for (int32_t ly = y; ly < y + localYHeight; ly++) {
           int a = 1;
@@ -122,7 +122,7 @@ inline void getBoxIds(
             a++;
           }
         }
-      } else if (check.first) {
+      } else if (std::get<0>(check)) {
         // compute cutout if requested
         // osm2rdf::geometry::Area intersection;
         // if (cutouts) {

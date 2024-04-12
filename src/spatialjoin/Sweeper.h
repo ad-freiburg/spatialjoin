@@ -61,6 +61,7 @@ struct SweeperCfg {
   std::string& pairStart;
   std::string& sepIsect;
   std::string& sepContains;
+  std::string& sepCovers;
   std::string& pairEnd;
   bool useBoxIds;
   bool useArea;
@@ -141,6 +142,7 @@ class Sweeper {
   GeometryCache<SimpleLine> _simpleLineCache;
 
   std::map<std::string, std::map<std::string, std::set<size_t>>> _subContains;
+  std::map<std::string, std::map<std::string, std::set<size_t>>> _subCovered;
   std::map<std::string, size_t> _subSizes;
 
   std::string _cache;
@@ -150,21 +152,24 @@ class Sweeper {
 
   std::mutex _mut;
 
-  std::pair<bool, bool> check(const Area* a, const Area* b, size_t t) const;
-  std::pair<bool, bool> check(const Line* a, const Area* b, size_t t) const;
-  std::pair<bool, bool> check(const SimpleLine* a, const Area* b,
+  std::tuple<bool, bool, bool> check(const Area* a, const Area* b, size_t t) const;
+  std::tuple<bool, bool, bool> check(const Line* a, const Area* b, size_t t) const;
+  std::tuple<bool, bool, bool> check(const SimpleLine* a, const Area* b,
                               size_t t) const;
   bool check(const Line* a, const Line* b, size_t t) const;
   bool check(const Line* a, const SimpleLine* b, size_t t) const;
-  bool check(const util::geo::I32Point& a, const Area* b, size_t t) const;
+  std::pair<bool, bool> check(const util::geo::I32Point& a, const Area* b, size_t t) const;
 
   void diskAdd(const BoxVal& bv);
 
   void writeIntersect(size_t t, const std::string& a, const std::string& b);
   void writeContains(size_t t, const std::string& a, const std::string& b);
+  void writeCovers(size_t t, const std::string& a, const std::string& b);
   void writeRel(size_t t, const std::string& a, const std::string& b,
                 const std::string& pred);
   void writeContainsMulti(size_t t, const std::string& a, const std::string& b,
+                          size_t bSub);
+  void writeCoversMulti(size_t t, const std::string& a, const std::string& b,
                           size_t bSub);
 
   void doCheck(const BoxVal cur, const SweepVal sv, size_t t);

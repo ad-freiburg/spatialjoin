@@ -320,7 +320,7 @@ void Sweeper::sweep() {
 }
 
 // _____________________________________________________________________________
-std::pair<bool, bool> Sweeper::check(const Area* a, const Area* b,
+std::tuple<bool, bool, bool> Sweeper::check(const Area* a, const Area* b,
                                      size_t t) const {
   if (_cfg.useBoxIds) {
     auto ts = TIME();
@@ -329,21 +329,21 @@ std::pair<bool, bool> Sweeper::check(const Area* a, const Area* b,
 
     // all boxes of a are fully contained in b, we intersect and we are
     // contained
-    if (r.first == a->boxIds.front().first) return {1, 1};
+    if (r.first == a->boxIds.front().first) return {1, 1, 1};
 
     // no box shared, we cannot contain or intersect
-    if (r.first + r.second == 0) return {0, 0};
+    if (r.first + r.second == 0) return {0, 0, 0};
 
     // at least one box is fully contained, so we intersect
     // but the number of fully and partially contained boxed is smaller
     // than the number of boxes of A, so we cannot possible by contained
     if (r.first + r.second < a->boxIds.front().first && r.first > 0) {
-      return {1, 0};
+      return {1, 0, 0};
     }
   }
 
   auto ts = TIME();
-  auto res = util::geo::intersectsContains(a->geom, a->box, a->area, b->geom,
+  auto res = util::geo::intersectsContainsCovered(a->geom, a->box, a->area, b->geom,
                                            b->box, b->area);
   _stats[t].timeFullGeoCheckAreaArea += TOOK(ts);
   _stats[t].fullGeoChecksAreaArea++;
@@ -351,7 +351,7 @@ std::pair<bool, bool> Sweeper::check(const Area* a, const Area* b,
 }
 
 // _____________________________________________________________________________
-std::pair<bool, bool> Sweeper::check(const Line* a, const Area* b,
+std::tuple<bool, bool, bool> Sweeper::check(const Line* a, const Area* b,
                                      size_t t) const {
   if (_cfg.useBoxIds) {
     auto ts = TIME();
@@ -360,21 +360,21 @@ std::pair<bool, bool> Sweeper::check(const Line* a, const Area* b,
 
     // all boxes of a are fully contained in b, we intersect and we are
     // contained
-    if (r.first == a->boxIds.front().first) return {1, 1};
+    if (r.first == a->boxIds.front().first) return {1, 1, 1};
 
     // no box shared, we cannot contain or intersect
-    if (r.first + r.second == 0) return {0, 0};
+    if (r.first + r.second == 0) return {0, 0, 0};
 
     // at least one box is fully contained, so we intersect
     // but the number of fully and partially contained boxed is smaller
     // than the number of boxes of A, so we cannot possible by contained
     if (r.first + r.second < a->boxIds.front().first && r.first > 0) {
-      return {1, 0};
+      return {1, 0, 0};
     }
   }
 
   auto ts = TIME();
-  auto res = util::geo::intersectsContains(a->geom, a->box, b->geom, b->box);
+  auto res = util::geo::intersectsContainsCovered(a->geom, a->box, b->geom, b->box);
   _stats[t].timeFullGeoCheckAreaLine += TOOK(ts);
   _stats[t].fullGeoChecksAreaLine++;
 
@@ -401,7 +401,7 @@ bool Sweeper::check(const Line* a, const Line* b, size_t t) const {
 }
 
 // _____________________________________________________________________________
-std::pair<bool, bool> Sweeper::check(const SimpleLine* a, const Area* b,
+std::tuple<bool, bool, bool> Sweeper::check(const SimpleLine* a, const Area* b,
                                      size_t t) const {
   if (_cfg.useBoxIds) {
     auto ts = TIME();
@@ -410,14 +410,14 @@ std::pair<bool, bool> Sweeper::check(const SimpleLine* a, const Area* b,
 
     // all boxes of a are fully contained in b, we intersect and we are
     // contained
-    if (r.first == 1) return {1, 1};
+    if (r.first == 1) return {1, 1, 1};
 
     // no box shared, we cannot contain or intersect
-    if (r.first + r.second == 0) return {0, 0};
+    if (r.first + r.second == 0) return {0, 0, 0};
   }
 
   auto ts = TIME();
-  auto res = util::geo::intersectsContains(
+  auto res = util::geo::intersectsContainsCovered(
       util::geo::I32XSortedLine(util::geo::LineSegment<int32_t>(a->a, a->b)),
       util::geo::getBoundingBox(util::geo::LineSegment<int32_t>(a->a, a->b)),
       b->geom, b->box);
@@ -449,7 +449,7 @@ bool Sweeper::check(const Line* a, const SimpleLine* b, size_t t) const {
 }
 
 // _____________________________________________________________________________
-bool Sweeper::check(const util::geo::I32Point& a, const Area* b,
+std::pair<bool, bool> Sweeper::check(const util::geo::I32Point& a, const Area* b,
                     size_t t) const {
   if (_cfg.useBoxIds) {
     auto ts = TIME();
@@ -457,10 +457,10 @@ bool Sweeper::check(const util::geo::I32Point& a, const Area* b,
     _stats[t].timeBoxIdIsectAreaPoint += TOOK(ts);
 
     // all boxes of a are fully contained in b, we are contained
-    if (r.first) return true;
+    if (r.first) return {1, 1};
 
     // no box shared, we cannot contain or intersect
-    if (r.first + r.second == 0) return false;
+    if (r.first + r.second == 0) return {0, 0};
   }
 
   auto ts = TIME();
@@ -469,6 +469,12 @@ bool Sweeper::check(const util::geo::I32Point& a, const Area* b,
   _stats[t].fullGeoChecksAreaPoint++;
 
   return res;
+}
+
+// ____________________________________________________________________________
+void Sweeper::writeCovers(size_t t, const std::string& a,
+                            const std::string& b) {
+  writeRel(t, a, b, _cfg.sepCovers);
 }
 
 // ____________________________________________________________________________
@@ -521,7 +527,7 @@ void Sweeper::doCheck(const BoxVal cur, const SweepVal sv, size_t t) {
 
     auto res = check(a.get(), b.get(), t);
 
-    if (res.first) {
+    if (std::get<0>(res)) {
       writeIntersect(t, a->id, b->id);
       writeIntersect(t, b->id, a->id);
 
@@ -535,7 +541,7 @@ void Sweeper::doCheck(const BoxVal cur, const SweepVal sv, size_t t) {
       // }
     }
 
-    if (res.second) {
+    if (std::get<1>(res)) {
       if (a->subId > 0) {
         // a is a multigeometry, *all* its parts must be contained.
         // we cache them, and write them as soon as we know that yes,
@@ -543,6 +549,17 @@ void Sweeper::doCheck(const BoxVal cur, const SweepVal sv, size_t t) {
         writeContainsMulti(t, b->id, a->id, a->subId);
       } else {
         writeContains(t, b->id, a->id);
+      }
+    }
+
+    if (std::get<2>(res)) {
+      if (a->subId > 0) {
+        // a is a multigeometry, *all* its parts must be covered.
+        // we cache them, and write them as soon as we know that yes,
+        // they are all contained
+        writeCoversMulti(t, b->id, a->id, a->subId);
+      } else {
+        writeCovers(t, b->id, a->id);
       }
     }
   } else if (cur.type == LINE && sv.type == POLYGON) {
@@ -555,13 +572,17 @@ void Sweeper::doCheck(const BoxVal cur, const SweepVal sv, size_t t) {
 
     auto res = check(a.get(), b.get(), t);
 
-    if (res.first) {
+    if (std::get<0>(res)) {
       writeIntersect(t, a->id, b->id);
       writeIntersect(t, b->id, a->id);
     }
 
-    if (res.second) {
+    if (std::get<1>(res)) {
       writeContains(t, b->id, a->id);
+    }
+
+    if (std::get<2>(res)) {
+      writeCovers(t, b->id, a->id);
     }
   } else if (cur.type == SIMPLE_LINE && sv.type == POLYGON) {
     auto ts = TIME();
@@ -573,13 +594,17 @@ void Sweeper::doCheck(const BoxVal cur, const SweepVal sv, size_t t) {
 
     auto res = check(a.get(), b.get(), t);
 
-    if (res.first) {
+    if (std::get<0>(res)) {
       writeIntersect(t, a->id, b->id);
       writeIntersect(t, b->id, a->id);
     }
 
-    if (res.second) {
+    if (std::get<1>(res)) {
       writeContains(t, b->id, a->id);
+    }
+
+    if (std::get<2>(res)) {
+      writeCovers(t, b->id, a->id);
     }
   } else if (cur.type == POLYGON && sv.type == LINE) {
     auto ts = TIME();
@@ -591,13 +616,17 @@ void Sweeper::doCheck(const BoxVal cur, const SweepVal sv, size_t t) {
 
     auto res = check(b.get(), a.get(), t);
 
-    if (res.first) {
+    if (std::get<0>(res)) {
       writeIntersect(t, a->id, b->id);
       writeIntersect(t, b->id, a->id);
     }
 
-    if (res.second) {
+    if (std::get<1>(res)) {
       writeContains(t, a->id, b->id);
+    }
+
+    if (std::get<2>(res)) {
+      writeCovers(t, a->id, b->id);
     }
   } else if (cur.type == POLYGON && sv.type == SIMPLE_LINE) {
     auto ts = TIME();
@@ -609,13 +638,17 @@ void Sweeper::doCheck(const BoxVal cur, const SweepVal sv, size_t t) {
 
     auto res = check(b.get(), a.get(), t);
 
-    if (res.first) {
+    if (std::get<0>(res)) {
       writeIntersect(t, a->id, b->id);
       writeIntersect(t, b->id, a->id);
     }
 
-    if (res.second) {
+    if (std::get<1>(res)) {
       writeContains(t, a->id, b->id);
+    }
+
+    if (std::get<2>(res)) {
+      writeCovers(t, a->id, b->id);
     }
   } else if (cur.type == LINE && sv.type == LINE) {
     auto ts = TIME();
@@ -672,11 +705,13 @@ void Sweeper::doCheck(const BoxVal cur, const SweepVal sv, size_t t) {
 
     auto res = check(a, b.get(), t);
 
-    if (res) {
+    if (res.first) {
       auto a = _pointCache.get(cur.id, t);
       writeContains(t, b->id, a->id);
       writeIntersect(t, a->id, b->id);
       writeIntersect(t, b->id, a->id);
+
+      if (res.second) writeCovers(t, b->id, a->id);
     }
   }
 }
@@ -744,6 +779,22 @@ void Sweeper::fillBatch(JobBatch* batch,
   const auto& overlaps = actives->overlap_find_all({cur->loY, cur->upY});
 
   for (auto p : overlaps) batch->push_back({*cur, p.v});
+}
+
+// _____________________________________________________________________________
+void Sweeper::writeCoversMulti(size_t t, const std::string& a,
+                                 const std::string& b, size_t bSub) {
+  {
+    std::unique_lock<std::mutex> lock(_mut);
+
+    _subCovered[b][a].insert(bSub);
+
+    if (_subCovered[b][a].size() != _subSizes[b]) return;
+
+    _subCovered[b].erase(a);
+  }
+
+  writeCovers(t, a, b);
 }
 
 // _____________________________________________________________________________
