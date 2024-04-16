@@ -32,7 +32,7 @@ find_package(BZip2 REQUIRED)
 # export compile commands to tools like clang
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-# Compiler-specific C++11 activation.
+# Compiler-specific C++14 activation.
 if ("${CMAKE_CXX_COMPILER_ID}" MATCHES "GNU")
 	execute_process(
 		COMMAND ${CMAKE_CXX_COMPILER} -dumpversion OUTPUT_VARIABLE GCC_VERSION)

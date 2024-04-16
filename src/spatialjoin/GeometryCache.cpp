@@ -120,6 +120,9 @@ sj::Line sj::GeometryCache<sj::Line>::getFromDisk(size_t off,
   // sub id
   _geomsFReads[tid].read(reinterpret_cast<char*>(&ret.subId), sizeof(uint16_t));
 
+  // length
+  _geomsFReads[tid].read(reinterpret_cast<char*>(&ret.length), sizeof(double));
+
   // boxIds
   uint32_t numBoxIds;
   _geomsFReads[tid].read(reinterpret_cast<char*>(&numBoxIds), sizeof(uint32_t));
@@ -269,6 +272,10 @@ size_t sj::GeometryCache<sj::Line>::add(const sj::Line& val) {
   // sub id
   _geomsF.write(reinterpret_cast<const char*>(&val.subId), sizeof(uint16_t));
   _geomsOffset += sizeof(uint16_t);
+
+  // length
+  _geomsF.write(reinterpret_cast<const char*>(&val.length), sizeof(double));
+  _geomsOffset += sizeof(double);
 
   // boxIds
   uint32_t size = val.boxIds.size();

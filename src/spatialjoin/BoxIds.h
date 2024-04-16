@@ -67,7 +67,8 @@ inline BoxIdList getBoxIds(const util::geo::I32XSortedLine& line,
 
       const util::geo::I32XSortedPolygon boxPoly{util::geo::I32Polygon(box)};
 
-      if (std::get<0>(util::geo::intersectsContainsCovered(line, envelope, boxPoly, box))) {
+      if (std::get<0>(util::geo::intersectsContainsCovers(line, envelope,
+                                                          boxPoly, box))) {
         int32_t newId = y * NUM_GRID_CELLS + x + 1;
         if (!boxIds.empty() && boxIds.back().second < 254 &&
             boxIds.back().first + boxIds.back().second == newId - 1) {
@@ -107,7 +108,7 @@ inline void getBoxIds(
 
       const util::geo::I32XSortedPolygon boxPoly{util::geo::I32Polygon(box)};
 
-      auto check = util::geo::intersectsContainsCovered(
+      auto check = util::geo::intersectsContainsCovers(
           boxPoly, box, util::geo::area(box), poly, envelope, area);
 
       if (std::get<1>(check)) {
@@ -219,7 +220,7 @@ inline BoxIdList packBoxIds(const BoxIdList& ids) {
 
 // ____________________________________________________________________________
 inline std::pair<int32_t, int32_t> boxIdIsect(const BoxIdList& idsA,
-                                            const BoxIdList& idsB) {
+                                              const BoxIdList& idsB) {
   size_t fullContained = 0;
   size_t partContained = 0;
 

@@ -15,6 +15,7 @@ using sj::Sweeper;
 using util::geo::DLine;
 using util::geo::DPoint;
 using util::geo::I32Line;
+using util::geo::I32MultiLine;
 using util::geo::I32MultiPolygon;
 using util::geo::I32Point;
 using util::geo::I32Polygon;
@@ -132,15 +133,16 @@ void parse(const char* c, size_t size, std::string& dangling, size_t* gid,
         }
       } else if ((p = dangling.rfind("MULTILINESTRING(", start)) !=
                  std::string::npos) {
+        I32MultiLine ml;
         p += 16;
-        size_t i = 0;
-        while ((p = dangling.find("(", p + 1)) != std::string::npos) {
+        while ((p = dangling.find("(", p)) != std::string::npos) {
           const auto& line = parseLineString(dangling, p + 1);
           if (line.size() != 0) {
-            // TODO, i is the line number
+            ml.push_back(line);
           }
-          i++;
+          p += 1;
         }
+        idx.add(ml, id);
       } else if ((p = dangling.rfind("POLYGON(", start)) != std::string::npos) {
         p += 7;
         size_t i = 0;

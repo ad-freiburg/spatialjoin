@@ -78,6 +78,9 @@ struct Line {
   // sub id (for multilines)
   uint16_t subId;
 
+  // length
+  double length;
+
   // box ids
   std::vector<sj::boxids::BoxId> boxIds;
 

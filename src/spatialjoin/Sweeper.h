@@ -33,6 +33,7 @@ struct BoxVal {
   int32_t val;
   bool out : 1;
   GeomType type : 2;
+  double areaOrLen;
 };
 
 inline bool operator==(const BoxVal& a, const BoxVal& b) {
@@ -152,13 +153,22 @@ class Sweeper {
 
   std::mutex _mut;
 
-  std::tuple<bool, bool, bool> check(const Area* a, const Area* b, size_t t) const;
-  std::tuple<bool, bool, bool> check(const Line* a, const Area* b, size_t t) const;
+  std::tuple<bool, bool, bool> check(const Area* a, const Area* b,
+                                     size_t t) const;
+  std::tuple<bool, bool, bool> check(const Line* a, const Area* b,
+                                     size_t t) const;
   std::tuple<bool, bool, bool> check(const SimpleLine* a, const Area* b,
+                                     size_t t) const;
+  std::pair<bool, bool> check(const Line* a, const Line* b, size_t t) const;
+  std::pair<bool, bool> check(const Line* a, const SimpleLine* b,
                               size_t t) const;
-  bool check(const Line* a, const Line* b, size_t t) const;
-  bool check(const Line* a, const SimpleLine* b, size_t t) const;
-  std::pair<bool, bool> check(const util::geo::I32Point& a, const Area* b, size_t t) const;
+  std::pair<bool, bool> check(const SimpleLine* a, const SimpleLine* b,
+                              size_t t) const;
+  std::pair<bool, bool> check(const SimpleLine* a, const Line* b,
+                              size_t t) const;
+  std::pair<bool, bool> check(const util::geo::I32Point& a, const Area* b,
+                              size_t t) const;
+  bool check(const util::geo::I32Point& a, const Line* b, size_t t) const;
 
   void diskAdd(const BoxVal& bv);
 
@@ -170,7 +180,7 @@ class Sweeper {
   void writeContainsMulti(size_t t, const std::string& a, const std::string& b,
                           size_t bSub);
   void writeCoversMulti(size_t t, const std::string& a, const std::string& b,
-                          size_t bSub);
+                        size_t bSub);
 
   void doCheck(const BoxVal cur, const SweepVal sv, size_t t);
 
@@ -184,10 +194,44 @@ class Sweeper {
                  const BoxVal* cur) const;
 
   static int boxCmp(const void* a, const void* b) {
-    if (static_cast<const BoxVal*>(a)->val < static_cast<const BoxVal*>(b)->val)
+    const auto& boxa = static_cast<const BoxVal*>(a);
+    const auto& boxb = static_cast<const BoxVal*>(b);
+    if (boxa->val < boxb->val) return -1;
+    if (boxa->val > boxb->val) return 1;
+
+    if (!boxa->out && boxb->out) return -1;
+    if (boxa->out && !boxb->out) return 1;
+
+    // everything before a polygon
+    if (boxa->type != POLYGON && boxb->type == POLYGON) return -1;
+    if (boxa->type == POLYGON && boxb->type != POLYGON) return 1;
+
+    // points before lines
+    if (boxa->type == POINT &&
+        (boxb->type == SIMPLE_LINE || boxb->type == LINE))
       return -1;
-    if (static_cast<const BoxVal*>(a)->val > static_cast<const BoxVal*>(b)->val)
+    if (boxb->type == POINT &&
+        (boxa->type == SIMPLE_LINE || boxa->type == LINE))
       return 1;
+
+    // smaller polygons before larger
+    if (boxa->type == POLYGON && boxb->type == POLYGON &&
+        boxa->areaOrLen < boxb->areaOrLen)
+      return -1;
+    if (boxa->type == POLYGON && boxb->type == POLYGON &&
+        boxa->areaOrLen > boxb->areaOrLen)
+      return 1;
+
+    // shorter lines before longer
+    if ((boxa->type == LINE || boxa->type == SIMPLE_LINE) &&
+        (boxb->type == LINE || boxb->type == SIMPLE_LINE) &&
+        boxa->areaOrLen < boxb->areaOrLen)
+      return -1;
+    if ((boxa->type == LINE || boxa->type == SIMPLE_LINE) == LINE &&
+        (boxb->type == LINE || boxb->type == SIMPLE_LINE) &&
+        boxa->areaOrLen > boxb->areaOrLen)
+      return 1;
+
     return 0;
   }
 };
