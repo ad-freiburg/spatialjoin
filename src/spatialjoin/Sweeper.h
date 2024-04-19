@@ -5,6 +5,7 @@
 #define SPATIALJOINS_SWEEPER_H_
 
 #include <bzlib.h>
+#include <zlib.h>
 #include <fcntl.h>
 
 #include <condition_variable>
@@ -25,6 +26,7 @@
 namespace sj {
 
 enum GeomType : uint8_t { POLYGON = 0, LINE = 1, POINT = 2, SIMPLE_LINE = 3 };
+enum OutMode : uint8_t { PLAIN = 0, BZ2 = 1, GZ = 2, COUT = 3 };
 
 struct BoxVal {
   size_t id : 60;
@@ -59,11 +61,11 @@ typedef std::vector<std::pair<BoxVal, SweepVal>> JobBatch;
 
 struct SweeperCfg {
   size_t numThreads;
-  std::string& pairStart;
-  std::string& sepIsect;
-  std::string& sepContains;
-  std::string& sepCovers;
-  std::string& pairEnd;
+  std::string pairStart;
+  std::string sepIsect;
+  std::string sepContains;
+  std::string sepCovers;
+  std::string pairEnd;
   bool useBoxIds;
   bool useArea;
 };
@@ -74,8 +76,8 @@ static const size_t BUFFER_S_PAIRS = 1024 * 1024 * 10;
 
 class Sweeper {
  public:
-  explicit Sweeper(SweeperCfg cfg, bool reUse, const std::string& cache,
-                   const std::string& out)
+  explicit Sweeper(SweeperCfg cfg, bool reUse, const std::string cache,
+                   const std::string out)
       : _cfg(cfg),
         _obufpos(0),
         _pointCache(100000, cfg.numThreads, cache, reUse),
@@ -85,6 +87,11 @@ class Sweeper {
         _cache(cache),
         _out(out),
         _jobs(100) {
+    if (util::endsWith(_out, ".bz2")) _outMode = BZ2;
+    else if (util::endsWith(_out, ".gz")) _outMode = GZ;
+    else if (out.size()) _outMode = PLAIN;
+    else _outMode = COUT;
+
     std::string fname = _cache + "/events";
 
     if (reUse) {
@@ -130,8 +137,11 @@ class Sweeper {
   unsigned char* _outBuffer;
   size_t _obufpos;
 
+  OutMode _outMode;
+
   std::vector<FILE*> _rawFiles;
   std::vector<BZFILE*> _files;
+  std::vector<gzFile> _gzFiles;
   std::vector<size_t> _outBufPos;
   std::vector<unsigned char*> _outBuffers;
 
