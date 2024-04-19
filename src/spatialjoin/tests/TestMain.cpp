@@ -42,7 +42,7 @@ std::string fullRun(const std::string& file) {
   std::ifstream ifs(".resTmp");
   ss << ifs.rdbuf();
 
-  unlink("tmp");
+  unlink(".resTmp");
 
   return ss.str();
 }
