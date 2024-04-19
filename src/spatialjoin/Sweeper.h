@@ -103,20 +103,20 @@ class Sweeper {
     _outBuffer = new unsigned char[BUFFER_S];
   };
 
-  void add(const util::geo::I32MultiPolygon& a, const std::string& gid);
-  void add(const util::geo::I32MultiLine& a, const std::string& gid);
-  void add(const util::geo::I32MultiPoint& a, const std::string& gid);
-  size_t add(const util::geo::I32MultiPolygon& a, const std::string& gid,
+  void add(const util::geo::I32MultiPolygon& a, std::string gid);
+  void add(const util::geo::I32MultiLine& a, std::string gid);
+  void add(const util::geo::I32MultiPoint& a, std::string gid);
+  size_t add(const util::geo::I32MultiPolygon& a, std::string gid,
              size_t);
-  size_t add(const util::geo::I32MultiLine& a, const std::string& gid, size_t);
-  size_t add(const util::geo::I32MultiPoint& a, const std::string& gid, size_t);
-  void add(const util::geo::I32Polygon& a, const std::string& gid);
-  void add(const util::geo::I32Polygon& a, const std::string& gid,
+  size_t add(const util::geo::I32MultiLine& a, std::string gid, size_t);
+  size_t add(const util::geo::I32MultiPoint& a, std::string gid, size_t);
+  void add(const util::geo::I32Polygon& a, std::string gid);
+  void add(const util::geo::I32Polygon& a, std::string gid,
            size_t subId);
-  void add(const util::geo::I32Line& a, const std::string& gid);
-  void add(const util::geo::I32Line& a, const std::string& gid, size_t subid);
-  void add(const util::geo::I32Point& a, const std::string& gid);
-  void add(const util::geo::I32Point& a, const std::string& gid, size_t subid);
+  void add(const util::geo::I32Line& a, std::string gid);
+  void add(const util::geo::I32Line& a, std::string gid, size_t subid);
+  void add(const util::geo::I32Point& a, std::string gid);
+  void add(const util::geo::I32Point& a, std::string gid, size_t subid);
   void flush();
 
   void sweep();

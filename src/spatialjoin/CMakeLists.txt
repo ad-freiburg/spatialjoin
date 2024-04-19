@@ -11,4 +11,4 @@ include_directories(
 add_executable(spatialjoin ${spatialjoin_main})
 add_library(spatialjoin_dep ${SPATIALJOIN_SRC})
 
-target_link_libraries(spatialjoin spatialjoin_dep util ${BZIP2_LIBRARIES} -lpthread)
+target_link_libraries(spatialjoin spatialjoin_dep util ${BZIP2_LIBRARIES} absl::base absl::strings -lpthread)

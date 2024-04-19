@@ -3,6 +3,10 @@
 // Authors: Patrick Brosi <brosi@informatik.uni-freiburg.de>
 
 #include <iostream>
+#include <string_view>
+#include <optional>
+
+#include "absl/strings/charconv.h"
 
 #include "BoxIds.h"
 #include "Sweeper.h"
@@ -10,6 +14,7 @@
 #include "util/geo/Geo.h"
 #include "util/http/Server.h"
 #include "util/log/Log.h"
+#include "ctre.hpp"
 
 using sj::Sweeper;
 using util::geo::DLine;
@@ -94,6 +99,23 @@ util::geo::I32Point parsePoint(const std::string& a, size_t p) {
   return {point.getX() * PREC, point.getY() * PREC};
 }
 
+std::optional<I32Point> matchPoint (std::string_view input) {
+    static_assert(ctre::match<"\\s*POINT\\s*\\([0-9]+(\\.[0-9]+)?\\s+[0-9]+(\\\\.[0-9]+)?\\s*\\)">(std::string_view{"POINT(30.2934 12)"}));
+    auto match  = ctre::match<"\\s*POINT\\s*\\((?<n1>[0-9]+(\\.[0-9]+)?)\\s+(?<n2>[0-9]+(\\\\.[0-9]+))?\\s*\\)">(input);
+    if (!match) {
+        return std::nullopt;
+    }
+    float f1;
+    float f2;
+    const auto& m1 = match.get<"n1">().to_view();
+    const auto& m2 = match.get<"n2">().to_view();
+    absl::from_chars(m1.data(), m1.data() + m1.size(), f1);
+    absl::from_chars(m1.data(), m1.data() + m1.size(), f2);
+    auto point = latLngToWebMerc(DPoint(
+            f1, f2));
+    return I32Point{point.getX() * PREC, point.getY() * PREC};
+}
+
 // _____________________________________________________________________________
 void parse(const char* c, size_t size, std::string& dangling, size_t* gid,
            Sweeper& idx) {
@@ -113,6 +135,9 @@ void parse(const char* c, size_t size, std::string& dangling, size_t* gid,
         start = idp + 2;
       }
 
+      if (auto p = matchPoint(dangling)) {
+
+      }
       auto p = dangling.rfind("POINT(", start);
 
       if (p != std::string::npos) {
@@ -197,6 +222,110 @@ void parse(const char* c, size_t size, std::string& dangling, size_t* gid,
     c++;
   }
 }
+
+// _____________________________________________________________________________
+void parseElement(std::string_view line,  std::string gid,
+              Sweeper& idx) {
+    if (auto p = matchPoint(line)) {
+        idx.add(p.value(), std::move(gid));
+        return;
+    } else if ((p = dangling.rfind("LINESTRING(", start)) !=
+
+               std::string::npos) {
+        p += 11;
+        const auto &line = parseLineString(dangling, p);
+        if (line.size() != 0) {
+            idx.add(line, id);
+        }
+    } else if ((p = dangling.rfind("MULTILINESTRING(", start)) !=
+               std::string::npos) {
+        p += 16;
+        size_t i = 0;
+        while ((p = dangling.find("(", p + 1)) != std::string::npos) {
+            const auto &line = parseLineString(dangling, p + 1);
+            if (line.size() != 0) {
+                // TODO, i is the line number
+            }
+            i++;
+        }
+    } else if ((p = dangling.rfind("POLYGON(", start)) != std::string::npos) {
+        p += 7;
+        size_t i = 0;
+        I32Polygon poly;
+        while ((p = dangling.find("(", p + 1)) != std::string::npos) {
+            const auto &line = parseLineString(dangling, p + 1);
+            if (i == 0) {
+                // outer
+                poly.getOuter() = line;
+            } else {
+                poly.getInners().push_back(line);
+            }
+            i++;
+        }
+        idx.add(poly, id);
+    } else if ((p = dangling.rfind("MULTIPOLYGON(", start)) !=
+               std::string::npos) {
+        p += 12;
+        I32MultiPolygon mp;
+        while (p != std::string::npos &&
+               (p = dangling.find("(", p + 1)) != std::string::npos) {
+            I32Polygon poly;
+            size_t i = 0;
+            while ((p = dangling.find("(", p + 1)) != std::string::npos) {
+                const auto &line = parseLineString(dangling, p + 1);
+                if (i == 0) {
+                    // outer
+                    poly.getOuter() = line;
+                } else {
+                    poly.getInners().push_back(line);
+                }
+
+                // check if multipolygon is closed
+                auto q = dangling.find(
+                        ")", p + 1);  // this is the closing of the linestring
+                auto q2 = dangling.find(")", q + 1);
+                auto q3 = dangling.find(",", q + 1);
+                if (q2 != std::string::npos && q3 != std::string::npos && q2 < q3) {
+                    p = q3;
+                    break;
+                }
+
+                i++;
+            }
+            mp.push_back(poly);
+        }
+        idx.add(mp, id);
+    }
+}
+
+// _____________________________________________________________________________
+void parseNew(std::string_view input, size_t *gid,
+              Sweeper &idx) {
+    while (true) {
+        auto idp = input.find('\t');
+        auto newline = input.find('\n');
+
+        if (newline == std::string_view::npos) {
+            return;
+            // TODO<joka921> Fix the rest.
+        }
+
+        auto line = input.substr(0, newline);
+        input.remove_prefix(newline + 1);
+
+
+        std::string id;
+        if (idp != std::string::npos) {
+            id = line.substr(0, idp);
+            line.remove_prefix(idp + 1);
+        } else {
+            id = std::to_string(*gid);
+        }
+
+        parseElement(line, std::move(id), idx);
+    }
+}
+
 
 // _____________________________________________________________________________
 int main(int argc, char** argv) {

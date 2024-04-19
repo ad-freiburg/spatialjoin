@@ -2,6 +2,17 @@ cmake_minimum_required (VERSION 3.5)
 
 project (spatialjoin)
 
+# C/C++ Versions
+set(CMAKE_C_STANDARD 11)
+set(CMAKE_C_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+if (CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
+	# will not take effect without FORCE
+	set(CMAKE_INSTALL_PREFIX ${CMAKE_BINARY_DIR} CACHE PATH "Install top-level directory" FORCE)
+endif ()
+
 if (CMAKE_BUILD_TYPE)
 	string(TOUPPER ${CMAKE_BUILD_TYPE} CMAKE_BUILD_TYPE)
 endif()
@@ -12,6 +23,31 @@ set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake/")
 set(EXECUTABLE_OUTPUT_PATH "${CMAKE_SOURCE_DIR}/build")
 
 find_package(OpenMP)
+
+include(FetchContent)
+################################
+# CTRE, Compile-Time-Regular-Expressions
+################################
+FetchContent_Declare(
+		ctre
+		GIT_REPOSITORY https://github.com/hanickadot/compile-time-regular-expressions.git
+		GIT_TAG b3d7788b559e34d985c8530c3e0e7260b67505a6 # v3.8.1
+)
+################################
+# ABSEIL
+################################
+set(ABSL_ENABLE_INSTALL ON)
+set(ABSL_USE_SYSTEM_INCLUDES ON)
+set(ABSL_PROPAGATE_CXX_STD ON)
+FetchContent_Declare(
+		abseil
+		GIT_REPOSITORY https://github.com/abseil/abseil-cpp.git
+		GIT_TAG 258e5a15759cc3d122d4a4826bc499af91d40aa9 # 2023-12-21
+)
+
+# Apply FetchContent
+FetchContent_MakeAvailable(ctre abseil)
+include_directories(${ctre_SOURCE_DIR}/single-header)
 
 # set compiler flags, see http://stackoverflow.com/questions/7724569/debug-vs-release-in-cmake
 set(CMAKE_CXX_FLAGS "-march=native -Ofast -fno-signed-zeros -fno-trapping-math -Wall -Wno-format-extra-args -Wextra -Wformat-nonliteral -Wformat-security -Wformat=2 -Wextra -Wno-implicit-fallthrough -Wno-narrowing -pedantic")
@@ -31,22 +67,6 @@ find_package(BZip2 REQUIRED)
 
 # export compile commands to tools like clang
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
-
-# Compiler-specific C++11 activation.
-if ("${CMAKE_CXX_COMPILER_ID}" MATCHES "GNU")
-	execute_process(
-		COMMAND ${CMAKE_CXX_COMPILER} -dumpversion OUTPUT_VARIABLE GCC_VERSION)
-	if ((GCC_VERSION VERSION_GREATER 4.8 OR GCC_VERSION VERSION_EQUAL 4.8))
-		set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++14")
-	else ()
-		message(FATAL_ERROR "${PROJECT_NAME} requires g++ 4.8 or greater!")
-	endif ()
-elseif ("${CMAKE_CXX_COMPILER_ID}" MATCHES "Clang")
-	#set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -stdlib=libc++ -std=c++11")
-	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++14")
-else ()
-	message(FATAL_ERROR "Your C++ compiler does not support C++14.")
-endif ()
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
 
