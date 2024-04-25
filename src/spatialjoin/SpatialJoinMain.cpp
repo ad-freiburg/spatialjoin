@@ -437,7 +437,7 @@ void parseStdin(Sweeper& idx) {
                 return;
             }
         }
-        std::string_view sv {buffer.data(), offset + numRead};
+        std::string_view sv {buffer.data(), buffer.size()};
         //std::cerr << "parsing " << sv.size() << "bytes(intermediate)" << std::endl;
         parseNew(sv, &gid, idx);
         auto beg = sv.data() - buffer.data();
