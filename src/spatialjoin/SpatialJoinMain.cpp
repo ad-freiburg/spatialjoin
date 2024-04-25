@@ -400,7 +400,7 @@ void parseElement(std::string_view line, std::string gid,
         idx.add(mpoly.value(), std::move(gid));
     } else {
         std::cerr << "Couldn't parse line of size " << line.size() << std::endl;
-        std::cerr << "Couldn't parse element \""  << line << std::endl;
+        std::cerr << "Couldn't parse element \""  << line.substr(0, 40) << std::endl;
         return;
     }
 }
