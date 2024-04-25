@@ -79,6 +79,21 @@ template <size_t N>
 static constexpr auto cls(const ctll::fixed_string<N>& s) {
     return ctll::fixed_string("[") + s + ctll::fixed_string("]");
 }
+
+template <size_t N>
+static constexpr auto paren(const ctll::fixed_string<N>& s) {
+    return ctll::fixed_string("\\(") + s + ctll::fixed_string("\\)");
+}
+
+template <size_t N>
+static constexpr auto optWsAround(const ctll::fixed_string<N>& s) {
+    return ctll::fixed_string("\\s*") + s + ctll::fixed_string("\\s*");
+}
+
+template <size_t N>
+static constexpr auto star(const ctll::fixed_string<N>& s) {
+    return s + fs("*");
+}
 // _____________________________________________________________________________
 void printHelp(int argc, char **argv) {
     UNUSED(argc);
@@ -151,6 +166,7 @@ util::geo::I32Point parsePoint(const std::string &a, size_t p) {
 
 static constexpr ctll::fixed_string floatRegex = "[0-9]+(\\.[0-9]+)?";
 static constexpr ctll::fixed_string coordinateRegex = grp(floatRegex, fs("n1")) + fs("\\s+") + grp(floatRegex, fs("n2"));
+static constexpr ctll::fixed_string innerParens = paren(star(cls(fs("^)"))));
 
 std::optional<I32Point> matchPoint(std::string_view input) {
     static constexpr ctll::fixed_string pointRegex = fs("\\s*POINT\\s*\\(") + coordinateRegex + fs("\\)");
@@ -196,11 +212,7 @@ std::optional<I32Line> matchLinestring(std::string_view input) {
     return parseCoordinateList(input);
 }
 
-std::optional<I32Polygon> matchPolygon(std::string_view input) {
-    if (!ctre::starts_with<"\\s*POLYGON">(input)) {
-        return std::nullopt;
-    }
-
+I32Polygon matchPolygonInner(std::string_view input) {
     std::vector<I32Line> lines;
     for (const auto &m: ctre::range<"\\([^(]*\\)">(input)) {
         lines.push_back(parseCoordinateList(m.to_view()));
@@ -212,27 +224,32 @@ std::optional<I32Polygon> matchPolygon(std::string_view input) {
     return result;
 }
 
-std::optional<I32MultiPolygon> matchMultipolygon(std::string_view input) {
-    if (ctre::starts_with<"\\s*MULTIPOLYGON">(input)) {
+std::optional<I32Polygon> matchPolygon(std::string_view input) {
+    if (!ctre::starts_with<"\\s*POLYGON">(input)) {
         return std::nullopt;
     }
 
-    //static constexpr ctll::fixed_string singlePolygon = R"-(\(\((?<outer>[^)]*)\)\s*(,\s*\((?<inner>[^)]*)\\))*\))-";
-    static constexpr ctll::fixed_string singlePolygon = R"-(\(\((?<outer>[^)]*)\)\s*(,\s*\((?<inner>[^)]*))*\))-";
-    std::vector<I32Polygon> polygons;
-    for (const auto &m: ctre::range<singlePolygon>(input)) {
-        I32Polygon p;
-        p.getOuter() = parseCoordinateList(m.get<"outer">().to_view());
-        // TODO<joka921> how to best do this?
-        /*
-        for (const auto& el : m.get<"inner">()) {
-            p.getInners().push_back(parseCoordinateList(el.to_view());
-        }
-         */
+    return matchPolygonInner(input);
+}
 
+std::optional<I32MultiPolygon> matchMultipolygon(std::string_view input) {
+
+    if (const auto& m = ctre::starts_with<"\\s*MULTIPOLYGON\\s*\\(">(input); !m) {
+        return std::nullopt;
+    } else {
+        input.remove_prefix(m.to_view().size());
     }
 
+    static constexpr auto polyStructure = paren(innerParens + grp(optWsAround(fs(",")) + innerParens) + fs("*"));
 
+    static_assert(ctre::match<innerParens>("( asdif )"));
+    static_assert(ctre::match<"[^(]">("y"));
+
+    std::vector<I32Polygon> polygons;
+    for (const auto &m: ctre::range<polyStructure>(input)) {
+        polygons.push_back(matchPolygonInner(m.to_view()));
+    }
+    return I32MultiPolygon{std::move(polygons)};
 }
 
 // _____________________________________________________________________________
@@ -455,6 +472,8 @@ int main(int argc, char **argv) {
     std::cerr << getWKT(p) << std::endl;
     std::cerr << getWKT(matchLinestring(" LINESTRING(30 10, 27.12340 17, 12.3 5)").value()) << std::endl;
     std::cerr << getWKT(matchPolygon(" POLYGON((30 10, 27.12340 17, 12.3 5))").value()) << std::endl;
+    std::cerr << getWKT(matchMultipolygon("MULTIPOLYGON (((30 20, 45 40, 10 40, 30 20)),\n"
+                                          "((15 5, 40 10, 10 20, 5 10, 15 5)))").value()) << std::endl;
     // disable output buffering for standard output
     setbuf(stdout, NULL);
 
