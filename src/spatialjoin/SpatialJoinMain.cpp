@@ -400,7 +400,7 @@ void parseElement(std::string_view line, std::string gid,
         idx.add(mpoly.value(), std::move(gid));
     } else {
         std::cerr << "Couldn't parse line of size " << line.size() << std::endl;
-        std::cerr << "Couldn't parse element \"" + std::string{line} << std::endl;
+        std::cerr << "Couldn't parse element \""  << line << std::endl;
         return;
     }
 }
@@ -472,7 +472,7 @@ void parseStdin(Sweeper &idx) {
         auto beg = sv.data() - buffer.data();
         auto end = beg + sv.size();
         offset = sv.size();
-        std::shift_left(buffer.data() + beg, buffer.data() + end, beg);
+        std::shift_left(buffer.data(), buffer.data() + end, beg);
     }
 }
 
