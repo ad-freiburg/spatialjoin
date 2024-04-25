@@ -365,79 +365,19 @@ void parseElement(std::string_view line, std::string gid,
     if (auto p = matchPoint(line)) {
         idx.add(p.value(), std::move(gid));
         return;
-    } /*
-    } else if ((p = dangling.rfind("LINESTRING(", start)) !=
-
-               std::string::npos) {
-        p += 11;
-        const auto &line = parseLineString(dangling, p);
-        if (line.size() != 0) {
-            idx.add(line, id);
-        }
-    } else if ((p = dangling.rfind("MULTILINESTRING(", start)) !=
-               std::string::npos) {
-        p += 16;
-        size_t i = 0;
-        while ((p = dangling.find("(", p + 1)) != std::string::npos) {
-            const auto &line = parseLineString(dangling, p + 1);
-            if (line.size() != 0) {
-                // TODO, i is the line number
-            }
-            i++;
-        }
-    } else if ((p = dangling.rfind("POLYGON(", start)) != std::string::npos) {
-        p += 7;
-        size_t i = 0;
-        I32Polygon poly;
-        while ((p = dangling.find("(", p + 1)) != std::string::npos) {
-            const auto &line = parseLineString(dangling, p + 1);
-            if (i == 0) {
-                // outer
-                poly.getOuter() = line;
-            } else {
-                poly.getInners().push_back(line);
-            }
-            i++;
-        }
-        idx.add(poly, id);
-    } else if ((p = dangling.rfind("MULTIPOLYGON(", start)) !=
-               std::string::npos) {
-        p += 12;
-        I32MultiPolygon mp;
-        while (p != std::string::npos &&
-               (p = dangling.find("(", p + 1)) != std::string::npos) {
-            I32Polygon poly;
-            size_t i = 0;
-            while ((p = dangling.find("(", p + 1)) != std::string::npos) {
-                const auto &line = parseLineString(dangling, p + 1);
-                if (i == 0) {
-                    // outer
-                    poly.getOuter() = line;
-                } else {
-                    poly.getInners().push_back(line);
-                }
-
-                // check if multipolygon is closed
-                auto q = dangling.find(
-                        ")", p + 1);  // this is the closing of the linestring
-                auto q2 = dangling.find(")", q + 1);
-                auto q3 = dangling.find(",", q + 1);
-                if (q2 != std::string::npos && q3 != std::string::npos && q2 < q3) {
-                    p = q3;
-                    break;
-                }
-
-                i++;
-            }
-            mp.push_back(poly);
-        }
-        idx.add(mp, id);
+    } else if (auto l = matchLinestring(line)) {
+        idx.add(l.value(), std::move(gid));
+    } else if (auto poly = matchPolygon(line)) {
+        idx.add(poly.value(), std::move(gid));
+    } else if (auto mpoly = matchMultipolygon(line)) {
+        idx.add(mpoly.value(), std::move(gid));
+    } else {
+        throw std::runtime_error("Couldn't parse element \"" + std::string{line});
     }
-    */
 }
 
 // _____________________________________________________________________________
-void parseNew(std::string_view input, size_t *gid,
+void parseNew(std::string_view &input, size_t *gid,
               Sweeper &idx) {
     while (true) {
         auto idp = input.find('\t');
@@ -461,6 +401,37 @@ void parseNew(std::string_view input, size_t *gid,
         }
 
         parseElement(line, std::move(id), idx);
+        ++(*gid);
+    }
+}
+
+void parseStdin(Sweeper& idx) {
+    std::vector<char> buffer;
+    buffer.resize(100'000'000);
+    size_t offset = 0;
+    size_t gid = 0;
+    while (true) {
+        size_t toRead = buffer.size() - offset;
+        auto numRead = read(0, buffer.data() + offset, toRead);
+        if (numRead < toRead) {
+            if (offset + numRead == 0) {
+                return;
+            }
+            if (buffer.at(offset + numRead - 1) != '\n') {
+                buffer.push_back('\n');
+                ++numRead;
+            }
+            std::string_view sv {buffer.data(), offset + numRead};
+            parseNew(sv, &gid, idx);
+            return;
+        }
+        assert(offset + numRead == buffer.size());
+        std::string_view sv {buffer.data(), offset + numRead};
+        parseNew(sv, &gid, idx);
+        auto beg = sv.data() - buffer.data();
+        auto end = beg + sv.size();
+        offset = sv.size();
+        std::shift_left(buffer.data() + beg, buffer.data() + end, beg);
     }
 }
 
@@ -573,9 +544,13 @@ int main(int argc, char **argv) {
     if (!useCache) {
         LOGTO(INFO, std::cerr) << "Parsing input geometries...";
 
+        parseStdin(sweeper);
+
+        /*
         while ((len = read(0, buf, 1024 * 1024 * 100)) > 0) {
             parse(buf, len, dangling, &gid, sweeper);
         }
+         */
 
         sweeper.flush();
     }
