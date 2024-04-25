@@ -413,7 +413,8 @@ void parseStdin(Sweeper& idx) {
     while (true) {
         size_t toRead = buffer.size() - offset;
         auto numRead = read(0, buffer.data() + offset, toRead);
-        if (numRead < toRead) {
+        std::cerr << "to Read" << toRead << "num Read " << numRead << std::endl;
+        if (numRead == 0) {
             if (offset + numRead == 0) {
                 return;
             }
@@ -422,12 +423,12 @@ void parseStdin(Sweeper& idx) {
                 ++numRead;
             }
             std::string_view sv {buffer.data(), offset + numRead};
+            std::cerr << "parsing " << sv.size() << "bytes " << std::endl;
             parseNew(sv, &gid, idx);
             return;
         }
-        assert(offset + numRead == buffer.size());
         std::string_view sv {buffer.data(), offset + numRead};
-        std::cerr << "parsing " << sv.size() << "bytes";
+        std::cerr << "parsing " << sv.size() << "bytes(intermediate)" << std::endl;
         parseNew(sv, &gid, idx);
         auto beg = sv.data() - buffer.data();
         auto end = beg + sv.size();
