@@ -239,6 +239,9 @@ std::optional<I32Polygon> matchPolygon(std::string_view input) {
 }
 
 std::optional<I32MultiPolygon> matchMultipolygon(std::string_view input) {
+    if (input.size() > 200'000) {
+        return std::nullopt;
+    }
 
     if (const auto &m = ctre::starts_with<"\\s*MULTIPOLYGON\\s*\\(">(input); !m) {
         return std::nullopt;
