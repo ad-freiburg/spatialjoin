@@ -393,7 +393,7 @@ void parseNew(std::string_view &input, size_t *gid,
 
 
         std::string id;
-        if (idp != std::string::npos) {
+        if (idp != std::string_view::npos) {
             id = line.substr(0, idp);
             line.remove_prefix(idp + 1);
         } else {
@@ -413,23 +413,32 @@ void parseStdin(Sweeper& idx) {
     size_t gid = 1;
     while (true) {
         size_t toRead = buffer.size() - offset;
-        auto numRead = read(0, buffer.data() + offset, toRead);
-        std::cerr << "to Read" << toRead << "num Read " << numRead << std::endl;
-        if (numRead == 0) {
-            if (offset + numRead == 0) {
+        size_t actualOffset = offset;
+        while (true) {
+            auto numRead = read(0, buffer.data() + actualOffset, toRead);
+            toRead -= numRead;
+            actualOffset += numRead;
+            if (toRead == 0) {
+                // read a complete block, break;
+                break;
+            }
+            //std::cerr << "to Read" << toRead << "num Read " << numRead << std::endl;
+            if (numRead == 0) {
+                if (offset + numRead == 0) {
+                    return;
+                }
+                if (buffer.at(offset + numRead - 1) != '\n') {
+                    buffer.push_back('\n');
+                    ++numRead;
+                }
+                std::string_view sv{buffer.data(), offset + numRead};
+                //std::cerr << "parsing " << sv.size() << "bytes " << std::endl;
+                parseNew(sv, &gid, idx);
                 return;
             }
-            if (buffer.at(offset + numRead - 1) != '\n') {
-                buffer.push_back('\n');
-                ++numRead;
-            }
-            std::string_view sv {buffer.data(), offset + numRead};
-            std::cerr << "parsing " << sv.size() << "bytes " << std::endl;
-            parseNew(sv, &gid, idx);
-            return;
         }
         std::string_view sv {buffer.data(), offset + numRead};
-        std::cerr << "parsing " << sv.size() << "bytes(intermediate)" << std::endl;
+        //std::cerr << "parsing " << sv.size() << "bytes(intermediate)" << std::endl;
         parseNew(sv, &gid, idx);
         auto beg = sv.data() - buffer.data();
         auto end = beg + sv.size();
