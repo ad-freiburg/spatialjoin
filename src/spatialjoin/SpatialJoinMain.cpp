@@ -216,20 +216,15 @@ std::optional<I32Line> matchLinestring(std::string_view input) {
 }
 
 I32Polygon matchPolygonInner(std::string_view input) {
-    /*
-    if (input.size() >= 30000) {
-        std::cerr << "large input " << input.size() << std::endl;
-    }
-     */
     std::vector<I32Line> lines;
     size_t position = 0;
     while (true) {
-        position = input.find('(', position);
+        position = input.find('(', position + 1);
         if (position == std::string_view::npos) {
             break;
         }
         while (true) {
-            auto close = input.find_first_of("()", position);
+            auto close = input.find_first_of("()", position + 1);
             if (close == std::string_view::npos) {
                 throw std::runtime_error("unmatched parentheses");
             }
