@@ -204,7 +204,6 @@ I32Line parseCoordinateList(std::string_view input) {
 std::optional<I32Line> matchLinestring(std::string_view input) {
     static_assert(ctre::starts_with<"\\s*LINESTRING">("LINESTRING(.asdfj)"));
     if (!ctre::starts_with<"\\s*LINESTRING">(input)) {
-        std::cerr << "no Linestring: " << input << std::endl;
         return std::nullopt;
     }
 
@@ -409,7 +408,8 @@ void parseStdin(Sweeper& idx) {
     std::vector<char> buffer;
     buffer.resize(100'000'000);
     size_t offset = 0;
-    size_t gid = 0;
+    // The lines by default were 1-based...
+    size_t gid = 1;
     while (true) {
         size_t toRead = buffer.size() - offset;
         auto numRead = read(0, buffer.data() + offset, toRead);
@@ -438,13 +438,6 @@ void parseStdin(Sweeper& idx) {
 
 // _____________________________________________________________________________
 int main(int argc, char **argv) {
-    std::cerr << getWKT(matchPoint("POINT(30.2934 12)").value()) << std::endl;
-    auto p = matchPoint("POINT(30 10)").value();
-    std::cerr << getWKT(p) << std::endl;
-    std::cerr << getWKT(matchLinestring(" LINESTRING(30 10, 27.12340 17, 12.3 5)").value()) << std::endl;
-    std::cerr << getWKT(matchPolygon(" POLYGON((30 10, 27.12340 17, 12.3 5))").value()) << std::endl;
-    std::cerr << getWKT(matchMultipolygon("MULTIPOLYGON (((30 20, 45 40, 10 40, 30 20)),\n"
-                                          "((15 5, 40 10, 10 20, 5 10, 15 5)))").value()) << std::endl;
     // disable output buffering for standard output
     setbuf(stdout, NULL);
 
