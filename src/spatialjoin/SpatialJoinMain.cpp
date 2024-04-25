@@ -371,7 +371,7 @@ void parseElement(std::string_view line, std::string gid,
     } else if (auto mpoly = matchMultipolygon(line)) {
         idx.add(mpoly.value(), std::move(gid));
     } else {
-        std::cerr << "Couldn't parse element \"" + std::string{line});
+        std::cerr << "Couldn't parse element \"" + std::string{line};
         return;
     }
 }
