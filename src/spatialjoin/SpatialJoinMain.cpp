@@ -150,15 +150,10 @@ util::geo::I32Point parsePoint(const std::string &a, size_t p) {
 }
 
 static constexpr ctll::fixed_string floatRegex = "[0-9]+(\\.[0-9]+)?";
-static constexpr ctll::fixed_string coordinateRegex = "[0-9]+(\\.[0-9]+)?";
+static constexpr ctll::fixed_string coordinateRegex = grp(floatRegex, fs("n1")) + fs("\\s+") + grp(floatRegex, fs("n2"));
 
 std::optional<I32Point> matchPoint(std::string_view input) {
-    static_assert(ctre::match<"\\s*POINT\\s*\\([0-9]+(\\.[0-9]+)?\\s+[0-9]+(\\\\.[0-9]+)?\\s*\\)">(
-            std::string_view{"POINT(30.2934 12)"}));
-    //static_assert(ctre::match<"\\s*POINT\\s*\\((?<alp>[0-9]+(\\.[0-9]+)?)\\s+([0-9]+(\\\\.[0-9]+))?\\s*\\)">("POINT(30.2934 12)"));
-    //static constexpr ctll::fixed_string pointRegex = "\\s*POINT\\s*\\((?<n1>[0-9]+(\\.[0-9]+)?)\\s+(?<n2>[0-9]+(\\.[0-9]+)?)\\)";
-    static constexpr ctll::fixed_string pointRegex = fs("\\s*POINT\\s*\\(") + grp(floatRegex, fs("n1")) + fs("\\s+") + grp(floatRegex, fs("n2")) + fs("\\)");
-    static_assert(ctre::match<"\\s*POINT\\s*\\((?<n1>[0-9]+(\\.[0-9]+)?)\\s+(?<n1>[0-9]+(\\.[0-9]+)?)\\)">("POINT (3.102 30)"));
+    static constexpr ctll::fixed_string pointRegex = fs("\\s*POINT\\s*\\(") + coordinateRegex + fs("\\)");
     static_assert(ctre::match<pointRegex>("POINT (3.102 30)"));
     auto match = ctre::match<pointRegex>(input);
     if (!match) {
@@ -177,13 +172,13 @@ std::optional<I32Point> matchPoint(std::string_view input) {
 
 I32Line parseCoordinateList(std::string_view input) {
     I32Line line;
-    for (const auto &m: ctre::range<"(?<n1>[0-9]+(\\\\.[0-9]+)?)\\\\s+(?<n2>[0-9]+(\\\\.[0-9]+))?">(input)) {
+    for (const auto &m: ctre::range<coordinateRegex>(input)) {
         float f1;
         float f2;
         const auto &m1 = m.get<"n1">().to_view();
         const auto &m2 = m.get<"n2">().to_view();
         absl::from_chars(m1.data(), m1.data() + m1.size(), f1);
-        absl::from_chars(m1.data(), m1.data() + m1.size(), f2);
+        absl::from_chars(m2.data(), m2.data() + m2.size(), f2);
         auto projPoint = latLngToWebMerc(DPoint(f1, f2));
         line.push_back(I32Point{projPoint.getX() * PREC, projPoint.getY() * PREC});
     }
@@ -191,7 +186,9 @@ I32Line parseCoordinateList(std::string_view input) {
 }
 
 std::optional<I32Line> matchLinestring(std::string_view input) {
-    if (ctre::starts_with<"\\s*LINESTRING">(input)) {
+    static_assert(ctre::starts_with<"\\s*LINESTRING">("LINESTRING(.asdfj)"));
+    if (!ctre::starts_with<"\\s*LINESTRING">(input)) {
+        std::cerr << "no Linestring: " << input << std::endl;
         return std::nullopt;
     }
 
@@ -200,7 +197,7 @@ std::optional<I32Line> matchLinestring(std::string_view input) {
 }
 
 std::optional<I32Polygon> matchPolygon(std::string_view input) {
-    if (ctre::starts_with<"\\s*POLYGON">(input)) {
+    if (!ctre::starts_with<"\\s*POLYGON">(input)) {
         return std::nullopt;
     }
 
@@ -456,7 +453,8 @@ int main(int argc, char **argv) {
     std::cerr << getWKT(matchPoint("POINT(30.2934 12)").value()) << std::endl;
     auto p = matchPoint("POINT(30 10)").value();
     std::cerr << getWKT(p) << std::endl;
-    std::cerr << getWKT(matchLinestring(" LINESTRING(30 10, 27.12340 17, 12.3 5").value()) << std::endl;
+    std::cerr << getWKT(matchLinestring(" LINESTRING(30 10, 27.12340 17, 12.3 5)").value()) << std::endl;
+    std::cerr << getWKT(matchPolygon(" POLYGON((30 10, 27.12340 17, 12.3 5))").value()) << std::endl;
     // disable output buffering for standard output
     setbuf(stdout, NULL);
 
