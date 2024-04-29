@@ -133,7 +133,7 @@ I32Line parseCoordinateList(std::string_view input) {
         // TODO<joka921> We currently match the regex twice.
         line.push_back(matchPointCoordinates(m.to_view()));
     }
-    return line;
+    return util::geo::simplify(line, 0);
 }
 
 std::optional<I32Line> matchLinestring(std::string_view input) {
@@ -214,12 +214,11 @@ std::optional<ElementVariant> parseElement(std::string_view line
     } else if (auto mpoly = matchMultipolygon(line)) {
         return std::move(mpoly.value());
     } else {
+        if (! ctre::search<"GEOMETRY">(line)) {
+            std::cerr << "Couldn't parse line of size " << line.size() << std::endl;
+            std::cerr << "Couldn't parse element \"" << line.substr(0, 40) << std::endl;
+        }
         return std::nullopt;
-        /*
-        std::cerr << "Couldn't parse line of size " << line.size() << std::endl;
-        std::cerr << "Couldn't parse element \"" << line.substr(0, 40) << std::endl;
-        throw std::runtime_error("Illegal element found, aborting");
-         */
     }
 }
 
