@@ -120,7 +120,7 @@ I32Point matchPointCoordinates(std::string_view input) {
 
 std::optional<I32Point> matchPoint(std::string_view input) {
     static constexpr ctll::fixed_string pointPrefix = fs(R"(\s*POINT\s*\()");
-    auto match = ctre::match<pointPrefix>(input);
+    auto match = ctre::search<pointPrefix>(input);
     if (!match) {
         return std::nullopt;
     }
