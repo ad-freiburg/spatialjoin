@@ -203,7 +203,7 @@ using ElementVariant = std::variant<I32Point, I32Polygon, I32MultiPolygon, I32Li
 
 
 // _____________________________________________________________________________
-ElementVariant parseElement(std::string_view line
+std::optional<ElementVariant> parseElement(std::string_view line
 ) {
     if (auto p = matchPoint(line)) {
         return std::move(p.value());
@@ -214,9 +214,12 @@ ElementVariant parseElement(std::string_view line
     } else if (auto mpoly = matchMultipolygon(line)) {
         return std::move(mpoly.value());
     } else {
+        return std::nullopt;
+        /*
         std::cerr << "Couldn't parse line of size " << line.size() << std::endl;
         std::cerr << "Couldn't parse element \"" << line.substr(0, 40) << std::endl;
         throw std::runtime_error("Illegal element found, aborting");
+         */
     }
 }
 
@@ -245,7 +248,11 @@ std::vector<std::pair<ElementVariant, std::string>> parseNew(std::string_view &i
             id = std::to_string(*gid);
         }
 
-        result.emplace_back(parseElement(line), std::move(id));
+        auto element = parseElement(line);
+        if (!element.has_value()) {
+            continue;
+        }
+        result.emplace_back(std::move(element.value()), std::move(id));
         ++(*gid);
     }
 }
