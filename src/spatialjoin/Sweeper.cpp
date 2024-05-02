@@ -96,6 +96,8 @@ void Sweeper::add(const util::geo::I32Polygon& poly, const std::string& gid,
   double areaSize = util::geo::area(poly);
   BoxIdList boxIds;
   if (_cfg.useBoxIds) boxIds = packBoxIds(getBoxIds(spoly, poly, box, areaSize));
+  util::geo::I32Polygon obb;
+  if (_cfg.useOBB) obb = util::geo::convexHull(util::geo::getOrientedEnvelope(poly));
 
   if (!_cfg.useArea) areaSize = 0;
 
@@ -106,6 +108,7 @@ void Sweeper::add(const util::geo::I32Polygon& poly, const std::string& gid,
       subid,
       areaSize,
       boxIds,
+      obb
   });
 
   diskAdd({id, box.getLowerLeft().getY(), box.getUpperRight().getY(),
@@ -128,6 +131,8 @@ void Sweeper::add(const util::geo::I32Line& line, const std::string& gid,
   const auto& box = util::geo::getBoundingBox(line);
   BoxIdList boxIds;
   if (_cfg.useBoxIds) boxIds = packBoxIds(getBoxIds(line, box));
+  util::geo::I32Polygon obb;
+  if (_cfg.useOBB) obb = util::geo::convexHull(util::geo::getOrientedEnvelope(line));
 
   if (line.size() == 2 && (!_cfg.useBoxIds || boxIds.front().first == 1) && subid == 0) {
     // simple line
@@ -142,7 +147,7 @@ void Sweeper::add(const util::geo::I32Line& line, const std::string& gid,
     const util::geo::I32XSortedLine sline(line);
 
     size_t id = _lineCache.add(Line{
-        sline, box, gid, subid, boxIds,  //{}  // dummy
+        sline, box, gid, subid, boxIds, obb//{}  // dummy
     });
 
     diskAdd({id, box.getLowerLeft().getY(), box.getUpperRight().getY(),
@@ -322,6 +327,14 @@ void Sweeper::sweep() {
 // _____________________________________________________________________________
 std::pair<bool, bool> Sweeper::check(const Area* a, const Area* b,
                                      size_t t) const {
+  if (_cfg.useOBB) {
+    auto ts = TIME();
+    auto r = util::geo::intersects(a->obb, b->obb);
+    _stats[t].timeOBBIsectAreaArea += TOOK(ts);
+    if (!r) {
+      return {0, 0};
+    }
+  }
   if (_cfg.useBoxIds) {
     auto ts = TIME();
     auto r = boxIdIsect(a->boxIds, b->boxIds);
@@ -353,6 +366,14 @@ std::pair<bool, bool> Sweeper::check(const Area* a, const Area* b,
 // _____________________________________________________________________________
 std::pair<bool, bool> Sweeper::check(const Line* a, const Area* b,
                                      size_t t) const {
+  if (_cfg.useOBB) {
+    auto ts = TIME();
+    auto r = util::geo::intersects(a->obb, b->obb);
+    _stats[t].timeOBBIsectAreaLine += TOOK(ts);
+    if (!r) {
+      return {0, 0};
+    }
+  }
   if (_cfg.useBoxIds) {
     auto ts = TIME();
     auto r = boxIdIsect(a->boxIds, b->boxIds);
@@ -383,6 +404,14 @@ std::pair<bool, bool> Sweeper::check(const Line* a, const Area* b,
 
 // _____________________________________________________________________________
 bool Sweeper::check(const Line* a, const Line* b, size_t t) const {
+  if (_cfg.useOBB) {
+    auto ts = TIME();
+    auto r = util::geo::intersects(a->obb, b->obb);
+    _stats[t].timeOBBIsectLineLine += TOOK(ts);
+    if (!r) {
+      return false;
+    }
+  }
   if (_cfg.useBoxIds) {
     auto ts = TIME();
     auto r = boxIdIsect(a->boxIds, b->boxIds);

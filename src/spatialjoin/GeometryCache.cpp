@@ -130,9 +130,9 @@ sj::Line sj::GeometryCache<sj::Line>::getFromDisk(size_t off,
   }
 
   // OBB
-  // ret.obb.getOuter().resize(5);
-  // _geomsFReads[tid].read(reinterpret_cast<char*>(&ret.obb.getOuter()[0]),
-  // sizeof(util::geo::I32Point) * 5);
+  ret.obb.getOuter().resize(5);
+  _geomsFReads[tid].read(reinterpret_cast<char*>(&ret.obb.getOuter()[0]),
+  sizeof(util::geo::I32Point) * 5);
 
   return ret;
 }
@@ -195,9 +195,9 @@ sj::Area sj::GeometryCache<sj::Area>::getFromDisk(size_t off,
   // }
 
   // OBB
-  // ret.obb.getOuter().resize(5);
-  // _geomsFReads[tid].read(reinterpret_cast<char*>(&ret.obb.getOuter()[0]),
-  // sizeof(util::geo::I32Point) * 5);
+  ret.obb.getOuter().resize(5);
+  _geomsFReads[tid].read(reinterpret_cast<char*>(&ret.obb.getOuter()[0]),
+  sizeof(util::geo::I32Point) * 5);
 
   return ret;
 }
@@ -281,9 +281,9 @@ size_t sj::GeometryCache<sj::Line>::add(const sj::Line& val) {
   _geomsOffset += sizeof(uint32_t) + sizeof(sj::boxids::BoxId) * size;
 
   // OBB
-  // _geomsF.write(reinterpret_cast<const char*>(&val.obb.getOuter()[0]),
-  // sizeof(util::geo::I32Point) * 5);
-  // _geomsOffset += sizeof(util::geo::I32Point) * 5;
+  _geomsF.write(reinterpret_cast<const char*>(&val.obb.getOuter()[0]),
+  sizeof(util::geo::I32Point) * 5);
+  _geomsOffset += sizeof(util::geo::I32Point) * 5;
 
   return ret;
 }
@@ -347,9 +347,9 @@ size_t sj::GeometryCache<sj::Area>::add(const sj::Area& val) {
   // }
 
   // OBB
-  // _geomsF.write(reinterpret_cast<const char*>(&val.obb.getOuter()[0]),
-  // sizeof(util::geo::I32Point) * 5);
-  // _geomsOffset += sizeof(util::geo::I32Point) * 5;
+  _geomsF.write(reinterpret_cast<const char*>(&val.obb.getOuter()[0]),
+  sizeof(util::geo::I32Point) * 5);
+  _geomsOffset += sizeof(util::geo::I32Point) * 5;
 
   return ret;
 }

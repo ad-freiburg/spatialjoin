@@ -16,6 +16,11 @@ struct Stats {
   uint64_t timeBoxIdIsectAreaPoint = 0;
   uint64_t timeBoxIdIsectLineLine = 0;
 
+  uint64_t timeOBBIsectAreaArea = 0;
+  uint64_t timeOBBIsectAreaLine = 0;
+  uint64_t timeOBBIsectAreaPoint = 0;
+  uint64_t timeOBBIsectLineLine = 0;
+
   uint64_t timeFullGeoCheckAreaArea = 0;
   uint64_t timeFullGeoCheckAreaLine = 0;
   uint64_t timeFullGeoCheckAreaPoint = 0;
@@ -34,6 +39,8 @@ inline std::string Stats::toString() {
       double(timeGeoCacheRetrievalArea + timeGeoCacheRetrievalLine + timeWrite +
              timeBoxIdIsectAreaArea + timeBoxIdIsectAreaLine +
              timeBoxIdIsectAreaPoint + timeBoxIdIsectLineLine +
+	     timeOBBIsectAreaArea + timeOBBIsectAreaLine +
+	     timeOBBIsectAreaPoint + timeOBBIsectLineLine +
              timeFullGeoCheckAreaArea + timeFullGeoCheckAreaLine +
              timeFullGeoCheckAreaPoint + timeFullGeoCheckLineLine) /
       1000000000.0;
@@ -62,6 +69,22 @@ inline std::string Stats::toString() {
 
   t = double(timeBoxIdIsectLineLine) / 1000000000.0;
   ss << "time for box ID intersections LINE/LINE: " << t << " s ("
+     << ((t / sum) * 100.0) << "%)\n";
+
+  t = double(timeOBBIsectAreaArea) / 1000000000.0;
+  ss << "time for obb intersections AREA/AREA: " << t << " s ("
+     << ((t / sum) * 100.0) << "%)\n";
+
+  t = double(timeOBBIsectAreaLine) / 1000000000.0;
+  ss << "time for obb intersections AREA/LINE: " << t << " s ("
+     << ((t / sum) * 100.0) << "%)\n";
+
+  t = double(timeOBBIsectAreaPoint) / 1000000000.0;
+  ss << "time for obb intersections AREA/POINT: " << t << " s ("
+     << ((t / sum) * 100.0) << "%)\n";
+
+  t = double(timeOBBIsectLineLine) / 1000000000.0;
+  ss << "time for obb intersections LINE/LINE: " << t << " s ("
      << ((t / sum) * 100.0) << "%)\n";
 
   t = double(timeFullGeoCheckAreaArea) / 1000000000.0;
@@ -100,6 +123,10 @@ inline Stats operator+(const Stats& a, const Stats& b) {
                a.timeBoxIdIsectAreaLine + b.timeBoxIdIsectAreaLine,
                a.timeBoxIdIsectAreaPoint + b.timeBoxIdIsectAreaPoint,
                a.timeBoxIdIsectLineLine + b.timeBoxIdIsectLineLine,
+               a.timeOBBIsectAreaArea + b.timeOBBIsectAreaArea,
+               a.timeOBBIsectAreaLine + b.timeOBBIsectAreaLine,
+               a.timeOBBIsectAreaPoint + b.timeOBBIsectAreaPoint,
+               a.timeOBBIsectLineLine + b.timeOBBIsectLineLine,
                a.timeFullGeoCheckAreaArea + b.timeFullGeoCheckAreaArea,
                a.timeFullGeoCheckAreaLine + b.timeFullGeoCheckAreaLine,
                a.timeFullGeoCheckAreaPoint + b.timeFullGeoCheckAreaPoint,

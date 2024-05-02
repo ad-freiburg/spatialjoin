@@ -53,7 +53,7 @@ struct Area {
   // std::unordered_map<int32_t, util::geo::I32XSortedMultiPolygon> cutouts;
 
   // OBB
-  // util::geo::I32Polygon obb;
+  util::geo::I32Polygon obb;
 };
 
 struct SimpleLine {
@@ -82,7 +82,7 @@ struct Line {
   std::vector<sj::boxids::BoxId> boxIds;
 
   // OBB
-  // util::geo::I32Polygon obb;
+  util::geo::I32Polygon obb;
 };
 
 struct Point {

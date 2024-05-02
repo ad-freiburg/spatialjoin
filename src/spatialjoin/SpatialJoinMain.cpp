@@ -54,6 +54,9 @@ void printHelp(int argc, char** argv) {
             << "disable box id criteria for contains/intersect computation\n"
             << std::setw(41) << "  --no-surface-area"
             << "disable surface area criteria for polygon contains\n"
+            << std::setw(41) << "  --no-oriented-envelope"
+            << "disable oriented envelope cirteria for contains/intersect"
+            << " computation\n"
             << std::endl;
 }
 
@@ -219,6 +222,7 @@ int main(int argc, char** argv) {
 
   bool useBoxIds = true;
   bool useArea = true;
+  bool useOBB = true;
 
   for (int i = 1; i < argc; i++) {
     std::string cur = argv[i];
@@ -254,6 +258,9 @@ int main(int argc, char** argv) {
         }
         if (cur == "--no-surface-area") {
           useArea = false;
+        }
+        if (cur == "--no-oriented-envelope") {
+          useOBB = false;
         }
         break;
       case 1:
@@ -291,8 +298,8 @@ int main(int argc, char** argv) {
 
   size_t NUM_THREADS = std::thread::hardware_concurrency();
 
-  Sweeper sweeper({NUM_THREADS, prefix, intersects, contains, suffix, useBoxIds, useArea}, useCache,
-                  cache, output);
+  Sweeper sweeper({NUM_THREADS, prefix, intersects, contains, suffix, useBoxIds,
+                  useArea, useOBB}, useCache, cache, output);
 
   size_t gid = 0;
 
