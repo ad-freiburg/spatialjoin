@@ -171,6 +171,9 @@ sj::Area sj::GeometryCache<sj::Area>::getFromDisk(size_t off,
   // area
   _geomsFReads[tid].read(reinterpret_cast<char*>(&ret.area), sizeof(double));
 
+  // outer area
+  _geomsFReads[tid].read(reinterpret_cast<char*>(&ret.outerArea), sizeof(double));
+
   // simplified inner
   // readPoly(_geomsFReads[tid], ret.inner);
 
@@ -322,6 +325,10 @@ size_t sj::GeometryCache<sj::Area>::add(const sj::Area& val) {
 
   // area
   _geomsF.write(reinterpret_cast<const char*>(&val.area), sizeof(double));
+  _geomsOffset += sizeof(double);
+
+  // outer area
+  _geomsF.write(reinterpret_cast<const char*>(&val.outerArea), sizeof(double));
   _geomsOffset += sizeof(double);
 
   // innerGeom

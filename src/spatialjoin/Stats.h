@@ -98,7 +98,7 @@ inline std::string Stats::toString() {
 
   t = double(timeFullGeoCheckLinePoint) / 1000000000.0;
   ss << "time for " << fullGeoChecksLinePoint
-     << " full geom checks LINE/Point: " << t << " s (" << ((t / sum) * 100.0)
+     << " full geom checks LINE/POINT: " << t << " s (" << ((t / sum) * 100.0)
      << "%)\n";
 
   t = double(timeWrite) / 1000000000.0;

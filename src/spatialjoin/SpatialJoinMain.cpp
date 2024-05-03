@@ -41,8 +41,8 @@ void printHelp(int argc, char** argv) {
       << "output file (.bz2 or .gz supported), empty prints to stdout\n"
       << std::setw(41) << "  -c [ --cache ] (default: '.')"
       << "cache directory for intermediate files\n"
-      << std::setw(41) << "  -C"
-      << "don't parse input, re-use intermediate cache files\n"
+      // << std::setw(41) << "  -C"
+      // << "don't parse input, re-use intermediate cache files\n"
       << std::setw(41) << "  --prefix (default: '')"
       << "prefix added at the beginning of every relation\n"
       << std::setw(41) << "  --intersects (default: ' intersects ')"
@@ -51,6 +51,14 @@ void printHelp(int argc, char** argv) {
       << "separator between containing geometry IDs\n"
       << std::setw(41) << "  --covers (default: ' covers ')"
       << "separator between covering geometry IDs\n"
+      << std::setw(41) << "  --touches (default: ' touches ')"
+      << "separator between touching geometry IDs\n"
+      << std::setw(41) << "  --equals (default: ' equals ')"
+      << "separator between equivalent geometry IDs\n"
+      << std::setw(41) << "  --overlaps (default: ' overlaps ')"
+      << "separator between overlapping geometry IDs\n"
+      << std::setw(41) << "  --crosses (default: ' crosses ')"
+      << "separator between crossing geometry IDs\n"
       << std::setw(41) << "  --suffix (default: '\\n')"
       << "suffix added at the beginning of every relation\n\n"
       << std::setfill(' ') << std::left << "Geometric computation:\n"
@@ -79,6 +87,10 @@ int main(int argc, char** argv) {
   std::string contains = " contains ";
   std::string intersects = " intersects ";
   std::string covers = " covers ";
+  std::string touches = " touches ";
+  std::string equals = " equals ";
+  std::string overlaps = " overlaps ";
+  std::string crosses = " crosses ";
   std::string suffix = "\n";
 
   bool useBoxIds = true;
@@ -92,9 +104,9 @@ int main(int argc, char** argv) {
           printHelp(argc, argv);
           exit(0);
         }
-        if (cur == "-C") {
-          useCache = true;
-        }
+        // if (cur == "-C") {
+          // useCache = true;
+        // }
         if (cur == "--prefix") {
           state = 1;
         }
@@ -115,6 +127,18 @@ int main(int argc, char** argv) {
         }
         if (cur == "--covers") {
           state = 7;
+        }
+        if (cur == "--touches") {
+          state = 8;
+        }
+        if (cur == "--equals") {
+          state = 9;
+        }
+        if (cur == "--overlaps") {
+          state = 10;
+        }
+        if (cur == "--crosses") {
+          state = 11;
         }
         if (cur == "--no-box-ids") {
           useBoxIds = false;
@@ -151,6 +175,22 @@ int main(int argc, char** argv) {
         covers = cur;
         state = 0;
         break;
+      case 8:
+        touches = cur;
+        state = 0;
+        break;
+      case 9:
+        equals = cur;
+        state = 0;
+        break;
+      case 10:
+        overlaps = cur;
+        state = 0;
+        break;
+      case 11:
+        crosses = cur;
+        state = 0;
+        break;
     }
   }
 
@@ -161,8 +201,8 @@ int main(int argc, char** argv) {
 
   size_t NUM_THREADS = std::thread::hardware_concurrency();
 
-  Sweeper sweeper({NUM_THREADS, prefix, intersects, contains, covers, suffix,
-                   useBoxIds, useArea},
+  Sweeper sweeper({NUM_THREADS, prefix, intersects, contains, covers, touches,
+                   equals, overlaps, crosses, suffix, useBoxIds, useArea},
                   useCache, cache, output);
 
   if (!useCache) {

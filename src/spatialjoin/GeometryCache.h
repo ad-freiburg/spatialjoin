@@ -40,6 +40,9 @@ struct Area {
   // area
   double area;
 
+  // outer area
+  double outerArea;
+
   // inner geom
   // util::geo::I32XSortedPolygon inner;
 

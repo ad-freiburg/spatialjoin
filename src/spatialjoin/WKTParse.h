@@ -67,6 +67,14 @@ void parse(const char* c, size_t size, std::string& dangling, size_t* gid,
         p += 6;
         auto point = parsePoint(dangling, p);
         idx.add(point, id);
+      } else if ((p = dangling.rfind("MULTIPOINT(", start)) !=
+
+                 std::string::npos) {
+        p += 11;
+        const auto& mp = parseLineString(dangling, p);
+        if (mp.size() != 0) {
+          idx.addMp(mp, id);
+        }
       } else if ((p = dangling.rfind("LINESTRING(", start)) !=
 
                  std::string::npos) {

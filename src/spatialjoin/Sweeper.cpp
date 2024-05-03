@@ -1,7 +1,7 @@
 #include <bzlib.h>
-#include <zlib.h>
 #include <stdio.h>
 #include <unistd.h>
+#include <zlib.h>
 
 #include <algorithm>
 #include <cassert>
@@ -57,11 +57,11 @@ void Sweeper::add(const I32MultiLine& a, const std::string& gid) {
 }
 
 // _____________________________________________________________________________
-void Sweeper::add(const I32MultiPoint& a, const std::string& gid) {
+void Sweeper::addMp(const I32MultiPoint& a, const std::string& gid) {
   uint16_t subid = 0;  // a subid of 0 means "single point"
   if (a.size() > 1) subid = 1;
 
-  add(a, gid, subid);
+  addMp(a, gid, subid);
 }
 
 // _____________________________________________________________________________
@@ -87,14 +87,33 @@ size_t Sweeper::add(const I32MultiLine& a, const std::string& gid,
 }
 
 // _____________________________________________________________________________
-size_t Sweeper::add(const I32MultiPoint& a, const std::string& gid,
-                    size_t subid) {
-  if (subid > 0) _subSizes[gid] = _subSizes[gid] + a.size();
-  for (const auto& point : a) {
-    add(point, gid, subid);
-    subid++;
+size_t Sweeper::addMp(const I32MultiPoint& a, const std::string& gid,
+                      size_t subid) {
+  if (subid > 0) {
+    _subSizes[gid] = _subSizes[gid] + a.size();
   }
-  return subid;
+  size_t newId = subid;
+  for (const auto& point : a) {
+    add(point, gid, newId);
+    newId++;
+  }
+  return newId;
+}
+
+// _____________________________________________________________________________
+void Sweeper::multiAdd(const std::string& gid, int32_t xLeft, int32_t xRight) {
+  auto i = _multiGidToId.find(gid);
+
+  if (i == _multiGidToId.end()) {
+    _multiIds.push_back(gid);
+    _multiRightX.push_back(xRight);
+    _multiLeftX.push_back(xLeft);
+    _multiGidToId[gid] = _multiIds.size() - 1;
+  } else {
+    size_t id = _multiGidToId[gid];
+    if (xRight > _multiRightX[id]) _multiRightX[id] = xRight;
+    if (xLeft > _multiLeftX[id]) _multiLeftX[id] = xLeft;
+  }
 }
 
 // _____________________________________________________________________________
@@ -108,19 +127,23 @@ void Sweeper::add(const I32Polygon& poly, const std::string& gid,
   const auto& box = getBoundingBox(poly);
   const I32XSortedPolygon spoly(poly);
   double areaSize = area(poly);
+  double outerAreaSize = outerArea(poly);
   BoxIdList boxIds;
   if (_cfg.useBoxIds)
     boxIds = packBoxIds(getBoxIds(spoly, poly, box, areaSize));
 
+  if (subid > 0)
+    multiAdd(gid, box.getLowerLeft().getX(), box.getUpperRight().getX());
+
   if (!_cfg.useArea) areaSize = 0;
 
-  size_t id = _areaCache.add({spoly, box, gid, subid, areaSize, boxIds});
+  size_t id =
+      _areaCache.add({spoly, box, gid, subid, areaSize, outerAreaSize, boxIds});
 
   diskAdd({id, box.getLowerLeft().getY(), box.getUpperRight().getY(),
            box.getLowerLeft().getX(), false, POLYGON, areaSize});
   diskAdd({id, box.getLowerLeft().getY(), box.getUpperRight().getY(),
            box.getUpperRight().getX(), true, POLYGON, areaSize});
-  _curSweepId++;
 
   if (_curSweepId % 1000000 == 0) LOGTO(INFO, std::cerr) << "@ " << _curSweepId;
 }
@@ -136,6 +159,9 @@ void Sweeper::add(const I32Line& line, const std::string& gid, size_t subid) {
   BoxIdList boxIds;
   if (_cfg.useBoxIds) boxIds = packBoxIds(getBoxIds(line, box));
   double len = util::geo::len(line);
+
+  if (subid > 0)
+    multiAdd(gid, box.getLowerLeft().getX(), box.getUpperRight().getX());
 
   if (line.size() == 2 && (!_cfg.useBoxIds || boxIds.front().first == 1) &&
       subid == 0) {
@@ -156,7 +182,6 @@ void Sweeper::add(const I32Line& line, const std::string& gid, size_t subid) {
     diskAdd({id, box.getLowerLeft().getY(), box.getUpperRight().getY(),
              box.getUpperRight().getX(), true, LINE, len});
   }
-  _curSweepId++;
 
   if (_curSweepId % 1000000 == 0) LOGTO(INFO, std::cerr) << "@ " << _curSweepId;
 }
@@ -169,15 +194,188 @@ void Sweeper::add(const I32Point& point, const std::string& gid) {
 // _____________________________________________________________________________
 void Sweeper::add(const I32Point& point, const std::string& gid, size_t subid) {
   size_t id = _pointCache.add({gid, subid});
+  if (subid > 0) multiAdd(gid, point.getX(), point.getX());
   diskAdd({id, point.getY(), point.getY(), point.getX(), false, POINT, 0});
   diskAdd({id, point.getY(), point.getY(), point.getX(), true, POINT, 0});
-  _curSweepId++;
 
   if (_curSweepId % 1000000 == 0) LOGTO(INFO, std::cerr) << "@ " << _curSweepId;
 }
 
 // _____________________________________________________________________________
+void Sweeper::clearMultis(bool force) {
+  int32_t curMinThreadX = std::numeric_limits<int32_t>::max();
+
+  for (size_t i = 0; i < _cfg.numThreads; i++) {
+    if (_atomicCurX[i] < curMinThreadX) curMinThreadX = _atomicCurX[i];
+  }
+
+  size_t c = 0;
+
+  for (auto a = _activeMultis.begin(); a != _activeMultis.end();) {
+    size_t mid = *a;
+    const std::string& gid = _multiIds[mid];
+    int32_t rightX = _multiRightX[mid];
+    if (force || rightX < curMinThreadX) {
+      multiOut(_cfg.numThreads, gid);
+      a = _activeMultis.erase(a);
+      c++;
+    } else {
+      a++;
+    }
+  }
+}
+
+// _____________________________________________________________________________
+void Sweeper::multiOut(size_t t, const std::string& gidA) {
+  // write touches
+  {
+    std::unique_lock<std::mutex> lock(_mutTouches);
+    auto i = _subTouches.find(gidA);
+    if (i != _subTouches.end()) {
+      for (const auto& b : i->second) {
+        auto gidB = b;
+        std::unique_lock<std::mutex> lock(_mutNotTouches);
+        auto j = _subNotTouches.find(gidA);
+        if (j != _subNotTouches.end()) {
+          auto k = j->second.find(gidB);
+          if (k == j->second.end()) {
+            writeRel(t, gidA, gidB, _cfg.sepTouches);
+            writeRel(t, gidB, gidA, _cfg.sepTouches);
+
+            auto bEntry = _subTouches.find(gidB);
+            if (bEntry != _subTouches.end()) bEntry->second.erase(gidA);
+
+            auto bEntryN = _subNotTouches.find(gidB);
+            if (bEntryN != _subNotTouches.end()) bEntryN->second.erase(gidA);
+          }
+        } else {
+          writeRel(t, gidA, gidB, _cfg.sepTouches);
+          writeRel(t, gidB, gidA, _cfg.sepTouches);
+        }
+      }
+    }
+  }
+
+  // write crosses
+  {
+    std::unique_lock<std::mutex> lock(_mutCrosses);
+    auto i = _subCrosses.find(gidA);
+    if (i != _subCrosses.end()) {
+      for (const auto& b : i->second) {
+        auto gidB = b;
+        std::unique_lock<std::mutex> lock(_mutNotCrosses);
+        auto j = _subNotCrosses.find(gidA);
+        if (j != _subNotCrosses.end()) {
+          auto k = j->second.find(gidB);
+          if (k == j->second.end()) {
+            writeRel(t, gidA, gidB, _cfg.sepCrosses);
+            writeRel(t, gidB, gidA, _cfg.sepCrosses);
+
+            auto bEntry = _subCrosses.find(gidB);
+            if (bEntry != _subCrosses.end()) bEntry->second.erase(gidA);
+
+            auto bEntryN = _subNotCrosses.find(gidB);
+            if (bEntryN != _subNotCrosses.end()) bEntryN->second.erase(gidA);
+          }
+        } else {
+          writeRel(t, gidA, gidB, _cfg.sepCrosses);
+          writeRel(t, gidB, gidA, _cfg.sepCrosses);
+        }
+      }
+    }
+  }
+
+  // write overlaps
+  {
+    std::unique_lock<std::mutex> lock(_mutOverlaps);
+    auto i = _subOverlaps.find(gidA);
+    if (i != _subOverlaps.end()) {
+      for (const auto& b : i->second) {
+        auto gidB = b;
+        std::unique_lock<std::mutex> lock(_mutNotOverlaps);
+        if (!notOverlaps(gidA, gidB)) {
+          writeRel(t, gidA, gidB, _cfg.sepOverlaps);
+          writeRel(t, gidB, gidA, _cfg.sepOverlaps);
+
+          auto bEntry = _subOverlaps.find(gidB);
+          if (bEntry != _subOverlaps.end()) bEntry->second.erase(gidA);
+
+          auto bEntryN = _subNotOverlaps.find(gidB);
+          if (bEntryN != _subNotOverlaps.end()) bEntryN->second.erase(gidA);
+        }
+      }
+    }
+  }
+
+  // write overlaps caused by incomplete covers
+  {
+    std::unique_lock<std::mutex> lock(_mutCovers);
+    auto i = _subCovered.find(gidA);
+    if (i != _subCovered.end()) {
+      for (const auto& b : i->second) {
+        auto gidB = b.first;
+        if (b.second.size() == _subSizes[gidA]) continue;
+
+        std::unique_lock<std::mutex> lock(_mutNotOverlaps);
+        if (!notOverlaps(gidA, gidB)) {
+          writeRel(t, gidA, gidB, _cfg.sepOverlaps);
+          writeRel(t, gidB, gidA, _cfg.sepOverlaps);
+
+          auto bEntry = _subOverlaps.find(gidB);
+          if (bEntry != _subOverlaps.end()) bEntry->second.erase(gidA);
+
+          auto bEntryN = _subNotOverlaps.find(gidB);
+          if (bEntryN != _subNotOverlaps.end()) bEntryN->second.erase(gidA);
+        }
+      }
+    }
+  }
+
+  {
+    std::unique_lock<std::mutex> lock(_mutContains);
+    _subContains.erase(gidA);
+  }
+  {
+    std::unique_lock<std::mutex> lock(_mutCovers);
+    _subCovered.erase(gidA);
+  }
+  {
+    std::unique_lock<std::mutex> lock(_mutEquals);
+    _subEquals.erase(gidA);
+  }
+  {
+    std::unique_lock<std::mutex> lock(_mutTouches);
+    _subTouches.erase(gidA);
+  }
+  {
+    std::unique_lock<std::mutex> lock(_mutNotTouches);
+    _subNotTouches.erase(gidA);
+  }
+  {
+    std::unique_lock<std::mutex> lock(_mutCrosses);
+    _subCrosses.erase(gidA);
+  }
+  {
+    std::unique_lock<std::mutex> lock(_mutNotCrosses);
+    _subNotCrosses.erase(gidA);
+  }
+  {
+    std::unique_lock<std::mutex> lock(_mutOverlaps);
+    _subOverlaps.erase(gidA);
+  }
+  {
+    std::unique_lock<std::mutex> lock(_mutNotOverlaps);
+    _subNotOverlaps.erase(gidA);
+  }
+}
+
+// _____________________________________________________________________________
 void Sweeper::flush() {
+  LOG(INFO) << _multiIds.size() << " multi geometries";
+  for (size_t i = 0; i < _multiIds.size(); i++) {
+    diskAdd({i, 2, 1, _multiLeftX[i] - 1, false, POINT, 0.0});
+  }
+
   ssize_t r = write(_file, _outBuffer, _obufpos);
   if (r < 0) throw std::runtime_error("Could not write to file.");
 
@@ -185,7 +383,7 @@ void Sweeper::flush() {
   _areaCache.flush();
   _lineCache.flush();
   _simpleLineCache.flush();
-  LOGTO(INFO, std::cerr) << "Sorting...";
+  LOGTO(INFO, std::cerr) << "Sorting events...";
 
   // now the individial parts are sorted
   std::string newFName = _cache + "/.sortTmp";
@@ -199,7 +397,7 @@ void Sweeper::flush() {
 #ifdef __unix__
   posix_fadvise(newFile, 0, 0, POSIX_FADV_SEQUENTIAL);
 #endif
-  util::externalSort(_file, newFile, sizeof(BoxVal), _curSweepId * 2, boxCmp);
+  util::externalSort(_file, newFile, sizeof(BoxVal), _curSweepId, boxCmp);
 
   // remove old file
   std::remove((_cache + "/events").c_str());
@@ -224,6 +422,7 @@ void Sweeper::diskAdd(const BoxVal& bv) {
     if (r < 0) throw std::runtime_error("Could not write to file.");
     _obufpos = 0;
   }
+  _curSweepId++;
 }
 
 // _____________________________________________________________________________
@@ -241,12 +440,15 @@ void Sweeper::sweep() {
 
   _rawFiles = {}, _files = {}, _outBufPos = {}, _outBuffers = {};
 
-  _files.resize(_cfg.numThreads);
-  _gzFiles.resize(_cfg.numThreads);
-  _rawFiles.resize(_cfg.numThreads);
-  _outBufPos.resize(_cfg.numThreads);
-  _outBuffers.resize(_cfg.numThreads);
-  _stats.resize(_cfg.numThreads);
+  _files.resize(_cfg.numThreads + 1);
+  _gzFiles.resize(_cfg.numThreads + 1);
+  _rawFiles.resize(_cfg.numThreads + 1);
+  _outBufPos.resize(_cfg.numThreads + 1);
+  _outBuffers.resize(_cfg.numThreads + 1);
+  _stats.resize(_cfg.numThreads + 1);
+  _checks.resize(_cfg.numThreads);
+  _curX.resize(_cfg.numThreads);
+  _atomicCurX = std::vector<std::atomic<int32_t>>(_cfg.numThreads);
 
   size_t counts = 0, checkCount = 0, jj = 0, checkPairs = 0;
   auto t = TIME();
@@ -258,17 +460,22 @@ void Sweeper::sweep() {
   for (size_t i = 0; i < thrds.size(); i++)
     thrds[i] = std::thread(&Sweeper::processQueue, this, i);
 
-  size_t len;
-  while ((len = read(_file, buf, sizeof(BoxVal) * RBUF_SIZE)) != 0) {
-    for (size_t i = 0; i < len; i += sizeof(BoxVal)) {
+  ssize_t len;
+
+  while ((len = read(_file, buf, sizeof(BoxVal) * RBUF_SIZE)) > 0) {
+    for (ssize_t i = 0; i < len; i += sizeof(BoxVal)) {
       auto cur = reinterpret_cast<const BoxVal*>(buf + i);
+      jj++;
 
       if (!cur->out) {
         // IN event
 
+        // multi-IN
+        if (cur->loY > cur->upY) _activeMultis.insert(cur->id);
+
         actives.insert({cur->loY, cur->upY}, {cur->id, cur->type});
 
-        if (++jj % 100000 == 0) {
+        if (jj % 100000 == 0) {
           auto lon = webMercToLatLng<double>((1.0 * cur->val) / PREC, 0).getX();
           checkCount += checkPairs;
           LOGTO(INFO, std::cerr)
@@ -278,13 +485,14 @@ void Sweeper::sweep() {
               << (checkPairs / double(TOOK(t))) * 1000000000.0
               << " pairs/s), avg. " << ((1.0 * checkCount) / (1.0 * counts))
               << " checks/geom, sweepLon=" << lon << "°, |A|=" << actives.size()
-              << ", |JQ|=" << _jobs.size() << " (x" << batchSize << ")";
+              << ", |JQ|=" << _jobs.size() << " (x" << batchSize << "), |A_mult|=" << _activeMultis.size();
           t = TIME();
           checkPairs = 0;
         }
+
+        if (jj % 100000 == 0) clearMultis(false);
       } else {
         // OUT event
-
         actives.erase({cur->loY, cur->upY}, {cur->id, cur->type});
 
         counts++;
@@ -301,6 +509,8 @@ void Sweeper::sweep() {
     }
   }
 
+  if (len < 0) throw std::runtime_error("Could not read from events file.");
+
   delete[] buf;
 
   if (curBatch.size()) _jobs.add(std::move(curBatch));
@@ -310,6 +520,8 @@ void Sweeper::sweep() {
 
   // wait for all workers to finish
   for (auto& thr : thrds) thr.join();
+
+  clearMultis(true);
 
   flushOutputFiles();
 
@@ -321,39 +533,45 @@ void Sweeper::sweep() {
 }
 
 // _____________________________________________________________________________
-std::tuple<bool, bool, bool> Sweeper::check(const Area* a, const Area* b,
-                                            size_t t) const {
+std::tuple<bool, bool, bool, bool, bool> Sweeper::check(const Area* a,
+                                                        const Area* b,
+                                                        size_t t) const {
   if (_cfg.useBoxIds) {
     auto ts = TIME();
     auto r = boxIdIsect(a->boxIds, b->boxIds);
     _stats[t].timeBoxIdIsectAreaArea += TOOK(ts);
 
     // all boxes of a are fully contained in b, we intersect and we are
-    // contained
-    if (r.first == a->boxIds.front().first) return {1, 1, 1};
+    // contained and we do not touch or overlap
+    if (r.first == a->boxIds.front().first) return {1, 1, 1, 0, 0};
 
-    // no box shared, we cannot contain or intersect
-    if (r.first + r.second == 0) return {0, 0, 0};
+    // no box shared, we cannot have any spatial relation
+    if (r.first + r.second == 0) return {0, 0, 0, 0, 0};
 
     // at least one box is fully contained, so we intersect
-    // but the number of fully and partially contained boxed is smaller
+    // but the number of fully and partially contained boxes is smaller
     // than the number of boxes of A, so we cannot possible by contained
     if (r.first + r.second < a->boxIds.front().first && r.first > 0) {
-      return {1, 0, 0};
+      // we surely overlap if the area of b is greater than the area of b
+      // of if the bounding box of b is not in a
+      // otherwise, we cannot be sure
+      if (b->area > a->area || !util::geo::contains(b->box, a->box))
+        return {1, 0, 0, 0, 1};
     }
   }
 
   auto ts = TIME();
-  auto res = intersectsContainsCovers(a->geom, a->box, a->area, b->geom, b->box,
-                                      b->area);
+  auto res = intersectsContainsCovers(a->geom, a->box, a->outerArea, b->geom,
+                                      b->box, b->outerArea);
   _stats[t].timeFullGeoCheckAreaArea += TOOK(ts);
   _stats[t].fullGeoChecksAreaArea++;
   return res;
 }
 
 // _____________________________________________________________________________
-std::tuple<bool, bool, bool> Sweeper::check(const Line* a, const Area* b,
-                                            size_t t) const {
+std::tuple<bool, bool, bool, bool, bool> Sweeper::check(const Line* a,
+                                                        const Area* b,
+                                                        size_t t) const {
   if (_cfg.useBoxIds) {
     auto ts = TIME();
     auto r = boxIdIsect(a->boxIds, b->boxIds);
@@ -361,16 +579,16 @@ std::tuple<bool, bool, bool> Sweeper::check(const Line* a, const Area* b,
 
     // all boxes of a are fully contained in b, we intersect and we are
     // contained
-    if (r.first == a->boxIds.front().first) return {1, 1, 1};
+    if (r.first == a->boxIds.front().first) return {1, 1, 1, 0, 0};
 
     // no box shared, we cannot contain or intersect
-    if (r.first + r.second == 0) return {0, 0, 0};
+    if (r.first + r.second == 0) return {0, 0, 0, 0, 0};
 
     // at least one box is fully contained, so we intersect
     // but the number of fully and partially contained boxed is smaller
     // than the number of boxes of A, so we cannot possible by contained
     if (r.first + r.second < a->boxIds.front().first && r.first > 0) {
-      return {1, 0, 0};
+      return {1, 0, 0, 0, 1};
     }
   }
 
@@ -383,15 +601,16 @@ std::tuple<bool, bool, bool> Sweeper::check(const Line* a, const Area* b,
 }
 
 // _____________________________________________________________________________
-std::pair<bool, bool> Sweeper::check(const Line* a, const Line* b,
-                                     size_t t) const {
+std::tuple<bool, bool, bool, bool, bool> Sweeper::check(const Line* a,
+                                                        const Line* b,
+                                                        size_t t) const {
   if (_cfg.useBoxIds) {
     auto ts = TIME();
     auto r = boxIdIsect(a->boxIds, b->boxIds);
     _stats[t].timeBoxIdIsectLineLine += TOOK(ts);
 
     // no box shared, we cannot contain or intersect
-    if (r.first + r.second == 0) return {0, 0};
+    if (r.first + r.second == 0) return {0, 0, 0, 0, 0};
   }
 
   auto ts = TIME();
@@ -403,8 +622,9 @@ std::pair<bool, bool> Sweeper::check(const Line* a, const Line* b,
 }
 
 // _____________________________________________________________________________
-std::tuple<bool, bool, bool> Sweeper::check(const SimpleLine* a, const Area* b,
-                                            size_t t) const {
+std::tuple<bool, bool, bool, bool, bool> Sweeper::check(const SimpleLine* a,
+                                                        const Area* b,
+                                                        size_t t) const {
   if (_cfg.useBoxIds) {
     auto ts = TIME();
     auto r = boxIdIsect({{1, 0}, {getBoxId(a->a), 0}}, b->boxIds);
@@ -412,10 +632,10 @@ std::tuple<bool, bool, bool> Sweeper::check(const SimpleLine* a, const Area* b,
 
     // all boxes of a are fully contained in b, we intersect and we are
     // contained
-    if (r.first == 1) return {1, 1, 1};
+    if (r.first == 1) return {1, 1, 1, 0, 0};
 
     // no box shared, we cannot contain or intersect
-    if (r.first + r.second == 0) return {0, 0, 0};
+    if (r.first + r.second == 0) return {0, 0, 0, 0, 0};
   }
 
   auto ts = TIME();
@@ -428,38 +648,46 @@ std::tuple<bool, bool, bool> Sweeper::check(const SimpleLine* a, const Area* b,
 }
 
 // _____________________________________________________________________________
-std::pair<bool, bool> Sweeper::check(const SimpleLine* a, const SimpleLine* b,
-                                     size_t t) const {
+std::tuple<bool, bool, bool, bool, bool> Sweeper::check(const SimpleLine* a,
+                                                        const SimpleLine* b,
+                                                        size_t t) const {
   auto ts = TIME();
 
   // no need to do a full sweep for two simple lines with all the required
   // datastructures, just unroll the individual checks here
 
   auto r = intersectsLineStrict(LineSegment<int32_t>(a->a, a->b), 32767, 32767,
-                                LineSegment<int32_t>(b->a, b->b));
+                                LineSegment<int32_t>(b->a, b->b), 32767, 32767);
 
-  if (r.second) {
+  bool weakIntersect = (r >> 0) & 1;
+  bool strictIntersect = (r >> 1) & 1;
+  bool overlaps = (r >> 2) & 1;
+  bool touches = (r >> 3) & 1;
+
+  if (strictIntersect && !touches && !overlaps) {
     _stats[t].timeFullGeoCheckLineLine += TOOK(ts);
     _stats[t].fullGeoChecksLineLine++;
-    return {1, 0};
+    return {1, 0, 0, 0, 1};
   }
 
   _stats[t].timeFullGeoCheckLineLine += TOOK(ts);
   _stats[t].fullGeoChecksLineLine++;
 
-  return {r.first, r.first};  // sic!
+  return {weakIntersect, !strictIntersect && weakIntersect,
+          touches && !overlaps, overlaps && !touches, 0};
 }
 
 // _____________________________________________________________________________
-std::pair<bool, bool> Sweeper::check(const SimpleLine* a, const Line* b,
-                                     size_t t) const {
+std::tuple<bool, bool, bool, bool, bool> Sweeper::check(const SimpleLine* a,
+                                                        const Line* b,
+                                                        size_t t) const {
   if (_cfg.useBoxIds) {
     auto ts = TIME();
     auto r = boxIdIsect({{1, 0}, {getBoxId(a->a), 0}}, b->boxIds);
     _stats[t].timeBoxIdIsectLineLine += TOOK(ts);
 
     // no box shared, we cannot contain or intersect
-    if (r.first + r.second == 0) return {0, 0};
+    if (r.first + r.second == 0) return {0, 0, 0, 0, 0};
   }
 
   auto ts = TIME();
@@ -472,15 +700,16 @@ std::pair<bool, bool> Sweeper::check(const SimpleLine* a, const Line* b,
 }
 
 // _____________________________________________________________________________
-std::pair<bool, bool> Sweeper::check(const Line* a, const SimpleLine* b,
-                                     size_t t) const {
+std::tuple<bool, bool, bool, bool, bool> Sweeper::check(const Line* a,
+                                                        const SimpleLine* b,
+                                                        size_t t) const {
   if (_cfg.useBoxIds) {
     auto ts = TIME();
     auto r = boxIdIsect(a->boxIds, {{1, 0}, {getBoxId(b->a), 0}});
     _stats[t].timeBoxIdIsectLineLine += TOOK(ts);
 
     // no box shared, we cannot contain or intersect
-    if (r.first + r.second == 0) return {0, 0};
+    if (r.first + r.second == 0) return {0, 0, 0, 0, 0};
   }
 
   auto ts = TIME();
@@ -516,22 +745,35 @@ std::pair<bool, bool> Sweeper::check(const I32Point& a, const Area* b,
 }
 
 // _____________________________________________________________________________
-bool Sweeper::check(const I32Point& a, const Line* b, size_t t) const {
+std::tuple<bool, bool> Sweeper::check(const I32Point& a, const Line* b,
+                                      size_t t) const {
   if (_cfg.useBoxIds) {
     auto ts = TIME();
     auto r = boxIdIsect({{1, 0}, {getBoxId(a), 0}}, b->boxIds);
     _stats[t].timeBoxIdIsectLinePoint += TOOK(ts);
 
     // no box shared, we cannot contain or intersect
-    if (r.first + r.second == 0) return false;
+    if (r.first + r.second == 0) return {0, 0};
   }
 
   auto ts = TIME();
-  auto res = util::geo::intersects(a, b->geom);
+  auto res = util::geo::intersectsContains(a, b->geom);
   _stats[t].timeFullGeoCheckLinePoint += TOOK(ts);
   _stats[t].fullGeoChecksLinePoint++;
 
   return res;
+}
+
+// ____________________________________________________________________________
+void Sweeper::writeCrosses(size_t t, const std::string& a,
+                           const std::string& b) {
+  writeRel(t, a, b, _cfg.sepCrosses);
+}
+
+// ____________________________________________________________________________
+void Sweeper::writeOverlaps(size_t t, const std::string& a,
+                            const std::string& b) {
+  writeRel(t, a, b, _cfg.sepOverlaps);
 }
 
 // ____________________________________________________________________________
@@ -604,6 +846,14 @@ void Sweeper::writeIntersect(size_t t, const std::string& a,
 
 // ____________________________________________________________________________
 void Sweeper::doCheck(const BoxVal cur, const SweepVal sv, size_t t) {
+  _checks[t]++;
+  _curX[t] = cur.val;
+
+  // every 10000 checks, update our position
+  if (_checks[t] % 10000 == 0) {
+    _atomicCurX[t] = _curX[t];
+  }
+
   if (cur.type == POLYGON && sv.type == POLYGON) {
     auto ts = TIME();
 
@@ -616,11 +866,13 @@ void Sweeper::doCheck(const BoxVal cur, const SweepVal sv, size_t t) {
 
     auto res = check(a.get(), b.get(), t);
 
+    // intersects
     if (std::get<0>(res)) {
       writeIntersect(t, a->id, b->id);
       writeIntersect(t, b->id, a->id);
     }
 
+    // contained
     if (std::get<1>(res)) {
       if (a->subId > 0) {
         // a is a multigeometry, *all* its parts must be contained.
@@ -632,6 +884,7 @@ void Sweeper::doCheck(const BoxVal cur, const SweepVal sv, size_t t) {
       }
     }
 
+    // covered
     if (std::get<2>(res)) {
       if (a->subId > 0) {
         // a is a multigeometry, *all* its parts must be covered.
@@ -643,17 +896,35 @@ void Sweeper::doCheck(const BoxVal cur, const SweepVal sv, size_t t) {
       }
 
       if (fabs(a->area - b->area) < util::geo::EPSILON) {
-        // both area were equivalent
+        // both areas were equivalent
+        writeEquals(t, a->id, a->subId, b->id, b->subId);
 
         if (b->subId > 0) {
-          // a is a multigeometry, *all* its parts must be covered.
+          // b is a multigeometry, *all* its parts must be equal.
           // we cache them, and write them as soon as we know that yes,
-          // they are all covered
+          // they are all equal
           writeCoversMulti(t, a->id, b->id, b->subId);
         } else {
           writeCovers(t, a->id, b->id);
         }
       }
+    }
+
+    // touches
+    if (std::get<3>(res)) {
+      writeTouches(t, a->id, a->subId, b->id, b->subId);
+    } else if (std::get<0>(res)) {
+      // if a is not a multi-geom, and is completey covered, we wont
+      // be finding a touch as we assume non-self-intersecting geoms
+      if (!(a->subId == 0 && std::get<2>(res))) {
+        writeNotTouches(t, a->id, a->subId, b->id, b->subId);
+      }
+    }
+
+    // overlaps
+    if (std::get<4>(res)) {
+      writeOverlaps(t, a->id, b->id);
+      writeOverlaps(t, b->id, a->id);
     }
   } else if (cur.type == LINE && sv.type == POLYGON) {
     auto ts = TIME();
@@ -667,11 +938,13 @@ void Sweeper::doCheck(const BoxVal cur, const SweepVal sv, size_t t) {
 
     auto res = check(a.get(), b.get(), t);
 
+    // intersects
     if (std::get<0>(res)) {
       writeIntersect(t, a->id, b->id);
       writeIntersect(t, b->id, a->id);
     }
 
+    // contains
     if (std::get<1>(res)) {
       if (a->subId > 0) {
         // a is a multigeometry, *all* its parts must be contained.
@@ -683,6 +956,7 @@ void Sweeper::doCheck(const BoxVal cur, const SweepVal sv, size_t t) {
       }
     }
 
+    // covers
     if (std::get<2>(res)) {
       if (a->subId > 0) {
         // a is a multigeometry, *all* its parts must be covered.
@@ -692,6 +966,22 @@ void Sweeper::doCheck(const BoxVal cur, const SweepVal sv, size_t t) {
       } else {
         writeCovers(t, b->id, a->id);
       }
+    }
+
+    // touches
+    if (std::get<3>(res)) {
+      writeTouches(t, a->id, a->subId, b->id, b->subId);
+    } else if (std::get<0>(res)) {
+      // if a is not a multi-geom, and is completey covered, we wont
+      // be finding a touch as we assume non-self-intersecting geoms
+      if (!(a->subId == 0 && std::get<2>(res))) {
+        writeNotTouches(t, a->id, a->subId, b->id, b->subId);
+      }
+    }
+
+    // crosses
+    if (std::get<4>(res)) {
+      writeCrosses(t, a->id, b->id);
     }
   } else if (cur.type == SIMPLE_LINE && sv.type == POLYGON) {
     auto ts = TIME();
@@ -705,17 +995,36 @@ void Sweeper::doCheck(const BoxVal cur, const SweepVal sv, size_t t) {
 
     auto res = check(a.get(), b.get(), t);
 
+    // intersects
     if (std::get<0>(res)) {
       writeIntersect(t, a->id, b->id);
       writeIntersect(t, b->id, a->id);
     }
 
+    // contains
     if (std::get<1>(res)) {
       writeContains(t, b->id, a->id);
     }
 
+    // covers
     if (std::get<2>(res)) {
       writeCovers(t, b->id, a->id);
+    }
+
+    // touches
+    if (std::get<3>(res)) {
+      writeTouches(t, a->id, 0, b->id, b->subId);
+    } else if (std::get<0>(res)) {
+      // if a is completey covered, we wont
+      // be finding a touch as we assume non-self-intersecting geoms
+      if (!(std::get<2>(res))) {
+        writeNotTouches(t, a->id, 0, b->id, b->subId);
+      }
+    }
+
+    // crosses
+    if (std::get<4>(res)) {
+      writeCrosses(t, a->id, b->id);
     }
   } else if (cur.type == POLYGON && sv.type == LINE) {
     auto ts = TIME();
@@ -729,11 +1038,13 @@ void Sweeper::doCheck(const BoxVal cur, const SweepVal sv, size_t t) {
 
     auto res = check(b.get(), a.get(), t);
 
+    // intersects
     if (std::get<0>(res)) {
       writeIntersect(t, a->id, b->id);
       writeIntersect(t, b->id, a->id);
     }
 
+    // contains
     if (std::get<1>(res)) {
       if (b->subId > 0) {
         // b is a multigeometry, *all* its parts must be covered.
@@ -745,6 +1056,7 @@ void Sweeper::doCheck(const BoxVal cur, const SweepVal sv, size_t t) {
       }
     }
 
+    // covers
     if (std::get<2>(res)) {
       if (b->subId > 0) {
         // b is a multigeometry, *all* its parts must be covered.
@@ -754,6 +1066,22 @@ void Sweeper::doCheck(const BoxVal cur, const SweepVal sv, size_t t) {
       } else {
         writeCovers(t, a->id, b->id);
       }
+    }
+
+    // touches
+    if (std::get<3>(res)) {
+      writeTouches(t, a->id, a->subId, b->id, b->subId);
+    } else if (std::get<0>(res)) {
+      // if b is not a multi-geom, and is completey covered, we wont
+      // be finding a touch as we assume non-self-intersecting geoms
+      if (!(b->subId == 0 && std::get<2>(res))) {
+        writeNotTouches(t, a->id, a->subId, b->id, b->subId);
+      }
+    }
+
+    // crosses
+    if (std::get<4>(res)) {
+      writeCrosses(t, b->id, a->id);
     }
   } else if (cur.type == POLYGON && sv.type == SIMPLE_LINE) {
     auto ts = TIME();
@@ -765,17 +1093,36 @@ void Sweeper::doCheck(const BoxVal cur, const SweepVal sv, size_t t) {
 
     auto res = check(b.get(), a.get(), t);
 
+    // intersects
     if (std::get<0>(res)) {
       writeIntersect(t, a->id, b->id);
       writeIntersect(t, b->id, a->id);
     }
 
+    // contains
     if (std::get<1>(res)) {
       writeContains(t, a->id, b->id);
     }
 
+    // covers
     if (std::get<2>(res)) {
       writeCovers(t, a->id, b->id);
+    }
+
+    // touches
+    if (std::get<3>(res)) {
+      writeTouches(t, a->id, a->subId, b->id, 0);
+    } else if (std::get<0>(res)) {
+      // if b is completey covered, we wont
+      // be finding a touch as we assume non-self-intersecting geoms
+      if (!std::get<2>(res)) {
+        writeNotTouches(t, a->id, a->subId, b->id, 0);
+      }
+    }
+
+    // crosses
+    if (std::get<4>(res)) {
+      writeCrosses(t, b->id, a->id);
     }
   } else if (cur.type == LINE && sv.type == LINE) {
     auto ts = TIME();
@@ -787,11 +1134,18 @@ void Sweeper::doCheck(const BoxVal cur, const SweepVal sv, size_t t) {
 
     auto res = check(a.get(), b.get(), t);
 
-    if (res.first) {
+    // intersects
+    if (std::get<0>(res)) {
       writeIntersect(t, a->id, b->id);
       writeIntersect(t, b->id, a->id);
     }
-    if (res.second) {
+
+    // covers
+    if (std::get<1>(res)) {
+      writeNotCrosses(t, a->id, a->subId, b->id, b->subId);
+
+      if (a->subId == 0) writeNotOverlaps(t, a->id, a->subId, b->id, b->subId);
+
       if (a->subId > 0) {
         // a is a multigeometry, *all* its parts must be covered.
         // we cache them, and write them as soon as we know that yes,
@@ -803,6 +1157,7 @@ void Sweeper::doCheck(const BoxVal cur, const SweepVal sv, size_t t) {
 
       if (fabs(a->length - b->length) < util::geo::EPSILON) {
         // both lines were equivalent
+        writeEquals(t, a->id, a->subId, b->id, b->subId);
 
         if (b->subId > 0) {
           // a is a multigeometry, *all* its parts must be covered.
@@ -814,6 +1169,26 @@ void Sweeper::doCheck(const BoxVal cur, const SweepVal sv, size_t t) {
         }
       }
     }
+
+    // touches
+    if (std::get<2>(res)) {
+      writeTouches(t, a->id, a->subId, b->id, b->subId);
+    } else if (std::get<0>(res)) {
+      writeNotTouches(t, a->id, a->subId, b->id, b->subId);
+    }
+
+    // crosses
+    if (std::get<4>(res)) {
+      writeNotOverlaps(t, a->id, a->subId, b->id, b->subId);
+      writeCrosses(t, a->id, a->subId, b->id, b->subId);
+    }
+
+    // overlaps
+    if (std::get<3>(res)) {
+      if (!std::get<1>(res))
+        writeNotCrosses(t, a->id, a->subId, b->id, b->subId);
+      writeOverlaps(t, a->id, a->subId, b->id, b->subId);
+    }
   } else if (cur.type == LINE && sv.type == SIMPLE_LINE) {
     auto ts = TIME();
     auto a = _lineCache.get(cur.id, t);
@@ -822,12 +1197,16 @@ void Sweeper::doCheck(const BoxVal cur, const SweepVal sv, size_t t) {
 
     auto res = check(a.get(), b.get(), t);
 
-    if (res.first) {
+    // intersects
+    if (std::get<0>(res)) {
       writeIntersect(t, a->id, b->id);
       writeIntersect(t, b->id, a->id);
     }
 
-    if (res.second) {
+    // covers
+    if (std::get<1>(res)) {
+      writeNotCrosses(t, a->id, a->subId, b->id, 0);
+
       if (a->subId > 0) {
         // a is a multigeometry, *all* its parts must be covered.
         // we cache them, and write them as soon as we know that yes,
@@ -841,7 +1220,28 @@ void Sweeper::doCheck(const BoxVal cur, const SweepVal sv, size_t t) {
           util::geo::EPSILON) {
         // both lines were equivalent
         writeCovers(t, a->id, b->id);
+
+        writeEquals(t, a->id, a->subId, b->id, 0);
       }
+    }
+
+    // touches
+    if (std::get<2>(res)) {
+      writeTouches(t, a->id, a->subId, b->id, 0);
+    } else if (std::get<0>(res)) {
+      writeNotTouches(t, a->id, a->subId, b->id, 0);
+    }
+
+    // crosses
+    if (std::get<4>(res)) {
+      writeNotOverlaps(t, a->id, a->subId, b->id, 0);
+      writeCrosses(t, a->id, a->subId, b->id, 0);
+    }
+
+    // overlaps
+    if (std::get<3>(res)) {
+      if (!std::get<1>(res)) writeNotCrosses(t, a->id, a->subId, b->id, 0);
+      writeOverlaps(t, a->id, a->subId, b->id, 0);
     }
   } else if (cur.type == SIMPLE_LINE && sv.type == LINE) {
     auto ts = TIME();
@@ -851,16 +1251,23 @@ void Sweeper::doCheck(const BoxVal cur, const SweepVal sv, size_t t) {
 
     auto res = check(a.get(), b.get(), t);
 
-    if (res.first) {
+    // intersects
+    if (std::get<0>(res)) {
       writeIntersect(t, a->id, b->id);
       writeIntersect(t, b->id, a->id);
     }
 
-    if (res.second) {
+    // covers
+    if (std::get<1>(res)) {
+      writeNotCrosses(t, a->id, 0, b->id, b->subId);
       writeCovers(t, b->id, a->id);
+
+      writeNotOverlaps(t, a->id, 0, b->id, b->subId);
 
       if (fabs(util::geo::len(LineSegment<int32_t>(a->a, a->b)) - b->length) <
           util::geo::EPSILON) {
+        writeEquals(t, a->id, 0, b->id, b->subId);
+
         if (b->subId > 0) {
           // b is a multigeometry, *all* its parts must be covered.
           // we cache them, and write them as soon as we know that yes,
@@ -871,6 +1278,25 @@ void Sweeper::doCheck(const BoxVal cur, const SweepVal sv, size_t t) {
         }
       }
     }
+
+    // touches
+    if (std::get<2>(res)) {
+      writeTouches(t, a->id, 0, b->id, b->subId);
+    } else if (std::get<0>(res)) {
+      writeNotTouches(t, a->id, 0, b->id, b->subId);
+    }
+
+    // crosses
+    if (std::get<4>(res)) {
+      writeNotOverlaps(t, a->id, 0, b->id, b->subId);
+      writeCrosses(t, a->id, 0, b->id, b->subId);
+    }
+
+    // overlaps
+    if (std::get<3>(res)) {
+      if (!std::get<1>(res)) writeNotCrosses(t, a->id, 0, b->id, b->subId);
+      writeOverlaps(t, a->id, 0, b->id, b->subId);
+    }
   } else if (cur.type == SIMPLE_LINE && sv.type == SIMPLE_LINE) {
     auto ts = TIME();
     auto a = _simpleLineCache.get(cur.id, t);
@@ -879,22 +1305,38 @@ void Sweeper::doCheck(const BoxVal cur, const SweepVal sv, size_t t) {
 
     auto res = check(a.get(), b.get(), t);
 
-    if (res.first) {
+    if (std::get<0>(res)) {
       writeIntersect(t, a->id, b->id);
       writeIntersect(t, b->id, a->id);
     }
 
-    if (res.second) {
+    if (std::get<1>(res)) {
       writeCovers(t, b->id, a->id);
 
       if (fabs(util::geo::len(LineSegment<int32_t>(a->a, a->b)) -
                util::geo::len(LineSegment<int32_t>(b->a, b->b))) <
           util::geo::EPSILON) {
+        writeEquals(t, a->id, 0, b->id, 0);
         writeCovers(t, a->id, b->id);
       }
     }
+
+    // touches
+    if (std::get<2>(res)) {
+      writeTouches(t, a->id, 0, b->id, 0);
+    }
+
+    // crosses
+    if (std::get<4>(res)) {
+      writeCrosses(t, a->id, 0, b->id, 0);
+    }
+
+    // overlaps
+    if (std::get<3>(res)) {
+      writeOverlaps(t, a->id, 0, b->id, 0);
+    }
   } else if (cur.type == POINT && sv.type == POINT) {
-    // point/point: trivial intersect & cover
+    // point/point: trivial intersect & cover & contains
 
     auto ts = TIME();
     auto a = _pointCache.get(cur.id, t);
@@ -905,14 +1347,17 @@ void Sweeper::doCheck(const BoxVal cur, const SweepVal sv, size_t t) {
 
     writeIntersect(t, a->id, b->id);
     writeIntersect(t, b->id, a->id);
+    writeEquals(t, a->id, a->subId, b->id, b->subId);
 
     if (a->subId > 0) {
       // a is a multigeometry, *all* its parts must be covered.
       // we cache them, and write them as soon as we know that yes,
       // they are all covered
       writeCoversMulti(t, b->id, a->id, a->subId);
+      writeContainsMulti(t, b->id, a->id, a->subId);
     } else {
       writeCovers(t, b->id, a->id);
+      writeContains(t, b->id, a->id);
     }
 
     if (b->subId > 0) {
@@ -920,16 +1365,18 @@ void Sweeper::doCheck(const BoxVal cur, const SweepVal sv, size_t t) {
       // we cache them, and write them as soon as we know that yes,
       // they are all covered
       writeCoversMulti(t, a->id, b->id, b->subId);
+      writeContainsMulti(t, a->id, b->id, b->subId);
     } else {
       writeCovers(t, a->id, b->id);
+      writeContains(t, a->id, b->id);
     }
   } else if (cur.type == POINT && sv.type == SIMPLE_LINE) {
-    auto a = I32Point(cur.val, cur.loY);
+    auto p = I32Point(cur.val, cur.loY);
     auto ts = TIME();
     auto b = _simpleLineCache.get(sv.id, t);
     _stats[t].timeGeoCacheRetrievalLine += TOOK(ts);
 
-    if (util::geo::contains(a, LineSegment<int32_t>(b->a, b->b))) {
+    if (util::geo::contains(p, LineSegment<int32_t>(b->a, b->b))) {
       auto ts = TIME();
       auto a = _pointCache.get(cur.id, t);
       _stats[t].timeGeoCacheRetrievalPoint += TOOK(ts);
@@ -945,9 +1392,19 @@ void Sweeper::doCheck(const BoxVal cur, const SweepVal sv, size_t t) {
         writeCovers(t, b->id, a->id);
       }
 
-      if (util::geo::len(LineSegment<int32_t>(b->a, b->b)) == 0) {
-        // zero length line, point also covers line
-        writeCovers(t, a->id, b->id);
+      if (p != b->a && p != b->b) {
+        if (a->subId > 0) {
+          // a is a multigeometry, *all* its parts must be contained.
+          // we cache them, and write them as soon as we know that yes,
+          // they are all contained
+          writeContainsMulti(t, b->id, a->id, a->subId);
+        } else {
+          writeContains(t, b->id, a->id);
+        }
+
+        writeNotTouches(t, a->id, a->subId, b->id, 0);
+      } else {
+        writeTouches(t, a->id, a->subId, b->id, 0);
       }
     }
   } else if (cur.type == POINT && sv.type == LINE) {
@@ -956,7 +1413,9 @@ void Sweeper::doCheck(const BoxVal cur, const SweepVal sv, size_t t) {
     auto b = _lineCache.get(sv.id, t);
     _stats[t].timeGeoCacheRetrievalLine += TOOK(ts);
 
-    if (check(a, b.get(), t)) {
+    auto res = check(a, b.get(), t);
+
+    if (std::get<0>(res)) {
       auto ts = TIME();
       auto a = _pointCache.get(cur.id, t);
       _stats[t].timeGeoCacheRetrievalPoint += TOOK(ts);
@@ -969,10 +1428,24 @@ void Sweeper::doCheck(const BoxVal cur, const SweepVal sv, size_t t) {
       if (a->subId > 0) {
         // a is a multigeometry, *all* its parts must be covered.
         // we cache them, and write them as soon as we know that yes,
-        // they are all contained
+        // they are all covered
         writeCoversMulti(t, b->id, a->id, a->subId);
       } else {
         writeCovers(t, b->id, a->id);
+      }
+
+      if (std::get<1>(res)) {
+        if (a->subId > 0) {
+          // a is a multigeometry, *all* its parts must be contained.
+          // we cache them, and write them as soon as we know that yes,
+          // they are all contained
+          writeContainsMulti(t, b->id, a->id, a->subId);
+        } else {
+          writeContains(t, b->id, a->id);
+        }
+        writeNotTouches(t, a->id, a->subId, b->id, b->subId);
+      } else {
+        writeTouches(t, a->id, a->subId, b->id, b->subId);
       }
 
       if (b->length == 0) {
@@ -1021,6 +1494,12 @@ void Sweeper::doCheck(const BoxVal cur, const SweepVal sv, size_t t) {
         } else {
           writeContains(t, b->id, a->id);
         }
+
+        if (a->subId != 0) {
+          writeNotTouches(t, a->id, a->subId, b->id, b->subId);
+        }
+      } else {
+        writeTouches(t, a->id, a->subId, b->id, b->subId);
       }
     }
   }
@@ -1030,7 +1509,7 @@ void Sweeper::doCheck(const BoxVal cur, const SweepVal sv, size_t t) {
 void Sweeper::flushOutputFiles() {
   if (_outMode == BZ2 || _outMode == GZ || _outMode == PLAIN) {
     if (_outMode == BZ2) {
-      for (size_t i = 0; i < _cfg.numThreads; i++) {
+      for (size_t i = 0; i < _cfg.numThreads + 1; i++) {
         int err = 0;
         BZ2_bzWrite(&err, _files[i], _outBuffers[i], _outBufPos[i]);
         if (err == BZ_IO_ERROR) {
@@ -1041,7 +1520,7 @@ void Sweeper::flushOutputFiles() {
         fclose(_rawFiles[i]);
       }
     } else if (_outMode == GZ) {
-      for (size_t i = 0; i < _cfg.numThreads; i++) {
+      for (size_t i = 0; i < _cfg.numThreads + 1; i++) {
         int r = gzwrite(_gzFiles[i], _outBuffers[i], _outBufPos[i]);
         if (r != (int)_outBufPos[i]) {
           gzclose(_gzFiles[i]);
@@ -1050,7 +1529,7 @@ void Sweeper::flushOutputFiles() {
         gzclose(_gzFiles[i]);
       }
     } else {
-      for (size_t i = 0; i < _cfg.numThreads; i++) {
+      for (size_t i = 0; i < _cfg.numThreads + 1; i++) {
         size_t r =
             fwrite(_outBuffers[i], sizeof(char), _outBufPos[i], _rawFiles[i]);
         if (r != _outBufPos[i]) {
@@ -1064,7 +1543,7 @@ void Sweeper::flushOutputFiles() {
     std::ofstream out(_cache + "/.rels0", std::ios_base::binary |
                                               std::ios_base::app |
                                               std::ios_base::ate);
-    for (size_t i = 1; i < _cfg.numThreads; i++) {
+    for (size_t i = 1; i < _cfg.numThreads + 1; i++) {
       std::string fName = _cache + "/.rels" + std::to_string(i);
       std::ifstream ifCur(fName, std::ios_base::binary);
       out << ifCur.rdbuf();
@@ -1079,7 +1558,7 @@ void Sweeper::flushOutputFiles() {
 // _____________________________________________________________________________
 void Sweeper::prepareOutputFiles() {
   if (_outMode == BZ2) {
-    for (size_t i = 0; i < _cfg.numThreads; i++) {
+    for (size_t i = 0; i < _cfg.numThreads + 1; i++) {
       _rawFiles[i] =
           fopen((_cache + "/.rels" + std::to_string(i)).c_str(), "w");
       int err = 0;
@@ -1090,7 +1569,7 @@ void Sweeper::prepareOutputFiles() {
       _outBuffers[i] = new unsigned char[BUFFER_S_PAIRS];
     }
   } else if (_outMode == GZ) {
-    for (size_t i = 0; i < _cfg.numThreads; i++) {
+    for (size_t i = 0; i < _cfg.numThreads + 1; i++) {
       _gzFiles[i] =
           gzopen((_cache + "/.rels" + std::to_string(i)).c_str(), "w");
       if (_gzFiles[i] == Z_NULL) {
@@ -1099,7 +1578,7 @@ void Sweeper::prepareOutputFiles() {
       _outBuffers[i] = new unsigned char[BUFFER_S_PAIRS];
     }
   } else if (_outMode == PLAIN) {
-    for (size_t i = 0; i < _cfg.numThreads; i++) {
+    for (size_t i = 0; i < _cfg.numThreads + 1; i++) {
       _rawFiles[i] =
           fopen((_cache + "/.rels" + std::to_string(i)).c_str(), "w");
       _outBuffers[i] = new unsigned char[BUFFER_S_PAIRS];
@@ -1113,6 +1592,8 @@ void Sweeper::processQueue(size_t t) {
   while ((batch = _jobs.get()).size()) {
     for (const auto& job : batch) doCheck(job.first, job.second, t);
   }
+
+  _atomicCurX[t] = _curX[t];
 }
 
 // _____________________________________________________________________________
@@ -1127,10 +1608,145 @@ void Sweeper::fillBatch(JobBatch* batch,
 }
 
 // _____________________________________________________________________________
+void Sweeper::writeOverlaps(size_t t, const std::string& a, size_t aSub,
+                            const std::string& b, size_t bSub) {
+  if (a == b) return;
+  if (aSub == 0 && bSub == 0) {
+    writeRel(t, a, b, _cfg.sepOverlaps);
+    writeRel(t, b, a, _cfg.sepOverlaps);
+    return;
+  }
+
+  {
+    std::unique_lock<std::mutex> lock(_mutOverlaps);
+
+    if (bSub != 0) _subOverlaps[b].insert(a);
+    if (aSub != 0) _subOverlaps[a].insert(b);
+  }
+}
+
+// _____________________________________________________________________________
+void Sweeper::writeNotOverlaps(size_t, const std::string& a, size_t aSub,
+                               const std::string& b, size_t bSub) {
+  if (a == b) return;
+  if (aSub == 0 && bSub == 0) return;
+
+  {
+    std::unique_lock<std::mutex> lock(_mutNotOverlaps);
+
+    _subNotOverlaps[b].insert(a);
+    _subNotOverlaps[a].insert(b);
+  }
+}
+
+// _____________________________________________________________________________
+void Sweeper::writeCrosses(size_t t, const std::string& a, size_t aSub,
+                           const std::string& b, size_t bSub) {
+  if (a == b) return;
+  if (aSub == 0 && bSub == 0) {
+    writeRel(t, a, b, _cfg.sepCrosses);
+    writeRel(t, b, a, _cfg.sepCrosses);
+    return;
+  }
+
+  {
+    // TODO: distinct locks for individual methods
+    std::unique_lock<std::mutex> lock(_mutCrosses);
+
+    if (bSub != 0) _subCrosses[b].insert(a);
+    if (aSub != 0) _subCrosses[a].insert(b);
+  }
+}
+
+// _____________________________________________________________________________
+void Sweeper::writeNotCrosses(size_t, const std::string& a, size_t aSub,
+                              const std::string& b, size_t bSub) {
+  if (a == b) return;
+  if (aSub == 0 && bSub == 0) return;
+
+  {
+    std::unique_lock<std::mutex> lock(_mutNotCrosses);
+
+    if (bSub != 0) _subNotCrosses[b].insert(a);
+    if (aSub != 0) _subNotCrosses[a].insert(b);
+  }
+}
+
+// _____________________________________________________________________________
+void Sweeper::writeTouches(size_t t, const std::string& a, size_t aSub,
+                           const std::string& b, size_t bSub) {
+  if (a == b) return;
+  if (aSub == 0 && bSub == 0) {
+    writeRel(t, a, b, _cfg.sepTouches);
+    writeRel(t, b, a, _cfg.sepTouches);
+    return;
+  }
+
+  {
+    std::unique_lock<std::mutex> lock(_mutTouches);
+
+    if (bSub != 0) _subTouches[b].insert(a);
+    if (aSub != 0) _subTouches[a].insert(b);
+  }
+}
+
+// _____________________________________________________________________________
+void Sweeper::writeNotTouches(size_t, const std::string& a, size_t aSub,
+                              const std::string& b, size_t bSub) {
+  if (a == b) return;
+  if (aSub == 0 && bSub == 0) return;
+
+  {
+    std::unique_lock<std::mutex> lock(_mutNotTouches);
+
+    if (bSub != 0) _subNotTouches[b].insert(a);
+    if (aSub != 0) _subNotTouches[a].insert(b);
+  }
+}
+
+// _____________________________________________________________________________
+void Sweeper::writeEquals(size_t t, const std::string& a, size_t aSub,
+                          const std::string& b, size_t bSub) {
+  if (a == b) return;
+  if (aSub == 0 && bSub == 0) {
+    writeRel(t, a, b, _cfg.sepEquals);
+    writeRel(t, b, a, _cfg.sepEquals);
+    return;
+  }
+
+  if (aSub == 0 || bSub == 0) {
+    writeNotOverlaps(t, a, aSub, b, bSub);
+    return;  // multi and non-multi cannot be equal
+  }
+
+  if (_subSizes[a] != _subSizes[b]) {
+    return;  // multi of different sizes cannot be equal
+  }
+
+  {
+    std::unique_lock<std::mutex> lock(_mutEquals);
+
+    _subEquals[b][a].insert(aSub);
+    _subEquals[a][b].insert(bSub);
+
+    if (_subEquals[a][b].size() != _subSizes[a] ||
+        _subEquals[b][a].size() != _subSizes[b])
+      return;
+
+    _subEquals[b].erase(a);
+    _subEquals[a].erase(b);
+  }
+
+  writeRel(t, a, b, _cfg.sepEquals);
+  writeRel(t, b, a, _cfg.sepEquals);
+}
+
+// _____________________________________________________________________________
 void Sweeper::writeCoversMulti(size_t t, const std::string& a,
                                const std::string& b, size_t bSub) {
+  if (a == b) return;
   {
-    std::unique_lock<std::mutex> lock(_mut);
+    std::unique_lock<std::mutex> lock(_mutCovers);
 
     _subCovered[b][a].insert(bSub);
 
@@ -1139,14 +1755,16 @@ void Sweeper::writeCoversMulti(size_t t, const std::string& a,
     _subCovered[b].erase(a);
   }
 
+  writeNotOverlaps(t, a, 0, b, bSub);
   writeCovers(t, a, b);
 }
 
 // _____________________________________________________________________________
 void Sweeper::writeContainsMulti(size_t t, const std::string& a,
                                  const std::string& b, size_t bSub) {
+  if (a == b) return;
   {
-    std::unique_lock<std::mutex> lock(_mut);
+    std::unique_lock<std::mutex> lock(_mutContains);
 
     _subContains[b][a].insert(bSub);
 
@@ -1156,4 +1774,22 @@ void Sweeper::writeContainsMulti(size_t t, const std::string& a,
   }
 
   writeContains(t, a, b);
+}
+
+// _____________________________________________________________________________
+bool Sweeper::notOverlaps(const std::string& a, const std::string& b) const {
+  auto j = _subNotOverlaps.find(a);
+  auto jj = _subNotOverlaps.find(b);
+
+  if (j != _subNotOverlaps.end()) {
+    auto k = j->second.find(b);
+    if (k != j->second.end()) return true;
+  }
+
+  if (jj != _subNotOverlaps.end()) {
+    auto k = jj->second.find(a);
+    if (k != jj->second.end()) return true;
+  }
+
+  return false;
 }

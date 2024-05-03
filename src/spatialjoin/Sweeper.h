@@ -5,9 +5,14 @@
 #define SPATIALJOINS_SWEEPER_H_
 
 #include <bzlib.h>
-#include <zlib.h>
 #include <fcntl.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#include <zlib.h>
 
+#include <atomic>
 #include <condition_variable>
 #include <mutex>
 #include <queue>
@@ -26,7 +31,7 @@
 namespace sj {
 
 enum GeomType : uint8_t { POLYGON = 0, LINE = 1, POINT = 2, SIMPLE_LINE = 3 };
-enum OutMode : uint8_t { PLAIN = 0, BZ2 = 1, GZ = 2, COUT = 3 };
+enum OutMode : uint8_t { PLAIN = 0, BZ2 = 1, GZ = 2, COUT = 3, NONE = 4 };
 
 struct BoxVal {
   size_t id : 60;
@@ -65,6 +70,10 @@ struct SweeperCfg {
   std::string sepIsect;
   std::string sepContains;
   std::string sepCovers;
+  std::string sepTouches;
+  std::string sepEquals;
+  std::string sepOverlaps;
+  std::string sepCrosses;
   std::string pairEnd;
   bool useBoxIds;
   bool useArea;
@@ -87,10 +96,25 @@ class Sweeper {
         _cache(cache),
         _out(out),
         _jobs(100) {
-    if (util::endsWith(_out, ".bz2")) _outMode = BZ2;
-    else if (util::endsWith(_out, ".gz")) _outMode = GZ;
-    else if (out.size()) _outMode = PLAIN;
-    else _outMode = COUT;
+    if (util::endsWith(_out, ".bz2"))
+      _outMode = BZ2;
+    else if (util::endsWith(_out, ".gz"))
+      _outMode = GZ;
+    else if (out.size())
+      _outMode = PLAIN;
+    else {
+      struct stat std_out;
+      struct stat dev_null;
+      if (fstat(STDOUT_FILENO, &std_out) == 0 && S_ISCHR(std_out.st_mode) &&
+          stat("/dev/null", &dev_null) == 0 &&
+          std_out.st_dev == dev_null.st_dev &&
+          std_out.st_ino == dev_null.st_ino) {
+        // output to /dev/null, print nothing
+        _outMode = NONE;
+      } else {
+        _outMode = COUT;
+      }
+    }
 
     std::string fname = _cache + "/events";
 
@@ -114,11 +138,12 @@ class Sweeper {
 
   void add(const util::geo::I32MultiPolygon& a, const std::string& gid);
   void add(const util::geo::I32MultiLine& a, const std::string& gid);
-  void add(const util::geo::I32MultiPoint& a, const std::string& gid);
+  void addMp(const util::geo::I32MultiPoint& a, const std::string& gid);
   size_t add(const util::geo::I32MultiPolygon& a, const std::string& gid,
              size_t);
   size_t add(const util::geo::I32MultiLine& a, const std::string& gid, size_t);
-  size_t add(const util::geo::I32MultiPoint& a, const std::string& gid, size_t);
+  size_t addMp(const util::geo::I32MultiPoint& a, const std::string& gid,
+               size_t);
   void add(const util::geo::I32Polygon& a, const std::string& gid);
   void add(const util::geo::I32Polygon& a, const std::string& gid,
            size_t subId);
@@ -145,6 +170,10 @@ class Sweeper {
   std::vector<size_t> _outBufPos;
   std::vector<unsigned char*> _outBuffers;
 
+  std::vector<size_t> _checks;
+  std::vector<int32_t> _curX;
+  std::vector<std::atomic<int32_t>> _atomicCurX;
+
   mutable std::vector<Stats> _stats;
 
   GeometryCache<Point> _pointCache;
@@ -154,43 +183,90 @@ class Sweeper {
 
   std::map<std::string, std::map<std::string, std::set<size_t>>> _subContains;
   std::map<std::string, std::map<std::string, std::set<size_t>>> _subCovered;
+  std::map<std::string, std::map<std::string, std::set<size_t>>> _subEquals;
+  std::map<std::string, std::set<std::string>> _subTouches;
+  std::map<std::string, std::set<std::string>> _subNotTouches;
+  std::map<std::string, std::set<std::string>> _subCrosses;
+  std::map<std::string, std::set<std::string>> _subNotCrosses;
+  std::map<std::string, std::set<std::string>> _subOverlaps;
+  std::map<std::string, std::set<std::string>> _subNotOverlaps;
   std::map<std::string, size_t> _subSizes;
+
+  std::set<size_t> _activeMultis;
+  std::vector<std::string> _multiIds;
+  std::vector<int32_t> _multiRightX;
+  std::vector<int32_t> _multiLeftX;
+  std::map<std::string, size_t> _multiGidToId;
 
   std::string _cache;
   std::string _out;
 
   util::JobQueue<JobBatch> _jobs;
 
-  std::mutex _mut;
+  std::mutex _mutEquals;
+  std::mutex _mutCovers;
+  std::mutex _mutContains;
+  std::mutex _mutTouches;
+  std::mutex _mutNotTouches;
+  std::mutex _mutCrosses;
+  std::mutex _mutNotCrosses;
+  std::mutex _mutOverlaps;
+  std::mutex _mutNotOverlaps;
 
-  std::tuple<bool, bool, bool> check(const Area* a, const Area* b,
-                                     size_t t) const;
-  std::tuple<bool, bool, bool> check(const Line* a, const Area* b,
-                                     size_t t) const;
-  std::tuple<bool, bool, bool> check(const SimpleLine* a, const Area* b,
-                                     size_t t) const;
-  std::pair<bool, bool> check(const Line* a, const Line* b, size_t t) const;
-  std::pair<bool, bool> check(const Line* a, const SimpleLine* b,
-                              size_t t) const;
-  std::pair<bool, bool> check(const SimpleLine* a, const SimpleLine* b,
-                              size_t t) const;
-  std::pair<bool, bool> check(const SimpleLine* a, const Line* b,
-                              size_t t) const;
+  std::tuple<bool, bool, bool, bool, bool> check(const Area* a, const Area* b,
+                                                 size_t t) const;
+  std::tuple<bool, bool, bool, bool, bool> check(const Line* a, const Area* b,
+                                                 size_t t) const;
+  std::tuple<bool, bool, bool, bool, bool> check(const SimpleLine* a,
+                                                 const Area* b, size_t t) const;
+  std::tuple<bool, bool, bool, bool, bool> check(const Line* a, const Line* b,
+                                                 size_t t) const;
+  std::tuple<bool, bool, bool, bool, bool> check(const Line* a,
+                                                 const SimpleLine* b,
+                                                 size_t t) const;
+  std::tuple<bool, bool, bool, bool, bool> check(const SimpleLine* a,
+                                                 const SimpleLine* b,
+                                                 size_t t) const;
+  std::tuple<bool, bool, bool, bool, bool> check(const SimpleLine* a,
+                                                 const Line* b, size_t t) const;
   std::pair<bool, bool> check(const util::geo::I32Point& a, const Area* b,
                               size_t t) const;
-  bool check(const util::geo::I32Point& a, const Line* b, size_t t) const;
+  std::tuple<bool, bool> check(const util::geo::I32Point& a, const Line* b,
+                               size_t t) const;
 
   void diskAdd(const BoxVal& bv);
+
+  void multiOut(size_t t, const std::string& gid);
+  void multiAdd(const std::string& gid, int32_t xLeft, int32_t xRight);
+  void clearMultis(bool force);
 
   void writeIntersect(size_t t, const std::string& a, const std::string& b);
   void writeContains(size_t t, const std::string& a, const std::string& b);
   void writeCovers(size_t t, const std::string& a, const std::string& b);
+  void writeOverlaps(size_t t, const std::string& a, const std::string& b);
+  void writeCrosses(size_t t, const std::string& a, const std::string& b);
   void writeRel(size_t t, const std::string& a, const std::string& b,
                 const std::string& pred);
   void writeContainsMulti(size_t t, const std::string& a, const std::string& b,
                           size_t bSub);
   void writeCoversMulti(size_t t, const std::string& a, const std::string& b,
                         size_t bSub);
+  void writeEquals(size_t t, const std::string& a, size_t aSub,
+                   const std::string& b, size_t bSub);
+  void writeTouches(size_t t, const std::string& a, size_t aSub,
+                    const std::string& b, size_t bSub);
+  void writeNotTouches(size_t t, const std::string& a, size_t aSub,
+                       const std::string& b, size_t bSub);
+
+  void writeOverlaps(size_t t, const std::string& a, size_t aSub,
+                     const std::string& b, size_t bSub);
+  void writeNotOverlaps(size_t t, const std::string& a, size_t aSub,
+                        const std::string& b, size_t bSub);
+
+  void writeCrosses(size_t t, const std::string& a, size_t aSub,
+                    const std::string& b, size_t bSub);
+  void writeNotCrosses(size_t t, const std::string& a, size_t aSub,
+                       const std::string& b, size_t bSub);
 
   void doCheck(const BoxVal cur, const SweepVal sv, size_t t);
 
@@ -198,6 +274,8 @@ class Sweeper {
 
   void prepareOutputFiles();
   void flushOutputFiles();
+
+  bool notOverlaps(const std::string& a, const std::string& b) const;
 
   void fillBatch(JobBatch* batch,
                  const sj::IntervalIdx<int32_t, SweepVal>* actives,
