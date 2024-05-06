@@ -148,7 +148,8 @@ void Sweeper::add(const I32Polygon& poly, const std::string& gid,
   diskAdd({id, box.getLowerLeft().getY(), box.getUpperRight().getY(),
            box.getUpperRight().getX(), true, POLYGON, areaSize});
 
-  if (_curSweepId % 1000000 == 0) LOGTO(INFO, std::cerr) << "@ " << _curSweepId;
+  if (_curSweepId / 2 % 1000000 == 0)
+    LOGTO(INFO, std::cerr) << "@ " << _curSweepId / 2;
 }
 
 // _____________________________________________________________________________
@@ -186,7 +187,8 @@ void Sweeper::add(const I32Line& line, const std::string& gid, size_t subid) {
              box.getUpperRight().getX(), true, LINE, len});
   }
 
-  if (_curSweepId % 1000000 == 0) LOGTO(INFO, std::cerr) << "@ " << _curSweepId;
+  if (_curSweepId / 2 % 1000000 == 0)
+    LOGTO(INFO, std::cerr) << "@ " << _curSweepId / 2;
 }
 
 // _____________________________________________________________________________
@@ -201,7 +203,8 @@ void Sweeper::add(const I32Point& point, const std::string& gid, size_t subid) {
   diskAdd({id, point.getY(), point.getY(), point.getX(), false, POINT, 0});
   diskAdd({id, point.getY(), point.getY(), point.getX(), true, POINT, 0});
 
-  if (_curSweepId % 1000000 == 0) LOGTO(INFO, std::cerr) << "@ " << _curSweepId;
+  if (_curSweepId / 2 % 1000000 == 0)
+    LOGTO(INFO, std::cerr) << "@ " << _curSweepId / 2;
 }
 
 // _____________________________________________________________________________
@@ -482,13 +485,14 @@ void Sweeper::sweep() {
           auto lon = webMercToLatLng<double>((1.0 * cur->val) / PREC, 0).getX();
           checkCount += checkPairs;
           LOGTO(INFO, std::cerr)
-              << jj << " / " << _curSweepId << " ("
+              << jj / 2 << " / " << _curSweepId / 2 << " ("
               << (((1.0 * jj) / (1.0 * _curSweepId)) * 100) << "%, "
               << (100000.0 / double(TOOK(t))) * 1000000000.0 << " geoms/s, "
               << (checkPairs / double(TOOK(t))) * 1000000000.0
               << " pairs/s), avg. " << ((1.0 * checkCount) / (1.0 * counts))
               << " checks/geom, sweepLon=" << lon << "°, |A|=" << actives.size()
-              << ", |JQ|=" << _jobs.size() << " (x" << batchSize << "), |A_mult|=" << _activeMultis.size();
+              << ", |JQ|=" << _jobs.size() << " (x" << batchSize
+              << "), |A_mult|=" << _activeMultis.size();
           t = TIME();
           checkPairs = 0;
         }
