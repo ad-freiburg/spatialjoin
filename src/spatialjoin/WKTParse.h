@@ -8,16 +8,17 @@
 // _____________________________________________________________________________
 util::geo::I32Line parseLineString(const std::string& a, size_t p) {
   util::geo::I32Line line;
-  line.reserve(2);
   auto end = memchr(a.c_str() + p, ')', a.size() - p);
-  assert(end);
+  if (!end) return line;
+
+  line.reserve(2);
 
   while (true) {
-    while (*(a.c_str() + p) && isspace(*(a.c_str() + p))) p++;
+    while ((a.c_str() + p) != end && *(a.c_str() + p) && isspace(*(a.c_str() + p))) p++;
     double x = util::atof(a.c_str() + p, 10);
-    double y = util::atof(
-        static_cast<const char*>(memchr(a.c_str() + p, ' ', a.size() - p)) + 1,
-        10);
+    const char* next = static_cast<const char*>(memchr(a.c_str() + p, ' ', a.size() - p));
+    if (!next || next >= end) return {};
+    double y = util::atof(next + 1, 10);
     auto projPoint = latLngToWebMerc(util::geo::DPoint(x, y));
 
     line.push_back(util::geo::I32Point{projPoint.getX() * PREC, projPoint.getY() * PREC});
@@ -32,12 +33,11 @@ util::geo::I32Line parseLineString(const std::string& a, size_t p) {
 
 // _____________________________________________________________________________
 util::geo::I32Point parsePoint(const std::string& a, size_t p) {
-  auto point = latLngToWebMerc(util::geo::DPoint(
-      util::atof(a.c_str() + p, 10),
-      util::atof(
-          static_cast<const char*>(memchr(a.c_str() + p, ' ', a.size() - p)) +
-              1,
-          10)));
+  double x = util::atof(a.c_str() + p, 10);
+  const char* next = static_cast<const char*>(memchr(a.c_str() + p, ' ', a.size() - p));
+  if (!next) return {0, 0};  // TODO!
+  double y = util::atof(next + 1, 10);
+  auto point = latLngToWebMerc(util::geo::DPoint(x, y));
 
   return {point.getX() * PREC, point.getY() * PREC};
 }
@@ -80,9 +80,7 @@ void parse(const char* c, size_t size, std::string& dangling, size_t* gid,
                  std::string::npos) {
         p += 11;
         const auto& line = parseLineString(dangling, p);
-        if (line.size() != 0) {
-          idx.add(line, id);
-        }
+        if (line.size() > 1) idx.add(line, id);
       } else if ((p = dangling.rfind("MULTILINESTRING(", start)) !=
                  std::string::npos) {
         util::geo::I32MultiLine ml;
@@ -109,7 +107,7 @@ void parse(const char* c, size_t size, std::string& dangling, size_t* gid,
           }
           i++;
         }
-        idx.add(poly, id);
+        if (poly.getOuter().size() > 1) idx.add(poly, id);
       } else if ((p = dangling.rfind("MULTIPOLYGON(", start)) !=
                  std::string::npos) {
         p += 12;

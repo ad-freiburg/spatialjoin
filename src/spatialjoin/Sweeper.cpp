@@ -66,24 +66,26 @@ void Sweeper::addMp(const I32MultiPoint& a, const std::string& gid) {
 
 // _____________________________________________________________________________
 size_t Sweeper::add(const I32MultiPolygon& a, const std::string& gid,
-                    size_t subid) {
-  if (subid > 0) _subSizes[gid] = _subSizes[gid] + a.size();
+                    size_t subId) {
   for (const auto& poly : a) {
-    add(poly, gid, subid);
-    subid++;
+    if (poly.getOuter().size() < 2) continue;
+    add(poly, gid, subId);
+    if (subId > 0) _subSizes[gid] = _subSizes[gid] + 1;
+    subId++;
   }
-  return subid;
+  return subId;
 }
 
 // _____________________________________________________________________________
 size_t Sweeper::add(const I32MultiLine& a, const std::string& gid,
-                    size_t subid) {
-  if (subid > 0) _subSizes[gid] = _subSizes[gid] + a.size();
+                    size_t subId) {
   for (const auto& line : a) {
-    add(line, gid, subid);
-    subid++;
+    if (line.size() < 2) continue;
+    add(line, gid, subId);
+    if (subId > 0) _subSizes[gid] = _subSizes[gid] + 1;
+    subId++;
   }
-  return subid;
+  return subId;
 }
 
 // _____________________________________________________________________________
@@ -125,6 +127,7 @@ void Sweeper::add(const I32Polygon& poly, const std::string& gid) {
 void Sweeper::add(const I32Polygon& poly, const std::string& gid,
                   size_t subid) {
   const auto& box = getBoundingBox(poly);
+  const auto& hull = util::geo::convexHull(poly);
   const I32XSortedPolygon spoly(poly);
   double areaSize = area(poly);
   double outerAreaSize = outerArea(poly);
