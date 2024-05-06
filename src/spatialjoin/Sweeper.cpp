@@ -481,12 +481,11 @@ void Sweeper::sweep() {
       auto cur = reinterpret_cast<const BoxVal*>(buf + i);
       jj++;
 
-      if (!cur->out) {
+      if (!cur->out && cur->loY > cur->upY) {
+        // special multi-IN
+        _activeMultis.insert(cur->id);
+      } else if (!cur->out) {
         // IN event
-
-        // multi-IN
-        if (cur->loY > cur->upY) _activeMultis.insert(cur->id);
-
         actives.insert({cur->loY, cur->upY}, {cur->id, cur->type});
 
         if (jj % 100000 == 0) {
@@ -734,13 +733,13 @@ std::tuple<bool, bool, bool, bool, bool> Sweeper::check(const SimpleLine* a,
                                                         const Line* b,
                                                         size_t t) const {
   // if (_cfg.useOBB) {
-    // auto ts = TIME();
-    // auto r = intersectsContainsCovers(
-        // I32XSortedLine(LineSegment<int32_t>(a->a, a->b)), b->obb);
-    // _stats[t].timeOBBIsectLineLine += TOOK(ts);
-    // if (!std::get<0>(r)) {
-      // return {0, 0, 0, 0, 0};
-    // }
+  // auto ts = TIME();
+  // auto r = intersectsContainsCovers(
+  // I32XSortedLine(LineSegment<int32_t>(a->a, a->b)), b->obb);
+  // _stats[t].timeOBBIsectLineLine += TOOK(ts);
+  // if (!std::get<0>(r)) {
+  // return {0, 0, 0, 0, 0};
+  // }
   // }
 
   if (_cfg.useBoxIds) {
@@ -766,13 +765,13 @@ std::tuple<bool, bool, bool, bool, bool> Sweeper::check(const Line* a,
                                                         const SimpleLine* b,
                                                         size_t t) const {
   // if (_cfg.useOBB) {
-    // auto ts = TIME();
-    // auto r = intersectsContainsCovers(
-        // I32XSortedLine(LineSegment<int32_t>(b->a, b->b)), a->obb);
-    // _stats[t].timeOBBIsectLineLine += TOOK(ts);
-    // if (!std::get<0>(r)) {
-      // return {0, 0, 0, 0, 0};
-    // }
+  // auto ts = TIME();
+  // auto r = intersectsContainsCovers(
+  // I32XSortedLine(LineSegment<int32_t>(b->a, b->b)), a->obb);
+  // _stats[t].timeOBBIsectLineLine += TOOK(ts);
+  // if (!std::get<0>(r)) {
+  // return {0, 0, 0, 0, 0};
+  // }
   // }
 
   if (_cfg.useBoxIds) {
