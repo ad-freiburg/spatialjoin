@@ -224,6 +224,9 @@ inline std::pair<int32_t, int32_t> boxIdIsect(const BoxIdList& idsA,
   size_t fullContained = 0;
   size_t partContained = 0;
 
+  // catch empty box ids
+  if (idsA.size() < 2 || idsB.size() < 2) return {0, 0};
+
   // shortcuts
   if (abs(idsA[1].first) > abs(idsB.back().first) + idsB.back().second) {
     return {fullContained, partContained};
