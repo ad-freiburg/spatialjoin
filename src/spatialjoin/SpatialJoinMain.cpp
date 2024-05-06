@@ -66,8 +66,8 @@ void printHelp(int argc, char** argv) {
       << "disable box id criteria for contains/covers/intersect computation\n"
       << std::setw(41) << "  --no-surface-area"
       << "disable surface area criteria for polygon contains/covers\n"
-            << std::setw(41) << "  --no-oriented-envelope"
-            << "disable oriented envelope cirteria for contains/intersect"
+      << std::setw(41) << "  --no-oriented-envelope"
+      << "disable oriented envelope cirteria for contains/intersect"
       << std::endl;
 }
 
@@ -108,49 +108,39 @@ int main(int argc, char** argv) {
           exit(0);
         }
         // if (cur == "-C") {
-          // useCache = true;
+        // useCache = true;
         // }
         if (cur == "--prefix") {
           state = 1;
-        }
-        if (cur == "--contains") {
+        } else if (cur == "--contains") {
           state = 2;
-        }
-        if (cur == "--intersects") {
+        } else if (cur == "--intersects") {
           state = 3;
-        }
-        if (cur == "--suffix") {
+        } else if (cur == "--suffix") {
           state = 4;
-        }
-        if (cur == "--output" || cur == "-o") {
+        } else if (cur == "--output" || cur == "-o") {
           state = 5;
-        }
-        if (cur == "--cache" || cur == "-c") {
+        } else if (cur == "--cache" || cur == "-c") {
           state = 6;
-        }
-        if (cur == "--covers") {
+        } else if (cur == "--covers") {
           state = 7;
-        }
-        if (cur == "--touches") {
+        } else if (cur == "--touches") {
           state = 8;
-        }
-        if (cur == "--equals") {
+        } else if (cur == "--equals") {
           state = 9;
-        }
-        if (cur == "--overlaps") {
+        } else if (cur == "--overlaps") {
           state = 10;
-        }
-        if (cur == "--crosses") {
+        } else if (cur == "--crosses") {
           state = 11;
-        }
-        if (cur == "--no-box-ids") {
+        } else if (cur == "--no-box-ids") {
           useBoxIds = false;
-        }
-        if (cur == "--no-surface-area") {
+        } else if (cur == "--no-surface-area") {
           useArea = false;
-        }
-        if (cur == "--no-oriented-envelope") {
+        } else if (cur == "--no-oriented-envelope") {
           useOBB = false;
+        } else {
+          std::cerr << "Unknown option '" << cur << "', see -h" << std::endl;
+          exit(1);
         }
         break;
       case 1:
@@ -207,9 +197,10 @@ int main(int argc, char** argv) {
 
   size_t NUM_THREADS = std::thread::hardware_concurrency();
 
-  Sweeper sweeper({NUM_THREADS, prefix, intersects, contains, covers, touches,
-                   equals, overlaps, crosses, suffix, useBoxIds, useArea, useOBB},
-                  useCache, cache, output);
+  Sweeper sweeper(
+      {NUM_THREADS, prefix, intersects, contains, covers, touches, equals,
+       overlaps, crosses, suffix, useBoxIds, useArea, useOBB},
+      useCache, cache, output);
 
   if (!useCache) {
     LOGTO(INFO, std::cerr) << "Parsing input geometries...";
