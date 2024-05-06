@@ -133,9 +133,7 @@ sj::Line sj::GeometryCache<sj::Line>::getFromDisk(size_t off,
   }
 
   // OBB
-  ret.obb.getOuter().resize(5);
-  _geomsFReads[tid].read(reinterpret_cast<char*>(&ret.obb.getOuter()[0]),
-  sizeof(util::geo::I32Point) * 5);
+  readPoly(_geomsFReads[tid], ret.obb);
 
   return ret;
 }
@@ -172,7 +170,8 @@ sj::Area sj::GeometryCache<sj::Area>::getFromDisk(size_t off,
   _geomsFReads[tid].read(reinterpret_cast<char*>(&ret.area), sizeof(double));
 
   // outer area
-  _geomsFReads[tid].read(reinterpret_cast<char*>(&ret.outerArea), sizeof(double));
+  _geomsFReads[tid].read(reinterpret_cast<char*>(&ret.outerArea),
+                         sizeof(double));
 
   // simplified inner
   // readPoly(_geomsFReads[tid], ret.inner);
@@ -201,9 +200,7 @@ sj::Area sj::GeometryCache<sj::Area>::getFromDisk(size_t off,
   // }
 
   // OBB
-  ret.obb.getOuter().resize(5);
-  _geomsFReads[tid].read(reinterpret_cast<char*>(&ret.obb.getOuter()[0]),
-  sizeof(util::geo::I32Point) * 5);
+  readPoly(_geomsFReads[tid], ret.obb);
 
   return ret;
 }
@@ -291,9 +288,14 @@ size_t sj::GeometryCache<sj::Line>::add(const sj::Line& val) {
   _geomsOffset += sizeof(uint32_t) + sizeof(sj::boxids::BoxId) * size;
 
   // OBB
-  _geomsF.write(reinterpret_cast<const char*>(&val.obb.getOuter()[0]),
-  sizeof(util::geo::I32Point) * 5);
-  _geomsOffset += sizeof(util::geo::I32Point) * 5;
+  // uint8_t obbSize = val.obb.getOuter().size();
+  // _geomsF.write(reinterpret_cast<const char*>(&obbSize), sizeof(uint8_t));
+  // if (obbSize > 0) {
+    // _geomsF.write(reinterpret_cast<const char*>(&val.obb.getOuter()[0]),
+                  // sizeof(util::geo::I32Point) * obbSize);
+  // }
+  // _geomsOffset += sizeof(uint8_t) + sizeof(util::geo::I32Point) * obbSize;
+  writePoly(val.obb);
 
   return ret;
 }
@@ -361,9 +363,14 @@ size_t sj::GeometryCache<sj::Area>::add(const sj::Area& val) {
   // }
 
   // OBB
-  _geomsF.write(reinterpret_cast<const char*>(&val.obb.getOuter()[0]),
-  sizeof(util::geo::I32Point) * 5);
-  _geomsOffset += sizeof(util::geo::I32Point) * 5;
+  // uint8_t obbSize = val.obb.getOuter().size();
+  // _geomsF.write(reinterpret_cast<const char*>(&obbSize), sizeof(uint8_t));
+  // if (obbSize > 0) {
+    // _geomsF.write(reinterpret_cast<const char*>(&val.obb.getOuter()[0]),
+                  // sizeof(util::geo::I32Point) * obbSize);
+  // }
+  // _geomsOffset += sizeof(uint8_t) + sizeof(util::geo::I32Point) * obbSize;
+  writePoly(val.obb);
 
   return ret;
 }

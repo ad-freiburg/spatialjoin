@@ -16,7 +16,7 @@ using sj::Sweeper;
 // _____________________________________________________________________________
 std::string fullRun(const std::string& file) {
   Sweeper sweeper({1, "$", " intersects ", " contains ", " covers ",
-                   " touches ", " equals ", " overlaps ", " crosses ", "$\n", true, true},
+                   " touches ", " equals ", " overlaps ", " crosses ", "$\n", true, true, true},
                   false, ".", ".resTmp");
 
   size_t gid = 0;

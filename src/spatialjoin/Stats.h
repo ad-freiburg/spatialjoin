@@ -81,6 +81,7 @@ inline std::string Stats::toString() {
 
   t = double(timeBoxIdIsectLinePoint) / 1000000000.0;
   ss << "time for box ID intersections LINE/POINT: " << t << " s ("
+     << ((t / sum) * 100.0) << "%)\n";
 
   t = double(timeOBBIsectAreaArea) / 1000000000.0;
   ss << "time for obb intersections AREA/AREA: " << t << " s ("

@@ -28,7 +28,6 @@ static const char* AUTHORS = "Patrick Brosi <brosi@informatik.uni-freiburg.de>";
 // _____________________________________________________________________________
 void printHelp(int argc, char** argv) {
   UNUSED(argc);
-<<<<<<< HEAD
   std::cout
       << "\n"
       << "(C) 2023-" << YEAR << " " << COPY << "\n"
@@ -209,7 +208,7 @@ int main(int argc, char** argv) {
   size_t NUM_THREADS = std::thread::hardware_concurrency();
 
   Sweeper sweeper({NUM_THREADS, prefix, intersects, contains, covers, touches,
-                   equals, overlaps, crosses, suffix, useBoxIds, useArea, useObb},
+                   equals, overlaps, crosses, suffix, useBoxIds, useArea, useOBB},
                   useCache, cache, output);
 
   if (!useCache) {
