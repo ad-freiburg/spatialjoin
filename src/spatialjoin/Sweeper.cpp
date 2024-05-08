@@ -40,6 +40,9 @@ using util::geo::intersectsLineStrict;
 using util::geo::LineSegment;
 using util::geo::webMercToLatLng;
 
+const static size_t CUTOUTS_MIN_SIZE = 2000;
+const static size_t OBB_MIN_SIZE = 100;
+
 // _____________________________________________________________________________
 void Sweeper::add(const I32MultiPolygon& a, const std::string& gid) {
   uint16_t subid = 0;  // a subid of 0 means "single polygon"
@@ -135,7 +138,7 @@ void Sweeper::add(const I32Polygon& poly, const std::string& gid,
   std::map<int32_t, size_t> cutouts;
 
   if (_cfg.useBoxIds) {
-    if (_cfg.useCutouts && poly.getOuter().size() > 100) {
+    if (_cfg.useCutouts && poly.getOuter().size() > CUTOUTS_MIN_SIZE) {
       boxIds = packBoxIds(getBoxIds(spoly, poly, box, areaSize, &cutouts));
     } else {
       boxIds = packBoxIds(getBoxIds(spoly, poly, box, areaSize, 0));
@@ -143,12 +146,14 @@ void Sweeper::add(const I32Polygon& poly, const std::string& gid,
   }
 
   util::geo::I32Polygon obb;
+  obb = util::geo::convexHull(util::geo::getOrientedEnvelope(poly));
 
-  // no gain for polygons with fewer than 5 anchor points
-  if (_cfg.useOBB && poly.getOuter().size() > 5)
-    obb = util::geo::convexHull(util::geo::getOrientedEnvelope(poly));
+  auto polyR = util::geo::rotate(poly, 45, I32Point(0, 0));
+  const auto& box45 = getBoundingBox(polyR);
 
-  if (obb.getOuter().size() >= poly.getOuter().size()) obb = {};
+  if (!_cfg.useOBB || poly.getOuter().size() < OBB_MIN_SIZE ||
+      obb.getOuter().size() >= poly.getOuter().size())
+    obb = {};
 
   if (subid > 0)
     multiAdd(gid, box.getLowerLeft().getX(), box.getUpperRight().getX());
@@ -159,9 +164,9 @@ void Sweeper::add(const I32Polygon& poly, const std::string& gid,
       {spoly, box, gid, subid, areaSize, outerAreaSize, boxIds, cutouts, obb});
 
   diskAdd({id, box.getLowerLeft().getY(), box.getUpperRight().getY(),
-           box.getLowerLeft().getX(), false, POLYGON, areaSize});
+           box.getLowerLeft().getX(), false, POLYGON, areaSize, box45});
   diskAdd({id, box.getLowerLeft().getY(), box.getUpperRight().getY(),
-           box.getUpperRight().getX(), true, POLYGON, areaSize});
+           box.getUpperRight().getX(), true, POLYGON, areaSize, box45});
 
   if (_curSweepId / 2 % 1000000 == 0)
     LOGTO(INFO, std::cerr) << "@ " << _curSweepId / 2;
@@ -179,7 +184,7 @@ void Sweeper::add(const I32Line& line, const std::string& gid, size_t subid) {
   std::map<int32_t, size_t> cutouts;
 
   if (_cfg.useBoxIds) {
-    if (_cfg.useCutouts && line.size() > 100) {
+    if (_cfg.useCutouts && line.size() > CUTOUTS_MIN_SIZE) {
       boxIds = packBoxIds(getBoxIds(line, box, &cutouts));
     } else {
       boxIds = packBoxIds(getBoxIds(line, box, 0));
@@ -189,11 +194,15 @@ void Sweeper::add(const I32Line& line, const std::string& gid, size_t subid) {
   double len = util::geo::len(line);
 
   util::geo::I32Polygon obb;
-  if (_cfg.useOBB && line.size() > 4)
-    obb = util::geo::convexHull(util::geo::getOrientedEnvelope(line));
+  obb = util::geo::convexHull(util::geo::getOrientedEnvelope(line));
+
+  auto lineR = util::geo::rotate(line, 45, I32Point(0, 0));
+  const auto& box45 = getBoundingBox(lineR);
 
   // drop redundant oriented bbox
-  if (obb.getOuter().size() >= line.size()) obb = {};
+  if (!_cfg.useOBB || line.size() < OBB_MIN_SIZE ||
+      obb.getOuter().size() >= line.size())
+    obb = {};
 
   if (subid > 0)
     multiAdd(gid, box.getLowerLeft().getX(), box.getUpperRight().getX());
@@ -204,18 +213,21 @@ void Sweeper::add(const I32Line& line, const std::string& gid, size_t subid) {
     size_t id = _simpleLineCache.add({line.front(), line.back(), gid});
 
     diskAdd({id, box.getLowerLeft().getY(), box.getUpperRight().getY(),
-             box.getLowerLeft().getX(), false, SIMPLE_LINE, len});
+             box.getLowerLeft().getX(), false, SIMPLE_LINE, len,
+             box45});
     diskAdd({id, box.getLowerLeft().getY(), box.getUpperRight().getY(),
-             box.getUpperRight().getX(), true, SIMPLE_LINE, len});
+             box.getUpperRight().getX(), true, SIMPLE_LINE, len,
+             box45});
   } else {
     const I32XSortedLine sline(line);
 
-    size_t id = _lineCache.add({sline, box, gid, subid, len, boxIds, cutouts, obb});
+    size_t id =
+        _lineCache.add({sline, box, gid, subid, len, boxIds, cutouts, obb});
 
     diskAdd({id, box.getLowerLeft().getY(), box.getUpperRight().getY(),
-             box.getLowerLeft().getX(), false, LINE, len});
+             box.getLowerLeft().getX(), false, LINE, len, box45});
     diskAdd({id, box.getLowerLeft().getY(), box.getUpperRight().getY(),
-             box.getUpperRight().getX(), true, LINE, len});
+             box.getUpperRight().getX(), true, LINE, len, box45});
   }
 
   if (_curSweepId / 2 % 1000000 == 0)
@@ -231,8 +243,11 @@ void Sweeper::add(const I32Point& point, const std::string& gid) {
 void Sweeper::add(const I32Point& point, const std::string& gid, size_t subid) {
   size_t id = _pointCache.add({gid, subid});
   if (subid > 0) multiAdd(gid, point.getX(), point.getX());
-  diskAdd({id, point.getY(), point.getY(), point.getX(), false, POINT, 0});
-  diskAdd({id, point.getY(), point.getY(), point.getX(), true, POINT, 0});
+  auto pointR = util::geo::rotate(point, 45, I32Point(0, 0));
+  diskAdd({id, point.getY(), point.getY(), point.getX(), false, POINT, 0,
+           util::geo::getBoundingBox(pointR)});
+  diskAdd({id, point.getY(), point.getY(), point.getX(), true, POINT, 0,
+           util::geo::getBoundingBox(pointR)});
 
   if (_curSweepId / 2 % 1000000 == 0)
     LOGTO(INFO, std::cerr) << "@ " << _curSweepId / 2;
@@ -410,7 +425,7 @@ void Sweeper::multiOut(size_t t, const std::string& gidA) {
 void Sweeper::flush() {
   LOG(INFO) << _multiIds.size() << " multi geometries";
   for (size_t i = 0; i < _multiIds.size(); i++) {
-    diskAdd({i, 2, 1, _multiLeftX[i] - 1, false, POINT, 0.0});
+    diskAdd({i, 2, 1, _multiLeftX[i] - 1, false, POINT, 0.0, {}});
   }
 
   ssize_t r = write(_file, _outBuffer, _obufpos);
@@ -509,15 +524,16 @@ void Sweeper::sweep() {
         _activeMultis.insert(cur->id);
       } else if (!cur->out) {
         // IN event
-        actives.insert({cur->loY, cur->upY}, {cur->id, cur->type});
+        actives.insert({cur->loY, cur->upY},
+                       {cur->id, cur->type, cur->b45});
 
-        if (jj % 100000 == 0) {
+        if (jj % 500000 == 0) {
           auto lon = webMercToLatLng<double>((1.0 * cur->val) / PREC, 0).getX();
           checkCount += checkPairs;
           LOGTO(INFO, std::cerr)
               << jj / 2 << " / " << _curSweepId / 2 << " ("
               << (((1.0 * jj) / (1.0 * _curSweepId)) * 100) << "%, "
-              << (100000.0 / double(TOOK(t))) * 1000000000.0 << " geoms/s, "
+              << (500000.0 / double(TOOK(t))) * 1000000000.0 << " geoms/s, "
               << (checkPairs / double(TOOK(t))) * 1000000000.0
               << " pairs/s), avg. " << ((1.0 * checkCount) / (1.0 * counts))
               << " checks/geom, sweepLon=" << lon << "°, |A|=" << actives.size()
@@ -573,26 +589,6 @@ void Sweeper::sweep() {
 std::tuple<bool, bool, bool, bool, bool> Sweeper::check(const Area* a,
                                                         const Area* b,
                                                         size_t t) const {
-  if (_cfg.useOBB) {
-    if (a->obb.getOuter().rawRing().size() &&
-        b->obb.getOuter().rawRing().size()) {
-      auto ts = TIME();
-      auto r = util::geo::intersectsContainsCovers(a->obb, b->obb);
-      _stats[t].timeOBBIsectAreaArea += TOOK(ts);
-      if (!std::get<0>(r)) return {0, 0, 0, 0, 0};
-    } else if (a->obb.getOuter().rawRing().size()) {
-      auto ts = TIME();
-      auto r = util::geo::intersectsContainsCovers(a->obb, b->geom);
-      _stats[t].timeOBBIsectAreaArea += TOOK(ts);
-      if (!std::get<0>(r)) return {0, 0, 0, 0, 0};
-    } else if (b->obb.getOuter().rawRing().size()) {
-      auto ts = TIME();
-      auto r = util::geo::intersectsContainsCovers(a->geom, b->obb);
-      _stats[t].timeOBBIsectAreaArea += TOOK(ts);
-      if (!std::get<0>(r)) return {0, 0, 0, 0, 0};
-    }
-  }
-
   if (_cfg.useBoxIds) {
     auto ts = TIME();
     auto r = boxIdIsect(a->boxIds, b->boxIds);
@@ -634,6 +630,17 @@ std::tuple<bool, bool, bool, bool, bool> Sweeper::check(const Area* a,
     }
   }
 
+  if (_cfg.useOBB) {
+    if (a->obb.getOuter().rawRing().size() &&
+        b->obb.getOuter().rawRing().size()) {
+      auto ts = TIME();
+      auto r = util::geo::intersectsContainsCovers(
+          a->obb, a->box, a->outerArea, b->obb, b->box, b->outerArea);
+      _stats[t].timeOBBIsectAreaArea += TOOK(ts);
+      if (!std::get<0>(r)) return {0, 0, 0, 0, 0};
+    }
+  }
+
   auto ts = TIME();
   auto res = intersectsContainsCovers(a->geom, a->box, a->outerArea, b->geom,
                                       b->box, b->outerArea);
@@ -646,26 +653,6 @@ std::tuple<bool, bool, bool, bool, bool> Sweeper::check(const Area* a,
 std::tuple<bool, bool, bool, bool, bool> Sweeper::check(const Line* a,
                                                         const Area* b,
                                                         size_t t) const {
-  if (_cfg.useOBB) {
-    if (a->obb.getOuter().rawRing().size() &&
-        b->obb.getOuter().rawRing().size()) {
-      auto ts = TIME();
-      auto r = util::geo::intersectsContainsCovers(a->obb, b->obb);
-      _stats[t].timeOBBIsectAreaLine += TOOK(ts);
-      if (!std::get<0>(r)) return {0, 0, 0, 0, 0};
-    } else if (a->obb.getOuter().rawRing().size()) {
-      auto ts = TIME();
-      auto r = util::geo::intersectsContainsCovers(a->obb, b->geom);
-      _stats[t].timeOBBIsectAreaLine += TOOK(ts);
-      if (!std::get<0>(r)) return {0, 0, 0, 0, 0};
-    } else if (b->obb.getOuter().rawRing().size()) {
-      auto ts = TIME();
-      auto r = util::geo::intersectsContainsCovers(a->geom, b->obb);
-      _stats[t].timeOBBIsectAreaLine += TOOK(ts);
-      if (!std::get<0>(r)) return {0, 0, 0, 0, 0};
-    }
-  }
-
   if (_cfg.useBoxIds) {
     auto ts = TIME();
     auto r = boxIdIsect(a->boxIds, b->boxIds);
@@ -702,6 +689,16 @@ std::tuple<bool, bool, bool, bool, bool> Sweeper::check(const Line* a,
     }
   }
 
+  if (_cfg.useOBB) {
+    if (a->obb.getOuter().rawRing().size() &&
+        b->obb.getOuter().rawRing().size()) {
+      auto ts = TIME();
+      auto r = intersectsContainsCovers(a->obb, a->box, 0, b->obb, b->box, 0);
+      _stats[t].timeOBBIsectAreaLine += TOOK(ts);
+      if (!std::get<0>(r)) return {0, 0, 0, 0, 0};
+    }
+  }
+
   auto ts = TIME();
   auto res = intersectsContainsCovers(a->geom, a->box, b->geom, b->box);
   _stats[t].timeFullGeoCheckAreaLine += TOOK(ts);
@@ -714,26 +711,6 @@ std::tuple<bool, bool, bool, bool, bool> Sweeper::check(const Line* a,
 std::tuple<bool, bool, bool, bool, bool> Sweeper::check(const Line* a,
                                                         const Line* b,
                                                         size_t t) const {
-  if (_cfg.useOBB) {
-    if (a->obb.getOuter().rawRing().size() &&
-        b->obb.getOuter().rawRing().size()) {
-      auto ts = TIME();
-      auto r = util::geo::intersectsContainsCovers(a->obb, b->obb);
-      _stats[t].timeOBBIsectLineLine += TOOK(ts);
-      if (!std::get<0>(r)) return {0, 0, 0, 0, 0};
-    } else if (a->obb.getOuter().rawRing().size()) {
-      auto ts = TIME();
-      auto r = util::geo::intersectsContainsCovers(b->geom, a->obb);
-      _stats[t].timeOBBIsectLineLine += TOOK(ts);
-      if (!std::get<0>(r)) return {0, 0, 0, 0, 0};
-    } else if (b->obb.getOuter().rawRing().size()) {
-      auto ts = TIME();
-      auto r = util::geo::intersectsContainsCovers(a->geom, b->obb);
-      _stats[t].timeOBBIsectLineLine += TOOK(ts);
-      if (!std::get<0>(r)) return {0, 0, 0, 0, 0};
-    }
-  }
-
   if (_cfg.useBoxIds) {
     auto ts = TIME();
     auto r = boxIdIsect(a->boxIds, b->boxIds);
@@ -749,8 +726,8 @@ std::tuple<bool, bool, bool, bool, bool> Sweeper::check(const Line* a,
         size_t firstInA = 0;
         size_t firstInB = i->second;
         auto ts = TIME();
-        auto res = intersectsCovers(
-            a->geom, b->geom, a->box, b->box, &firstInA, &firstInB);
+        auto res = intersectsCovers(a->geom, b->geom, a->box, b->box, &firstInA,
+                                    &firstInB);
         _stats[t].timeCutoutGeoCheckLineLine += TOOK(ts);
         _stats[t].cutoutGeoChecksLineLine++;
         return res;
@@ -764,12 +741,23 @@ std::tuple<bool, bool, bool, bool, bool> Sweeper::check(const Line* a,
         size_t firstInA = i->second;
         size_t firstInB = 0;
         auto ts = TIME();
-        auto res = intersectsCovers(
-            a->geom, b->geom, a->box, b->box, &firstInA, &firstInB);
+        auto res = intersectsCovers(a->geom, b->geom, a->box, b->box, &firstInA,
+                                    &firstInB);
         _stats[t].timeCutoutGeoCheckLineLine += TOOK(ts);
         _stats[t].cutoutGeoChecksLineLine++;
         return res;
       }
+    }
+  }
+
+  if (_cfg.useOBB) {
+    if (a->obb.getOuter().rawRing().size() &&
+        b->obb.getOuter().rawRing().size()) {
+      auto ts = TIME();
+      auto r = util::geo::intersectsContainsCovers(a->obb, a->box, 0, b->obb,
+                                                   b->box, 0);
+      _stats[t].timeOBBIsectLineLine += TOOK(ts);
+      if (!std::get<0>(r)) return {0, 0, 0, 0, 0};
     }
   }
 
@@ -785,16 +773,6 @@ std::tuple<bool, bool, bool, bool, bool> Sweeper::check(const Line* a,
 std::tuple<bool, bool, bool, bool, bool> Sweeper::check(const SimpleLine* a,
                                                         const Area* b,
                                                         size_t t) const {
-  if (_cfg.useOBB && b->obb.getOuter().rawRing().size()) {
-    auto ts = TIME();
-    auto r = intersectsContainsCovers(
-        I32XSortedLine(LineSegment<int32_t>(a->a, a->b)), b->obb);
-    _stats[t].timeOBBIsectAreaLine += TOOK(ts);
-    if (!std::get<0>(r)) {
-      return {0, 0, 0, 0, 0};
-    }
-  }
-
   if (_cfg.useBoxIds) {
     auto ts = TIME();
     auto r = boxIdIsect({{1, 0}, {getBoxId(a->a), 0}}, b->boxIds);
@@ -816,12 +794,22 @@ std::tuple<bool, bool, bool, bool, bool> Sweeper::check(const SimpleLine* a,
         auto ts = TIME();
         auto res = intersectsContainsCovers(
             I32XSortedLine(LineSegment<int32_t>(a->a, a->b)),
-            getBoundingBox(LineSegment<int32_t>(a->a, a->b)), b->geom, b->box, &firstInA, &firstInB);
+            getBoundingBox(LineSegment<int32_t>(a->a, a->b)), b->geom, b->box,
+            &firstInA, &firstInB);
         _stats[t].timeCutoutGeoCheckLineLine += TOOK(ts);
         _stats[t].cutoutGeoChecksLineLine++;
         return res;
       }
     }
+  }
+
+  if (_cfg.useOBB && b->obb.getOuter().rawRing().size()) {
+    auto ts = TIME();
+    auto r = intersectsContainsCovers(
+        I32XSortedLine(LineSegment<int32_t>(a->a, a->b)),
+        getBoundingBox(LineSegment<int32_t>(a->a, a->b)), b->obb, b->box);
+    _stats[t].timeOBBIsectAreaLine += TOOK(ts);
+    if (!std::get<0>(r)) return {0, 0, 0, 0, 0};
   }
 
   auto ts = TIME();
@@ -892,9 +880,10 @@ std::tuple<bool, bool, bool, bool, bool> Sweeper::check(const SimpleLine* a,
         size_t firstInA = 0;
         size_t firstInB = i->second;
         auto ts = TIME();
-  auto res = intersectsCovers(
-      I32XSortedLine(LineSegment<int32_t>(a->a, a->b)), b->geom,
-      getBoundingBox(LineSegment<int32_t>(a->a, a->b)), b->box, &firstInA, &firstInB);
+        auto res = intersectsCovers(
+            I32XSortedLine(LineSegment<int32_t>(a->a, a->b)), b->geom,
+            getBoundingBox(LineSegment<int32_t>(a->a, a->b)), b->box, &firstInA,
+            &firstInB);
         _stats[t].timeCutoutGeoCheckLineLine += TOOK(ts);
         _stats[t].cutoutGeoChecksLineLine++;
         return res;
@@ -940,9 +929,10 @@ std::tuple<bool, bool, bool, bool, bool> Sweeper::check(const Line* a,
         size_t firstInA = i->second;
         size_t firstInB = 0;
         auto ts = TIME();
-  auto res = intersectsCovers(
-      a->geom, I32XSortedLine(LineSegment<int32_t>(b->a, b->b)), a->box,
-      getBoundingBox(LineSegment<int32_t>(b->a, b->b)), &firstInA, &firstInB);
+        auto res = intersectsCovers(
+            a->geom, I32XSortedLine(LineSegment<int32_t>(b->a, b->b)), a->box,
+            getBoundingBox(LineSegment<int32_t>(b->a, b->b)), &firstInA,
+            &firstInB);
         _stats[t].timeCutoutGeoCheckLineLine += TOOK(ts);
         _stats[t].cutoutGeoChecksLineLine++;
         return res;
@@ -962,13 +952,6 @@ std::tuple<bool, bool, bool, bool, bool> Sweeper::check(const Line* a,
 // _____________________________________________________________________________
 std::pair<bool, bool> Sweeper::check(const I32Point& a, const Area* b,
                                      size_t t) const {
-  if (_cfg.useOBB && b->obb.getOuter().rawRing().size()) {
-    auto ts = TIME();
-    auto r = containsCovers(a, b->obb);
-    _stats[t].timeOBBIsectAreaPoint += TOOK(ts);
-    if (!std::get<1>(r)) return {0, 0};
-  }
-
   if (_cfg.useBoxIds) {
     auto ts = TIME();
     auto r = boxIdIsect({{1, 0}, {getBoxId(a), 0}}, b->boxIds);
@@ -991,6 +974,13 @@ std::pair<bool, bool> Sweeper::check(const I32Point& a, const Area* b,
         return res;
       }
     }
+  }
+
+  if (_cfg.useOBB && b->obb.getOuter().rawRing().size()) {
+    auto ts = TIME();
+    auto r = containsCovers(a, b->obb);
+    _stats[t].timeOBBIsectAreaPoint += TOOK(ts);
+    if (!std::get<1>(r)) return {0, 0};
   }
 
   auto ts = TIME();
@@ -1129,9 +1119,9 @@ void Sweeper::doCheck(const BoxVal cur, const SweepVal sv, size_t t) {
     auto a = _areaCache.get(cur.id, t);
     auto b = _areaCache.get(sv.id, t);
 
-    if (a->id == b->id) return;  // no self-checks in multigeometries
-
     _stats[t].timeGeoCacheRetrievalArea += TOOK(ts);
+
+    if (a->id == b->id) return;  // no self-checks in multigeometries
 
     auto res = check(a.get(), b.get(), t);
 
@@ -1869,11 +1859,13 @@ void Sweeper::processQueue(size_t t) {
 void Sweeper::fillBatch(JobBatch* batch,
                         const IntervalIdx<int32_t, SweepVal>* actives,
                         const BoxVal* cur) const {
-  batch->reserve(20);
-
   const auto& overlaps = actives->overlap_find_all({cur->loY, cur->upY});
 
-  for (auto p : overlaps) batch->push_back({*cur, p.v});
+  for (auto p : overlaps) {
+    if (_cfg.useDiagBox && !util::geo::intersects(p.v.b45, cur->b45)) continue;
+
+    batch->push_back({*cur, p.v});
+  }
 }
 
 // _____________________________________________________________________________

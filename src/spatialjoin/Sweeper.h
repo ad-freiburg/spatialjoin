@@ -41,6 +41,7 @@ struct BoxVal {
   bool out : 1;
   GeomType type : 2;
   double areaOrLen;
+  util::geo::I32Box b45;
 };
 
 inline bool operator==(const BoxVal& a, const BoxVal& b) {
@@ -49,9 +50,12 @@ inline bool operator==(const BoxVal& a, const BoxVal& b) {
 
 struct SweepVal {
   SweepVal(size_t id, GeomType type) : id(id), type(type) {}
+  SweepVal(size_t id, GeomType type, util::geo::I32Box b45)
+      : id(id), type(type), b45(b45) {}
   SweepVal() : id(0), type(POLYGON) {}
   size_t id : 60;
   GeomType type : 2;
+  util::geo::I32Box b45;
 };
 
 inline bool operator==(const SweepVal& a, const SweepVal& b) {
@@ -79,6 +83,7 @@ struct SweeperCfg {
   bool useArea;
   bool useOBB;
   bool useCutouts;
+  bool useDiagBox;
 };
 
 // buffer sizes _must_ be multiples of sizeof(BoxVal)

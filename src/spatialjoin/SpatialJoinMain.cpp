@@ -69,8 +69,9 @@ void printHelp(int argc, char** argv) {
       << std::setw(41) << "  --no-oriented-envelope"
       << "disable oriented envelope cirteria for contains/intersect\n"
       << std::setw(41) << "  --no-cutouts"
-      << "disable cutouts"
-      << std::endl;
+      << "disable cutouts\n"
+      << std::setw(41) << "  --no-diag-box"
+      << "disable diagonal bounding-box based pre-filter" << std::endl;
 }
 
 // _____________________________________________________________________________
@@ -101,6 +102,7 @@ int main(int argc, char** argv) {
   bool useArea = true;
   bool useOBB = true;
   bool useCutouts = true;
+  bool useDiagBox = true;
 
   for (int i = 1; i < argc; i++) {
     std::string cur = argv[i];
@@ -143,6 +145,8 @@ int main(int argc, char** argv) {
           useOBB = false;
         } else if (cur == "--no-cutouts") {
           useCutouts = false;
+        } else if (cur == "--no-diag-box") {
+          useDiagBox = false;
         } else {
           std::cerr << "Unknown option '" << cur << "', see -h" << std::endl;
           exit(1);
@@ -202,24 +206,26 @@ int main(int argc, char** argv) {
 
   size_t NUM_THREADS = std::thread::hardware_concurrency();
 
-  Sweeper sweeper(
-      {NUM_THREADS, prefix, intersects, contains, covers, touches, equals,
-       overlaps, crosses, suffix, useBoxIds, useArea, useOBB, useCutouts},
-      useCache, cache, output);
+  Sweeper sweeper({NUM_THREADS, prefix, intersects, contains, covers, touches,
+                   equals, overlaps, crosses, suffix, useBoxIds, useArea,
+                   useOBB, useCutouts, useDiagBox},
+                  useCache, cache, output);
 
   if (!useCache) {
     LOGTO(INFO, std::cerr) << "Parsing input geometries...";
+    auto ts = TIME();
 
     while ((len = read(0, buf, 1024 * 1024 * 100)) > 0) {
       parse(buf, len, dangling, &gid, sweeper);
     }
 
     sweeper.flush();
+
+    LOGTO(INFO, std::cerr) << "done (" << TOOK(ts) / 1000000000.0 << "s).";
   }
 
-  LOGTO(INFO, std::cerr) << "done.";
-
   LOGTO(INFO, std::cerr) << "Sweeping...";
+  auto ts = TIME();
   sweeper.sweep();
-  LOGTO(INFO, std::cerr) << "done.";
+  LOGTO(INFO, std::cerr) << "done (" << TOOK(ts) / 1000000000.0 << "s).";
 }
