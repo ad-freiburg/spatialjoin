@@ -67,7 +67,9 @@ void printHelp(int argc, char** argv) {
       << std::setw(41) << "  --no-surface-area"
       << "disable surface area criteria for polygon contains/covers\n"
       << std::setw(41) << "  --no-oriented-envelope"
-      << "disable oriented envelope cirteria for contains/intersect"
+      << "disable oriented envelope cirteria for contains/intersect\n"
+      << std::setw(41) << "  --no-cutouts"
+      << "disable cutouts"
       << std::endl;
 }
 
@@ -98,6 +100,7 @@ int main(int argc, char** argv) {
   bool useBoxIds = true;
   bool useArea = true;
   bool useOBB = true;
+  bool useCutouts = true;
 
   for (int i = 1; i < argc; i++) {
     std::string cur = argv[i];
@@ -138,6 +141,8 @@ int main(int argc, char** argv) {
           useArea = false;
         } else if (cur == "--no-oriented-envelope") {
           useOBB = false;
+        } else if (cur == "--no-cutouts") {
+          useCutouts = false;
         } else {
           std::cerr << "Unknown option '" << cur << "', see -h" << std::endl;
           exit(1);
@@ -199,7 +204,7 @@ int main(int argc, char** argv) {
 
   Sweeper sweeper(
       {NUM_THREADS, prefix, intersects, contains, covers, touches, equals,
-       overlaps, crosses, suffix, useBoxIds, useArea, useOBB},
+       overlaps, crosses, suffix, useBoxIds, useArea, useOBB, useCutouts},
       useCache, cache, output);
 
   if (!useCache) {

@@ -7,8 +7,8 @@
 #include <fstream>
 #include <iostream>
 #include <list>
+#include <map>
 #include <memory>
-#include <mutex>
 #include <unordered_map>
 
 #include "BoxIds.h"
@@ -53,7 +53,7 @@ struct Area {
   std::vector<sj::boxids::BoxId> boxIds;
 
   // cutouts
-  // std::unordered_map<int32_t, util::geo::I32XSortedMultiPolygon> cutouts;
+  std::map<int32_t, size_t> cutouts;
 
   // OBB
   util::geo::I32XSortedPolygon obb;
@@ -86,6 +86,9 @@ struct Line {
 
   // box ids
   std::vector<sj::boxids::BoxId> boxIds;
+
+  // cutouts
+  std::map<int32_t, size_t> cutouts;
 
   // OBB
   util::geo::I32XSortedPolygon obb;

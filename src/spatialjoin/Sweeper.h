@@ -78,6 +78,7 @@ struct SweeperCfg {
   bool useBoxIds;
   bool useArea;
   bool useOBB;
+  bool useCutouts;
 };
 
 // buffer sizes _must_ be multiples of sizeof(BoxVal)

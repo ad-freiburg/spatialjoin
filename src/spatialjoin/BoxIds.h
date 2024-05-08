@@ -4,6 +4,8 @@
 #ifndef SPATIALJOINS_BOXIDS_H_
 #define SPATIALJOINS_BOXIDS_H_
 
+#include <map>
+
 #include "util/geo/Geo.h"
 
 const static int PREC = 10;
@@ -42,7 +44,8 @@ inline int32_t getBoxId(const util::geo::I32Point& p) {
 
 // ____________________________________________________________________________
 inline BoxIdList getBoxIds(const util::geo::I32XSortedLine& line,
-                           const util::geo::I32Box& envelope) {
+                           const util::geo::I32Box& envelope,
+                           std::map<int32_t, size_t>* cutouts) {
   int32_t startX = std::floor(
       (1.0 * envelope.getLowerLeft().getX() + WORLD_W / 2.0) / GRID_W);
   int32_t startY = std::floor(
@@ -67,14 +70,20 @@ inline BoxIdList getBoxIds(const util::geo::I32XSortedLine& line,
 
       const util::geo::I32XSortedPolygon boxPoly{util::geo::I32Polygon(box)};
 
-      if (std::get<0>(util::geo::intersectsContainsCovers(line, envelope,
-                                                          boxPoly, box))) {
+      size_t firstInA = 0;
+      size_t firstInB = 0;
+
+      if (std::get<0>(util::geo::intersectsContainsCovers(
+              line, envelope, boxPoly, box, &firstInA, &firstInB))) {
         int32_t newId = y * NUM_GRID_CELLS + x + 1;
         if (!boxIds.empty() && boxIds.back().second < 254 &&
             boxIds.back().first + boxIds.back().second == newId - 1) {
           boxIds.back().second++;
+
+          if (cutouts) (*cutouts)[newId] = firstInB;
         } else {
           boxIds.push_back({newId, 0});
+          if (cutouts) (*cutouts)[newId] = firstInB;
         }
       }
     }
@@ -84,14 +93,11 @@ inline BoxIdList getBoxIds(const util::geo::I32XSortedLine& line,
 }
 
 // ____________________________________________________________________________
-inline void getBoxIds(
-    const util::geo::I32XSortedPolygon& poly,
-    const util::geo::I32Polygon& polyr, const util::geo::I32Box& envelope,
-    double area, int xFrom, int xTo, int yFrom, int yTo, int xWidth,
-    int yHeight, BoxIdList* ret
-    // const osm2rdf::geometry::Area& curIsect,
-    // std::unordered_map<int32_t, osm2rdf::geometry::Area>* cutouts
-) {
+inline void getBoxIds(const util::geo::I32XSortedPolygon& poly,
+                      const util::geo::I32Polygon& polyr,
+                      const util::geo::I32Box& envelope, double area, int xFrom,
+                      int xTo, int yFrom, int yTo, int xWidth, int yHeight,
+                      BoxIdList* ret, std::map<int32_t, size_t>* cutouts) {
   for (int32_t y = yFrom; y < yTo; y += yHeight) {
     for (int32_t x = xFrom; x < xTo; x += xWidth) {
       int localXWidth = std::min(xTo - x, xWidth);
@@ -108,8 +114,12 @@ inline void getBoxIds(
 
       const util::geo::I32XSortedPolygon boxPoly{util::geo::I32Polygon(box)};
 
+      size_t firstInA = 0;
+      size_t firstInB = 0;
+
       auto check = util::geo::intersectsContainsCovers(
-          boxPoly, box, util::geo::area(box), poly, envelope, area);
+          boxPoly, box, util::geo::area(box), poly, envelope, area, &firstInA,
+          &firstInB);
 
       if (std::get<1>(check)) {
         // we can insert all at once
@@ -124,19 +134,11 @@ inline void getBoxIds(
           }
         }
       } else if (std::get<0>(check)) {
-        // compute cutout if requested
-        // osm2rdf::geometry::Area intersection;
-        // if (cutouts) {
-        // boost::geometry::intersection(bboxPoly, curIsect, intersection);
-        // }
-
         if (localXWidth == 1 && localYHeight == 1) {
           // only intersecting
           int32_t newId = -(y * NUM_GRID_CELLS + x + 1);
 
-          // if (cutouts) {
-          // (*cutouts)[-newId] = intersection;
-          // }
+          if (cutouts) (*cutouts)[-newId] = firstInB;
 
           if (!ret->empty() && ret->back().second < 254 &&
               ret->back().first - ret->back().second == newId + 1) {
@@ -151,7 +153,7 @@ inline void getBoxIds(
           int newYHeight = (localYHeight + 1) / 2;
 
           getBoxIds(poly, polyr, envelope, area, x, x + localXWidth, y,
-                    y + localYHeight, newXWidth, newYHeight, ret);
+                    y + localYHeight, newXWidth, newYHeight, ret, cutouts);
         }
       }
     }
@@ -161,10 +163,8 @@ inline void getBoxIds(
 // ____________________________________________________________________________
 inline BoxIdList getBoxIds(const util::geo::I32XSortedPolygon& poly,
                            const util::geo::I32Polygon& polyr,
-                           const util::geo::I32Box& envelope, double area
-                           // const osm2rdf::geometry::Area& inner,
-                           // const osm2rdf::geometry::Area& outer
-) {
+                           const util::geo::I32Box& envelope, double area,
+                           std::map<int32_t, size_t>* cutouts) {
   int32_t startX = std::floor(
       (1.0 * envelope.getLowerLeft().getX() + WORLD_W / 2.0) / GRID_W);
   int32_t startY = std::floor(
@@ -182,7 +182,7 @@ inline BoxIdList getBoxIds(const util::geo::I32XSortedPolygon& poly,
   BoxIdList boxIds;
 
   getBoxIds(poly, polyr, envelope, area, startX, endX, startY, endY,
-            (endX - startX + 3) / 4, (endY - startY + 3) / 4, &boxIds);
+            (endX - startX + 3) / 4, (endY - startY + 3) / 4, &boxIds, cutouts);
   std::sort(boxIds.begin(), boxIds.end(), BoxIdCmp());
 
   return boxIds;

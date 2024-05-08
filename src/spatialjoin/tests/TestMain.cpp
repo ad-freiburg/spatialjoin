@@ -16,7 +16,7 @@ using sj::Sweeper;
 // _____________________________________________________________________________
 std::string fullRun(const std::string& file) {
   Sweeper sweeper({1, "$", " intersects ", " contains ", " covers ",
-                   " touches ", " equals ", " overlaps ", " crosses ", "$\n", true, true, true},
+                   " touches ", " equals ", " overlaps ", " crosses ", "$\n", true, true, true, true},
                   false, ".", ".resTmp");
 
   size_t gid = 0;
@@ -255,6 +255,14 @@ int main(int, char**) {
     TEST(res.find("$Berlin intersects Grenzpart$") != std::string::npos);
     TEST(res.find("$Berlin covers Grenzpart$") != std::string::npos);
     TEST(res.find("$Berlin contains Grenzpart$") == std::string::npos);
+
+    TEST(res.find("$Haus overlaps Brandenburg$") != std::string::npos);
+    TEST(res.find("$Haus-Way intersects Brandenburg$") != std::string::npos);
+    TEST(res.find("$Haus intersects Brandenburg-Way$") != std::string::npos);
+    TEST(res.find("$Haus-Way intersects Brandenburg-Way$") != std::string::npos);
+
+    TEST(res.find("$Brandenburg-Point intersects Brandenburg-Way$") != std::string::npos);
+    TEST(res.find("$Brandenburg-Point intersects Brandenburg$") != std::string::npos);
   }
 
   {

@@ -29,24 +29,40 @@ struct Stats {
   uint64_t timeFullGeoCheckLineLine = 0;
   uint64_t timeFullGeoCheckLinePoint = 0;
 
+  uint64_t timeCutoutGeoCheckAreaArea = 0;
+  uint64_t timeCutoutGeoCheckAreaLine = 0;
+  uint64_t timeCutoutGeoCheckAreaPoint = 0;
+  uint64_t timeCutoutGeoCheckLineLine = 0;
+  uint64_t timeCutoutGeoCheckLinePoint = 0;
+
   size_t fullGeoChecksAreaArea = 0;
   size_t fullGeoChecksAreaLine = 0;
   size_t fullGeoChecksAreaPoint = 0;
   size_t fullGeoChecksLineLine = 0;
   size_t fullGeoChecksLinePoint = 0;
 
+  size_t cutoutGeoChecksAreaArea = 0;
+  size_t cutoutGeoChecksAreaLine = 0;
+  size_t cutoutGeoChecksAreaPoint = 0;
+  size_t cutoutGeoChecksLineLine = 0;
+  size_t cutoutGeoChecksLinePoint = 0;
+
   std::string toString();
 };
 
 inline std::string Stats::toString() {
   double sum =
-      double(timeGeoCacheRetrievalArea + timeGeoCacheRetrievalLine + timeGeoCacheRetrievalPoint + timeWrite +
-             timeBoxIdIsectAreaArea + timeBoxIdIsectAreaLine +
-	     timeOBBIsectAreaArea + timeOBBIsectAreaLine +
-	     timeOBBIsectAreaPoint + timeOBBIsectLineLine +
-             timeBoxIdIsectAreaPoint + timeBoxIdIsectLineLine +timeBoxIdIsectLinePoint +
+      double(timeGeoCacheRetrievalArea + timeGeoCacheRetrievalLine +
+             timeGeoCacheRetrievalPoint + timeWrite + timeBoxIdIsectAreaArea +
+             timeBoxIdIsectAreaLine + timeOBBIsectAreaArea +
+             timeOBBIsectAreaLine + timeOBBIsectAreaPoint +
+             timeOBBIsectLineLine + timeBoxIdIsectAreaPoint +
+             timeBoxIdIsectLineLine + timeBoxIdIsectLinePoint +
              timeFullGeoCheckAreaArea + timeFullGeoCheckAreaLine +
-             timeFullGeoCheckAreaPoint + timeFullGeoCheckLineLine + timeFullGeoCheckLinePoint) /
+             timeFullGeoCheckAreaPoint + timeFullGeoCheckLineLine +
+             timeFullGeoCheckLinePoint + timeCutoutGeoCheckAreaArea +
+             timeCutoutGeoCheckAreaLine + timeCutoutGeoCheckAreaPoint +
+             timeCutoutGeoCheckLineLine + timeCutoutGeoCheckLinePoint) /
       1000000000.0;
 
   std::stringstream ss;
@@ -124,6 +140,31 @@ inline std::string Stats::toString() {
      << " full geom checks LINE/POINT: " << t << " s (" << ((t / sum) * 100.0)
      << "%)\n";
 
+  t = double(timeCutoutGeoCheckAreaArea) / 1000000000.0;
+  ss << "time for " << cutoutGeoChecksAreaArea
+     << " cutout geom checks AREA/AREA: " << t << " s (" << ((t / sum) * 100.0)
+     << "%)\n";
+
+  t = double(timeCutoutGeoCheckAreaLine) / 1000000000.0;
+  ss << "time for " << cutoutGeoChecksAreaLine
+     << " cutout geom checks AREA/LINE: " << t << " s (" << ((t / sum) * 100.0)
+     << "%)\n";
+
+  t = double(timeCutoutGeoCheckAreaPoint) / 1000000000.0;
+  ss << "time for " << cutoutGeoChecksAreaPoint
+     << " cutout geom checks AREA/POINT: " << t << " s (" << ((t / sum) * 100.0)
+     << "%)\n";
+
+  t = double(timeCutoutGeoCheckLineLine) / 1000000000.0;
+  ss << "time for " << cutoutGeoChecksLineLine
+     << " cutout geom checks LINE/LINE: " << t << " s (" << ((t / sum) * 100.0)
+     << "%)\n";
+
+  t = double(timeCutoutGeoCheckLinePoint) / 1000000000.0;
+  ss << "time for " << cutoutGeoChecksLinePoint
+     << " cutout geom checks LINE/POINT: " << t << " s (" << ((t / sum) * 100.0)
+     << "%)\n";
+
   t = double(timeWrite) / 1000000000.0;
   ss << "time for output writing: " << t << " s (" << ((t / sum) * 100.0)
      << "%)\n";
@@ -151,11 +192,21 @@ inline Stats operator+(const Stats& a, const Stats& b) {
                a.timeFullGeoCheckAreaPoint + b.timeFullGeoCheckAreaPoint,
                a.timeFullGeoCheckLineLine + b.timeFullGeoCheckLineLine,
                a.timeFullGeoCheckLinePoint + b.timeFullGeoCheckLinePoint,
+               a.timeCutoutGeoCheckAreaArea + b.timeCutoutGeoCheckAreaArea,
+               a.timeCutoutGeoCheckAreaLine + b.timeCutoutGeoCheckAreaLine,
+               a.timeCutoutGeoCheckAreaPoint + b.timeCutoutGeoCheckAreaPoint,
+               a.timeCutoutGeoCheckLineLine + b.timeCutoutGeoCheckLineLine,
+               a.timeCutoutGeoCheckLinePoint + b.timeCutoutGeoCheckLinePoint,
                a.fullGeoChecksAreaArea + b.fullGeoChecksAreaArea,
                a.fullGeoChecksAreaLine + b.fullGeoChecksAreaLine,
                a.fullGeoChecksAreaPoint + b.fullGeoChecksAreaPoint,
                a.fullGeoChecksLineLine + b.fullGeoChecksLineLine,
-               a.fullGeoChecksLinePoint + b.fullGeoChecksLinePoint};
+               a.fullGeoChecksLinePoint + b.fullGeoChecksLinePoint,
+               a.cutoutGeoChecksAreaArea + b.cutoutGeoChecksAreaArea,
+               a.cutoutGeoChecksAreaLine + b.cutoutGeoChecksAreaLine,
+               a.cutoutGeoChecksAreaPoint + b.cutoutGeoChecksAreaPoint,
+               a.cutoutGeoChecksLineLine + b.cutoutGeoChecksLineLine,
+               a.cutoutGeoChecksLinePoint + b.cutoutGeoChecksLinePoint};
 }
 
 inline void operator+=(Stats& a, const Stats& b) { a = a + b; }
