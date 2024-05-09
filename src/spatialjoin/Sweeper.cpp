@@ -265,6 +265,11 @@ void Sweeper::clearMultis(bool force) {
 
   for (auto a = _activeMultis.begin(); a != _activeMultis.end();) {
     size_t mid = *a;
+    if (mid >= _multiIds.size()) {
+      // TODO: Just skip or erase and skip?
+      a++;
+      continue;
+    }
     const std::string& gid = _multiIds[mid];
     int32_t rightX = _multiRightX[mid];
     if (force || rightX < curMinThreadX) {
