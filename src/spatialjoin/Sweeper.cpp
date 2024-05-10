@@ -266,7 +266,7 @@ void Sweeper::clearMultis(bool force) {
   for (auto a = _activeMultis.begin(); a != _activeMultis.end();) {
     size_t mid = *a;
     if (mid >= _multiIds.size()) {
-      // TODO: Just skip or erase and skip?
+      LOG(WARN) << "Invalid multi ID " << mid << " detected!";
       a++;
       continue;
     }
@@ -373,7 +373,8 @@ void Sweeper::multiOut(size_t t, const std::string& gidA) {
         auto gidB = b.first;
         if (b.second.size() == _subSizes[gidA]) continue;
 
-        std::unique_lock<std::mutex> lock(_mutNotOverlaps);
+        std::unique_lock<std::mutex> lock(_mutOverlaps);
+        std::unique_lock<std::mutex> lock2(_mutNotOverlaps);
         if (!notOverlaps(gidA, gidB)) {
           writeRel(t, gidA, gidB, _cfg.sepOverlaps);
           writeRel(t, gidB, gidA, _cfg.sepOverlaps);
