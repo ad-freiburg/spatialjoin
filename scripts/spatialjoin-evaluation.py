@@ -112,11 +112,25 @@ def analyze(args: argparse.Namespace):
             name, duration = line.strip().split("\t")
             results.append((name, float(duration)))
 
+    # First, show the maximal and minimal duration overall.
+    sorted_results = sorted(results, key=lambda pair: pair[1])
+    min_name, min_duration = sorted_results[0]
+    max_name, max_duration = sorted_results[-1]
+    med_name, med_duration = sorted_results[len(sorted_results) // 2]
+    print(f"Overall MIN         : {min_duration:.1f}s ({min_name})")
+    print(f"Overall MAX         : {max_duration:.1f}s ({max_name})")
+    print(f"Overall MEDIAN      : {med_duration:.1f}s ({med_name})")
+    print()
+
     # For each option, compute its maximal and minimal speedup relative
     # to all the other options.
     for option_index, description in \
             [0, "box ids"], [1, "surface area"], [2, "cutouts"], \
             [3, "diagonal boxes"], [4, "oriented envelopes"]:
+        # Only consider the options that match `--option-index-regex`.
+        if not re.match(args.option_index_regex, str(option_index)):
+            continue
+
         # Sort the results by name, with the option at `option_index` as
         # least significant.
         def sort_key(pair):
@@ -177,6 +191,10 @@ if __name__ == "__main__":
                         help="Only show the commands that would be executed")
     parser.add_argument("--analyze", action="store_true", default=False,
                         help="Analyze the results from a previous run")
+    parser.add_argument("--option-index-regex", type=str,
+                        default="[0-9]",
+                        help="With --analyze, only analyze the options, where "
+                        "the index matches this regex")
     argcomplete.autocomplete(parser, always_complete_options="long")
     args = parser.parse_args()
 
