@@ -265,6 +265,11 @@ void Sweeper::clearMultis(bool force) {
 
   for (auto a = _activeMultis.begin(); a != _activeMultis.end();) {
     size_t mid = *a;
+    if (mid >= _multiIds.size()) {
+      LOG(WARN) << "Invalid multi ID " << mid << " detected!";
+      a++;
+      continue;
+    }
     const std::string& gid = _multiIds[mid];
     int32_t rightX = _multiRightX[mid];
     if (force || rightX < curMinThreadX) {
@@ -368,7 +373,8 @@ void Sweeper::multiOut(size_t t, const std::string& gidA) {
         auto gidB = b.first;
         if (b.second.size() == _subSizes[gidA]) continue;
 
-        std::unique_lock<std::mutex> lock(_mutNotOverlaps);
+        std::unique_lock<std::mutex> lock(_mutOverlaps);
+        std::unique_lock<std::mutex> lock2(_mutNotOverlaps);
         if (!notOverlaps(gidA, gidB)) {
           writeRel(t, gidA, gidB, _cfg.sepOverlaps);
           writeRel(t, gidB, gidA, _cfg.sepOverlaps);
@@ -425,7 +431,7 @@ void Sweeper::multiOut(size_t t, const std::string& gidA) {
 void Sweeper::flush() {
   LOG(INFO) << _multiIds.size() << " multi geometries";
   for (size_t i = 0; i < _multiIds.size(); i++) {
-    diskAdd({i, 2, 1, _multiLeftX[i] - 1, false, POINT, 0.0, {}});
+    diskAdd({i, 1, 0, _multiLeftX[i] - 1, false, POINT, 0.0, {}});
   }
 
   ssize_t r = write(_file, _outBuffer, _obufpos);
@@ -519,7 +525,7 @@ void Sweeper::sweep() {
       auto cur = reinterpret_cast<const BoxVal*>(buf + i);
       jj++;
 
-      if (!cur->out && cur->loY > cur->upY) {
+      if (!cur->out && cur->loY == 1 && cur->upY == 0 && cur->type == POINT) {
         // special multi-IN
         _activeMultis.insert(cur->id);
       } else if (!cur->out) {
