@@ -76,28 +76,30 @@ def evaluate_all(args: argparse.Namespace):
                                 stdout=subprocess.DEVNULL,
                                 stderr=subprocess.PIPE)
         end = time.time()
-        duration_seconds = f"{end - start:.3f}"
+        total_time = f"{end - start:.3f}"
+
+        # If non-zero exit code, print the error message
         if result.returncode != 0:
-            # print(colored(
-            #     f"Command failed with exit code {result.returncode}"
-            #     f", and the following output to stderr:", "red"))
-            # print()
             error_message = [line for line in
                              result.stderr.decode().split("\n")
                              if " INFO : " not in line]
             if len(error_message) > 0:
-                error_message = error_message[0]
+                total_time = error_message[0]
             else:
-                error_message = "[no output to stderr except INFO messages]"
-            duration_seconds = error_message
-            # print(colored(error_message, "red"))
-            # print()
-            # print("The command was:")
-            # print()
-            # print(colored(f"{cmd}", "blue"))
-            # print()
-            # exit(1)
-        print(f"{name}\t{duration_seconds}")
+                total_time = "[no output to stderr except INFO messages]"
+
+        # Extract the separate times for parsing and sweeping from the log.
+        parse_time = "[not found]"
+        sweep_time = "[not found]"
+        for line in result.stderr.decode().split("\n"):
+            match = re.match(".*INFO : done \\(([0-9.]+)s\\)\\.", line)
+            if match:
+                if parse_time == "[not found]":
+                    parse_time = f"{float(match.group(1)):.3f}"
+                elif sweep_time == "[not found]":
+                    sweep_time = f"{float(match.group(1)):.3f}"
+
+        print(f"{name}\t{total_time}\t{parse_time}\t{sweep_time}", flush=True)
 
 
 def analyze(args: argparse.Namespace):
@@ -109,24 +111,34 @@ def analyze(args: argparse.Namespace):
     results = []
     with open(f"{args.basename}.spatialjoin-evaluation.tsv") as file:
         for line in file:
-            name, duration = line.strip().split("\t")
-            results.append((name, float(duration)))
+            if line.startswith("#"):
+                continue
+            name, total_time, parse_time, sweep_time = \
+                    line.strip().split("\t")
+            time = total_time
+            if args.time == "parse":
+                time = parse_time
+            elif args.time == "sweep":
+                time = sweep_time
+            results.append((name, float(time)))
 
     # First, show the maximal and minimal duration overall.
     sorted_results = sorted(results, key=lambda pair: pair[1])
     min_name, min_duration = sorted_results[0]
     max_name, max_duration = sorted_results[-1]
     med_name, med_duration = sorted_results[len(sorted_results) // 2]
-    print(f"Overall MIN         : {min_duration:.1f}s ({min_name})")
-    print(f"Overall MAX         : {max_duration:.1f}s ({max_name})")
-    print(f"Overall MEDIAN      : {med_duration:.1f}s ({med_name})")
+    print(f"Overall stats  : "
+          f"min {min_duration:.1f}s ({min_name}), "
+          f"max {max_duration:.1f}s ({max_name}), "
+          f"median {med_duration:.1f}s ({med_name}), "
+          f"max/min = {max_duration / min_duration:.1f}x")
     print()
 
     # For each option, compute its maximal and minimal speedup relative
     # to all the other options.
     for option_index, description in \
             [0, "box ids"], [1, "surface area"], [2, "cutouts"], \
-            [3, "diagonal boxes"], [4, "oriented envelopes"]:
+            [3, "diagonal boxes"], [4, "oriented boxes"]:
         # Only consider the options that match `--option-index-regex`.
         if not re.match(args.option_index_regex, str(option_index)):
             continue
@@ -167,7 +179,7 @@ def analyze(args: argparse.Namespace):
                             f"{sorted_results[min_speedup_index][0]}"
         max_speedup_names = f"{sorted_results[max_speedup_index + 1][0]} -> " \
                             f"{sorted_results[max_speedup_index][0]}"
-        print(f"{description:20}: "
+        print(f"{description:15}: "
               f"max speedup {max_speedup:4.2f}x ({max_speedup_names}), "
               f"min speedup {min_speedup:4.2f}x ({min_speedup_names})")
 
@@ -191,6 +203,10 @@ if __name__ == "__main__":
                         help="Only show the commands that would be executed")
     parser.add_argument("--analyze", action="store_true", default=False,
                         help="Analyze the results from a previous run")
+    parser.add_argument("--time",
+                        choices=["total", "parse", "sweep"],
+                        default="total",
+                        help="Time to analyze with --analyze (default: total)")
     parser.add_argument("--option-index-regex", type=str,
                         default="[0-9]",
                         help="With --analyze, only analyze the options, where "
