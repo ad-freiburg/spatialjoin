@@ -47,10 +47,11 @@ def evaluate_all(args: argparse.Namespace):
     `options` above.
     """
 
-    # The five options and a represenative letter for each.
-    options = [('b', '--no-box-ids'), ('s', '--no-surface-area'),
-               ('c', '--no-cutouts'), ('d', '--no-diag-box'),
-               ('o', '--no-oriented-envelope')]
+    # The five options and a representative letter for each.
+    all_options = [('b', '--no-box-ids'), ('s', '--no-surface-area'),
+                   ('c', '--no-cutouts'), ('d', '--no-diag-box'),
+                   ('o', '--no-oriented-envelope')]
+    options = [all_options[int(i)] for i in args.option_indexes.split(",")]
 
     # Try all combinations of the options.
     for name, combination in all_combinations(options):
@@ -134,15 +135,15 @@ def analyze(args: argparse.Namespace):
           f"max/min = {max_duration / min_duration:.1f}x")
     print()
 
+    # A short human-readable description for each option.
+    descriptions = {0: "box ids", 1: "surface area", 2: "cutouts",
+                    3: "diagonal boxes", 4: "oriented boxes"}
+
     # For each option, compute its maximal and minimal speedup relative
     # to all the other options.
-    for option_index, description in \
-            [0, "box ids"], [1, "surface area"], [2, "cutouts"], \
-            [3, "diagonal boxes"], [4, "oriented boxes"]:
-        # Only consider the options that match `--option-index-regex`.
-        if not re.match(args.option_index_regex, str(option_index)):
-            continue
-
+    for option_index in args.option_indexes.split(","):
+        option_index = int(option_index)
+        description = descriptions[option_index]
         # Sort the results by name, with the option at `option_index` as
         # least significant.
         def sort_key(pair):
@@ -207,10 +208,10 @@ if __name__ == "__main__":
                         choices=["total", "parse", "sweep"],
                         default="total",
                         help="Time to analyze with --analyze (default: total)")
-    parser.add_argument("--option-index-regex", type=str,
-                        default="[0-9]",
-                        help="With --analyze, only analyze the options, where "
-                        "the index matches this regex")
+    parser.add_argument("--option-indexes", type=str,
+                        default="0,1,2,3,4",
+                        help="Comma-separated list of option indexes "
+                        "(default: 0,1,2,3,4)")
     argcomplete.autocomplete(parser, always_complete_options="long")
     args = parser.parse_args()
 
