@@ -84,10 +84,12 @@ struct SweeperCfg {
   bool useOBB;
   bool useCutouts;
   bool useDiagBox;
+  bool useFastSweepSkip;
 };
 
-// buffer sizes _must_ be multiples of sizeof(BoxVal)
-static const size_t BUFFER_S = sizeof(BoxVal) * 64 * 1024 * 1024;
+// buffer size _must_ be multiples of sizeof(BoxVal)
+static const ssize_t BUFFER_S = sizeof(BoxVal) * 64 * 1024 * 1024;
+
 static const size_t BUFFER_S_PAIRS = 1024 * 1024 * 10;
 
 class Sweeper {
@@ -167,7 +169,7 @@ class Sweeper {
   size_t _curSweepId = 0;
   int _file;
   unsigned char* _outBuffer;
-  size_t _obufpos;
+  ssize_t _obufpos;
 
   OutMode _outMode;
 

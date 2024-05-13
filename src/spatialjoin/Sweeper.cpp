@@ -24,6 +24,7 @@ using sj::boxids::BoxIdList;
 using sj::boxids::getBoxId;
 using sj::boxids::getBoxIds;
 using sj::boxids::packBoxIds;
+using util::writeAll;
 using util::geo::area;
 using util::geo::getBoundingBox;
 using util::geo::I32Line;
@@ -117,7 +118,7 @@ void Sweeper::multiAdd(const std::string& gid, int32_t xLeft, int32_t xRight) {
   } else {
     size_t id = _multiGidToId[gid];
     if (xRight > _multiRightX[id]) _multiRightX[id] = xRight;
-    if (xLeft > _multiLeftX[id]) _multiLeftX[id] = xLeft;
+    if (xLeft < _multiLeftX[id]) _multiLeftX[id] = xLeft;
   }
 }
 
@@ -131,7 +132,16 @@ void Sweeper::add(const I32Polygon& poly, const std::string& gid,
                   size_t subid) {
   const auto& box = getBoundingBox(poly);
   const auto& hull = util::geo::convexHull(poly);
-  const I32XSortedPolygon spoly(poly);
+  I32XSortedPolygon spoly(poly);
+
+  if (!_cfg.useFastSweepSkip) {
+    spoly.setInnerMaxSegLen(std::numeric_limits<int32_t>::max());
+    spoly.getOuter().setMaxSegLen(std::numeric_limits<int32_t>::max());
+    for (auto& inner : spoly.getInners()) {
+      inner.setMaxSegLen(std::numeric_limits<int32_t>::max());
+    }
+  }
+
   double areaSize = area(poly);
   double outerAreaSize = outerArea(poly);
   BoxIdList boxIds;
@@ -213,13 +223,15 @@ void Sweeper::add(const I32Line& line, const std::string& gid, size_t subid) {
     size_t id = _simpleLineCache.add({line.front(), line.back(), gid});
 
     diskAdd({id, box.getLowerLeft().getY(), box.getUpperRight().getY(),
-             box.getLowerLeft().getX(), false, SIMPLE_LINE, len,
-             box45});
+             box.getLowerLeft().getX(), false, SIMPLE_LINE, len, box45});
     diskAdd({id, box.getLowerLeft().getY(), box.getUpperRight().getY(),
-             box.getUpperRight().getX(), true, SIMPLE_LINE, len,
-             box45});
+             box.getUpperRight().getX(), true, SIMPLE_LINE, len, box45});
   } else {
-    const I32XSortedLine sline(line);
+    I32XSortedLine sline(line);
+
+    if (!_cfg.useFastSweepSkip) {
+      sline.setMaxSegLen(std::numeric_limits<int32_t>::max());
+    }
 
     size_t id =
         _lineCache.add({sline, box, gid, subid, len, boxIds, cutouts, obb});
@@ -429,21 +441,20 @@ void Sweeper::multiOut(size_t t, const std::string& gidA) {
 
 // _____________________________________________________________________________
 void Sweeper::flush() {
-  LOG(INFO) << _multiIds.size() << " multi geometries";
+  LOGTO(INFO, std::cerr) << _multiIds.size() << " multi geometries";
   for (size_t i = 0; i < _multiIds.size(); i++) {
     diskAdd({i, 1, 0, _multiLeftX[i] - 1, false, POINT, 0.0, {}});
   }
 
-  ssize_t r = write(_file, _outBuffer, _obufpos);
-  if (r < 0) throw std::runtime_error("Could not write to file.");
+  writeAll(_file, _outBuffer, _obufpos);
 
   _pointCache.flush();
   _areaCache.flush();
   _lineCache.flush();
   _simpleLineCache.flush();
+
   LOGTO(INFO, std::cerr) << "Sorting events...";
 
-  // now the individial parts are sorted
   std::string newFName = _cache + "/.sortTmp";
   int newFile = open(newFName.c_str(), O_RDWR | O_CREAT, 0666);
 
@@ -456,6 +467,8 @@ void Sweeper::flush() {
   posix_fadvise(newFile, 0, 0, POSIX_FADV_SEQUENTIAL);
 #endif
   util::externalSort(_file, newFile, sizeof(BoxVal), _curSweepId, boxCmp);
+
+  fsync(newFile);
 
   // remove old file
   std::remove((_cache + "/events").c_str());
@@ -476,8 +489,7 @@ void Sweeper::diskAdd(const BoxVal& bv) {
   _obufpos += sizeof(BoxVal);
 
   if (_obufpos >= BUFFER_S) {
-    ssize_t r = write(_file, _outBuffer, BUFFER_S);
-    if (r < 0) throw std::runtime_error("Could not write to file.");
+    writeAll(_file, _outBuffer, BUFFER_S);
     _obufpos = 0;
   }
   _curSweepId++;
@@ -530,8 +542,7 @@ void Sweeper::sweep() {
         _activeMultis.insert(cur->id);
       } else if (!cur->out) {
         // IN event
-        actives.insert({cur->loY, cur->upY},
-                       {cur->id, cur->type, cur->b45});
+        actives.insert({cur->loY, cur->upY}, {cur->id, cur->type, cur->b45});
 
         if (jj % 500000 == 0) {
           auto lon = webMercToLatLng<double>((1.0 * cur->val) / PREC, 0).getX();

@@ -71,7 +71,9 @@ void printHelp(int argc, char** argv) {
       << std::setw(41) << "  --no-cutouts"
       << "disable cutouts\n"
       << std::setw(41) << "  --no-diag-box"
-      << "disable diagonal bounding-box based pre-filter" << std::endl;
+      << "disable diagonal bounding-box based pre-filter\n"
+      << std::setw(41) << "  --no-fast-sweep-skip"
+      << "disable fast sweep skip using binary search" << std::endl;
 }
 
 // _____________________________________________________________________________
@@ -103,6 +105,7 @@ int main(int argc, char** argv) {
   bool useOBB = true;
   bool useCutouts = true;
   bool useDiagBox = true;
+  bool useFastSweepSkip = true;
 
   for (int i = 1; i < argc; i++) {
     std::string cur = argv[i];
@@ -147,6 +150,8 @@ int main(int argc, char** argv) {
           useCutouts = false;
         } else if (cur == "--no-diag-box") {
           useDiagBox = false;
+        } else if (cur == "--no-fast-sweep-skip") {
+          useFastSweepSkip = false;
         } else {
           std::cerr << "Unknown option '" << cur << "', see -h" << std::endl;
           exit(1);
@@ -208,7 +213,7 @@ int main(int argc, char** argv) {
 
   Sweeper sweeper({NUM_THREADS, prefix, intersects, contains, covers, touches,
                    equals, overlaps, crosses, suffix, useBoxIds, useArea,
-                   useOBB, useCutouts, useDiagBox},
+                   useOBB, useCutouts, useDiagBox, useFastSweepSkip},
                   useCache, cache, output);
 
   if (!useCache) {
