@@ -41,7 +41,7 @@ using util::geo::intersectsLineStrict;
 using util::geo::LineSegment;
 using util::geo::webMercToLatLng;
 
-const static size_t CUTOUTS_MIN_SIZE = 2000;
+const static size_t CUTOUTS_MIN_SIZE = 100;
 const static size_t OBB_MIN_SIZE = 100;
 
 // _____________________________________________________________________________
@@ -134,14 +134,6 @@ void Sweeper::add(const I32Polygon& poly, const std::string& gid,
   const auto& hull = util::geo::convexHull(poly);
   I32XSortedPolygon spoly(poly);
 
-  if (!_cfg.useFastSweepSkip) {
-    spoly.setInnerMaxSegLen(std::numeric_limits<int32_t>::max());
-    spoly.getOuter().setMaxSegLen(std::numeric_limits<int32_t>::max());
-    for (auto& inner : spoly.getInners()) {
-      inner.setMaxSegLen(std::numeric_limits<int32_t>::max());
-    }
-  }
-
   double areaSize = area(poly);
   double outerAreaSize = outerArea(poly);
   BoxIdList boxIds;
@@ -152,6 +144,14 @@ void Sweeper::add(const I32Polygon& poly, const std::string& gid,
       boxIds = packBoxIds(getBoxIds(spoly, poly, box, areaSize, &cutouts));
     } else {
       boxIds = packBoxIds(getBoxIds(spoly, poly, box, areaSize, 0));
+    }
+  }
+
+  if (!_cfg.useFastSweepSkip) {
+    spoly.setInnerMaxSegLen(std::numeric_limits<int32_t>::max());
+    spoly.getOuter().setMaxSegLen(std::numeric_limits<int32_t>::max());
+    for (auto& inner : spoly.getInners()) {
+      inner.setMaxSegLen(std::numeric_limits<int32_t>::max());
     }
   }
 
