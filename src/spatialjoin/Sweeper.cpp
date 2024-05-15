@@ -11,6 +11,7 @@
 #include <cstring>
 #include <set>
 
+#include "InnerOuter.h"
 #include "BoxIds.h"
 #include "IntervalIdx.h"
 #include "Sweeper.h"
