@@ -49,11 +49,7 @@ bool innerOuterDouglasPeucker(const util::geo::Ring<T>& inputPoints,
   auto R = inputPoints[r];
 
   // L and R should be different points.
-  if (L == R) {
-    std::cerr << "DOUGLAS PEUCKER FAIL!" << std::endl;
-    // TODO: handle
-    return false;
-  }
+  if (L == R) return false;
 
   // Compute point furthest to the left (negative value for
   // distanceFromPointToLine) and furthest to the right (positive value).
@@ -126,6 +122,77 @@ double signedDistanceFromPointToLine(const util::geo::Point<T>& A,
   double areaTriangleTimesTwo = (B.getY() - A.getY()) * (A.getX() - C.getX()) -
                                 (B.getX() - A.getX()) * (A.getY() - C.getY());
   return areaTriangleTimesTwo / distAB;
+}
+
+// ____________________________________________________________________________
+template <Mode MODE, typename T>
+util::geo::MultiPolygon<T> simplifiedArea(
+    const util::geo::MultiPolygon<T>& area, double factor) {
+  // default value: empty area, means no inner geom
+  util::geo::Polygon<T> ret;
+
+  if (area.size() == 0) return ret;
+
+  size_t numPointsOld = 0;
+  size_t numPointsNew = 0;
+
+  for (const auto& poly : area) {
+    util::geo::Polygon<T> simplified;
+    numPointsOld += poly.getOuter().size();
+
+    for (const auto& origInner : poly.getInners()) {
+      numPointsOld += origInner.size();
+      if (origInner.size() < 4) {
+        numPointsNew += origInner.size();
+        simplified.getInners().push_back(origInner);
+        continue;
+      }
+
+      // inner polygons are given in counter-clockwise order
+
+      double eps = sqrt(util::geo::area(origInner) / 3.14) * 3.14 * 2 * factor;
+
+      // simplify the inner geometries with outer simplification, because
+      // inner geometries are given counter-clockwise, it is not
+      // necessary to swap the simplification mode
+      util::geo::Ring<T> retDP;
+      size_t m = floor(origInner.size() / 2);
+      innerOuterDouglasPeucker<MODE>(origInner, retDP, 0, m, eps);
+      innerOuterDouglasPeucker<MODE>(origInner, retDP, m + 1,
+                                     origInner.size() - 1, eps);
+      retDP.push_back(retDP.front());  // ensure valid polygon
+      simplified.getInners().push_back(retDP);
+      numPointsNew += retDP.size();
+    }
+
+    if (poly.getOuter().size() < 4) {
+      numPointsNew += poly.getOuter().size();
+      simplified.getOuter() = poly.getOuter();
+    } else {
+      double eps =
+          sqrt(util::geo::area(poly.getOuter()) / 3.14) * 3.14 * 2 * factor;
+
+      // simplify the outer geometry with inner simplification
+      util::geo::Ring<T> retDP;
+      size_t m = floor(poly.getOuter().size() / 2);
+      innerOuterDouglasPeucker<MODE>(poly.getOuter(), retDP, 0, m, eps);
+      innerOuterDouglasPeucker<MODE>(poly.getOuter(), retDP, m + 1,
+                                     poly.getOuter().size() - 1, eps);
+      retDP.push_back(retDP.front());  // ensure valid polygon
+      numPointsNew += retDP.size();
+      simplified.getOuter() = retDP;
+    }
+
+    ret.push_back(simplified);
+  }
+
+  if (numPointsNew >= numPointsOld) {
+    // gain too low, return empty poly to avoid extra space and double-checking
+    // later on
+    return {};
+  }
+
+  return ret;
 }
 
 }  // namespace innerouter
