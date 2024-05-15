@@ -130,14 +130,15 @@ void Sweeper::add(const I32Polygon& poly, const std::string& gid) {
 // _____________________________________________________________________________
 void Sweeper::add(const I32Polygon& poly, const std::string& gid,
                   size_t subid) {
+
   const auto& box = getBoundingBox(poly);
-  const auto& hull = util::geo::convexHull(poly);
   I32XSortedPolygon spoly(poly);
 
   double areaSize = area(poly);
   double outerAreaSize = outerArea(poly);
   BoxIdList boxIds;
   std::map<int32_t, size_t> cutouts;
+
 
   if (_cfg.useBoxIds) {
     if (_cfg.useCutouts && poly.getOuter().size() > CUTOUTS_MIN_SIZE) {

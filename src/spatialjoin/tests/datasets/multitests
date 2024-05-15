@@ -36,6 +36,14 @@ POLYGON((0.0005 0.0005, 0.0005 0.0005), (0.0005 0.0005), (), ())
 POLYGON((0.0005))
 POINT()
 POINT(diesistnichtkorrekt)
+POINT(
+LINE
+ 
+helloooo
 POLYGON((a), (b), (c), (d))
 POLYGON()
 MULTIPOLYGON((), (), ((), (), ()))
+
+
+
+
