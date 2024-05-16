@@ -85,6 +85,7 @@ struct SweeperCfg {
   bool useCutouts;
   bool useDiagBox;
   bool useFastSweepSkip;
+  bool useInnerOuter;
 };
 
 // buffer size _must_ be multiples of sizeof(BoxVal)

@@ -185,12 +185,6 @@ sj::Area sj::GeometryCache<sj::Area>::getFromDisk(size_t off,
   _geomsFReads[tid].read(reinterpret_cast<char*>(&ret.outerArea),
                          sizeof(double));
 
-  // simplified inner
-  // readPoly(_geomsFReads[tid], ret.inner);
-
-  // simplified outer
-  // readPoly(_geomsFReads[tid], ret.outer);
-
   // boxIds
   uint32_t numBoxIds;
   _geomsFReads[tid].read(reinterpret_cast<char*>(&numBoxIds), sizeof(uint32_t));
@@ -214,6 +208,12 @@ sj::Area sj::GeometryCache<sj::Area>::getFromDisk(size_t off,
 
   // OBB
   readPoly(_geomsFReads[tid], ret.obb);
+
+  // simplified inner
+  readPoly(_geomsFReads[tid], ret.inner);
+
+  // simplified outer
+  readPoly(_geomsFReads[tid], ret.outer);
 
   return ret;
 }
@@ -352,12 +352,6 @@ size_t sj::GeometryCache<sj::Area>::add(const sj::Area& val) {
   _geomsF.write(reinterpret_cast<const char*>(&val.outerArea), sizeof(double));
   _geomsOffset += sizeof(double);
 
-  // innerGeom
-  // writePoly(val.inner);
-
-  // outerGeom
-  // writePoly(val.outer);
-
   // boxIds
   uint32_t size = val.boxIds.size();
   _geomsF.write(reinterpret_cast<const char*>(&size), sizeof(uint32_t));
@@ -383,6 +377,12 @@ size_t sj::GeometryCache<sj::Area>::add(const sj::Area& val) {
 
   // OBB
   writePoly(val.obb);
+
+  // innerGeom
+  writePoly(val.inner);
+
+  // outerGeom
+  writePoly(val.outer);
 
   return ret;
 }
