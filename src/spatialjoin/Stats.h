@@ -152,6 +152,22 @@ inline std::string Stats::toString() {
   ss << "time for convex hull intersections LINE/LINE: " << t << " s ("
      << ((t / sum) * 100.0) << "%)\n";
 
+  t = double(timeConvexHullIsectAreaArea) / 1000000000.0;
+  ss << "time for convex hull intersections AREA/AREA: " << t << " s ("
+     << ((t / sum) * 100.0) << "%)\n";
+
+  t = double(timeConvexHullIsectAreaLine) / 1000000000.0;
+  ss << "time for convex hull intersections AREA/LINE: " << t << " s ("
+     << ((t / sum) * 100.0) << "%)\n";
+
+  t = double(timeConvexHullIsectAreaPoint) / 1000000000.0;
+  ss << "time for convex hull intersections AREA/POINT: " << t << " s ("
+     << ((t / sum) * 100.0) << "%)\n";
+
+  t = double(timeConvexHullIsectLineLine) / 1000000000.0;
+  ss << "time for convex hull intersections LINE/LINE: " << t << " s ("
+     << ((t / sum) * 100.0) << "%)\n";
+
   t = double(timeFullGeoCheckAreaArea) / 1000000000.0;
   ss << "time for " << fullGeoChecksAreaArea
      << " full geom checks AREA/AREA: " << t << " s (" << ((t / sum) * 100.0)

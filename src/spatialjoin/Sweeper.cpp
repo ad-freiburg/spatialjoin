@@ -292,6 +292,14 @@ void Sweeper::add(const I32Line& line, const std::string& gid, size_t subid,
 
   const double len = util::geo::len(line);
 
+  util::geo::I32Polygon convexHull;
+  if (_cfg.useConvexHull) {
+    convexHull = util::geo::convexHull(line);
+  }
+
+  util::geo::I32Polygon obb;
+  obb = util::geo::convexHull(util::geo::getOrientedEnvelope(line));
+
   I32Box box45;
   if (_cfg.useDiagBox) {
     auto polyR = util::geo::rotateSinCos(line, sin45, cos45, I32Point(0, 0));
@@ -1090,6 +1098,15 @@ std::tuple<bool, bool, bool, bool, bool> Sweeper::check(const Area* a,
     if (!std::get<0>(r)) return {0, 0, 0, 0, 0};
   }
 
+  if (_cfg.useConvexHull) {
+    auto ts = TIME();
+    auto r = util::geo::intersectsContainsCovers(
+        a->convexHull, a->box, a->outerArea,
+        b->convexHull, b->box, b->outerArea);
+    _stats[t].timeConvexHullIsectAreaArea += TOOK(ts);
+    if (!std::get<0>(r)) return {0, 0, 0, 0, 0};
+  }
+
   if (_cfg.useInnerOuter && !a->outer.empty() && !b->outer.empty()) {
     auto ts = TIME();
     auto r = util::geo::intersectsContainsCovers(
@@ -1195,6 +1212,14 @@ std::tuple<bool, bool, bool, bool, bool> Sweeper::check(const Line* a,
     if (!std::get<0>(r)) return {0, 0, 0, 0, 0};
   }
 
+  if (_cfg.useConvexHull) {
+    auto ts = TIME();
+    auto r = intersectsContainsCovers(
+      a->convexHull, a->box, 0, b->convexHull, b->box, 0);
+    _stats[t].timeConvexHullIsectAreaLine += TOOK(ts);
+    if (!std::get<0>(r)) return {0, 0, 0, 0, 0};
+  }
+
   if (_cfg.useInnerOuter && !b->outer.empty()) {
     auto ts = TIME();
     auto r = util::geo::intersectsContainsCovers(a->geom, a->box, b->outer,
@@ -1275,6 +1300,14 @@ std::tuple<bool, bool, bool, bool, bool> Sweeper::check(const Line* a,
     auto ts = TIME();
     auto r = intersectsContainsCovers(a->convexHull, a->box, 0, b->convexHull,
                                       b->box, 0);
+    _stats[t].timeConvexHullIsectLineLine += TOOK(ts);
+    if (!std::get<0>(r)) return {0, 0, 0, 0, 0};
+  }
+
+  if (_cfg.useConvexHull) {
+    auto ts = TIME();
+    auto r = intersectsContainsCovers(
+      a->convexHull, a->box, 0, b->convexHull, b->box, 0);
     _stats[t].timeConvexHullIsectLineLine += TOOK(ts);
     if (!std::get<0>(r)) return {0, 0, 0, 0, 0};
   }
@@ -1522,6 +1555,13 @@ std::pair<bool, bool> Sweeper::check(const I32Point& a, const Area* b,
     auto r = containsCovers(a, b->convexHull);
     _stats[t].timeConvexHullIsectAreaPoint += TOOK(ts);
     if (!std::get<1>(r)) return {0, 0};
+  }
+
+  if (_cfg.useConvexHull) {
+    auto ts = TIME();
+    auto r = containsCovers(a, b->convexHull);
+    _stats[t].timeConvexHullIsectAreaPoint += TOOK(ts);
+    if (!std::get<0>(r)) return {0, 0};
   }
 
   if (_cfg.useInnerOuter && !b->outer.empty()) {
