@@ -23,6 +23,11 @@ struct Stats {
   uint64_t timeOBBIsectAreaPoint = 0;
   uint64_t timeOBBIsectLineLine = 0;
 
+  uint64_t timeConvexHullIsectAreaArea = 0;
+  uint64_t timeConvexHullIsectAreaLine = 0;
+  uint64_t timeConvexHullIsectAreaPoint = 0;
+  uint64_t timeConvexHullIsectLineLine = 0;
+
   uint64_t timeFullGeoCheckAreaArea = 0;
   uint64_t timeFullGeoCheckAreaLine = 0;
   uint64_t timeFullGeoCheckAreaPoint = 0;
@@ -69,7 +74,9 @@ inline std::string Stats::toString() {
              timeGeoCacheRetrievalPoint + timeWrite + timeBoxIdIsectAreaArea +
              timeBoxIdIsectAreaLine + timeOBBIsectAreaArea +
              timeOBBIsectAreaLine + timeOBBIsectAreaPoint +
-             timeOBBIsectLineLine + timeBoxIdIsectAreaPoint +
+             timeOBBIsectLineLine + timeConvexHullIsectAreaArea +
+	     timeConvexHullIsectAreaLine + timeConvexHullIsectAreaPoint +
+	     timeConvexHullIsectLineLine + timeBoxIdIsectAreaPoint +
              timeBoxIdIsectLineLine + timeBoxIdIsectLinePoint +
              timeFullGeoCheckAreaArea + timeFullGeoCheckAreaLine +
              timeFullGeoCheckAreaPoint + timeFullGeoCheckLineLine +
@@ -127,6 +134,22 @@ inline std::string Stats::toString() {
 
   t = double(timeOBBIsectLineLine) / 1000000000.0;
   ss << "time for obb intersections LINE/LINE: " << t << " s ("
+     << ((t / sum) * 100.0) << "%)\n";
+
+  t = double(timeConvexHullIsectAreaArea) / 1000000000.0;
+  ss << "time for convex hull intersections AREA/AREA: " << t << " s ("
+     << ((t / sum) * 100.0) << "%)\n";
+
+  t = double(timeConvexHullIsectAreaLine) / 1000000000.0;
+  ss << "time for convex hull intersections AREA/LINE: " << t << " s ("
+     << ((t / sum) * 100.0) << "%)\n";
+
+  t = double(timeConvexHullIsectAreaPoint) / 1000000000.0;
+  ss << "time for convex hull intersections AREA/POINT: " << t << " s ("
+     << ((t / sum) * 100.0) << "%)\n";
+
+  t = double(timeConvexHullIsectLineLine) / 1000000000.0;
+  ss << "time for convex hull intersections LINE/LINE: " << t << " s ("
      << ((t / sum) * 100.0) << "%)\n";
 
   t = double(timeFullGeoCheckAreaArea) / 1000000000.0;

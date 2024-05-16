@@ -50,6 +50,9 @@ struct Area {
   // cutouts
   std::map<int32_t, size_t> cutouts;
 
+  // Convex hull
+  util::geo::I32XSortedPolygon convexHull;
+
   // OBB
   util::geo::I32XSortedPolygon obb;
 
@@ -102,6 +105,9 @@ struct Line {
 
   // cutouts
   std::map<int32_t, size_t> cutouts;
+
+  // Convex hull
+  util::geo::I32XSortedPolygon convexHull;
 
   // OBB
   util::geo::I32XSortedPolygon obb;

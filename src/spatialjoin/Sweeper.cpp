@@ -136,6 +136,7 @@ void Sweeper::add(const I32Polygon& poly, const std::string& gid, size_t subid,
                   WriteBatch& batch) {
   WriteCand cur;
   const auto& box = getBoundingBox(poly);
+  const auto& hull = util::geo::convexHull(poly);
   I32XSortedPolygon spoly(poly);
 
   double areaSize = area(poly);
@@ -213,7 +214,13 @@ void Sweeper::add(const I32Polygon& poly, const std::string& gid, size_t subid,
       outer = outerPoly;
     }
 
-    util::geo::I32Polygon obb;
+  util::geo::I32Polygon convexHull;
+  if (_cfg.useConvexHull) {
+    convexHull = util::geo::convexHull(poly);
+  }
+
+  util::geo::I32Polygon obb;
+  obb = util::geo::convexHull(util::geo::getOrientedEnvelope(poly));
 
     if (_cfg.useOBB && poly.getOuter().size() >= OBB_MIN_SIZE) {
       obb = util::geo::convexHull(
@@ -226,7 +233,7 @@ void Sweeper::add(const I32Polygon& poly, const std::string& gid, size_t subid,
     std::stringstream str;
     GeometryCache<Area>::writeTo(
         {spoly, box, gid, subid, areaSize, _cfg.useArea ? outerAreaSize : 0,
-         boxIds, cutouts, obb, inner, innerBox, innerOuterAreaSize, outer,
+         boxIds, cutouts, obb, convexHull, inner, innerBox, innerOuterAreaSize, outer,
          outerBox, outerOuterAreaSize},
         str);
     ;
@@ -279,6 +286,14 @@ void Sweeper::add(const I32Line& line, const std::string& gid, size_t subid,
   }
 
   const double len = util::geo::len(line);
+
+  util::geo::I32Polygon convexHull;
+  if (_cfg.useConvexHull) {
+    convexHull = util::geo::convexHull(line);
+  }
+
+  util::geo::I32Polygon obb;
+  obb = util::geo::convexHull(util::geo::getOrientedEnvelope(line));
 
   I32Box box45;
   if (_cfg.useDiagBox) {
@@ -333,7 +348,7 @@ void Sweeper::add(const I32Line& line, const std::string& gid, size_t subid,
 
     std::stringstream str;
     GeometryCache<Line>::writeTo(
-        {sline, box, gid, subid, len, boxIds, cutouts, obb}, str);
+        {sline, box, gid, subid, len, boxIds, cutouts, obb, convexHull}, str);
     cur.raw = str.str();
 
     cur.boxvalIn = {0,  // placeholder, will be overwritten later on
@@ -1063,6 +1078,15 @@ std::tuple<bool, bool, bool, bool, bool> Sweeper::check(const Area* a,
     }
   }
 
+  if (_cfg.useConvexHull) {
+    auto ts = TIME();
+    auto r = util::geo::intersectsContainsCovers(
+        a->convexHull, a->box, a->outerArea,
+        b->convexHull, b->box, b->outerArea);
+    _stats[t].timeConvexHullIsectAreaArea += TOOK(ts);
+    if (!std::get<0>(r)) return {0, 0, 0, 0, 0};
+  }
+
   if (_cfg.useInnerOuter && !a->outer.empty() && !b->outer.empty()) {
     auto ts = TIME();
     auto r = util::geo::intersectsContainsCovers(
@@ -1160,6 +1184,14 @@ std::tuple<bool, bool, bool, bool, bool> Sweeper::check(const Line* a,
     }
   }
 
+  if (_cfg.useConvexHull) {
+    auto ts = TIME();
+    auto r = intersectsContainsCovers(
+      a->convexHull, a->box, 0, b->convexHull, b->box, 0);
+    _stats[t].timeConvexHullIsectAreaLine += TOOK(ts);
+    if (!std::get<0>(r)) return {0, 0, 0, 0, 0};
+  }
+
   if (_cfg.useInnerOuter && !b->outer.empty()) {
     auto ts = TIME();
     auto r = util::geo::intersectsContainsCovers(a->geom, a->box, b->outer,
@@ -1236,6 +1268,14 @@ std::tuple<bool, bool, bool, bool, bool> Sweeper::check(const Line* a,
       _stats[t].timeOBBIsectLineLine += TOOK(ts);
       if (!std::get<0>(r)) return {0, 0, 0, 0, 0};
     }
+  }
+
+  if (_cfg.useConvexHull) {
+    auto ts = TIME();
+    auto r = intersectsContainsCovers(
+      a->convexHull, a->box, 0, b->convexHull, b->box, 0);
+    _stats[t].timeConvexHullIsectLineLine += TOOK(ts);
+    if (!std::get<0>(r)) return {0, 0, 0, 0, 0};
   }
 
   auto ts = TIME();
@@ -1474,6 +1514,13 @@ std::pair<bool, bool> Sweeper::check(const I32Point& a, const Area* b,
     auto r = containsCovers(a, b->obb);
     _stats[t].timeOBBIsectAreaPoint += TOOK(ts);
     if (!std::get<1>(r)) return {0, 0};
+  }
+
+  if (_cfg.useConvexHull) {
+    auto ts = TIME();
+    auto r = containsCovers(a, b->convexHull);
+    _stats[t].timeConvexHullIsectAreaPoint += TOOK(ts);
+    if (!std::get<0>(r)) return {0, 0};
   }
 
   if (_cfg.useInnerOuter && !b->outer.empty()) {
