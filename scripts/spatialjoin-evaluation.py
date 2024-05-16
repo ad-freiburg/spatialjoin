@@ -114,8 +114,7 @@ def analyze(args: argparse.Namespace):
         for line in file:
             if line.startswith("#"):
                 continue
-            name, total_time, parse_time, sweep_time = \
-                    line.strip().split("\t")
+            name, total_time, parse_time, sweep_time = line.strip().split("\t")
             time = total_time
             if args.time == "parse":
                 time = parse_time
@@ -135,6 +134,29 @@ def analyze(args: argparse.Namespace):
           f"max/min = {max_duration / min_duration:.1f}x")
     print()
 
+    # Best k options, for each fixed k.
+    best = {}
+    for name, time in results:
+        k = sum(1 for c in name if c.isupper())
+        if k not in best:
+            best[k] = (name, time)
+        else:
+            if time < best[k][1]:
+                best[k] = (name, time)
+    baseline_name = best[0][0]
+    baseline_time = best[0][1]
+    print(f"Baseline      : {baseline_name} -> {baseline_time:6.1f}s")
+    for k in sorted(best.keys()):
+        if k > 0:
+            name, time = best[k]
+            previous_name, previous_time = best[k - 1]
+            print(f"Best {k} {'option ' if k == 1 else 'options'}: "
+                  f"{name} -> {time:6.1f}s, "
+                  f"{baseline_time / time:4.1f}x speedup over baseline"
+                  f" ({previous_time / time:3.1f}x over previous)")
+
+    print()
+
     # A short human-readable description for each option.
     descriptions = {0: "box ids", 1: "surface area", 2: "cutouts",
                     3: "diagonal boxes", 4: "oriented boxes"}
@@ -144,6 +166,7 @@ def analyze(args: argparse.Namespace):
     for option_index in args.option_indexes.split(","):
         option_index = int(option_index)
         description = descriptions[option_index]
+
         # Sort the results by name, with the option at `option_index` as
         # least significant.
         def sort_key(pair):
@@ -152,6 +175,7 @@ def analyze(args: argparse.Namespace):
             key = name[:i] + name[i + 1:] + name[i]
             return key
         sorted_results = sorted(results, key=sort_key)
+
         # Iterate over pairs of consecutive items in the sorted list and keep
         # track of the minimal and maximal speedup.
         min_speedup, min_speedup_index = None, None
