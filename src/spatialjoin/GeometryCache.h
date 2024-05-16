@@ -43,12 +43,6 @@ struct Area {
   // outer area
   double outerArea;
 
-  // inner geom
-  // util::geo::I32XSortedPolygon inner;
-
-  // outer geom
-  // util::geo::I32XSortedPolygon outer;
-
   // box ids
   std::vector<sj::boxids::BoxId> boxIds;
 
@@ -57,6 +51,12 @@ struct Area {
 
   // OBB
   util::geo::I32XSortedPolygon obb;
+
+  // inner geom
+  util::geo::I32XSortedPolygon inner;
+
+  // outer geom
+  util::geo::I32XSortedPolygon outer;
 };
 
 struct SimpleLine {

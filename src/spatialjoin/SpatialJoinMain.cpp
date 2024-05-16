@@ -73,7 +73,9 @@ void printHelp(int argc, char** argv) {
       << std::setw(41) << "  --no-diag-box"
       << "disable diagonal bounding-box based pre-filter\n"
       << std::setw(41) << "  --no-fast-sweep-skip"
-      << "disable fast sweep skip using binary search" << std::endl;
+      << "disable fast sweep skip using binary search\n"
+      << std::setw(41) << "  --use-inner-outer"
+      << "(experimental) use inner/outer geometries" << std::endl;
 }
 
 // _____________________________________________________________________________
@@ -106,6 +108,7 @@ int main(int argc, char** argv) {
   bool useCutouts = true;
   bool useDiagBox = true;
   bool useFastSweepSkip = true;
+  bool useInnerOuter = false;
 
   for (int i = 1; i < argc; i++) {
     std::string cur = argv[i];
@@ -152,6 +155,8 @@ int main(int argc, char** argv) {
           useDiagBox = false;
         } else if (cur == "--no-fast-sweep-skip") {
           useFastSweepSkip = false;
+        } else if (cur == "--use-inner-outer") {
+          useInnerOuter = true;
         } else {
           std::cerr << "Unknown option '" << cur << "', see -h" << std::endl;
           exit(1);
@@ -211,10 +216,11 @@ int main(int argc, char** argv) {
 
   size_t NUM_THREADS = std::thread::hardware_concurrency();
 
-  Sweeper sweeper({NUM_THREADS, prefix, intersects, contains, covers, touches,
-                   equals, overlaps, crosses, suffix, useBoxIds, useArea,
-                   useOBB, useCutouts, useDiagBox, useFastSweepSkip},
-                  useCache, cache, output);
+  Sweeper sweeper(
+      {NUM_THREADS, prefix, intersects, contains, covers, touches, equals,
+       overlaps, crosses, suffix, useBoxIds, useArea, useOBB, useCutouts,
+       useDiagBox, useFastSweepSkip, useInnerOuter},
+      useCache, cache, output);
 
   if (!useCache) {
     LOGTO(INFO, std::cerr) << "Parsing input geometries...";

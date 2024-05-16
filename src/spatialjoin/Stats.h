@@ -35,6 +35,10 @@ struct Stats {
   uint64_t timeCutoutGeoCheckLineLine = 0;
   uint64_t timeCutoutGeoCheckLinePoint = 0;
 
+  uint64_t timeInnerOuterCheckAreaArea = 0;
+  uint64_t timeInnerOuterCheckAreaLine = 0;
+  uint64_t timeInnerOuterCheckAreaPoint = 0;
+
   size_t fullGeoChecksAreaArea = 0;
   size_t fullGeoChecksAreaLine = 0;
   size_t fullGeoChecksAreaPoint = 0;
@@ -46,6 +50,10 @@ struct Stats {
   size_t cutoutGeoChecksAreaPoint = 0;
   size_t cutoutGeoChecksLineLine = 0;
   size_t cutoutGeoChecksLinePoint = 0;
+
+  size_t innerOuterChecksAreaArea = 0;
+  size_t innerOuterChecksAreaLine = 0;
+  size_t innerOuterChecksAreaPoint = 0;
 
   std::string toString();
 };
@@ -62,7 +70,8 @@ inline std::string Stats::toString() {
              timeFullGeoCheckAreaPoint + timeFullGeoCheckLineLine +
              timeFullGeoCheckLinePoint + timeCutoutGeoCheckAreaArea +
              timeCutoutGeoCheckAreaLine + timeCutoutGeoCheckAreaPoint +
-             timeCutoutGeoCheckLineLine + timeCutoutGeoCheckLinePoint) /
+             timeCutoutGeoCheckLineLine + timeCutoutGeoCheckLinePoint +
+             timeInnerOuterCheckAreaArea + timeInnerOuterCheckAreaLine) /
       1000000000.0;
 
   std::stringstream ss;
@@ -165,6 +174,21 @@ inline std::string Stats::toString() {
      << " cutout geom checks LINE/POINT: " << t << " s (" << ((t / sum) * 100.0)
      << "%)\n";
 
+  t = double(timeInnerOuterCheckAreaArea) / 1000000000.0;
+  ss << "time for " << innerOuterChecksAreaArea
+     << " inner/outer checks AREA/AREA: " << t << " s (" << ((t / sum) * 100.0)
+     << "%)\n";
+
+  t = double(timeInnerOuterCheckAreaLine) / 1000000000.0;
+  ss << "time for " << innerOuterChecksAreaLine
+     << " inner/outer checks AREA/LINE: " << t << " s (" << ((t / sum) * 100.0)
+     << "%)\n";
+
+  t = double(timeInnerOuterCheckAreaPoint) / 1000000000.0;
+  ss << "time for " << innerOuterChecksAreaPoint
+     << " inner/outer checks AREA/POINT: " << t << " s (" << ((t / sum) * 100.0)
+     << "%)\n";
+
   t = double(timeWrite) / 1000000000.0;
   ss << "time for output writing: " << t << " s (" << ((t / sum) * 100.0)
      << "%)\n";
@@ -197,6 +221,9 @@ inline Stats operator+(const Stats& a, const Stats& b) {
                a.timeCutoutGeoCheckAreaPoint + b.timeCutoutGeoCheckAreaPoint,
                a.timeCutoutGeoCheckLineLine + b.timeCutoutGeoCheckLineLine,
                a.timeCutoutGeoCheckLinePoint + b.timeCutoutGeoCheckLinePoint,
+               a.timeInnerOuterCheckAreaArea + b.timeInnerOuterCheckAreaArea,
+               a.timeInnerOuterCheckAreaLine + b.timeInnerOuterCheckAreaLine,
+               a.timeInnerOuterCheckAreaPoint + b.timeInnerOuterCheckAreaPoint,
                a.fullGeoChecksAreaArea + b.fullGeoChecksAreaArea,
                a.fullGeoChecksAreaLine + b.fullGeoChecksAreaLine,
                a.fullGeoChecksAreaPoint + b.fullGeoChecksAreaPoint,
@@ -206,7 +233,10 @@ inline Stats operator+(const Stats& a, const Stats& b) {
                a.cutoutGeoChecksAreaLine + b.cutoutGeoChecksAreaLine,
                a.cutoutGeoChecksAreaPoint + b.cutoutGeoChecksAreaPoint,
                a.cutoutGeoChecksLineLine + b.cutoutGeoChecksLineLine,
-               a.cutoutGeoChecksLinePoint + b.cutoutGeoChecksLinePoint};
+               a.cutoutGeoChecksLinePoint + b.cutoutGeoChecksLinePoint,
+               a.innerOuterChecksAreaArea + b.innerOuterChecksAreaArea,
+               a.innerOuterChecksAreaLine + b.innerOuterChecksAreaLine,
+               a.innerOuterChecksAreaPoint + b.innerOuterChecksAreaPoint};
 }
 
 inline void operator+=(Stats& a, const Stats& b) { a = a + b; }
