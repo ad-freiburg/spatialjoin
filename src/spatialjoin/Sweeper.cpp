@@ -176,10 +176,9 @@ void Sweeper::add(const I32Polygon& poly, const std::string& gid,
   if (subid > 0)
     multiAdd(gid, box.getLowerLeft().getX(), box.getUpperRight().getX());
 
-  if (!_cfg.useArea) areaSize = 0;
-
-  size_t id = _areaCache.add({spoly, box, gid, subid, areaSize, outerAreaSize,
-                              boxIds, cutouts, obb, inner, outer});
+  size_t id = _areaCache.add({spoly, box, gid, subid, areaSize,
+                              _cfg.useArea ? outerAreaSize : 0, boxIds, cutouts,
+                              obb, inner, outer});
 
   diskAdd({id, box.getLowerLeft().getY(), box.getUpperRight().getY(),
            box.getLowerLeft().getX(), false, POLYGON, areaSize, box45});
