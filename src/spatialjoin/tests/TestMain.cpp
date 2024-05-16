@@ -22,7 +22,8 @@ std::string fullRun(const std::string& file) {
 
   size_t gid = 0;
 
-  char* buf = new char[1024 * 1024 * 100];
+  // extreme buffer size 1 here for test purposes
+  char* buf = new char[1];
 
   size_t len = 0;
   std::string dangling;
@@ -30,7 +31,7 @@ std::string fullRun(const std::string& file) {
   int f = open(file.c_str(), O_RDONLY);
   TEST(f >= 0);
 
-  while ((len = read(f, buf, 1024 * 1024 * 100)) > 0) {
+  while ((len = read(f, buf, 1)) > 0) {
     parse(buf, len, dangling, &gid, sweeper);
   }
 
