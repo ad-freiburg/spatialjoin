@@ -11,8 +11,8 @@
 #include <cstring>
 #include <set>
 
-#include "InnerOuter.h"
 #include "BoxIds.h"
+#include "InnerOuter.h"
 #include "IntervalIdx.h"
 #include "Sweeper.h"
 #include "util/Misc.h"
@@ -25,6 +25,7 @@ using sj::boxids::BoxIdList;
 using sj::boxids::getBoxId;
 using sj::boxids::getBoxIds;
 using sj::boxids::packBoxIds;
+using sj::innerouter::Mode;
 using util::writeAll;
 using util::geo::area;
 using util::geo::getBoundingBox;
@@ -131,7 +132,6 @@ void Sweeper::add(const I32Polygon& poly, const std::string& gid) {
 // _____________________________________________________________________________
 void Sweeper::add(const I32Polygon& poly, const std::string& gid,
                   size_t subid) {
-
   const auto& box = getBoundingBox(poly);
   I32XSortedPolygon spoly(poly);
 
@@ -139,7 +139,6 @@ void Sweeper::add(const I32Polygon& poly, const std::string& gid,
   double outerAreaSize = outerArea(poly);
   BoxIdList boxIds;
   std::map<int32_t, size_t> cutouts;
-
 
   if (_cfg.useBoxIds) {
     if (_cfg.useCutouts && poly.getOuter().size() > CUTOUTS_MIN_SIZE) {
@@ -157,6 +156,13 @@ void Sweeper::add(const I32Polygon& poly, const std::string& gid,
     }
   }
 
+  I32XSortedPolygon inner, outer;
+
+  if (_cfg.useInnerOuter) {
+    inner = sj::innerouter::simplifiedPoly<Mode::INNER>(poly, 1 / (3.14 * 20));
+    outer = sj::innerouter::simplifiedPoly<Mode::OUTER>(poly, 1 / (3.14 * 20));
+  }
+
   util::geo::I32Polygon obb;
   obb = util::geo::convexHull(util::geo::getOrientedEnvelope(poly));
 
@@ -170,10 +176,9 @@ void Sweeper::add(const I32Polygon& poly, const std::string& gid,
   if (subid > 0)
     multiAdd(gid, box.getLowerLeft().getX(), box.getUpperRight().getX());
 
-  if (!_cfg.useArea) areaSize = 0;
-
-  size_t id = _areaCache.add(
-      {spoly, box, gid, subid, areaSize, outerAreaSize, boxIds, cutouts, obb});
+  size_t id = _areaCache.add({spoly, box, gid, subid, areaSize,
+                              _cfg.useArea ? outerAreaSize : 0, boxIds, cutouts,
+                              obb, inner, outer});
 
   diskAdd({id, box.getLowerLeft().getY(), box.getUpperRight().getY(),
            box.getLowerLeft().getX(), false, POLYGON, areaSize, box45});
@@ -660,6 +665,42 @@ std::tuple<bool, bool, bool, bool, bool> Sweeper::check(const Area* a,
     }
   }
 
+  if (_cfg.useInnerOuter && !a->outer.empty() && !b->outer.empty()) {
+    auto ts = TIME();
+    auto r = util::geo::intersectsContainsCovers(
+        a->outer, a->box, a->outerArea, b->outer, b->box, b->outerArea);
+    _stats[t].timeInnerOuterCheckAreaArea += TOOK(ts);
+    _stats[t].innerOuterChecksAreaArea++;
+    if (!std::get<0>(r)) return {0, 0, 0, 0, 0};
+  }
+
+  if (_cfg.useInnerOuter && !a->outer.empty() && !b->inner.empty()) {
+    auto ts = TIME();
+    auto r = util::geo::intersectsContainsCovers(
+        a->outer, a->box, a->outerArea, b->inner, b->box, b->outerArea);
+    _stats[t].timeInnerOuterCheckAreaArea += TOOK(ts);
+    _stats[t].innerOuterChecksAreaArea++;
+    if (std::get<1>(r)) return {1, 1, 1, 0, 0};
+  }
+
+  if (_cfg.useInnerOuter && a->outer.empty() && !b->outer.empty()) {
+    auto ts = TIME();
+    auto r = util::geo::intersectsContainsCovers(
+        a->geom, a->box, a->outerArea, b->outer, b->box, b->outerArea);
+    _stats[t].timeInnerOuterCheckAreaArea += TOOK(ts);
+    _stats[t].innerOuterChecksAreaArea++;
+    if (!std::get<0>(r)) return {0, 0, 0, 0, 0};
+  }
+
+  if (_cfg.useInnerOuter && a->outer.empty() && !b->inner.empty()) {
+    auto ts = TIME();
+    auto r = util::geo::intersectsContainsCovers(
+        a->geom, a->box, a->outerArea, b->inner, b->box, b->outerArea);
+    _stats[t].timeInnerOuterCheckAreaArea += TOOK(ts);
+    _stats[t].innerOuterChecksAreaArea++;
+    if (std::get<1>(r)) return {1, 1, 1, 0, 0};
+  }
+
   auto ts = TIME();
   auto res = intersectsContainsCovers(a->geom, a->box, a->outerArea, b->geom,
                                       b->box, b->outerArea);
@@ -716,6 +757,24 @@ std::tuple<bool, bool, bool, bool, bool> Sweeper::check(const Line* a,
       _stats[t].timeOBBIsectAreaLine += TOOK(ts);
       if (!std::get<0>(r)) return {0, 0, 0, 0, 0};
     }
+  }
+
+  if (_cfg.useInnerOuter && !b->outer.empty()) {
+    auto ts = TIME();
+    auto r =
+        util::geo::intersectsContainsCovers(a->geom, a->box, b->outer, b->box);
+    _stats[t].timeInnerOuterCheckAreaLine += TOOK(ts);
+    _stats[t].innerOuterChecksAreaLine++;
+    if (!std::get<0>(r)) return {0, 0, 0, 0, 0};
+  }
+
+  if (_cfg.useInnerOuter && !b->inner.empty()) {
+    auto ts = TIME();
+    auto r =
+        util::geo::intersectsContainsCovers(a->geom, a->box, b->inner, b->box);
+    _stats[t].timeInnerOuterCheckAreaLine += TOOK(ts);
+    _stats[t].innerOuterChecksAreaLine++;
+    if (std::get<1>(r)) return {1, 1, 1, 0, 0};
   }
 
   auto ts = TIME();
@@ -829,6 +888,26 @@ std::tuple<bool, bool, bool, bool, bool> Sweeper::check(const SimpleLine* a,
         getBoundingBox(LineSegment<int32_t>(a->a, a->b)), b->obb, b->box);
     _stats[t].timeOBBIsectAreaLine += TOOK(ts);
     if (!std::get<0>(r)) return {0, 0, 0, 0, 0};
+  }
+
+  if (_cfg.useInnerOuter && !b->outer.empty()) {
+    auto ts = TIME();
+    auto r = util::geo::intersectsContainsCovers(
+        I32XSortedLine(LineSegment<int32_t>(a->a, a->b)),
+        getBoundingBox(LineSegment<int32_t>(a->a, a->b)), b->outer, b->box);
+    _stats[t].timeInnerOuterCheckAreaLine += TOOK(ts);
+    _stats[t].innerOuterChecksAreaLine++;
+    if (!std::get<0>(r)) return {0, 0, 0, 0, 0};
+  }
+
+  if (_cfg.useInnerOuter && !b->inner.empty()) {
+    auto ts = TIME();
+    auto r = util::geo::intersectsContainsCovers(
+        I32XSortedLine(LineSegment<int32_t>(a->a, a->b)),
+        getBoundingBox(LineSegment<int32_t>(a->a, a->b)), b->inner, b->box);
+    _stats[t].timeInnerOuterCheckAreaLine += TOOK(ts);
+    _stats[t].innerOuterChecksAreaLine++;
+    if (std::get<1>(r)) return {1, 1, 1, 0, 0};
   }
 
   auto ts = TIME();
@@ -1000,6 +1079,22 @@ std::pair<bool, bool> Sweeper::check(const I32Point& a, const Area* b,
     auto r = containsCovers(a, b->obb);
     _stats[t].timeOBBIsectAreaPoint += TOOK(ts);
     if (!std::get<1>(r)) return {0, 0};
+  }
+
+  if (_cfg.useInnerOuter && !b->outer.empty()) {
+    auto ts = TIME();
+    auto r = containsCovers(a, b->outer);
+    _stats[t].timeInnerOuterCheckAreaPoint += TOOK(ts);
+    _stats[t].innerOuterChecksAreaPoint++;
+    if (!std::get<1>(r)) return {0, 0};
+  }
+
+  if (_cfg.useInnerOuter && !b->inner.empty()) {
+    auto ts = TIME();
+    auto r = containsCovers(a, b->inner);
+    _stats[t].timeInnerOuterCheckAreaPoint += TOOK(ts);
+    _stats[t].innerOuterChecksAreaPoint++;
+    if (std::get<1>(r)) return {1, 1};
   }
 
   auto ts = TIME();
