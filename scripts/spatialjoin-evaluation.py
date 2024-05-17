@@ -41,10 +41,10 @@ def all_combinations(options: list[tuple[str, str]]) -> list[tuple[str, str]]:
     return combinations
 
 
-def evaluate_all(args: argparse.Namespace):
+def compute(args: argparse.Namespace):
     """
-    Evaluate `spatialjoin` for the given dataset, for all combinations of the
-    `options` above.
+    Compute `spatialjoin` for the given dataset, for all combinations in
+    `args.combinations`.
     """
 
     # The five options and a representative letter for each.
@@ -104,12 +104,12 @@ def evaluate_all(args: argparse.Namespace):
         print(f"{name}\t{total_time}\t{parse_time}\t{sweep_time}", flush=True)
 
 
-def analyze(args: argparse.Namespace):
+def read_results(args: argparse.Namespace) -> list[tuple[str, float]]:
+
     """
-    Analyze the results from a previous run.
+    Read the results from file `{args.basename}.spatialjoin-evaluation.tsv`.
     """
 
-    # Read the results from the file.
     results = []
     with open(f"{args.basename}.spatialjoin-evaluation.tsv") as file:
         for line in file:
@@ -117,11 +117,46 @@ def analyze(args: argparse.Namespace):
                 continue
             name, total_time, parse_time, sweep_time = line.strip().split("\t")
             time = total_time
-            if args.time == "parse":
+            if args.analyze == "parse":
                 time = parse_time
-            elif args.time == "sweep":
+            elif args.analyze == "sweep":
                 time = sweep_time
             results.append((name, float(time)))
+    return results
+
+
+def analyze_selected(args: argparse.Namespace):
+    """
+    Show results for the combinations given by `args.combinations`.
+    """
+
+    # Read the results from file and convert them to a dictionary.
+    results = read_results(args)
+    results = dict(results)
+
+    first_name, first_time, previous_time = None, None, None
+    for name in args.combinations.split(","):
+        if name not in results:
+            print(f"ERROR: no result for {name}")
+            continue
+        time = results[name]
+        if first_name is None:
+            first_name, first_time = name, time
+            print(f"{name} -> {time:6.1f}s")
+        else:
+            print(f"{name} -> {time:6.1f}s, "
+                  f"{first_time / time:5.2f}x speedup over first"
+                  f" ({previous_time / time:4.2f}x over previous)")
+        previous_time = time
+
+
+def analyze_all(args: argparse.Namespace):
+    """
+    Analyze the results from a previous run.
+    """
+
+    # Read the results from file.
+    results = read_results(args)
 
     # First, show the maximal and minimal duration overall.
     sorted_results = sorted(results, key=lambda pair: pair[1])
@@ -137,24 +172,24 @@ def analyze(args: argparse.Namespace):
 
     # Best k options, for each fixed k.
     best = {}
-    for name, time in results:
+    for name, seconds in results:
         k = sum(1 for c in name if c.isupper())
         if k not in best:
-            best[k] = (name, time)
+            best[k] = (name, seconds)
         else:
-            if time < best[k][1]:
-                best[k] = (name, time)
+            if seconds < best[k][1]:
+                best[k] = (name, seconds)
     baseline_name = best[0][0]
     baseline_time = best[0][1]
     print(f"Baseline      : {baseline_name} -> {baseline_time:6.1f}s")
     for k in sorted(best.keys()):
         if k > 0:
-            name, time = best[k]
+            name, seconds = best[k]
             previous_name, previous_time = best[k - 1]
             print(f"Best {k} {'option ' if k == 1 else 'options'}: "
-                  f"{name} -> {time:6.1f}s, "
-                  f"{baseline_time / time:4.1f}x speedup over baseline"
-                  f" ({previous_time / time:3.1f}x over previous)")
+                  f"{name} -> {seconds:6.1f}s, "
+                  f"{baseline_time / seconds:4.1f}x speedup over baseline"
+                  f" ({previous_time / seconds:3.1f}x over previous)")
 
     print()
 
@@ -227,12 +262,11 @@ if __name__ == "__main__":
     parser.add_argument("--only-show-commands",
                         action="store_true", default=False,
                         help="Only show the commands that would be executed")
-    parser.add_argument("--analyze", action="store_true", default=False,
-                        help="Analyze the results from a previous run")
-    parser.add_argument("--time",
+    parser.add_argument("--analyze",
                         choices=["total", "parse", "sweep"],
                         default="total",
-                        help="Time to analyze with --analyze (default: total)")
+                        help="Analyze the specifed time"
+                        " (reads file produced by previous run)")
     parser.add_argument("--option-indexes", type=str,
                         default="0,1,2,3,4",
                         help="Comma-separated list of option indexes "
@@ -240,12 +274,21 @@ if __name__ == "__main__":
     parser.add_argument("--no-fast-sweep-skip", action="store_true",
                         default=False,
                         help="Call spatialjoin with --no-fast-sweep-skip")
+    combinations = ["ALL", "bscdo,Bscdo,BscDo,BsCDo,BsCDO,BSCDO"]
+    parser.add_argument("--combinations", type=str,
+                        default="ALL",
+                        help="Compute / analyze only these "
+                        "combinations").completer = \
+        argcomplete.ChoicesCompleter(combinations)
     argcomplete.autocomplete(parser, always_complete_options="long")
     args = parser.parse_args()
 
     # Evaluate `spatialjoin` for the given dataset, for all combinations of the
     # `options` above.
-    if not args.analyze:
-        evaluate_all(args)
+    if args.analyze:
+        if args.combinations == "ALL":
+            analyze_all(args)
+        else:
+            analyze_selected(args)
     else:
-        analyze(args)
+        compute(args)
