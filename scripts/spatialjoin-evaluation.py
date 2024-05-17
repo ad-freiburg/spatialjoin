@@ -53,9 +53,17 @@ def compute(args: argparse.Namespace):
                    ('o', '--no-oriented-envelope')]
     options = [all_options[int(i)] for i in args.option_indexes.split(",")]
 
+    # The combinations from `--combinations` as a set.
+    combinations = set(args.combinations.split(","))
+
     # Try all combinations of the options.
     sweep_mode = " --no-fast-sweep-skip" if args.no_fast_sweep_skip else ""
     for name, combination in all_combinations(options):
+        # Consider only combinations compatible with `args.combinations`.
+        if args.combinations != "ALL" and name not in combinations:
+            continue
+
+        # The command line for this combination.
         cmd = (f"cat {args.basename}.spatialjoin-input.tsv |"
                f" spatialjoin{sweep_mode} {combination}"
                f" --contains \" ogc:sfContains \""
@@ -264,7 +272,7 @@ if __name__ == "__main__":
                         help="Only show the commands that would be executed")
     parser.add_argument("--analyze",
                         choices=["total", "parse", "sweep"],
-                        default="total",
+                        default=None,
                         help="Analyze the specifed time"
                         " (reads file produced by previous run)")
     parser.add_argument("--option-indexes", type=str,
