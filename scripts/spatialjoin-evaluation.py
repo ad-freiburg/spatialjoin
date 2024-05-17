@@ -54,9 +54,10 @@ def evaluate_all(args: argparse.Namespace):
     options = [all_options[int(i)] for i in args.option_indexes.split(",")]
 
     # Try all combinations of the options.
+    sweep_mode = " --no-fast-sweep-skip" if args.no_fast_sweep_skip else ""
     for name, combination in all_combinations(options):
         cmd = (f"cat {args.basename}.spatialjoin-input.tsv |"
-               f" spatialjoin {combination}"
+               f" spatialjoin{sweep_mode} {combination}"
                f" --contains \" ogc:sfContains \""
                f" --covers \" ogc:sfCovers \""
                f" --intersects \" ogc:sfIntersects \""
@@ -216,7 +217,7 @@ if __name__ == "__main__":
     search_paths = (list(Path(".").glob("*.spatialjoin-input.tsv")) +
                     list(Path(".").glob("*.spatialjoin-evaluation.tsv")))
     for p in search_paths:
-        basenames.add(re.sub("\\..*$", "", p.name))
+        basenames.add(re.sub("\\.spatialjoin-[a-z]+\\.tsv*$", "", p.name))
 
     # Parse command line arguments.
     parser = argparse.ArgumentParser()
@@ -236,6 +237,9 @@ if __name__ == "__main__":
                         default="0,1,2,3,4",
                         help="Comma-separated list of option indexes "
                         "(default: 0,1,2,3,4)")
+    parser.add_argument("--no-fast-sweep-skip", action="store_true",
+                        default=False,
+                        help="Call spatialjoin with --no-fast-sweep-skip")
     argcomplete.autocomplete(parser, always_complete_options="long")
     args = parser.parse_args()
 
