@@ -86,8 +86,6 @@ int main(int argc, char** argv) {
   // initialize randomness
   srand(time(NULL) + rand());  // NOLINT
 
-  bool useCache = false;
-
   int state = 0;
 
   std::string prefix = "";
@@ -118,9 +116,6 @@ int main(int argc, char** argv) {
           printHelp(argc, argv);
           exit(0);
         }
-        // if (cur == "-C") {
-        // useCache = true;
-        // }
         if (cur == "--prefix") {
           state = 1;
         } else if (cur == "--contains") {
@@ -220,23 +215,21 @@ int main(int argc, char** argv) {
       {NUM_THREADS, prefix, intersects, contains, covers, touches, equals,
        overlaps, crosses, suffix, useBoxIds, useArea, useOBB, useCutouts,
        useDiagBox, useFastSweepSkip, useInnerOuter},
-      useCache, cache, output);
+      cache, output);
 
-  if (!useCache) {
-    LOGTO(INFO, std::cerr) << "Parsing input geometries...";
-    auto ts = TIME();
+  LOGTO(INFO, std::cerr) << "Parsing input geometries...";
+  auto ts = TIME();
 
-    while ((len = read(0, buf, 1024 * 1024 * 100)) > 0) {
-      parse(buf, len, dangling, &gid, sweeper);
-    }
-
-    sweeper.flush();
-
-    LOGTO(INFO, std::cerr) << "done (" << TOOK(ts) / 1000000000.0 << "s).";
+  while ((len = read(0, buf, 1024 * 1024 * 100)) > 0) {
+    parse(buf, len, dangling, &gid, sweeper);
   }
 
+  sweeper.flush();
+
+  LOGTO(INFO, std::cerr) << "done (" << TOOK(ts) / 1000000000.0 << "s).";
+
   LOGTO(INFO, std::cerr) << "Sweeping...";
-  auto ts = TIME();
+  ts = TIME();
   sweeper.sweep();
   LOGTO(INFO, std::cerr) << "done (" << TOOK(ts) / 1000000000.0 << "s).";
 }

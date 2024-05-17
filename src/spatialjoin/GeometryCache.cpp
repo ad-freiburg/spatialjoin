@@ -162,9 +162,7 @@ sj::Area sj::GeometryCache<sj::Area>::getFromDisk(size_t off,
   // geom
   readPoly(_geomsFReads[tid], ret.geom);
 
-  // TODO: careful, resize initializes entire vector!
-
-  // envelopes
+  // envelope
   _geomsFReads[tid].read(reinterpret_cast<char*>(&ret.box),
                          sizeof(util::geo::I32Box));
 
@@ -212,8 +210,20 @@ sj::Area sj::GeometryCache<sj::Area>::getFromDisk(size_t off,
   // simplified inner
   readPoly(_geomsFReads[tid], ret.inner);
 
+  _geomsFReads[tid].read(reinterpret_cast<char*>(&ret.innerBox),
+                         sizeof(util::geo::I32Box));
+
+  _geomsFReads[tid].read(reinterpret_cast<char*>(&ret.innerOuterArea),
+                         sizeof(double));
+
   // simplified outer
   readPoly(_geomsFReads[tid], ret.outer);
+
+  _geomsFReads[tid].read(reinterpret_cast<char*>(&ret.outerBox),
+                         sizeof(util::geo::I32Box));
+
+  _geomsFReads[tid].read(reinterpret_cast<char*>(&ret.outerOuterArea),
+                         sizeof(double));
 
   return ret;
 }
@@ -327,7 +337,7 @@ size_t sj::GeometryCache<sj::Area>::add(const sj::Area& val) {
   // geoms
   writePoly(val.geom);
 
-  // envelopes
+  // envelope
   _geomsF.write(reinterpret_cast<const char*>(&val.box),
                 sizeof(util::geo::I32Box));
   _geomsOffset += sizeof(util::geo::I32Box);
@@ -381,8 +391,24 @@ size_t sj::GeometryCache<sj::Area>::add(const sj::Area& val) {
   // innerGeom
   writePoly(val.inner);
 
+  _geomsF.write(reinterpret_cast<const char*>(&val.innerBox),
+                sizeof(util::geo::I32Box));
+  _geomsOffset += sizeof(util::geo::I32Box);
+
+  // inner area
+  _geomsF.write(reinterpret_cast<const char*>(&val.innerOuterArea), sizeof(double));
+  _geomsOffset += sizeof(double);
+
   // outerGeom
   writePoly(val.outer);
+
+  _geomsF.write(reinterpret_cast<const char*>(&val.outerBox),
+                sizeof(util::geo::I32Box));
+  _geomsOffset += sizeof(util::geo::I32Box);
+
+  // outer area
+  _geomsF.write(reinterpret_cast<const char*>(&val.outerOuterArea), sizeof(double));
+  _geomsOffset += sizeof(double);
 
   return ret;
 }
@@ -393,10 +419,6 @@ void sj::GeometryCache<W>::flush() {
   if (_geomsF.is_open()) {
     _geomsF.flush();
     _geomsF.close();
-  }
-
-  for (size_t i = 0; i < _geomsFReads.size(); i++) {
-    _geomsFReads[i].open(getFName(), std::ios::in | std::ios::binary);
   }
 }
 
@@ -548,25 +570,25 @@ void sj::GeometryCache<W>::writeLine(const util::geo::I32XSortedLine& geom) {
 // ____________________________________________________________________________
 template <>
 std::string sj::GeometryCache<sj::Area>::getFName() const {
-  return _dir + "/areas";
+  return util::getTmpFName(_dir, ".spatialjoin", "areas");
 }
 
 // ____________________________________________________________________________
 template <>
 std::string sj::GeometryCache<sj::Line>::getFName() const {
-  return _dir + "/lines";
+  return util::getTmpFName(_dir, ".spatialjoin", "lines");
 }
 
 // ____________________________________________________________________________
 template <>
 std::string sj::GeometryCache<sj::Point>::getFName() const {
-  return _dir + "/points";
+  return util::getTmpFName(_dir, ".spatialjoin", "points");
 }
 
 // ____________________________________________________________________________
 template <>
 std::string sj::GeometryCache<sj::SimpleLine>::getFName() const {
-  return _dir + "/simplelines";
+  return util::getTmpFName(_dir, ".spatialjoin", "simplelines");
 }
 
 // ____________________________________________________________________________

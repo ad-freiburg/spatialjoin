@@ -93,16 +93,18 @@ static const ssize_t BUFFER_S = sizeof(BoxVal) * 64 * 1024 * 1024;
 
 static const size_t BUFFER_S_PAIRS = 1024 * 1024 * 10;
 
+static const size_t MAX_OUT_LINE_LENGTH = 1000;
+
 class Sweeper {
  public:
-  explicit Sweeper(SweeperCfg cfg, bool reUse, const std::string cache,
+  explicit Sweeper(SweeperCfg cfg, const std::string cache,
                    const std::string out)
       : _cfg(cfg),
         _obufpos(0),
-        _pointCache(100000, cfg.numThreads, cache, reUse),
-        _areaCache(100000, cfg.numThreads, cache, reUse),
-        _lineCache(100000, cfg.numThreads, cache, reUse),
-        _simpleLineCache(100000, cfg.numThreads, cache, reUse),
+        _pointCache(100000, cfg.numThreads, cache),
+        _areaCache(100000, cfg.numThreads, cache),
+        _lineCache(100000, cfg.numThreads, cache),
+        _simpleLineCache(100000, cfg.numThreads, cache),
         _cache(cache),
         _out(out),
         _jobs(100) {
@@ -126,19 +128,15 @@ class Sweeper {
       }
     }
 
-    std::string fname = _cache + "/events";
-
-    if (reUse) {
-      _file = open(fname.c_str(), O_RDONLY);
-      _curSweepId = (lseek(_file, 0, SEEK_END) + 1) / (2 * sizeof(BoxVal));
-      lseek(_file, 0, SEEK_SET);
-    } else {
-      _file = open(fname.c_str(), O_RDWR | O_CREAT | O_TRUNC, 0666);
-    }
+    _fname = util::getTmpFName(_cache, ".spatialjoin", "events");
+    _file = open(_fname.c_str(), O_RDWR | O_CREAT | O_TRUNC, 0666);
 
     if (_file < 0) {
-      throw std::runtime_error("Could not open temporary file " + fname);
+      throw std::runtime_error("Could not open temporary file " + _fname);
     }
+
+    // immediately unlink
+    unlink(_fname.c_str());
 
 #ifdef __unix__
     posix_fadvise(_file, 0, 0, POSIX_FADV_SEQUENTIAL);
@@ -168,6 +166,7 @@ class Sweeper {
  private:
   const SweeperCfg _cfg;
   size_t _curSweepId = 0;
+  std::string _fname;
   int _file;
   unsigned char* _outBuffer;
   ssize_t _obufpos;
@@ -257,6 +256,8 @@ class Sweeper {
   void writeCrosses(size_t t, const std::string& a, const std::string& b);
   void writeRel(size_t t, const std::string& a, const std::string& b,
                 const std::string& pred);
+  void writeRelToBuf(size_t t, const std::string& a, const std::string& b,
+                     const std::string& pred);
   void writeContainsMulti(size_t t, const std::string& a, const std::string& b,
                           size_t bSub);
   void writeCoversMulti(size_t t, const std::string& a, const std::string& b,
