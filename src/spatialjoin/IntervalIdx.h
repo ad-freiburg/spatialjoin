@@ -71,6 +71,7 @@ class IntervalIdx {
   std::vector<IntervalVal<K, V>> overlap_find_all(
       const std::pair<K, K> s) const {
     std::vector<IntervalVal<K, V>> ret;
+    ret.reserve(15);
 
     // retrieve from each sub-list
     for (size_t j = 0; j < _ts.size(); j++) get(s, _ivals[j], _ts[j], ret);
@@ -97,7 +98,7 @@ class IntervalIdx {
   // retrieve all overlapping intervals from an set of intervals, sorted by
   // left interval boundary, with a parameter t which specifies the guaranteed
   // maximum interval range in the set
-  void get(const std::pair<K, K> val, const std::set<IntervalVal<K, V>>& idx,
+  void get(const std::pair<K, K>& val, const std::set<IntervalVal<K, V>>& idx,
            K t, std::vector<IntervalVal<K, V>>& ret) const {
     // search for the first interval that might overlap with the queried one
     // we can do binary search here by exploiting the fact that we know that

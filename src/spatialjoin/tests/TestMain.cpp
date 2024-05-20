@@ -49,55 +49,55 @@ std::string fullRun(const std::string& file, const sj::SweeperCfg& cfg) {
 // _____________________________________________________________________________
 int main(int, char**) {
   sj::SweeperCfg baseline{
-      1,           "$",        " intersects ", " contains ", " covers ",
+      1, 1,           "$",        " intersects ", " contains ", " covers ",
       " touches ", " equals ", " overlaps ",   " crosses ",  "$\n",
       false,       false,      false,          false,        false,
       false,       false};
 
-  sj::SweeperCfg all{1,           "$",         " intersects ", " contains ",
+  sj::SweeperCfg all{1, 1,           "$",         " intersects ", " contains ",
                      " covers ",  " touches ", " equals ",     " overlaps ",
                      " crosses ", "$\n",       true,           true,
                      true,        true,        true,           true,
                      true};
 
   sj::SweeperCfg noSurfaceArea{
-      1,           "$",        " intersects ", " contains ", " covers ",
+      1, 1,           "$",        " intersects ", " contains ", " covers ",
       " touches ", " equals ", " overlaps ",   " crosses ",  "$\n",
       true,        false,      true,           true,         true,
       true,        true};
 
   sj::SweeperCfg noBoxIds{
-      1,           "$",        " intersects ", " contains ", " covers ",
+      1, 1,           "$",        " intersects ", " contains ", " covers ",
       " touches ", " equals ", " overlaps ",   " crosses ",  "$\n",
       false,       true,       true,           true,         true,
       true,        true};
 
-  sj::SweeperCfg noObb{1,           "$",         " intersects ", " contains ",
+  sj::SweeperCfg noObb{1, 1,           "$",         " intersects ", " contains ",
                        " covers ",  " touches ", " equals ",     " overlaps ",
                        " crosses ", "$\n",       true,           true,
                        false,       true,        true,           true,
                        true};
 
   sj::SweeperCfg noCutouts{
-      1,           "$",        " intersects ", " contains ", " covers ",
+      1, 1,           "$",        " intersects ", " contains ", " covers ",
       " touches ", " equals ", " overlaps ",   " crosses ",  "$\n",
       true,        true,       true,           false,        true,
       true,        true};
 
   sj::SweeperCfg noDiagBox{
-      1,           "$",        " intersects ", " contains ", " covers ",
+      1, 1,           "$",        " intersects ", " contains ", " covers ",
       " touches ", " equals ", " overlaps ",   " crosses ",  "$\n",
       true,        true,       true,           true,         false,
       true,        true};
 
   sj::SweeperCfg noFastSweep{
-      1,           "$",        " intersects ", " contains ", " covers ",
+      1, 1,           "$",        " intersects ", " contains ", " covers ",
       " touches ", " equals ", " overlaps ",   " crosses ",  "$\n",
       true,        true,       true,           true,         true,
       false,       true};
 
   sj::SweeperCfg noInnerOuter{
-      1,           "$",        " intersects ", " contains ", " covers ",
+      1, 1,           "$",        " intersects ", " contains ", " covers ",
       " touches ", " equals ", " overlaps ",   " crosses ",  "$\n",
       true,        true,       true,           true,         true,
       true,        false};
@@ -451,6 +451,13 @@ int main(int, char**) {
       auto res = fullRun("../src/spatialjoin/tests/datasets/touchwayfail", cfg);
       TEST(res.find("$1 touches 2$") != std::string::npos);
       TEST(res.find("$2 touches 1$") != std::string::npos);
+    }
+
+    {
+      auto res = fullRun("../src/spatialjoin/tests/datasets/simpleareafail", cfg);
+      TEST(res.find("$1 intersects 2$") != std::string::npos);
+      TEST(res.find("$2 intersects 1$") != std::string::npos);
+      TEST(res.find("$2 crosses 1$") != std::string::npos);
     }
   }
 }

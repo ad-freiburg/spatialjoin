@@ -30,7 +30,13 @@
 
 namespace sj {
 
-enum GeomType : uint8_t { POLYGON = 0, LINE = 1, POINT = 2, SIMPLE_LINE = 3 };
+enum GeomType : uint8_t {
+  POLYGON = 0,
+  LINE = 1,
+  POINT = 2,
+  SIMPLE_LINE = 3,
+  SIMPLE_POLYGON = 4
+};
 enum OutMode : uint8_t { PLAIN = 0, BZ2 = 1, GZ = 2, COUT = 3, NONE = 4 };
 
 struct BoxVal {
@@ -39,7 +45,7 @@ struct BoxVal {
   int32_t upY;
   int32_t val;
   bool out : 1;
-  GeomType type : 2;
+  GeomType type : 3;
   double areaOrLen;
   util::geo::I32Box b45;
 };
@@ -54,7 +60,7 @@ struct SweepVal {
       : id(id), type(type), b45(b45) {}
   SweepVal() : id(0), type(POLYGON) {}
   size_t id : 60;
-  GeomType type : 2;
+  GeomType type : 3;
   util::geo::I32Box b45;
 };
 
@@ -70,6 +76,7 @@ typedef std::vector<std::pair<BoxVal, SweepVal>> JobBatch;
 
 struct SweeperCfg {
   size_t numThreads;
+  size_t numCacheThreads;
   std::string pairStart;
   std::string sepIsect;
   std::string sepContains;
@@ -101,10 +108,11 @@ class Sweeper {
                    const std::string out)
       : _cfg(cfg),
         _obufpos(0),
-        _pointCache(100000, cfg.numThreads, cache),
-        _areaCache(100000, cfg.numThreads, cache),
-        _lineCache(100000, cfg.numThreads, cache),
-        _simpleLineCache(100000, cfg.numThreads, cache),
+        _pointCache(100000, cfg.numCacheThreads, cache),
+        _areaCache(100000, cfg.numCacheThreads, cache),
+        _simpleAreaCache(100000, cfg.numCacheThreads, cache),
+        _lineCache(100000, cfg.numCacheThreads, cache),
+        _simpleLineCache(100000, cfg.numCacheThreads, cache),
         _cache(cache),
         _out(out),
         _jobs(100) {
@@ -128,6 +136,7 @@ class Sweeper {
       }
     }
 
+    // OUTFACTOR 1
     _fname = util::getTmpFName(_cache, ".spatialjoin", "events");
     _file = open(_fname.c_str(), O_RDWR | O_CREAT | O_TRUNC, 0666);
 
@@ -141,6 +150,9 @@ class Sweeper {
 #ifdef __unix__
     posix_fadvise(_file, 0, 0, POSIX_FADV_SEQUENTIAL);
 #endif
+
+    // OUTFACTOR 1
+
     _outBuffer = new unsigned char[BUFFER_S];
   };
 
@@ -162,6 +174,7 @@ class Sweeper {
   void flush();
 
   void sweep();
+  void sortCache();
 
  private:
   const SweeperCfg _cfg;
@@ -187,6 +200,7 @@ class Sweeper {
 
   GeometryCache<Point> _pointCache;
   GeometryCache<Area> _areaCache;
+  GeometryCache<SimpleArea> _simpleAreaCache;
   GeometryCache<Line> _lineCache;
   GeometryCache<SimpleLine> _simpleLineCache;
 
@@ -221,6 +235,8 @@ class Sweeper {
   std::mutex _mutNotCrosses;
   std::mutex _mutOverlaps;
   std::mutex _mutNotOverlaps;
+
+  Area areaFromSimpleArea(const SimpleArea* sa) const;
 
   std::tuple<bool, bool, bool, bool, bool> check(const Area* a, const Area* b,
                                                  size_t t) const;
@@ -279,7 +295,7 @@ class Sweeper {
   void writeNotCrosses(size_t t, const std::string& a, size_t aSub,
                        const std::string& b, size_t bSub);
 
-  void doCheck(const BoxVal cur, const SweepVal sv, size_t t);
+  void doCheck(BoxVal cur, SweepVal sv, size_t t);
 
   void processQueue(size_t t);
 
@@ -302,8 +318,12 @@ class Sweeper {
     if (boxa->out && !boxb->out) return 1;
 
     // everything before a polygon
-    if (boxa->type != POLYGON && boxb->type == POLYGON) return -1;
-    if (boxa->type == POLYGON && boxb->type != POLYGON) return 1;
+    if (boxa->type != POLYGON && boxa->type != SIMPLE_POLYGON &&
+        (boxb->type == POLYGON || boxb->type == SIMPLE_POLYGON))
+      return -1;
+    if ((boxa->type == POLYGON || boxb->type == SIMPLE_POLYGON) &&
+        boxb->type != POLYGON && boxb->type != SIMPLE_POLYGON)
+      return 1;
 
     // points before lines
     if (boxa->type == POINT &&
@@ -314,10 +334,12 @@ class Sweeper {
       return 1;
 
     // smaller polygons before larger
-    if (boxa->type == POLYGON && boxb->type == POLYGON &&
+    if ((boxa->type == POLYGON || boxa->type == SIMPLE_POLYGON) &&
+        (boxb->type == POLYGON || boxb->type == SIMPLE_POLYGON) &&
         boxa->areaOrLen < boxb->areaOrLen)
       return -1;
-    if (boxa->type == POLYGON && boxb->type == POLYGON &&
+    if ((boxa->type == POLYGON || boxa->type == SIMPLE_POLYGON) &&
+        (boxb->type == POLYGON || boxb->type == SIMPLE_POLYGON) &&
         boxa->areaOrLen > boxb->areaOrLen)
       return 1;
 
@@ -333,6 +355,9 @@ class Sweeper {
 
     return 0;
   }
+
+  size_t _SIMPLE = 0;
+  size_t _NONSIMPLE = 0;
 };
 }  // namespace sj
 
