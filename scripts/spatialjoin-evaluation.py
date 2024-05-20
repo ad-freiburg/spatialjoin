@@ -12,18 +12,19 @@ import time
 from pathlib import Path
 
 import argcomplete
+from argcomplete.completers import ChoicesCompleter
 
 
 def all_combinations(options: list[tuple[str, str]]) -> list[tuple[str, str]]:
     """
     Print all combinations of the options.
 
-    >>> test_options = [('a', '--anna'), ('b', '--berta'), ('c', '--clara')]
+    >>> test_options = [('a', '--no-a'), ('b', '--no-b'), ('C', '--use-c')]
     >>> all_combinations(test_options) # doctest: +NORMALIZE_WHITESPACE
-    [('abc', '--anna --berta --clara'), ('Abc', '--berta --clara'), \
-     ('aBc', '--anna --clara'), ('ABc', '--clara'), \
-     ('abC', '--anna --berta'), ('AbC', '--berta'), \
-     ('aBC', '--anna'), ('ABC', '')]
+    [('abc', '--no-a --no-b'), ('Abc', '--no-b'), \
+     ('aBc', '--no-a'), ('ABc', ''), \
+     ('abC', '--no-a --no-b --use-c'), ('AbC', '--no-b --use-c'), \
+     ('aBC', '--no-a --use-c'), ('ABC', '--use-c')]
     """
 
     combinations = []
@@ -33,9 +34,12 @@ def all_combinations(options: list[tuple[str, str]]) -> list[tuple[str, str]]:
         for j in range(len(options)):
             if i & (1 << j) == 0:
                 name += options[j][0].lower()
-                combination += options[j][1] + " "
+                if options[j][0].islower():
+                    combination += options[j][1] + " "
             else:
                 name += options[j][0].upper()
+                if options[j][0].isupper():
+                    combination += options[j][1] + " "
         combination = combination.strip()
         combinations.append((name, combination))
     return combinations
@@ -47,17 +51,28 @@ def compute(args: argparse.Namespace):
     `args.combinations`.
     """
 
-    # The five options and a representative letter for each.
-    all_options = [('b', '--no-box-ids'), ('s', '--no-surface-area'),
-                   ('c', '--no-cutouts'), ('d', '--no-diag-box'),
-                   ('o', '--no-oriented-envelope')]
+    # The six options and a representative letter for each.
+    all_options = [('b', '--no-box-ids'),
+                   ('c', '--no-cutouts'),
+                   ('s', '--no-surface-area'),
+                   ('d', '--no-diag-box'),
+                   ('o', '--no-oriented-envelope'),
+                   ('I', '--use-inner-outer')]
     options = [all_options[int(i)] for i in args.option_indexes.split(",")]
 
     # The combinations from `--combinations` as a set.
     combinations = set(args.combinations.split(","))
 
+    # Create empty log file (clear it if it already exists).
+    log_file_name = f"{args.basename}.spatialjoin-evaluation.log" \
+        if not args.no_log_file else None
+    if log_file_name:
+        log_file = open(log_file_name, "w")
+        log_file.close()
+
     # Try all combinations of the options.
     sweep_mode = " --no-fast-sweep-skip" if args.no_fast_sweep_skip else ""
+    count = 0
     for name, combination in all_combinations(options):
         # Consider only combinations compatible with `args.combinations`.
         if args.combinations != "ALL" and name not in combinations:
@@ -65,15 +80,29 @@ def compute(args: argparse.Namespace):
 
         # The command line for this combination.
         cmd = (f"cat {args.basename}.spatialjoin-input.tsv |"
-               f" spatialjoin{sweep_mode} {combination}"
-               f" --contains \" ogc:sfContains \""
-               f" --covers \" ogc:sfCovers \""
-               f" --intersects \" ogc:sfIntersects \""
-               f" --equals \" ogc:sfEquals \""
-               f" --touches \" ogc:sfTouches \""
-               f" --crosses \" ogc:sfCrosses \""
-               f" --overlaps \" ogc:sfOverlaps \""
-               f" --suffix $' .\\n'")
+               f" spatialjoin{sweep_mode} {combination}")
+
+        # Optionally, generate RDF output.
+        if args.rdf_output:
+            cmd += (" --contains \" ogc:sfContains \""
+                    " --covers \" ogc:sfCovers \""
+                    " --intersects \" ogc:sfIntersects \""
+                    " --equals \" ogc:sfEquals \""
+                    " --touches \" ogc:sfTouches \""
+                    " --crosses \" ogc:sfCrosses \""
+                    " --overlaps \" ogc:sfOverlaps \""
+                    " --suffix $' .\\n'")
+
+        # Optionally, tee stderr to the log file.
+        if log_file_name:
+            count += 1
+            with open(log_file_name, "a") as log_file:
+                log_file.write(f"\n"
+                               f"### Combination {count}\n"
+                               f"### {name}\n"
+                               f"### {cmd} > /dev/null\n"
+                               f"\n")
+            cmd += f" 2> >(tee -a {log_file_name} >&2)"
 
         # Only show the commands?
         if args.only_show_commands:
@@ -83,6 +112,7 @@ def compute(args: argparse.Namespace):
         # Run the command and time it.
         start = time.time()
         result = subprocess.run(cmd, shell=True,
+                                executable="/bin/bash",
                                 stdout=subprocess.DEVNULL,
                                 stderr=subprocess.PIPE)
         end = time.time()
@@ -143,7 +173,8 @@ def analyze_selected(args: argparse.Namespace):
     results = dict(results)
 
     first_name, first_time, previous_time = None, None, None
-    for name in args.combinations.split(","):
+    names = args.combinations.split(",")
+    for i, name in enumerate(names):
         if name not in results:
             print(f"ERROR: no result for {name}")
             continue
@@ -152,10 +183,16 @@ def analyze_selected(args: argparse.Namespace):
             first_name, first_time = name, time
             print(f"{name} -> {time:6.1f}s")
         else:
+            # Find previous to compare with (must have prefix in common,
+            # depending on how you go back in the list of `names`).
+            for j in range(i):
+                if names[j][:j] == name[:j]:
+                    previous_name = names[j]
+            previous_time = results[previous_name]
+            # Show the speedup.
             print(f"{name} -> {time:6.1f}s, "
-                  f"{first_time / time:5.2f}x speedup over first"
-                  f" ({previous_time / time:4.2f}x over previous)")
-        previous_time = time
+                  f"{first_time / time:5.2f}x speedup over {first_name}"
+                  f" ({previous_time / time:5.2f}x over {previous_name})")
 
 
 def analyze_all(args: argparse.Namespace):
@@ -266,7 +303,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("basename",
                         help="basename of the dataset").completer = \
-        argcomplete.ChoicesCompleter(list(basenames))
+        ChoicesCompleter(list(basenames))
     parser.add_argument("--only-show-commands",
                         action="store_true", default=False,
                         help="Only show the commands that would be executed")
@@ -276,18 +313,23 @@ if __name__ == "__main__":
                         help="Analyze the specifed time"
                         " (reads file produced by previous run)")
     parser.add_argument("--option-indexes", type=str,
-                        default="0,1,2,3,4",
+                        default="0,1,2,3,4,5",
                         help="Comma-separated list of option indexes "
-                        "(default: 0,1,2,3,4)")
+                        "(default: 0,1,2,3,4,5)")
     parser.add_argument("--no-fast-sweep-skip", action="store_true",
                         default=False,
                         help="Call spatialjoin with --no-fast-sweep-skip")
-    combinations = ["ALL", "bscdo,Bscdo,BscDo,BsCDo,BsCDO,BSCDO"]
+    combinations = ["ALL", "bcsdoi,Bcsdoi,BCsdoi,BCSdoi,BCSDoi,BCSdOi,BCSdoI"]
     parser.add_argument("--combinations", type=str,
                         default="ALL",
                         help="Compute / analyze only these "
                         "combinations").completer = \
-        argcomplete.ChoicesCompleter(combinations)
+        ChoicesCompleter(combinations)
+    parser.add_argument("--no-log-file", action="store_true", default=False,
+                        help="No log file "
+                        "(default: <basename>.spatialjoin-evaluation.log)")
+    parser.add_argument("--rdf-output", action="store_true", default=False,
+                        help="Generate RDF output")
     argcomplete.autocomplete(parser, always_complete_options="long")
     args = parser.parse_args()
 
