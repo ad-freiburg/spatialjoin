@@ -29,6 +29,7 @@ using sj::innerouter::Mode;
 using util::writeAll;
 using util::geo::area;
 using util::geo::getBoundingBox;
+using util::geo::I32Box;
 using util::geo::I32Line;
 using util::geo::I32MultiLine;
 using util::geo::I32MultiPoint;
@@ -45,6 +46,9 @@ using util::geo::webMercToLatLng;
 
 const static size_t CUTOUTS_MIN_SIZE = 100;
 const static size_t OBB_MIN_SIZE = 100;
+
+const static double sin45 = 1.0 / sqrt(2);
+const static double cos45 = 1.0 / sqrt(2);
 
 // _____________________________________________________________________________
 void Sweeper::add(const I32MultiPolygon& a, const std::string& gid) {
@@ -142,9 +146,9 @@ void Sweeper::add(const I32Polygon& poly, const std::string& gid,
 
   if (_cfg.useBoxIds) {
     if (_cfg.useCutouts && poly.getOuter().size() > CUTOUTS_MIN_SIZE) {
-      boxIds = packBoxIds(getBoxIds(spoly, poly, box, areaSize, &cutouts));
+      boxIds = packBoxIds(getBoxIds(spoly, box, areaSize, &cutouts));
     } else {
-      boxIds = packBoxIds(getBoxIds(spoly, poly, box, areaSize, 0));
+      boxIds = packBoxIds(getBoxIds(spoly, box, areaSize, 0));
     }
   }
 
@@ -157,28 +161,49 @@ void Sweeper::add(const I32Polygon& poly, const std::string& gid,
   }
 
   I32XSortedPolygon inner, outer;
+  I32Box innerBox, outerBox;
+  double outerOuterAreaSize = 0;
+  double innerOuterAreaSize = 0;
 
   if (_cfg.useInnerOuter) {
-    inner = sj::innerouter::simplifiedPoly<Mode::INNER>(poly, 1 / (3.14 * 20));
-    outer = sj::innerouter::simplifiedPoly<Mode::OUTER>(poly, 1 / (3.14 * 20));
+    const auto& innerPoly =
+        sj::innerouter::simplifiedPoly<Mode::INNER>(poly, 1 / (3.14 * 20));
+    const auto& outerPoly =
+        sj::innerouter::simplifiedPoly<Mode::OUTER>(poly, 1 / (3.14 * 20));
+
+    innerBox = getBoundingBox(innerPoly);
+    outerBox = getBoundingBox(outerPoly);
+
+    innerOuterAreaSize = outerArea(innerPoly);
+    outerOuterAreaSize = outerArea(outerPoly);
+
+    inner = innerPoly;
+    outer = outerPoly;
   }
 
   util::geo::I32Polygon obb;
-  obb = util::geo::convexHull(util::geo::getOrientedEnvelope(poly));
 
-  auto polyR = util::geo::rotate(poly, 45, I32Point(0, 0));
-  const auto& box45 = getBoundingBox(polyR);
+  I32Box box45;
+  if (_cfg.useDiagBox) {
+    auto polyR = util::geo::rotateSinCos(poly, sin45, cos45, I32Point(0, 0));
+    box45 = getBoundingBox(polyR);
+  }
 
-  if (!_cfg.useOBB || poly.getOuter().size() < OBB_MIN_SIZE ||
-      obb.getOuter().size() >= poly.getOuter().size())
-    obb = {};
+  if (_cfg.useOBB && poly.getOuter().size() >= OBB_MIN_SIZE) {
+    obb = util::geo::convexHull(
+        util::geo::pad(util::geo::getOrientedEnvelope(poly), 10));
+
+    // drop redundant oriented bbox
+    if (obb.getOuter().size() >= poly.getOuter().size()) obb = {};
+  }
 
   if (subid > 0)
     multiAdd(gid, box.getLowerLeft().getX(), box.getUpperRight().getX());
 
   size_t id = _areaCache.add({spoly, box, gid, subid, areaSize,
                               _cfg.useArea ? outerAreaSize : 0, boxIds, cutouts,
-                              obb, inner, outer});
+                              obb, inner, innerBox, innerOuterAreaSize, outer,
+                              outerBox, outerOuterAreaSize});
 
   diskAdd({id, box.getLowerLeft().getY(), box.getUpperRight().getY(),
            box.getLowerLeft().getX(), false, POLYGON, areaSize, box45});
@@ -208,18 +233,13 @@ void Sweeper::add(const I32Line& line, const std::string& gid, size_t subid) {
     }
   }
 
-  double len = util::geo::len(line);
+  const double len = util::geo::len(line);
 
-  util::geo::I32Polygon obb;
-  obb = util::geo::convexHull(util::geo::getOrientedEnvelope(line));
-
-  auto lineR = util::geo::rotate(line, 45, I32Point(0, 0));
-  const auto& box45 = getBoundingBox(lineR);
-
-  // drop redundant oriented bbox
-  if (!_cfg.useOBB || line.size() < OBB_MIN_SIZE ||
-      obb.getOuter().size() >= line.size())
-    obb = {};
+  I32Box box45;
+  if (_cfg.useDiagBox) {
+    auto polyR = util::geo::rotateSinCos(line, sin45, cos45, I32Point(0, 0));
+    box45 = getBoundingBox(polyR);
+  }
 
   if (subid > 0)
     multiAdd(gid, box.getLowerLeft().getX(), box.getUpperRight().getX());
@@ -234,13 +254,22 @@ void Sweeper::add(const I32Line& line, const std::string& gid, size_t subid) {
     diskAdd({id, box.getLowerLeft().getY(), box.getUpperRight().getY(),
              box.getUpperRight().getX(), true, SIMPLE_LINE, len, box45});
   } else {
+    // normal line
     I32XSortedLine sline(line);
+    util::geo::I32Polygon obb;
+    if (_cfg.useOBB && line.size() >= OBB_MIN_SIZE) {
+      obb = util::geo::convexHull(
+          util::geo::pad(util::geo::getOrientedEnvelope(line), 10));
+
+      // drop redundant oriented bbox
+      if (obb.getOuter().size() >= line.size()) obb = {};
+    }
 
     if (!_cfg.useFastSweepSkip) {
       sline.setMaxSegLen(std::numeric_limits<int32_t>::max());
     }
 
-    size_t id =
+    const size_t id =
         _lineCache.add({sline, box, gid, subid, len, boxIds, cutouts, obb});
 
     diskAdd({id, box.getLowerLeft().getY(), box.getUpperRight().getY(),
@@ -262,7 +291,7 @@ void Sweeper::add(const I32Point& point, const std::string& gid) {
 void Sweeper::add(const I32Point& point, const std::string& gid, size_t subid) {
   size_t id = _pointCache.add({gid, subid});
   if (subid > 0) multiAdd(gid, point.getX(), point.getX());
-  auto pointR = util::geo::rotate(point, 45, I32Point(0, 0));
+  auto pointR = util::geo::rotateSinCos(point, sin45, cos45, I32Point(0, 0));
   diskAdd({id, point.getY(), point.getY(), point.getX(), false, POINT, 0,
            util::geo::getBoundingBox(pointR)});
   diskAdd({id, point.getY(), point.getY(), point.getX(), true, POINT, 0,
@@ -462,8 +491,9 @@ void Sweeper::flush() {
 
   LOGTO(INFO, std::cerr) << "Sorting events...";
 
-  std::string newFName = _cache + "/.sortTmp";
+  std::string newFName = util::getTmpFName(_cache, ".spatialjoin", "sorttmp");
   int newFile = open(newFName.c_str(), O_RDWR | O_CREAT, 0666);
+  unlink(newFName.c_str());
 
   if (newFile < 0) {
     throw std::runtime_error("Could not open temporary file " + newFName);
@@ -477,11 +507,7 @@ void Sweeper::flush() {
 
   fsync(newFile);
 
-  // remove old file
-  std::remove((_cache + "/events").c_str());
-  std::rename((_cache + "/.sortTmp").c_str(), (_cache + "/events").c_str());
-
-  _file = open((_cache + "/events").c_str(), O_RDONLY);
+  _file = newFile;
 
 #ifdef __unix__
   posix_fadvise(newFile, 0, 0, POSIX_FADV_SEQUENTIAL);
@@ -655,11 +681,9 @@ std::tuple<bool, bool, bool, bool, bool> Sweeper::check(const Area* a,
   }
 
   if (_cfg.useOBB) {
-    if (a->obb.getOuter().rawRing().size() &&
-        b->obb.getOuter().rawRing().size()) {
+    if (!a->obb.empty() && !b->obb.empty()) {
       auto ts = TIME();
-      auto r = util::geo::intersectsContainsCovers(
-          a->obb, a->box, a->outerArea, b->obb, b->box, b->outerArea);
+      auto r = util::geo::intersectsContainsCovers(a->obb, b->obb);
       _stats[t].timeOBBIsectAreaArea += TOOK(ts);
       if (!std::get<0>(r)) return {0, 0, 0, 0, 0};
     }
@@ -668,7 +692,8 @@ std::tuple<bool, bool, bool, bool, bool> Sweeper::check(const Area* a,
   if (_cfg.useInnerOuter && !a->outer.empty() && !b->outer.empty()) {
     auto ts = TIME();
     auto r = util::geo::intersectsContainsCovers(
-        a->outer, a->box, a->outerArea, b->outer, b->box, b->outerArea);
+        a->outer, a->outerBox, a->outerOuterArea, b->outer, b->outerBox,
+        b->outerOuterArea);
     _stats[t].timeInnerOuterCheckAreaArea += TOOK(ts);
     _stats[t].innerOuterChecksAreaArea++;
     if (!std::get<0>(r)) return {0, 0, 0, 0, 0};
@@ -677,7 +702,8 @@ std::tuple<bool, bool, bool, bool, bool> Sweeper::check(const Area* a,
   if (_cfg.useInnerOuter && !a->outer.empty() && !b->inner.empty()) {
     auto ts = TIME();
     auto r = util::geo::intersectsContainsCovers(
-        a->outer, a->box, a->outerArea, b->inner, b->box, b->outerArea);
+        a->outer, a->outerBox, a->outerOuterArea, b->inner, b->innerBox,
+        b->innerOuterArea);
     _stats[t].timeInnerOuterCheckAreaArea += TOOK(ts);
     _stats[t].innerOuterChecksAreaArea++;
     if (std::get<1>(r)) return {1, 1, 1, 0, 0};
@@ -685,8 +711,9 @@ std::tuple<bool, bool, bool, bool, bool> Sweeper::check(const Area* a,
 
   if (_cfg.useInnerOuter && a->outer.empty() && !b->outer.empty()) {
     auto ts = TIME();
-    auto r = util::geo::intersectsContainsCovers(
-        a->geom, a->box, a->outerArea, b->outer, b->box, b->outerArea);
+    auto r = util::geo::intersectsContainsCovers(a->geom, a->box, a->outerArea,
+                                                 b->outer, b->outerBox,
+                                                 b->outerOuterArea);
     _stats[t].timeInnerOuterCheckAreaArea += TOOK(ts);
     _stats[t].innerOuterChecksAreaArea++;
     if (!std::get<0>(r)) return {0, 0, 0, 0, 0};
@@ -694,8 +721,9 @@ std::tuple<bool, bool, bool, bool, bool> Sweeper::check(const Area* a,
 
   if (_cfg.useInnerOuter && a->outer.empty() && !b->inner.empty()) {
     auto ts = TIME();
-    auto r = util::geo::intersectsContainsCovers(
-        a->geom, a->box, a->outerArea, b->inner, b->box, b->outerArea);
+    auto r = util::geo::intersectsContainsCovers(a->geom, a->box, a->outerArea,
+                                                 b->inner, b->innerBox,
+                                                 b->innerOuterArea);
     _stats[t].timeInnerOuterCheckAreaArea += TOOK(ts);
     _stats[t].innerOuterChecksAreaArea++;
     if (std::get<1>(r)) return {1, 1, 1, 0, 0};
@@ -750,10 +778,9 @@ std::tuple<bool, bool, bool, bool, bool> Sweeper::check(const Line* a,
   }
 
   if (_cfg.useOBB) {
-    if (a->obb.getOuter().rawRing().size() &&
-        b->obb.getOuter().rawRing().size()) {
+    if (!a->obb.empty() && !b->obb.empty()) {
       auto ts = TIME();
-      auto r = intersectsContainsCovers(a->obb, a->box, 0, b->obb, b->box, 0);
+      auto r = intersectsContainsCovers(a->obb, b->obb);
       _stats[t].timeOBBIsectAreaLine += TOOK(ts);
       if (!std::get<0>(r)) return {0, 0, 0, 0, 0};
     }
@@ -761,8 +788,8 @@ std::tuple<bool, bool, bool, bool, bool> Sweeper::check(const Line* a,
 
   if (_cfg.useInnerOuter && !b->outer.empty()) {
     auto ts = TIME();
-    auto r =
-        util::geo::intersectsContainsCovers(a->geom, a->box, b->outer, b->box);
+    auto r = util::geo::intersectsContainsCovers(a->geom, a->box, b->outer,
+                                                 b->outerBox);
     _stats[t].timeInnerOuterCheckAreaLine += TOOK(ts);
     _stats[t].innerOuterChecksAreaLine++;
     if (!std::get<0>(r)) return {0, 0, 0, 0, 0};
@@ -770,8 +797,8 @@ std::tuple<bool, bool, bool, bool, bool> Sweeper::check(const Line* a,
 
   if (_cfg.useInnerOuter && !b->inner.empty()) {
     auto ts = TIME();
-    auto r =
-        util::geo::intersectsContainsCovers(a->geom, a->box, b->inner, b->box);
+    auto r = util::geo::intersectsContainsCovers(a->geom, a->box, b->inner,
+                                                 b->innerBox);
     _stats[t].timeInnerOuterCheckAreaLine += TOOK(ts);
     _stats[t].innerOuterChecksAreaLine++;
     if (std::get<1>(r)) return {1, 1, 1, 0, 0};
@@ -829,11 +856,9 @@ std::tuple<bool, bool, bool, bool, bool> Sweeper::check(const Line* a,
   }
 
   if (_cfg.useOBB) {
-    if (a->obb.getOuter().rawRing().size() &&
-        b->obb.getOuter().rawRing().size()) {
+    if (!a->obb.empty() && !b->obb.empty()) {
       auto ts = TIME();
-      auto r = util::geo::intersectsContainsCovers(a->obb, a->box, 0, b->obb,
-                                                   b->box, 0);
+      auto r = util::geo::intersectsContainsCovers(a->obb, b->obb);
       _stats[t].timeOBBIsectLineLine += TOOK(ts);
       if (!std::get<0>(r)) return {0, 0, 0, 0, 0};
     }
@@ -881,11 +906,10 @@ std::tuple<bool, bool, bool, bool, bool> Sweeper::check(const SimpleLine* a,
     }
   }
 
-  if (_cfg.useOBB && b->obb.getOuter().rawRing().size()) {
+  if (_cfg.useOBB && !b->obb.empty()) {
     auto ts = TIME();
     auto r = intersectsContainsCovers(
-        I32XSortedLine(LineSegment<int32_t>(a->a, a->b)),
-        getBoundingBox(LineSegment<int32_t>(a->a, a->b)), b->obb, b->box);
+        I32XSortedLine(LineSegment<int32_t>(a->a, a->b)), b->obb);
     _stats[t].timeOBBIsectAreaLine += TOOK(ts);
     if (!std::get<0>(r)) return {0, 0, 0, 0, 0};
   }
@@ -894,7 +918,8 @@ std::tuple<bool, bool, bool, bool, bool> Sweeper::check(const SimpleLine* a,
     auto ts = TIME();
     auto r = util::geo::intersectsContainsCovers(
         I32XSortedLine(LineSegment<int32_t>(a->a, a->b)),
-        getBoundingBox(LineSegment<int32_t>(a->a, a->b)), b->outer, b->box);
+        getBoundingBox(LineSegment<int32_t>(a->a, a->b)), b->outer,
+        b->outerBox);
     _stats[t].timeInnerOuterCheckAreaLine += TOOK(ts);
     _stats[t].innerOuterChecksAreaLine++;
     if (!std::get<0>(r)) return {0, 0, 0, 0, 0};
@@ -953,16 +978,6 @@ std::tuple<bool, bool, bool, bool, bool> Sweeper::check(const SimpleLine* a,
 std::tuple<bool, bool, bool, bool, bool> Sweeper::check(const SimpleLine* a,
                                                         const Line* b,
                                                         size_t t) const {
-  // if (_cfg.useOBB) {
-  // auto ts = TIME();
-  // auto r = intersectsContainsCovers(
-  // I32XSortedLine(LineSegment<int32_t>(a->a, a->b)), b->obb);
-  // _stats[t].timeOBBIsectLineLine += TOOK(ts);
-  // if (!std::get<0>(r)) {
-  // return {0, 0, 0, 0, 0};
-  // }
-  // }
-
   if (_cfg.useBoxIds) {
     auto ts = TIME();
     auto r = boxIdIsect({{1, 0}, {getBoxId(a->a), 0}}, b->boxIds);
@@ -989,6 +1004,14 @@ std::tuple<bool, bool, bool, bool, bool> Sweeper::check(const SimpleLine* a,
     }
   }
 
+  if (_cfg.useOBB && !b->obb.empty()) {
+    auto ts = TIME();
+    auto r = intersectsContainsCovers(
+        I32XSortedLine(LineSegment<int32_t>(a->a, a->b)), b->obb);
+    _stats[t].timeOBBIsectLineLine += TOOK(ts);
+    if (!std::get<0>(r)) return {0, 0, 0, 0, 0};
+  }
+
   auto ts = TIME();
   auto res = intersectsCovers(
       I32XSortedLine(LineSegment<int32_t>(a->a, a->b)), b->geom,
@@ -1002,16 +1025,6 @@ std::tuple<bool, bool, bool, bool, bool> Sweeper::check(const SimpleLine* a,
 std::tuple<bool, bool, bool, bool, bool> Sweeper::check(const Line* a,
                                                         const SimpleLine* b,
                                                         size_t t) const {
-  // if (_cfg.useOBB) {
-  // auto ts = TIME();
-  // auto r = intersectsContainsCovers(
-  // I32XSortedLine(LineSegment<int32_t>(b->a, b->b)), a->obb);
-  // _stats[t].timeOBBIsectLineLine += TOOK(ts);
-  // if (!std::get<0>(r)) {
-  // return {0, 0, 0, 0, 0};
-  // }
-  // }
-
   if (_cfg.useBoxIds) {
     auto ts = TIME();
     auto r = boxIdIsect(a->boxIds, {{1, 0}, {getBoxId(b->a), 0}});
@@ -1036,6 +1049,14 @@ std::tuple<bool, bool, bool, bool, bool> Sweeper::check(const Line* a,
         return res;
       }
     }
+  }
+
+  if (_cfg.useOBB && !a->obb.empty()) {
+    auto ts = TIME();
+    auto r = intersectsContainsCovers(
+        I32XSortedLine(LineSegment<int32_t>(b->a, b->b)), a->obb);
+    _stats[t].timeOBBIsectLineLine += TOOK(ts);
+    if (!std::get<0>(r)) return {0, 0, 0, 0, 0};
   }
 
   auto ts = TIME();
@@ -1162,13 +1183,34 @@ void Sweeper::writeContains(size_t t, const std::string& a,
 }
 
 // ____________________________________________________________________________
+void Sweeper::writeRelToBuf(size_t t, const std::string& a,
+                            const std::string& b, const std::string& pred) {
+  memcpy(_outBuffers[t] + _outBufPos[t], _cfg.pairStart.c_str(),
+         _cfg.pairStart.size());
+  _outBufPos[t] += _cfg.pairStart.size();
+  memcpy(_outBuffers[t] + _outBufPos[t], a.c_str(), a.size());
+  _outBufPos[t] += a.size();
+  memcpy(_outBuffers[t] + _outBufPos[t], pred.c_str(), pred.size());
+  _outBufPos[t] += pred.size();
+  memcpy(_outBuffers[t] + _outBufPos[t], b.c_str(), b.size());
+  _outBufPos[t] += b.size();
+  memcpy(_outBuffers[t] + _outBufPos[t], _cfg.pairEnd.c_str(),
+         _cfg.pairEnd.size());
+  _outBufPos[t] += _cfg.pairEnd.size();
+}
+
+// ____________________________________________________________________________
 void Sweeper::writeRel(size_t t, const std::string& a, const std::string& b,
                        const std::string& pred) {
   auto ts = TIME();
-  std::string out = _cfg.pairStart + a + pred + b + _cfg.pairEnd;
+
+  if (_outMode == NONE) return;
+
+  size_t totSize = _cfg.pairStart.size() + a.size() + pred.size() + b.size() +
+                   _cfg.pairEnd.size();
 
   if (_outMode == BZ2) {
-    if (_outBufPos[t] + out.size() >= BUFFER_S_PAIRS) {
+    if (_outBufPos[t] + totSize >= BUFFER_S_PAIRS) {
       int err = 0;
       BZ2_bzWrite(&err, _files[t], _outBuffers[t], _outBufPos[t]);
       if (err == BZ_IO_ERROR) {
@@ -1178,10 +1220,9 @@ void Sweeper::writeRel(size_t t, const std::string& a, const std::string& b,
       _outBufPos[t] = 0;
     }
 
-    memcpy(_outBuffers[t] + _outBufPos[t], out.c_str(), out.size());
-    _outBufPos[t] += out.size();
+    writeRelToBuf(t, a, b, pred);
   } else if (_outMode == GZ) {
-    if (_outBufPos[t] + out.size() >= BUFFER_S_PAIRS) {
+    if (_outBufPos[t] + totSize >= BUFFER_S_PAIRS) {
       int r = gzwrite(_gzFiles[t], _outBuffers[t], _outBufPos[t]);
       if (r != (int)_outBufPos[t]) {
         gzclose(_gzFiles[t]);
@@ -1190,10 +1231,9 @@ void Sweeper::writeRel(size_t t, const std::string& a, const std::string& b,
       _outBufPos[t] = 0;
     }
 
-    memcpy(_outBuffers[t] + _outBufPos[t], out.c_str(), out.size());
-    _outBufPos[t] += out.size();
+    writeRelToBuf(t, a, b, pred);
   } else if (_outMode == PLAIN) {
-    if (_outBufPos[t] + out.size() >= BUFFER_S_PAIRS) {
+    if (_outBufPos[t] + totSize >= BUFFER_S_PAIRS) {
       size_t r =
           fwrite(_outBuffers[t], sizeof(char), _outBufPos[t], _rawFiles[t]);
       if (r != _outBufPos[t]) {
@@ -1202,10 +1242,14 @@ void Sweeper::writeRel(size_t t, const std::string& a, const std::string& b,
       _outBufPos[t] = 0;
     }
 
-    memcpy(_outBuffers[t] + _outBufPos[t], out.c_str(), out.size());
-    _outBufPos[t] += out.size();
+    writeRelToBuf(t, a, b, pred);
   } else if (_outMode == COUT) {
-    fputs(out.c_str(), stdout);
+    if (_outBufPos[t] + totSize + 1 >= BUFFER_S_PAIRS) {
+      _outBuffers[t][_outBufPos[t]] = 0;
+      fputs(reinterpret_cast<const char*>(_outBuffers[t]), stdout);
+      _outBufPos[t] = 0;
+    }
+    writeRelToBuf(t, a, b, pred);
   }
 
   _stats[t].timeWrite += TOOK(ts);
@@ -1880,6 +1924,12 @@ void Sweeper::doCheck(const BoxVal cur, const SweepVal sv, size_t t) {
 
 // _____________________________________________________________________________
 void Sweeper::flushOutputFiles() {
+  if (_outMode == COUT) {
+    for (size_t i = 0; i < _cfg.numThreads + 1; i++) {
+      _outBuffers[i][_outBufPos[i]] = 0;
+      fputs(reinterpret_cast<const char*>(_outBuffers[i]), stdout);
+    }
+  }
   if (_outMode == BZ2 || _outMode == GZ || _outMode == PLAIN) {
     if (_outMode == BZ2) {
       for (size_t i = 0; i < _cfg.numThreads + 1; i++) {
@@ -1913,18 +1963,20 @@ void Sweeper::flushOutputFiles() {
     }
 
     // merge files into first file
-    std::ofstream out(_cache + "/.rels0", std::ios_base::binary |
-                                              std::ios_base::app |
-                                              std::ios_base::ate);
+    std::ofstream out(
+        _cache + "/.rels" + std::to_string(getpid()) + "-0",
+        std::ios_base::binary | std::ios_base::app | std::ios_base::ate);
     for (size_t i = 1; i < _cfg.numThreads + 1; i++) {
-      std::string fName = _cache + "/.rels" + std::to_string(i);
+      std::string fName = _cache + "/.rels" + std::to_string(getpid()) + "-" +
+                          std::to_string(i);
       std::ifstream ifCur(fName, std::ios_base::binary);
       out << ifCur.rdbuf();
       std::remove(fName.c_str());
     }
 
     // move first file to output file
-    std::rename((_cache + "/.rels0").c_str(), _out.c_str());
+    std::rename((_cache + "/.rels" + std::to_string(getpid()) + "-0").c_str(),
+                _out.c_str());
   }
 }
 
@@ -1932,8 +1984,10 @@ void Sweeper::flushOutputFiles() {
 void Sweeper::prepareOutputFiles() {
   if (_outMode == BZ2) {
     for (size_t i = 0; i < _cfg.numThreads + 1; i++) {
-      _rawFiles[i] =
-          fopen((_cache + "/.rels" + std::to_string(i)).c_str(), "w");
+      _rawFiles[i] = fopen((_cache + "/.rels" + std::to_string(getpid()) + "-" +
+                            std::to_string(i))
+                               .c_str(),
+                           "w");
       int err = 0;
       _files[i] = BZ2_bzWriteOpen(&err, _rawFiles[i], 6, 0, 30);
       if (err != BZ_OK) {
@@ -1943,8 +1997,10 @@ void Sweeper::prepareOutputFiles() {
     }
   } else if (_outMode == GZ) {
     for (size_t i = 0; i < _cfg.numThreads + 1; i++) {
-      _gzFiles[i] =
-          gzopen((_cache + "/.rels" + std::to_string(i)).c_str(), "w");
+      _gzFiles[i] = gzopen((_cache + "/.rels" + std::to_string(getpid()) + "-" +
+                            std::to_string(i))
+                               .c_str(),
+                           "w");
       if (_gzFiles[i] == Z_NULL) {
         throw std::runtime_error("Could not open bzip file for writing.");
       }
@@ -1952,8 +2008,14 @@ void Sweeper::prepareOutputFiles() {
     }
   } else if (_outMode == PLAIN) {
     for (size_t i = 0; i < _cfg.numThreads + 1; i++) {
-      _rawFiles[i] =
-          fopen((_cache + "/.rels" + std::to_string(i)).c_str(), "w");
+      _rawFiles[i] = fopen((_cache + "/.rels" + std::to_string(getpid()) + "-" +
+                            std::to_string(i))
+                               .c_str(),
+                           "w");
+      _outBuffers[i] = new unsigned char[BUFFER_S_PAIRS];
+    }
+  } else if (_outMode == COUT) {
+    for (size_t i = 0; i < _cfg.numThreads + 1; i++) {
       _outBuffers[i] = new unsigned char[BUFFER_S_PAIRS];
     }
   }

@@ -55,8 +55,20 @@ struct Area {
   // inner geom
   util::geo::I32XSortedPolygon inner;
 
+  // inner polygon envelope
+  util::geo::I32Box innerBox;
+
+  // outer area for inner polygon
+  double innerOuterArea;
+
   // outer geom
   util::geo::I32XSortedPolygon outer;
+
+  // outer polygon envelope
+  util::geo::I32Box outerBox;
+
+  // outer area for outer polygon
+  double outerOuterArea;
 };
 
 struct SimpleLine {
@@ -105,8 +117,7 @@ struct Point {
 template <typename W>
 class GeometryCache {
  public:
-  GeometryCache(size_t maxSize, size_t numthreads,
-                const std::string& dir, bool reuse)
+  GeometryCache(size_t maxSize, size_t numthreads, const std::string& dir)
       : _maxSize(maxSize), _dir(dir) {
     _geomsFReads.resize(numthreads);
     _accessCount.resize(numthreads);
@@ -115,16 +126,16 @@ class GeometryCache {
     _vals.resize(numthreads);
     _idMap.resize(numthreads);
 
-    if (reuse) {
-      flush();
-    } else {
-      _geomsF.open(getFName(), std::ios::out | std::ios::in | std::ios::binary |
-                                   std::ios::trunc);
-    }
-  }
+    _fName = getFName();
 
-  GeometryCache(size_t maxSize, size_t numthreads, const std::string& dir)
-      : GeometryCache(maxSize, numthreads, dir, false) {}
+    _geomsF.open(_fName, std::ios::out | std::ios::in | std::ios::binary |
+                             std::ios::trunc);
+
+    for (size_t i = 0; i < _geomsFReads.size(); i++) {
+      _geomsFReads[i].open(_fName, std::ios::in | std::ios::binary);
+    }
+    unlink(_fName.c_str());
+  }
 
   ~GeometryCache() {
     size_t access = 0;
@@ -135,6 +146,11 @@ class GeometryCache {
     }
     std::cerr << "Geometry cache <" << getFName() << ">: " << access
               << " accesses, " << diskAccess << " disk lookups" << std::endl;
+
+    if (_geomsF.is_open()) _geomsF.close();
+    for (size_t i = 0; i < _geomsFReads.size(); i++) {
+      _geomsFReads[i].close();
+    }
   }
 
   size_t add(const W& val);
@@ -174,6 +190,7 @@ class GeometryCache {
 
   size_t _maxSize;
   std::string _dir;
+  std::string _fName;
 };
 }  // namespace sj
 
