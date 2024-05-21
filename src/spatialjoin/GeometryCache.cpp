@@ -3,6 +3,7 @@
 
 #include <fstream>
 #include <iostream>
+#include <mutex>
 #include <vector>
 
 #include "GeometryCache.h"
@@ -10,7 +11,11 @@
 
 // ____________________________________________________________________________
 template <typename W>
-std::shared_ptr<W> sj::GeometryCache<W>::get(size_t off, size_t tid) const {
+std::shared_ptr<W> sj::GeometryCache<W>::get(size_t off, size_t desTid) const {
+  size_t tid = desTid % _numThreads;
+
+  std::unique_lock<std::mutex> lock(_mutexes[tid]);
+
   _accessCount[tid]++;
 
   // check if value is in cache
@@ -30,7 +35,8 @@ std::shared_ptr<W> sj::GeometryCache<W>::get(size_t off, size_t tid) const {
 // ____________________________________________________________________________
 template <typename W>
 std::shared_ptr<W> sj::GeometryCache<W>::cache(size_t off, const W& val,
-                                               size_t tid) const {
+                                               size_t desTid) const {
+  size_t tid = desTid % _numThreads;
   // push value to front
   _vals[tid].push_front({off, std::make_shared<W>(val)});
 
@@ -50,7 +56,8 @@ std::shared_ptr<W> sj::GeometryCache<W>::cache(size_t off, const W& val,
 // ____________________________________________________________________________
 template <>
 sj::SimpleLine sj::GeometryCache<sj::SimpleLine>::getFromDisk(
-    size_t off, size_t tid) const {
+    size_t off, size_t desTid) const {
+  size_t tid = desTid % _numThreads;
   _diskAccessCount[tid]++;
   sj::SimpleLine ret;
 
@@ -63,8 +70,8 @@ sj::SimpleLine sj::GeometryCache<sj::SimpleLine>::getFromDisk(
                          sizeof(util::geo::I32Point));
 
   // id
-  size_t len;
-  _geomsFReads[tid].read(reinterpret_cast<char*>(&len), sizeof(size_t));
+  uint16_t len;
+  _geomsFReads[tid].read(reinterpret_cast<char*>(&len), sizeof(uint16_t));
   ret.id.resize(len);
   _geomsFReads[tid].read(reinterpret_cast<char*>(&ret.id[0]),
                          len * sizeof(char));
@@ -75,15 +82,16 @@ sj::SimpleLine sj::GeometryCache<sj::SimpleLine>::getFromDisk(
 // ____________________________________________________________________________
 template <>
 sj::Point sj::GeometryCache<sj::Point>::getFromDisk(size_t off,
-                                                    size_t tid) const {
+                                                    size_t desTid) const {
+  size_t tid = desTid % _numThreads;
   _diskAccessCount[tid]++;
   sj::Point ret;
 
   _geomsFReads[tid].seekg(off);
 
   // id
-  size_t len;
-  _geomsFReads[tid].read(reinterpret_cast<char*>(&len), sizeof(size_t));
+  uint16_t len;
+  _geomsFReads[tid].read(reinterpret_cast<char*>(&len), sizeof(uint16_t));
   ret.id.resize(len);
   _geomsFReads[tid].read(reinterpret_cast<char*>(&ret.id[0]),
                          len * sizeof(char));
@@ -96,8 +104,36 @@ sj::Point sj::GeometryCache<sj::Point>::getFromDisk(size_t off,
 
 // ____________________________________________________________________________
 template <>
+sj::SimpleArea sj::GeometryCache<sj::SimpleArea>::getFromDisk(
+    size_t off, size_t desTid) const {
+  size_t tid = desTid % _numThreads;
+  _diskAccessCount[tid]++;
+  sj::SimpleArea ret;
+
+  _geomsFReads[tid].seekg(off);
+
+  // geom
+  uint32_t size;
+  _geomsFReads[tid].read(reinterpret_cast<char*>(&size), sizeof(uint32_t));
+  ret.geom.resize(size);
+  _geomsFReads[tid].read(reinterpret_cast<char*>(&ret.geom[0]),
+                         size * sizeof(util::geo::I32Point));
+
+  // id
+  uint16_t len;
+  _geomsFReads[tid].read(reinterpret_cast<char*>(&len), sizeof(uint16_t));
+  ret.id.resize(len);
+  _geomsFReads[tid].read(reinterpret_cast<char*>(&ret.id[0]),
+                         len * sizeof(char));
+
+  return ret;
+}
+
+// ____________________________________________________________________________
+template <>
 sj::Line sj::GeometryCache<sj::Line>::getFromDisk(size_t off,
-                                                  size_t tid) const {
+                                                  size_t desTid) const {
+  size_t tid = desTid % _numThreads;
   _diskAccessCount[tid]++;
   sj::Line ret;
 
@@ -111,8 +147,8 @@ sj::Line sj::GeometryCache<sj::Line>::getFromDisk(size_t off,
                          sizeof(util::geo::I32Box));
 
   // id
-  size_t len;
-  _geomsFReads[tid].read(reinterpret_cast<char*>(&len), sizeof(size_t));
+  uint16_t len;
+  _geomsFReads[tid].read(reinterpret_cast<char*>(&len), sizeof(uint16_t));
   ret.id.resize(len);
   _geomsFReads[tid].read(reinterpret_cast<char*>(&ret.id[0]),
                          len * sizeof(char));
@@ -153,7 +189,8 @@ sj::Line sj::GeometryCache<sj::Line>::getFromDisk(size_t off,
 // ____________________________________________________________________________
 template <>
 sj::Area sj::GeometryCache<sj::Area>::getFromDisk(size_t off,
-                                                  size_t tid) const {
+                                                  size_t desTid) const {
+  size_t tid = desTid % _numThreads;
   _diskAccessCount[tid]++;
   sj::Area ret;
 
@@ -167,8 +204,8 @@ sj::Area sj::GeometryCache<sj::Area>::getFromDisk(size_t off,
                          sizeof(util::geo::I32Box));
 
   // id
-  size_t len;
-  _geomsFReads[tid].read(reinterpret_cast<char*>(&len), sizeof(size_t));
+  uint16_t len;
+  _geomsFReads[tid].read(reinterpret_cast<char*>(&len), sizeof(uint16_t));
   ret.id.resize(len);
   _geomsFReads[tid].read(reinterpret_cast<char*>(&ret.id[0]),
                          len * sizeof(char));
@@ -210,20 +247,24 @@ sj::Area sj::GeometryCache<sj::Area>::getFromDisk(size_t off,
   // simplified inner
   readPoly(_geomsFReads[tid], ret.inner);
 
-  _geomsFReads[tid].read(reinterpret_cast<char*>(&ret.innerBox),
-                         sizeof(util::geo::I32Box));
+  if (!ret.inner.empty()) {
+    _geomsFReads[tid].read(reinterpret_cast<char*>(&ret.innerBox),
+                           sizeof(util::geo::I32Box));
 
-  _geomsFReads[tid].read(reinterpret_cast<char*>(&ret.innerOuterArea),
-                         sizeof(double));
+    _geomsFReads[tid].read(reinterpret_cast<char*>(&ret.innerOuterArea),
+                           sizeof(double));
+  }
 
   // simplified outer
   readPoly(_geomsFReads[tid], ret.outer);
 
-  _geomsFReads[tid].read(reinterpret_cast<char*>(&ret.outerBox),
-                         sizeof(util::geo::I32Box));
+  if (!ret.outer.empty()) {
+    _geomsFReads[tid].read(reinterpret_cast<char*>(&ret.outerBox),
+                           sizeof(util::geo::I32Box));
 
-  _geomsFReads[tid].read(reinterpret_cast<char*>(&ret.outerOuterArea),
-                         sizeof(double));
+    _geomsFReads[tid].read(reinterpret_cast<char*>(&ret.outerOuterArea),
+                           sizeof(double));
+  }
 
   return ret;
 }
@@ -234,9 +275,9 @@ size_t sj::GeometryCache<sj::Point>::add(const sj::Point& val) {
   size_t ret = _geomsOffset;
 
   // id
-  size_t s = val.id.size();
-  _geomsF.write(reinterpret_cast<const char*>(&s), sizeof(size_t));
-  _geomsOffset += sizeof(size_t);
+  uint16_t s = val.id.size();
+  _geomsF.write(reinterpret_cast<const char*>(&s), sizeof(uint16_t));
+  _geomsOffset += sizeof(uint16_t);
   _geomsF.write(reinterpret_cast<const char*>(val.id.c_str()),
                 val.id.size() * sizeof(char));
   _geomsOffset += sizeof(char) * val.id.size();
@@ -247,6 +288,31 @@ size_t sj::GeometryCache<sj::Point>::add(const sj::Point& val) {
 
   return ret;
 }
+
+// ____________________________________________________________________________
+template <>
+size_t sj::GeometryCache<sj::SimpleArea>::add(const sj::SimpleArea& val) {
+  size_t ret = _geomsOffset;
+
+  // geom
+  uint32_t len = val.geom.size();
+  _geomsF.write(reinterpret_cast<const char*>(&len), sizeof(uint32_t));
+  _geomsOffset += sizeof(uint32_t);
+  _geomsF.write(reinterpret_cast<const char*>(&val.geom[0]),
+                len * sizeof(util::geo::I32Point));
+  _geomsOffset += sizeof(util::geo::I32Point) * len;
+
+  // id
+  uint16_t s = val.id.size();
+  _geomsF.write(reinterpret_cast<const char*>(&s), sizeof(uint16_t));
+  _geomsOffset += sizeof(uint16_t);
+  _geomsF.write(reinterpret_cast<const char*>(val.id.c_str()),
+                val.id.size() * sizeof(char));
+  _geomsOffset += sizeof(char) * val.id.size();
+
+  return ret;
+}
+
 // ____________________________________________________________________________
 
 template <>
@@ -261,9 +327,9 @@ size_t sj::GeometryCache<sj::SimpleLine>::add(const sj::SimpleLine& val) {
   _geomsOffset += sizeof(util::geo::I32Point) * 2;
 
   // id
-  size_t s = val.id.size();
-  _geomsF.write(reinterpret_cast<const char*>(&s), sizeof(size_t));
-  _geomsOffset += sizeof(size_t);
+  uint16_t s = val.id.size();
+  _geomsF.write(reinterpret_cast<const char*>(&s), sizeof(uint16_t));
+  _geomsOffset += sizeof(uint16_t);
   _geomsF.write(reinterpret_cast<const char*>(val.id.c_str()),
                 val.id.size() * sizeof(char));
   _geomsOffset += sizeof(char) * val.id.size();
@@ -285,9 +351,9 @@ size_t sj::GeometryCache<sj::Line>::add(const sj::Line& val) {
   _geomsOffset += sizeof(util::geo::I32Box);
 
   // id
-  size_t s = val.id.size();
-  _geomsF.write(reinterpret_cast<const char*>(&s), sizeof(size_t));
-  _geomsOffset += sizeof(size_t);
+  uint16_t s = val.id.size();
+  _geomsF.write(reinterpret_cast<const char*>(&s), sizeof(uint16_t));
+  _geomsOffset += sizeof(uint16_t);
   _geomsF.write(reinterpret_cast<const char*>(val.id.c_str()),
                 val.id.size() * sizeof(char));
   _geomsOffset += sizeof(char) * val.id.size();
@@ -343,9 +409,9 @@ size_t sj::GeometryCache<sj::Area>::add(const sj::Area& val) {
   _geomsOffset += sizeof(util::geo::I32Box);
 
   // id
-  size_t s = val.id.size();
-  _geomsF.write(reinterpret_cast<const char*>(&s), sizeof(size_t));
-  _geomsOffset += sizeof(size_t);
+  uint16_t s = val.id.size();
+  _geomsF.write(reinterpret_cast<const char*>(&s), sizeof(uint16_t));
+  _geomsOffset += sizeof(uint16_t);
   _geomsF.write(reinterpret_cast<const char*>(val.id.c_str()),
                 val.id.size() * sizeof(char));
   _geomsOffset += sizeof(char) * val.id.size();
@@ -391,24 +457,30 @@ size_t sj::GeometryCache<sj::Area>::add(const sj::Area& val) {
   // innerGeom
   writePoly(val.inner);
 
-  _geomsF.write(reinterpret_cast<const char*>(&val.innerBox),
-                sizeof(util::geo::I32Box));
-  _geomsOffset += sizeof(util::geo::I32Box);
+  if (!val.inner.empty()) {
+    _geomsF.write(reinterpret_cast<const char*>(&val.innerBox),
+                  sizeof(util::geo::I32Box));
+    _geomsOffset += sizeof(util::geo::I32Box);
 
-  // inner area
-  _geomsF.write(reinterpret_cast<const char*>(&val.innerOuterArea), sizeof(double));
-  _geomsOffset += sizeof(double);
+    // inner area
+    _geomsF.write(reinterpret_cast<const char*>(&val.innerOuterArea),
+                  sizeof(double));
+    _geomsOffset += sizeof(double);
+  }
 
   // outerGeom
   writePoly(val.outer);
 
-  _geomsF.write(reinterpret_cast<const char*>(&val.outerBox),
-                sizeof(util::geo::I32Box));
-  _geomsOffset += sizeof(util::geo::I32Box);
+  if (!val.outer.empty()) {
+    _geomsF.write(reinterpret_cast<const char*>(&val.outerBox),
+                  sizeof(util::geo::I32Box));
+    _geomsOffset += sizeof(util::geo::I32Box);
 
-  // outer area
-  _geomsF.write(reinterpret_cast<const char*>(&val.outerOuterArea), sizeof(double));
-  _geomsOffset += sizeof(double);
+    // outer area
+    _geomsF.write(reinterpret_cast<const char*>(&val.outerOuterArea),
+                  sizeof(double));
+    _geomsOffset += sizeof(double);
+  }
 
   return ret;
 }
@@ -592,7 +664,14 @@ std::string sj::GeometryCache<sj::SimpleLine>::getFName() const {
 }
 
 // ____________________________________________________________________________
+template <>
+std::string sj::GeometryCache<sj::SimpleArea>::getFName() const {
+  return util::getTmpFName(_dir, ".spatialjoin", "simpleareas");
+}
+
+// ____________________________________________________________________________
 template class sj::GeometryCache<sj::Area>;
 template class sj::GeometryCache<sj::Line>;
 template class sj::GeometryCache<sj::SimpleLine>;
 template class sj::GeometryCache<sj::Point>;
+template class sj::GeometryCache<sj::SimpleArea>;

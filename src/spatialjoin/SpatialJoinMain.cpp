@@ -25,6 +25,8 @@ static const char* COPY =
     "University of Freiburg - Chair of Algorithms and Data Structures";
 static const char* AUTHORS = "Patrick Brosi <brosi@informatik.uni-freiburg.de>";
 
+static const size_t NUM_THREADS = std::thread::hardware_concurrency();
+
 // _____________________________________________________________________________
 void printHelp(int argc, char** argv) {
   UNUSED(argc);
@@ -75,7 +77,18 @@ void printHelp(int argc, char** argv) {
       << std::setw(41) << "  --no-fast-sweep-skip"
       << "disable fast sweep skip using binary search\n"
       << std::setw(41) << "  --use-inner-outer"
-      << "(experimental) use inner/outer geometries" << std::endl;
+      << "(experimental) use inner/outer geometries\n\n"
+      << std::setfill(' ') << std::left << "Misc:\n"
+      << std::setw(41) << "  --pre-sort-cache"
+      << "sort cache by leftmost X coordinates for higher locality\n"
+      << std::setw(41)
+      << "  --num-threads (default: " + std::to_string(NUM_THREADS) + ")"
+      << "number of threads for geometric computation\n"
+      << std::setw(41)
+      << "  --num-caches (default: " + std::to_string(NUM_THREADS) + ")"
+      << "number of geometry caches (if < --num-threads, syncing\n"
+      << std::setw(41) << " "
+      << "is done via locks)" << std::endl;
 }
 
 // _____________________________________________________________________________
@@ -108,6 +121,11 @@ int main(int argc, char** argv) {
   bool useFastSweepSkip = true;
   bool useInnerOuter = false;
 
+  bool preSortCache = false;
+
+  size_t numThreads = NUM_THREADS;
+  size_t numCaches = NUM_THREADS;
+
   for (int i = 1; i < argc; i++) {
     std::string cur = argv[i];
     switch (state) {
@@ -138,6 +156,10 @@ int main(int argc, char** argv) {
           state = 10;
         } else if (cur == "--crosses") {
           state = 11;
+        } else if (cur == "--num-caches") {
+          state = 12;
+        } else if (cur == "--num-threads") {
+          state = 13;
         } else if (cur == "--no-box-ids") {
           useBoxIds = false;
         } else if (cur == "--no-surface-area") {
@@ -152,6 +174,8 @@ int main(int argc, char** argv) {
           useFastSweepSkip = false;
         } else if (cur == "--use-inner-outer") {
           useInnerOuter = true;
+        } else if (cur == "--pre-sort-cache") {
+          preSortCache = true;
         } else {
           std::cerr << "Unknown option '" << cur << "', see -h" << std::endl;
           exit(1);
@@ -201,6 +225,14 @@ int main(int argc, char** argv) {
         crosses = cur;
         state = 0;
         break;
+      case 12:
+        numCaches = atoi(cur.c_str());
+        state = 0;
+        break;
+      case 13:
+        numThreads = atoi(cur.c_str());
+        state = 0;
+        break;
     }
   }
 
@@ -209,12 +241,10 @@ int main(int argc, char** argv) {
   std::string dangling;
   size_t gid = 0;
 
-  size_t NUM_THREADS = std::thread::hardware_concurrency();
-
   Sweeper sweeper(
-      {NUM_THREADS, prefix, intersects, contains, covers, touches, equals,
-       overlaps, crosses, suffix, useBoxIds, useArea, useOBB, useCutouts,
-       useDiagBox, useFastSweepSkip, useInnerOuter},
+      {numThreads, numCaches, prefix, intersects, contains, covers, touches,
+       equals, overlaps, crosses, suffix, useBoxIds, useArea, useOBB,
+       useCutouts, useDiagBox, useFastSweepSkip, useInnerOuter},
       cache, output);
 
   LOGTO(INFO, std::cerr) << "Parsing input geometries...";
@@ -227,6 +257,14 @@ int main(int argc, char** argv) {
   sweeper.flush();
 
   LOGTO(INFO, std::cerr) << "done (" << TOOK(ts) / 1000000000.0 << "s).";
+
+  if (preSortCache) {
+    ts = TIME();
+    LOGTO(INFO, std::cerr) << "Pre-sorting cache...";
+    sweeper.sortCache();
+    sweeper.flush();
+    LOGTO(INFO, std::cerr) << "done (" << TOOK(ts) / 1000000000.0 << "s).";
+  }
 
   LOGTO(INFO, std::cerr) << "Sweeping...";
   ts = TIME();

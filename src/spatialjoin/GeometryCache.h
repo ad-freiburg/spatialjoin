@@ -9,6 +9,7 @@
 #include <list>
 #include <map>
 #include <memory>
+#include <mutex>
 #include <unordered_map>
 
 #include "BoxIds.h"
@@ -18,10 +19,10 @@ namespace sj {
 
 struct SimpleArea {
   // polygon
-  util::geo::I32Polygon geom;
+  util::geo::Ring<int32_t> geom;
 
   // id
-  size_t id;
+  std::string id;
 };
 
 struct Area {
@@ -114,12 +115,18 @@ struct Point {
   uint16_t subId;
 };
 
+// const static size_t READ_BUFF_SIZE = 1024 * 5 ;
+
 template <typename W>
 class GeometryCache {
  public:
   GeometryCache(size_t maxSize, size_t numthreads, const std::string& dir)
-      : _maxSize(maxSize), _dir(dir) {
+      : _maxSize(maxSize),
+        _numThreads(numthreads),
+        _dir(dir),
+        _mutexes(numthreads) {
     _geomsFReads.resize(numthreads);
+    _geomsFReadsBuffs.resize(numthreads);
     _accessCount.resize(numthreads);
     _diskAccessCount.resize(numthreads);
 
@@ -133,6 +140,9 @@ class GeometryCache {
 
     for (size_t i = 0; i < _geomsFReads.size(); i++) {
       _geomsFReads[i].open(_fName, std::ios::in | std::ios::binary);
+      // _geomsFReadsBuffs[i].resize(READ_BUFF_SIZE);
+      // _geomsFReads[i].rdbuf()->pubsetbuf(&_geomsFReadsBuffs[i][0],
+      // READ_BUFF_SIZE);
     }
     unlink(_fName.c_str());
   }
@@ -163,6 +173,24 @@ class GeometryCache {
 
   void flush();
 
+  GeometryCache& operator=(GeometryCache&& other) {
+    other._geomsF.flush();
+    _accessCount = std::move(other._accessCount);
+    _diskAccessCount = std::move(other._diskAccessCount);
+    _geomsF = std::move(other._geomsF);
+    _geomsFReads = std::move(other._geomsFReads);
+    _geomsOffset = other._geomsOffset;
+
+    _vals = std::move(other._vals);
+    _idMap = std::move(other._idMap);
+    _maxSize = other._maxSize;
+    _dir = other._dir;
+    _fName = other._fName;
+    _numThreads = other._numThreads;
+
+    return *this;
+  }
+
  private:
   std::string getFName() const;
   void readLine(std::fstream& str, util::geo::I32XSortedLine& ret) const;
@@ -180,6 +208,7 @@ class GeometryCache {
 
   mutable std::fstream _geomsF;
   mutable std::vector<std::fstream> _geomsFReads;
+  mutable std::vector<std::vector<char>> _geomsFReadsBuffs;
   size_t _geomsOffset = 0;
 
   mutable std::vector<std::list<std::pair<size_t, std::shared_ptr<W>>>> _vals;
@@ -188,9 +217,11 @@ class GeometryCache {
       typename std::list<std::pair<size_t, std::shared_ptr<W>>>::iterator>>
       _idMap;
 
-  size_t _maxSize;
+  size_t _maxSize, _numThreads;
   std::string _dir;
   std::string _fName;
+
+  mutable std::vector<std::mutex> _mutexes;
 };
 }  // namespace sj
 

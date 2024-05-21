@@ -235,7 +235,7 @@ inline BoxIdList packBoxIds(const BoxIdList& ids) {
   }
 
   if (ids.size() == 1) {
-    return {{1, 0}, ids[0]};
+    return {{1 + ids[0].second, 0}, ids[0]};
   }
 
   // assume the list is sorted!
