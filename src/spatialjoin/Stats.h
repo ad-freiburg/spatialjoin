@@ -75,8 +75,8 @@ inline std::string Stats::toString() {
              timeBoxIdIsectAreaLine + timeOBBIsectAreaArea +
              timeOBBIsectAreaLine + timeOBBIsectAreaPoint +
              timeOBBIsectLineLine + timeConvexHullIsectAreaArea +
-	     timeConvexHullIsectAreaLine + timeConvexHullIsectAreaPoint +
-	     timeConvexHullIsectLineLine + timeBoxIdIsectAreaPoint +
+             timeConvexHullIsectAreaLine + timeConvexHullIsectAreaPoint +
+             timeConvexHullIsectLineLine + timeBoxIdIsectAreaPoint +
              timeBoxIdIsectLineLine + timeBoxIdIsectLinePoint +
              timeFullGeoCheckAreaArea + timeFullGeoCheckAreaLine +
              timeFullGeoCheckAreaPoint + timeFullGeoCheckLineLine +
@@ -303,6 +303,10 @@ inline Stats operator+(const Stats& a, const Stats& b) {
                a.timeOBBIsectAreaLine + b.timeOBBIsectAreaLine,
                a.timeOBBIsectAreaPoint + b.timeOBBIsectAreaPoint,
                a.timeOBBIsectLineLine + b.timeOBBIsectLineLine,
+               a.timeConvexHullIsectAreaArea + b.timeConvexHullIsectAreaArea,
+               a.timeConvexHullIsectAreaLine + b.timeConvexHullIsectAreaLine,
+               a.timeConvexHullIsectAreaPoint + b.timeConvexHullIsectAreaPoint,
+               a.timeConvexHullIsectLineLine + b.timeConvexHullIsectLineLine,
                a.timeFullGeoCheckAreaArea + b.timeFullGeoCheckAreaArea,
                a.timeFullGeoCheckAreaLine + b.timeFullGeoCheckAreaLine,
                a.timeFullGeoCheckAreaPoint + b.timeFullGeoCheckAreaPoint,
