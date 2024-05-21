@@ -1471,7 +1471,12 @@ void Sweeper::doCheck(const BoxVal cur, const SweepVal sv, size_t t) {
 
     if (a->id == b->id) return;  // no self-checks in multigeometries
 
+    _stats[t].totalComps++;
+    auto totTime = TIME();
+
     auto res = check(a, b, t);
+
+    _stats[t].timeHisto(std::max(a->geom.getOuter().rawRing().size(), b->geom.getOuter().rawRing().size()), TOOK(totTime));
 
     // intersects
     if (std::get<0>(res)) {
@@ -1554,7 +1559,12 @@ void Sweeper::doCheck(const BoxVal cur, const SweepVal sv, size_t t) {
 
     if (a->id == b->id) return;  // no self-checks in multigeometries
 
+    _stats[t].totalComps++;
+    auto totTime = TIME();
+
     auto res = check(a.get(), b, t);
+
+    _stats[t].timeHisto(std::max(a->geom.rawLine().size(), b->geom.getOuter().rawRing().size()), TOOK(totTime));
 
     // intersects
     if (std::get<0>(res)) {
@@ -1622,7 +1632,12 @@ void Sweeper::doCheck(const BoxVal cur, const SweepVal sv, size_t t) {
 
     if (a->id == b->id) return;  // no self-checks in multigeometries
 
+    _stats[t].totalComps++;
+    auto totTime = TIME();
+
     auto res = check(a.get(), b, t);
+
+    _stats[t].timeHisto(b->geom.getOuter().rawRing().size(), TOOK(totTime));
 
     // intersects
     if (std::get<0>(res)) {
@@ -1676,7 +1691,12 @@ void Sweeper::doCheck(const BoxVal cur, const SweepVal sv, size_t t) {
 
     if (a->id == b->id) return;  // no self-checks in multigeometries
 
+    _stats[t].totalComps++;
+    auto totTime = TIME();
+
     auto res = check(b.get(), a, t);
+
+    _stats[t].timeHisto(std::max(a->geom.getOuter().rawRing().size(), b->geom.rawLine().size()), TOOK(totTime));
 
     // intersects
     if (std::get<0>(res)) {
@@ -1742,7 +1762,12 @@ void Sweeper::doCheck(const BoxVal cur, const SweepVal sv, size_t t) {
     auto b = _simpleLineCache.get(sv.id, t);
     _stats[t].timeGeoCacheRetrievalLine += TOOK(ts);
 
+    _stats[t].totalComps++;
+    auto totTime = TIME();
+
     auto res = check(b.get(), a, t);
+
+    _stats[t].timeHisto(a->geom.getOuter().rawRing().size(), TOOK(totTime));
 
     // intersects
     if (std::get<0>(res)) {
@@ -1783,7 +1808,12 @@ void Sweeper::doCheck(const BoxVal cur, const SweepVal sv, size_t t) {
 
     if (a->id == b->id) return;  // no self-checks in multigeometries
 
+    _stats[t].totalComps++;
+    auto totTime = TIME();
+
     auto res = check(a.get(), b.get(), t);
+
+    _stats[t].timeHisto(std::max(a->geom.rawLine().size(), b->geom.rawLine().size()), TOOK(totTime));
 
     // intersects
     if (std::get<0>(res)) {
@@ -1846,7 +1876,12 @@ void Sweeper::doCheck(const BoxVal cur, const SweepVal sv, size_t t) {
     auto b = _simpleLineCache.get(sv.id, t);
     _stats[t].timeGeoCacheRetrievalLine += TOOK(ts);
 
+    _stats[t].totalComps++;
+    auto totTime = TIME();
+
     auto res = check(a.get(), b.get(), t);
+
+    _stats[t].timeHisto(a->geom.rawLine().size(), TOOK(totTime));
 
     // intersects
     if (std::get<0>(res)) {
@@ -1900,7 +1935,12 @@ void Sweeper::doCheck(const BoxVal cur, const SweepVal sv, size_t t) {
     auto b = _lineCache.get(sv.id, t);
     _stats[t].timeGeoCacheRetrievalLine += TOOK(ts);
 
+    _stats[t].totalComps++;
+    auto totTime = TIME();
+
     auto res = check(a.get(), b.get(), t);
+
+    _stats[t].timeHisto(b->geom.rawLine().size(), TOOK(totTime));
 
     // intersects
     if (std::get<0>(res)) {
@@ -1954,7 +1994,12 @@ void Sweeper::doCheck(const BoxVal cur, const SweepVal sv, size_t t) {
     auto b = _simpleLineCache.get(sv.id, t);
     _stats[t].timeGeoCacheRetrievalLine += TOOK(ts);
 
+    _stats[t].totalComps++;
+    auto totTime = TIME();
+
     auto res = check(a.get(), b.get(), t);
+
+    _stats[t].timeHisto(2, TOOK(totTime));
 
     if (std::get<0>(res)) {
       writeIntersect(t, a->id, b->id);
@@ -2064,7 +2109,12 @@ void Sweeper::doCheck(const BoxVal cur, const SweepVal sv, size_t t) {
     auto b = _lineCache.get(sv.id, t);
     _stats[t].timeGeoCacheRetrievalLine += TOOK(ts);
 
+    _stats[t].totalComps++;
+    auto totTime = TIME();
+
     auto res = check(a, b.get(), t);
+
+    _stats[t].timeHisto(b->geom.rawLine().size(), TOOK(totTime));
 
     if (std::get<0>(res)) {
       auto ts = TIME();
@@ -2129,7 +2179,12 @@ void Sweeper::doCheck(const BoxVal cur, const SweepVal sv, size_t t) {
     }
     _stats[t].timeGeoCacheRetrievalArea += TOOK(ts);
 
+    _stats[t].totalComps++;
+    auto totTime = TIME();
+
     auto res = check(a, b, t);
+
+    _stats[t].timeHisto(b->geom.getOuter().rawRing().size(), TOOK(totTime));
 
     if (res.second) {
       auto ts = TIME();
