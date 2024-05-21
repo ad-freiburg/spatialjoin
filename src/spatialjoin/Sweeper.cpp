@@ -193,10 +193,10 @@ void Sweeper::add(const I32Polygon& poly, const std::string& gid, size_t subid,
       }
     }
 
-    I32XSortedPolygon inner, outer;
-    I32Box innerBox, outerBox;
-    double outerOuterAreaSize = 0;
-    double innerOuterAreaSize = 0;
+  I32XSortedPolygon inner, outer;
+  I32Box innerBox, outerBox;
+  double outerOuterAreaSize = 0;
+  double innerOuterAreaSize = 0;
 
     if (_cfg.useInnerOuter) {
       const auto& innerPoly =
@@ -1014,6 +1014,7 @@ sj::Area Sweeper::areaFromSimpleArea(const SimpleArea* sa) const {
           _cfg.useArea ? areaSize : 0,
           (_cfg.useBoxIds ? BoxIdList{{1, 0}, {-getBoxId(sa->geom.front()), 0}}
                           : BoxIdList{}),
+          {},
           {},
           {},
           {},
