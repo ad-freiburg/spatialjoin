@@ -159,11 +159,13 @@ class GeometryCache {
 
     if (_geomsF.is_open()) _geomsF.close();
     for (size_t i = 0; i < _geomsFReads.size(); i++) {
-      _geomsFReads[i].close();
+      if (_geomsFReads[i].is_open()) _geomsFReads[i].close();
     }
   }
 
   size_t add(const W& val);
+  size_t add(const std::string& raw);
+  static size_t writeTo(const W& val, std::ostream& str);
 
   std::shared_ptr<W> get(size_t off, size_t tid) const;
   W getFromDisk(size_t off, size_t tid) const;
@@ -194,10 +196,10 @@ class GeometryCache {
  private:
   std::string getFName() const;
   void readLine(std::fstream& str, util::geo::I32XSortedLine& ret) const;
-  void writeLine(const util::geo::I32XSortedLine& ret);
+  static size_t writeLine(const util::geo::I32XSortedLine& ret, std::ostream& str);
 
   void readPoly(std::fstream& str, util::geo::I32XSortedPolygon& ret) const;
-  void writePoly(const util::geo::I32XSortedPolygon& ret);
+  static size_t writePoly(const util::geo::I32XSortedPolygon& ret, std::ostream& str);
 
   void readMultiPoly(std::fstream& str,
                      util::geo::I32XSortedMultiPolygon& ret) const;
