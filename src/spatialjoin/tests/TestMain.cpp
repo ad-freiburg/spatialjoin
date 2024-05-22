@@ -128,7 +128,6 @@ int main(int, char**) {
                                    noDiagBox, noFastSweep, noInnerOuter,
                                    noConvexHulls};
 
-  for (size_t i = 0; i < 10000000; i++) {
   for (auto cfg : cfgs) {
     {
       auto res = fullRun("../src/spatialjoin/tests/datasets/freiburg", cfg);
@@ -489,6 +488,5 @@ int main(int, char**) {
       TEST(res.find("$1 intersects 2$") != std::string::npos);
       TEST(res.find("$2 intersects 1$") != std::string::npos);
     }
-  }
   }
 }
