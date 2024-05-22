@@ -50,6 +50,14 @@ struct BoxVal {
   util::geo::I32Box b45;
 };
 
+struct WriteCand {
+  std::string raw;
+  std::string gid;
+  BoxVal boxvalIn;
+  BoxVal boxvalOut;
+  size_t subid;
+};
+
 inline bool operator==(const BoxVal& a, const BoxVal& b) {
   return a.id == b.id && a.loY == b.loY && a.upY == b.upY && a.type == b.type;
 }
@@ -156,21 +164,43 @@ class Sweeper {
     _outBuffer = new unsigned char[BUFFER_S];
   };
 
-  void add(const util::geo::I32MultiPolygon& a, const std::string& gid);
-  void add(const util::geo::I32MultiLine& a, const std::string& gid);
-  void addMp(const util::geo::I32MultiPoint& a, const std::string& gid);
-  size_t add(const util::geo::I32MultiPolygon& a, const std::string& gid,
-             size_t);
-  size_t add(const util::geo::I32MultiLine& a, const std::string& gid, size_t);
-  size_t addMp(const util::geo::I32MultiPoint& a, const std::string& gid,
-               size_t);
-  void add(const util::geo::I32Polygon& a, const std::string& gid);
+  ~Sweeper() {
+    close(_file);
+
+    for (size_t i = 0; i < _cfg.numThreads + 1; i++) {
+      if (_outBuffers[i]) delete[] _outBuffers[i];
+    }
+  }
+
+  void add(const util::geo::I32MultiPolygon& a, const std::string& gid,
+           std::vector<WriteCand>& batch);
+  void add(const util::geo::I32MultiPolygon& a, const std::string& gid, size_t,
+           std::vector<WriteCand>& batch);
   void add(const util::geo::I32Polygon& a, const std::string& gid,
-           size_t subId);
-  void add(const util::geo::I32Line& a, const std::string& gid);
-  void add(const util::geo::I32Line& a, const std::string& gid, size_t subid);
-  void add(const util::geo::I32Point& a, const std::string& gid);
-  void add(const util::geo::I32Point& a, const std::string& gid, size_t subid);
+           std::vector<WriteCand>& batch);
+  void add(const util::geo::I32Polygon& a, const std::string& gid, size_t subId,
+           std::vector<WriteCand>& batch);
+
+  void add(const util::geo::I32MultiLine& a, const std::string& gid, size_t,
+           std::vector<WriteCand>& batch);
+  void add(const util::geo::I32MultiLine& a, const std::string& gid,
+           std::vector<WriteCand>& batch);
+  void add(const util::geo::I32Line& a, const std::string& gid,
+           std::vector<WriteCand>& batch);
+  void add(const util::geo::I32Line& a, const std::string& gid, size_t subid,
+           std::vector<WriteCand>& batch);
+
+  void add(const util::geo::I32Point& a, const std::string& gid,
+           std::vector<WriteCand>& batch);
+  void add(const util::geo::I32Point& a, const std::string& gid, size_t subid,
+           std::vector<WriteCand>& batch);
+  void addMp(const util::geo::I32MultiPoint& a, const std::string& gid, size_t,
+             std::vector<WriteCand>& batch);
+  void addMp(const util::geo::I32MultiPoint& a, const std::string& gid,
+             std::vector<WriteCand>& batch);
+
+  void addBatch(std::vector<WriteCand>& cands);
+
   void flush();
 
   void sweep();
@@ -356,8 +386,13 @@ class Sweeper {
     return 0;
   }
 
-  size_t _SIMPLE = 0;
-  size_t _NONSIMPLE = 0;
+  mutable std::mutex _multiAddMtx;
+  mutable std::mutex _sweepEventWriteMtx;
+  mutable std::mutex _pointGeomCacheWriteMtx;
+  mutable std::mutex _lineGeomCacheWriteMtx;
+  mutable std::mutex _simpleLineGeomCacheWriteMtx;
+  mutable std::mutex _areaGeomCacheWriteMtx;
+  mutable std::mutex _simpleAreaGeomCacheWriteMtx;
 };
 }  // namespace sj
 

@@ -17,10 +17,11 @@ using sj::Sweeper;
 std::string fullRun(const std::string& file, const sj::SweeperCfg& cfg) {
   Sweeper sweeper(cfg, ".", ".resTmp");
 
-  size_t gid = 0;
+  size_t gid = 1;
 
   // extreme buffer size 1 here for test purposes
-  char* buf = new char[1];
+  const static size_t BUFF_SIZE = 1000000;
+  char* buf = new char[BUFF_SIZE];
 
   size_t len = 0;
   std::string dangling;
@@ -28,9 +29,18 @@ std::string fullRun(const std::string& file, const sj::SweeperCfg& cfg) {
   int f = open(file.c_str(), O_RDONLY);
   TEST(f >= 0);
 
-  while ((len = read(f, buf, 1)) > 0) {
-    parse(buf, len, dangling, &gid, sweeper);
+  util::JobQueue<ParseBatch> jobs(1000);
+  std::vector<std::thread> thrds(16);
+  for (size_t i = 0; i < thrds.size(); i++)
+    thrds[i] = std::thread(&processQueue, &jobs, i, &sweeper);
+
+  while ((len = read(f, buf, BUFF_SIZE)) > 0) {
+    parse(buf, len, dangling, &gid, jobs);
   }
+
+  jobs.add({});
+  // wait for all workers to finish
+  for (auto& thr : thrds) thr.join();
 
   sweeper.flush();
   sweeper.sweep();
@@ -41,7 +51,12 @@ std::string fullRun(const std::string& file, const sj::SweeperCfg& cfg) {
   std::ifstream ifs(".resTmp");
   ss << ifs.rdbuf();
 
+  ifs.close();
   unlink(".resTmp");
+
+  close(f);
+
+  delete[] buf;
 
   return ss.str();
 }

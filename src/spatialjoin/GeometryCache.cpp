@@ -271,44 +271,67 @@ sj::Area sj::GeometryCache<sj::Area>::getFromDisk(size_t off,
 
 // ____________________________________________________________________________
 template <>
-size_t sj::GeometryCache<sj::Point>::add(const sj::Point& val) {
-  size_t ret = _geomsOffset;
+size_t sj::GeometryCache<sj::Point>::writeTo(const sj::Point& val,
+                                             std::ostream& str) {
+  size_t ret = 0;
 
   // id
   uint16_t s = val.id.size();
-  _geomsF.write(reinterpret_cast<const char*>(&s), sizeof(uint16_t));
-  _geomsOffset += sizeof(uint16_t);
-  _geomsF.write(reinterpret_cast<const char*>(val.id.c_str()),
-                val.id.size() * sizeof(char));
-  _geomsOffset += sizeof(char) * val.id.size();
+  str.write(reinterpret_cast<const char*>(&s), sizeof(uint16_t));
+  ret += sizeof(uint16_t);
+  str.write(reinterpret_cast<const char*>(val.id.c_str()),
+            val.id.size() * sizeof(char));
+  ret += sizeof(char) * val.id.size();
 
   // sub id
-  _geomsF.write(reinterpret_cast<const char*>(&val.subId), sizeof(uint16_t));
-  _geomsOffset += sizeof(uint16_t);
+  str.write(reinterpret_cast<const char*>(&val.subId), sizeof(uint16_t));
+  ret += sizeof(uint16_t);
+
+  return ret;
+}
+
+// ____________________________________________________________________________
+template <typename W>
+size_t sj::GeometryCache<W>::add(const W& val) {
+  size_t ret = _geomsOffset;
+
+  writeTo(val, _geomsF);
+
+  return ret;
+}
+
+// ____________________________________________________________________________
+template <typename W>
+size_t sj::GeometryCache<W>::add(const std::string& raw) {
+  size_t ret = _geomsOffset;
+
+  _geomsF.write(raw.c_str(), raw.size());
+  _geomsOffset += raw.size();
 
   return ret;
 }
 
 // ____________________________________________________________________________
 template <>
-size_t sj::GeometryCache<sj::SimpleArea>::add(const sj::SimpleArea& val) {
-  size_t ret = _geomsOffset;
+size_t sj::GeometryCache<sj::SimpleArea>::writeTo(const sj::SimpleArea& val,
+                                                  std::ostream& str) {
+  size_t ret = 0;
 
   // geom
   uint32_t len = val.geom.size();
-  _geomsF.write(reinterpret_cast<const char*>(&len), sizeof(uint32_t));
-  _geomsOffset += sizeof(uint32_t);
-  _geomsF.write(reinterpret_cast<const char*>(&val.geom[0]),
-                len * sizeof(util::geo::I32Point));
-  _geomsOffset += sizeof(util::geo::I32Point) * len;
+  str.write(reinterpret_cast<const char*>(&len), sizeof(uint32_t));
+  ret += sizeof(uint32_t);
+  str.write(reinterpret_cast<const char*>(&val.geom[0]),
+            len * sizeof(util::geo::I32Point));
+  ret += sizeof(util::geo::I32Point) * len;
 
   // id
   uint16_t s = val.id.size();
-  _geomsF.write(reinterpret_cast<const char*>(&s), sizeof(uint16_t));
-  _geomsOffset += sizeof(uint16_t);
-  _geomsF.write(reinterpret_cast<const char*>(val.id.c_str()),
-                val.id.size() * sizeof(char));
-  _geomsOffset += sizeof(char) * val.id.size();
+  str.write(reinterpret_cast<const char*>(&s), sizeof(uint16_t));
+  ret += sizeof(uint16_t);
+  str.write(reinterpret_cast<const char*>(val.id.c_str()),
+            val.id.size() * sizeof(char));
+  ret += sizeof(char) * val.id.size();
 
   return ret;
 }
@@ -316,170 +339,169 @@ size_t sj::GeometryCache<sj::SimpleArea>::add(const sj::SimpleArea& val) {
 // ____________________________________________________________________________
 
 template <>
-size_t sj::GeometryCache<sj::SimpleLine>::add(const sj::SimpleLine& val) {
-  size_t ret = _geomsOffset;
+size_t sj::GeometryCache<sj::SimpleLine>::writeTo(const sj::SimpleLine& val,
+                                                  std::ostream& str) {
+  size_t ret = 0;
 
   // geoms
-  _geomsF.write(reinterpret_cast<const char*>(&val.a),
-                sizeof(util::geo::I32Point));
-  _geomsF.write(reinterpret_cast<const char*>(&val.b),
-                sizeof(util::geo::I32Point));
-  _geomsOffset += sizeof(util::geo::I32Point) * 2;
+  str.write(reinterpret_cast<const char*>(&val.a), sizeof(util::geo::I32Point));
+  str.write(reinterpret_cast<const char*>(&val.b), sizeof(util::geo::I32Point));
+  ret += sizeof(util::geo::I32Point) * 2;
 
   // id
   uint16_t s = val.id.size();
-  _geomsF.write(reinterpret_cast<const char*>(&s), sizeof(uint16_t));
-  _geomsOffset += sizeof(uint16_t);
-  _geomsF.write(reinterpret_cast<const char*>(val.id.c_str()),
-                val.id.size() * sizeof(char));
-  _geomsOffset += sizeof(char) * val.id.size();
+  str.write(reinterpret_cast<const char*>(&s), sizeof(uint16_t));
+  ret += sizeof(uint16_t);
+  str.write(reinterpret_cast<const char*>(val.id.c_str()),
+            val.id.size() * sizeof(char));
+  ret += sizeof(char) * val.id.size();
 
   return ret;
 }
 
 // ____________________________________________________________________________
 template <>
-size_t sj::GeometryCache<sj::Line>::add(const sj::Line& val) {
-  size_t ret = _geomsOffset;
+size_t sj::GeometryCache<sj::Line>::writeTo(const sj::Line& val,
+                                            std::ostream& str) {
+  size_t ret = 0;
 
   // geoms
-  writeLine(val.geom);
+  ret += writeLine(val.geom, str);
 
   // envelopes
-  _geomsF.write(reinterpret_cast<const char*>(&val.box),
-                sizeof(util::geo::I32Box));
-  _geomsOffset += sizeof(util::geo::I32Box);
+  str.write(reinterpret_cast<const char*>(&val.box), sizeof(util::geo::I32Box));
+  ret += sizeof(util::geo::I32Box);
 
   // id
   uint16_t s = val.id.size();
-  _geomsF.write(reinterpret_cast<const char*>(&s), sizeof(uint16_t));
-  _geomsOffset += sizeof(uint16_t);
-  _geomsF.write(reinterpret_cast<const char*>(val.id.c_str()),
-                val.id.size() * sizeof(char));
-  _geomsOffset += sizeof(char) * val.id.size();
+  str.write(reinterpret_cast<const char*>(&s), sizeof(uint16_t));
+  ret += sizeof(uint16_t);
+  str.write(reinterpret_cast<const char*>(val.id.c_str()),
+            val.id.size() * sizeof(char));
+  ret += sizeof(char) * val.id.size();
 
   // sub id
-  _geomsF.write(reinterpret_cast<const char*>(&val.subId), sizeof(uint16_t));
-  _geomsOffset += sizeof(uint16_t);
+  str.write(reinterpret_cast<const char*>(&val.subId), sizeof(uint16_t));
+  ret += sizeof(uint16_t);
 
   // length
-  _geomsF.write(reinterpret_cast<const char*>(&val.length), sizeof(double));
-  _geomsOffset += sizeof(double);
+  str.write(reinterpret_cast<const char*>(&val.length), sizeof(double));
+  ret += sizeof(double);
 
   // boxIds
   uint32_t size = val.boxIds.size();
-  _geomsF.write(reinterpret_cast<const char*>(&size), sizeof(uint32_t));
+  str.write(reinterpret_cast<const char*>(&size), sizeof(uint32_t));
   if (size > 0) {
-    _geomsF.write(reinterpret_cast<const char*>(&val.boxIds[0]),
-                  sizeof(sj::boxids::BoxId) * size);
+    str.write(reinterpret_cast<const char*>(&val.boxIds[0]),
+              sizeof(sj::boxids::BoxId) * size);
   }
 
-  _geomsOffset += sizeof(uint32_t) + sizeof(sj::boxids::BoxId) * size;
+  ret += sizeof(uint32_t) + sizeof(sj::boxids::BoxId) * size;
 
   // cutouts
   size = val.cutouts.size();
-  _geomsF.write(reinterpret_cast<const char*>(&size), sizeof(uint32_t));
-  _geomsOffset += sizeof(uint32_t);
+  str.write(reinterpret_cast<const char*>(&size), sizeof(uint32_t));
+  ret += sizeof(uint32_t);
 
   for (const auto& el : val.cutouts) {
     int32_t boxid = el.first;
     int32_t cutout = el.second;
-    _geomsF.write(reinterpret_cast<const char*>(&boxid), sizeof(int32_t));
-    _geomsF.write(reinterpret_cast<const char*>(&cutout), sizeof(int32_t));
-    _geomsOffset += sizeof(int32_t) + sizeof(int32_t);
+    str.write(reinterpret_cast<const char*>(&boxid), sizeof(int32_t));
+    str.write(reinterpret_cast<const char*>(&cutout), sizeof(int32_t));
+    ret += sizeof(int32_t) + sizeof(int32_t);
   }
 
   // OBB
-  writePoly(val.obb);
+  ret += writePoly(val.obb, str);
 
   return ret;
 }
 
 // ____________________________________________________________________________
 template <>
-size_t sj::GeometryCache<sj::Area>::add(const sj::Area& val) {
-  size_t ret = _geomsOffset;
+size_t sj::GeometryCache<sj::Area>::writeTo(const sj::Area& val,
+                                            std::ostream& str) {
+  size_t ret = 0;
 
   // geoms
-  writePoly(val.geom);
+  ret += writePoly(val.geom, str);
 
   // envelope
-  _geomsF.write(reinterpret_cast<const char*>(&val.box),
-                sizeof(util::geo::I32Box));
-  _geomsOffset += sizeof(util::geo::I32Box);
+  str.write(reinterpret_cast<const char*>(&val.box), sizeof(util::geo::I32Box));
+  ret += sizeof(util::geo::I32Box);
 
   // id
   uint16_t s = val.id.size();
-  _geomsF.write(reinterpret_cast<const char*>(&s), sizeof(uint16_t));
-  _geomsOffset += sizeof(uint16_t);
-  _geomsF.write(reinterpret_cast<const char*>(val.id.c_str()),
-                val.id.size() * sizeof(char));
-  _geomsOffset += sizeof(char) * val.id.size();
+  str.write(reinterpret_cast<const char*>(&s), sizeof(uint16_t));
+  ret += sizeof(uint16_t);
+  str.write(reinterpret_cast<const char*>(val.id.c_str()),
+            val.id.size() * sizeof(char));
+  ret += sizeof(char) * val.id.size();
 
   // sub id
-  _geomsF.write(reinterpret_cast<const char*>(&val.subId), sizeof(uint16_t));
-  _geomsOffset += sizeof(uint16_t);
+  str.write(reinterpret_cast<const char*>(&val.subId), sizeof(uint16_t));
+  ret += sizeof(uint16_t);
 
   // area
-  _geomsF.write(reinterpret_cast<const char*>(&val.area), sizeof(double));
-  _geomsOffset += sizeof(double);
+  str.write(reinterpret_cast<const char*>(&val.area), sizeof(double));
+  ret += sizeof(double);
 
   // outer area
-  _geomsF.write(reinterpret_cast<const char*>(&val.outerArea), sizeof(double));
-  _geomsOffset += sizeof(double);
+  str.write(reinterpret_cast<const char*>(&val.outerArea), sizeof(double));
+  ret += sizeof(double);
 
   // boxIds
   uint32_t size = val.boxIds.size();
-  _geomsF.write(reinterpret_cast<const char*>(&size), sizeof(uint32_t));
+  str.write(reinterpret_cast<const char*>(&size), sizeof(uint32_t));
   if (size > 0) {
-    _geomsF.write(reinterpret_cast<const char*>(&val.boxIds[0]),
-                  sizeof(sj::boxids::BoxId) * size);
+    str.write(reinterpret_cast<const char*>(&val.boxIds[0]),
+              sizeof(sj::boxids::BoxId) * size);
   }
 
-  _geomsOffset += sizeof(uint32_t) + sizeof(sj::boxids::BoxId) * size;
+  ret += sizeof(uint32_t) + sizeof(sj::boxids::BoxId) * size;
 
   // cutouts
   size = val.cutouts.size();
-  _geomsF.write(reinterpret_cast<const char*>(&size), sizeof(uint32_t));
-  _geomsOffset += sizeof(uint32_t);
+  str.write(reinterpret_cast<const char*>(&size), sizeof(uint32_t));
+  ret += sizeof(uint32_t);
 
   for (const auto& el : val.cutouts) {
     int32_t boxid = el.first;
     int32_t cutout = el.second;
-    _geomsF.write(reinterpret_cast<const char*>(&boxid), sizeof(int32_t));
-    _geomsF.write(reinterpret_cast<const char*>(&cutout), sizeof(int32_t));
-    _geomsOffset += sizeof(int32_t) + sizeof(int32_t);
+    str.write(reinterpret_cast<const char*>(&boxid), sizeof(int32_t));
+    str.write(reinterpret_cast<const char*>(&cutout), sizeof(int32_t));
+    ret += sizeof(int32_t) + sizeof(int32_t);
   }
 
   // OBB
-  writePoly(val.obb);
+  ret += writePoly(val.obb, str);
 
   // innerGeom
-  writePoly(val.inner);
+  ret += writePoly(val.inner, str);
 
   if (!val.inner.empty()) {
-    _geomsF.write(reinterpret_cast<const char*>(&val.innerBox),
-                  sizeof(util::geo::I32Box));
-    _geomsOffset += sizeof(util::geo::I32Box);
+    str.write(reinterpret_cast<const char*>(&val.innerBox),
+              sizeof(util::geo::I32Box));
+    ret += sizeof(util::geo::I32Box);
 
     // inner area
-    _geomsF.write(reinterpret_cast<const char*>(&val.innerOuterArea),
-                  sizeof(double));
-    _geomsOffset += sizeof(double);
+    str.write(reinterpret_cast<const char*>(&val.innerOuterArea),
+              sizeof(double));
+    ret += sizeof(double);
   }
 
   // outerGeom
-  writePoly(val.outer);
+  ret += writePoly(val.outer, str);
 
   if (!val.outer.empty()) {
-    _geomsF.write(reinterpret_cast<const char*>(&val.outerBox),
-                  sizeof(util::geo::I32Box));
-    _geomsOffset += sizeof(util::geo::I32Box);
+    str.write(reinterpret_cast<const char*>(&val.outerBox),
+              sizeof(util::geo::I32Box));
+    ret += sizeof(util::geo::I32Box);
 
     // outer area
-    _geomsF.write(reinterpret_cast<const char*>(&val.outerOuterArea),
-                  sizeof(double));
-    _geomsOffset += sizeof(double);
+    str.write(reinterpret_cast<const char*>(&val.outerOuterArea),
+              sizeof(double));
+    ret += sizeof(double);
   }
 
   return ret;
@@ -550,58 +572,61 @@ void sj::GeometryCache<W>::readPoly(std::fstream& str,
 
 // ____________________________________________________________________________
 template <typename W>
-void sj::GeometryCache<W>::writePoly(const util::geo::I32XSortedPolygon& geom) {
+size_t sj::GeometryCache<W>::writePoly(const util::geo::I32XSortedPolygon& geom,
+                                       std::ostream& str) {
+  size_t ret = 0;
   // geom, outer
   double maxSegLen = geom.getOuter().getMaxSegLen();
-  _geomsF.write(reinterpret_cast<const char*>(&maxSegLen), sizeof(double));
-  _geomsOffset += sizeof(double);
+  str.write(reinterpret_cast<const char*>(&maxSegLen), sizeof(double));
+  ret += sizeof(double);
 
   uint32_t locSize = geom.getOuter().rawRing().size();
-  _geomsF.write(reinterpret_cast<const char*>(&locSize), sizeof(uint32_t));
+  str.write(reinterpret_cast<const char*>(&locSize), sizeof(uint32_t));
   if (locSize)
-    _geomsF.write(reinterpret_cast<const char*>(&geom.getOuter().rawRing()[0]),
-                  sizeof(util::geo::XSortedTuple<int32_t>) * locSize);
-  _geomsOffset +=
-      sizeof(uint32_t) + sizeof(util::geo::XSortedTuple<int32_t>) * locSize;
+    str.write(reinterpret_cast<const char*>(&geom.getOuter().rawRing()[0]),
+              sizeof(util::geo::XSortedTuple<int32_t>) * locSize);
+  ret += sizeof(uint32_t) + sizeof(util::geo::XSortedTuple<int32_t>) * locSize;
 
   // geom, inners
   locSize = geom.getInners().size();
-  _geomsF.write(reinterpret_cast<const char*>(&locSize), sizeof(uint32_t));
-  _geomsOffset += sizeof(uint32_t);
+  str.write(reinterpret_cast<const char*>(&locSize), sizeof(uint32_t));
+  ret += sizeof(uint32_t);
 
   // inner max box seg len
   double innerMaxSegLen = geom.getInnerMaxSegLen();
-  _geomsF.write(reinterpret_cast<const char*>(&innerMaxSegLen), sizeof(double));
-  _geomsOffset += sizeof(double);
+  str.write(reinterpret_cast<const char*>(&innerMaxSegLen), sizeof(double));
+  ret += sizeof(double);
 
   // inner boxes
-  _geomsF.write(reinterpret_cast<const char*>(&geom.getInnerBoxes()[0]),
-                sizeof(util::geo::Box<int32_t>) * locSize);
-  _geomsOffset += sizeof(util::geo::Box<int32_t>) * locSize;
+  str.write(reinterpret_cast<const char*>(&geom.getInnerBoxes()[0]),
+            sizeof(util::geo::Box<int32_t>) * locSize);
+  ret += sizeof(util::geo::Box<int32_t>) * locSize;
 
   // inner box idx
-  _geomsF.write(reinterpret_cast<const char*>(&geom.getInnerBoxIdx()[0]),
-                sizeof(std::pair<int32_t, size_t>) * locSize);
-  _geomsOffset += sizeof(std::pair<int32_t, size_t>) * locSize;
+  str.write(reinterpret_cast<const char*>(&geom.getInnerBoxIdx()[0]),
+            sizeof(std::pair<int32_t, size_t>) * locSize);
+  ret += sizeof(std::pair<int32_t, size_t>) * locSize;
 
   // inner areas
-  _geomsF.write(reinterpret_cast<const char*>(&geom.getInnerAreas()[0]),
-                sizeof(double) * locSize);
-  _geomsOffset += sizeof(double) * locSize;
+  str.write(reinterpret_cast<const char*>(&geom.getInnerAreas()[0]),
+            sizeof(double) * locSize);
+  ret += sizeof(double) * locSize;
 
   for (const auto& inner : geom.getInners()) {
     locSize = inner.rawRing().size();
     double maxSegLen = inner.getMaxSegLen();
-    _geomsF.write(reinterpret_cast<const char*>(&maxSegLen), sizeof(double));
-    _geomsOffset += sizeof(double);
+    str.write(reinterpret_cast<const char*>(&maxSegLen), sizeof(double));
+    ret += sizeof(double);
 
-    _geomsF.write(reinterpret_cast<const char*>(&locSize), sizeof(uint32_t));
+    str.write(reinterpret_cast<const char*>(&locSize), sizeof(uint32_t));
     if (locSize)
-      _geomsF.write(reinterpret_cast<const char*>(&inner.rawRing()[0]),
-                    sizeof(util::geo::XSortedTuple<int32_t>) * locSize);
-    _geomsOffset +=
+      str.write(reinterpret_cast<const char*>(&inner.rawRing()[0]),
+                sizeof(util::geo::XSortedTuple<int32_t>) * locSize);
+    ret +=
         sizeof(uint32_t) + sizeof(util::geo::XSortedTuple<int32_t>) * locSize;
   }
+
+  return ret;
 }
 
 // ____________________________________________________________________________
@@ -624,19 +649,22 @@ void sj::GeometryCache<W>::readLine(std::fstream& str,
 
 // ____________________________________________________________________________
 template <typename W>
-void sj::GeometryCache<W>::writeLine(const util::geo::I32XSortedLine& geom) {
+size_t sj::GeometryCache<W>::writeLine(const util::geo::I32XSortedLine& geom,
+                                       std::ostream& str) {
+  size_t ret = 0;
   // geom, outer
   double maxSegLen = geom.getMaxSegLen();
-  _geomsF.write(reinterpret_cast<const char*>(&maxSegLen), sizeof(double));
-  _geomsOffset += sizeof(double);
+  str.write(reinterpret_cast<const char*>(&maxSegLen), sizeof(double));
+  ret += sizeof(double);
 
   uint32_t locSize = geom.rawLine().size();
-  _geomsF.write(reinterpret_cast<const char*>(&locSize), sizeof(uint32_t));
+  str.write(reinterpret_cast<const char*>(&locSize), sizeof(uint32_t));
   if (locSize)
-    _geomsF.write(reinterpret_cast<const char*>(&geom.rawLine()[0]),
-                  sizeof(util::geo::XSortedTuple<int32_t>) * locSize);
-  _geomsOffset +=
-      sizeof(uint32_t) + sizeof(util::geo::XSortedTuple<int32_t>) * locSize;
+    str.write(reinterpret_cast<const char*>(&geom.rawLine()[0]),
+              sizeof(util::geo::XSortedTuple<int32_t>) * locSize);
+  ret += sizeof(uint32_t) + sizeof(util::geo::XSortedTuple<int32_t>) * locSize;
+
+  return ret;
 }
 
 // ____________________________________________________________________________

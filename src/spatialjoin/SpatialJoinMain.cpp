@@ -236,10 +236,11 @@ int main(int argc, char** argv) {
     }
   }
 
-  char* buf = new char[1024 * 1024 * 100];
+  const static size_t CACHE_SIZE = 1024 * 1024 * 100;
+  unsigned char* buf = new unsigned char[CACHE_SIZE];
   size_t len;
   std::string dangling;
-  size_t gid = 0;
+  size_t gid = 1;
 
   Sweeper sweeper(
       {numThreads, numCaches, prefix, intersects, contains, covers, touches,
@@ -250,9 +251,19 @@ int main(int argc, char** argv) {
   LOGTO(INFO, std::cerr) << "Parsing input geometries...";
   auto ts = TIME();
 
-  while ((len = read(0, buf, 1024 * 1024 * 100)) > 0) {
-    parse(buf, len, dangling, &gid, sweeper);
+  util::JobQueue<ParseBatch> jobs(1000);
+  std::vector<std::thread> thrds(NUM_THREADS);
+  for (size_t i = 0; i < thrds.size(); i++)
+    thrds[i] = std::thread(&processQueue, &jobs, i, &sweeper);
+
+  while ((len = util::readAll(0, buf, CACHE_SIZE)) > 0) {
+    parse(reinterpret_cast<char*>(buf), len, dangling, &gid, jobs);
   }
+
+  // end event
+  jobs.add({});
+  // wait for all workers to finish
+  for (auto& thr : thrds) thr.join();
 
   sweeper.flush();
 
@@ -270,4 +281,6 @@ int main(int argc, char** argv) {
   ts = TIME();
   sweeper.sweep();
   LOGTO(INFO, std::cerr) << "done (" << TOOK(ts) / 1000000000.0 << "s).";
+
+  delete[] buf;
 }
