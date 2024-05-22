@@ -1623,9 +1623,10 @@ void Sweeper::doCheck(const BoxVal cur, const SweepVal sv, size_t t) {
 
     auto res = check(a, b, t);
 
-    _stats[t].timeHisto(std::max(a->geom.getOuter().rawRing().size(),
-                                 b->geom.getOuter().rawRing().size()),
-                        TOOK(totTime));
+    auto tokTime = TOOK(totTime);
+
+    _stats[t].timeHisto(std::max(a->geom.getOuter().rawRing().size(), b->geom.getOuter().rawRing().size()), tokTime);
+    _stats[t].timeWeightedHisto(std::max(a->geom.getOuter().getMaxSegLen(), b->geom.getOuter().getMaxSegLen()), tokTime);
 
     // intersects
     if (std::get<0>(res)) {
@@ -1713,9 +1714,9 @@ void Sweeper::doCheck(const BoxVal cur, const SweepVal sv, size_t t) {
 
     auto res = check(a.get(), b, t);
 
-    _stats[t].timeHisto(
-        std::max(a->geom.rawLine().size(), b->geom.getOuter().rawRing().size()),
-        TOOK(totTime));
+    auto tokTime = TOOK(totTime);
+    _stats[t].timeHisto(std::max(a->geom.rawLine().size(), b->geom.getOuter().rawRing().size()), tokTime);
+    _stats[t].timeWeightedHisto(std::max(a->geom.getMaxSegLen(), b->geom.getOuter().getMaxSegLen()), tokTime);
 
     // intersects
     if (std::get<0>(res)) {
@@ -1788,7 +1789,9 @@ void Sweeper::doCheck(const BoxVal cur, const SweepVal sv, size_t t) {
 
     auto res = check(a.get(), b, t);
 
-    _stats[t].timeHisto(b->geom.getOuter().rawRing().size(), TOOK(totTime));
+    auto tokTime = TOOK(totTime);
+    _stats[t].timeHisto(b->geom.getOuter().rawRing().size(), tokTime);
+    _stats[t].timeWeightedHisto(b->geom.getOuter().getMaxSegLen(), tokTime);
 
     // intersects
     if (std::get<0>(res)) {
@@ -1847,9 +1850,9 @@ void Sweeper::doCheck(const BoxVal cur, const SweepVal sv, size_t t) {
 
     auto res = check(b.get(), a, t);
 
-    _stats[t].timeHisto(
-        std::max(a->geom.getOuter().rawRing().size(), b->geom.rawLine().size()),
-        TOOK(totTime));
+    auto tokTime = TOOK(totTime);
+    _stats[t].timeHisto(std::max(a->geom.getOuter().rawRing().size(), b->geom.rawLine().size()), tokTime);
+    _stats[t].timeWeightedHisto(std::max(a->geom.getOuter().getMaxSegLen(), b->geom.getMaxSegLen()), tokTime);
 
     // intersects
     if (std::get<0>(res)) {
@@ -1920,7 +1923,10 @@ void Sweeper::doCheck(const BoxVal cur, const SweepVal sv, size_t t) {
 
     auto res = check(b.get(), a, t);
 
-    _stats[t].timeHisto(a->geom.getOuter().rawRing().size(), TOOK(totTime));
+    auto tokTime = TOOK(totTime);
+
+    _stats[t].timeHisto(a->geom.getOuter().rawRing().size(), tokTime);
+    _stats[t].timeWeightedHisto(a->geom.getOuter().getMaxSegLen(), tokTime);
 
     // intersects
     if (std::get<0>(res)) {
@@ -1966,9 +1972,9 @@ void Sweeper::doCheck(const BoxVal cur, const SweepVal sv, size_t t) {
 
     auto res = check(a.get(), b.get(), t);
 
-    _stats[t].timeHisto(
-        std::max(a->geom.rawLine().size(), b->geom.rawLine().size()),
-        TOOK(totTime));
+    auto tokTime = TOOK(totTime);
+    _stats[t].timeHisto(std::max(a->geom.rawLine().size(), b->geom.rawLine().size()), tokTime);
+    _stats[t].timeWeightedHisto(std::max(a->geom.getMaxSegLen(), b->geom.getMaxSegLen()), tokTime);
 
     // intersects
     if (std::get<0>(res)) {
@@ -2036,7 +2042,10 @@ void Sweeper::doCheck(const BoxVal cur, const SweepVal sv, size_t t) {
 
     auto res = check(a.get(), b.get(), t);
 
-    _stats[t].timeHisto(a->geom.rawLine().size(), TOOK(totTime));
+    auto tokTime = TOOK(totTime);
+
+    _stats[t].timeHisto(a->geom.rawLine().size(), tokTime);
+    _stats[t].timeWeightedHisto(a->geom.getMaxSegLen(), tokTime);
 
     // intersects
     if (std::get<0>(res)) {
@@ -2095,7 +2104,10 @@ void Sweeper::doCheck(const BoxVal cur, const SweepVal sv, size_t t) {
 
     auto res = check(a.get(), b.get(), t);
 
-    _stats[t].timeHisto(b->geom.rawLine().size(), TOOK(totTime));
+    auto tokTime = TOOK(totTime);
+
+    _stats[t].timeHisto(b->geom.rawLine().size(), tokTime);
+    _stats[t].timeWeightedHisto(b->geom.getMaxSegLen(), tokTime);
 
     // intersects
     if (std::get<0>(res)) {
@@ -2154,7 +2166,10 @@ void Sweeper::doCheck(const BoxVal cur, const SweepVal sv, size_t t) {
 
     auto res = check(a.get(), b.get(), t);
 
-    _stats[t].timeHisto(2, TOOK(totTime));
+    auto tokTime = TOOK(totTime);
+
+    _stats[t].timeHisto(2, tokTime);
+    _stats[t].timeWeightedHisto(std::max(a->b.getX() - a->a.getX(), b->b.getX() - b->a.getX()), tokTime);
 
     if (std::get<0>(res)) {
       writeIntersect(t, a->id, b->id);
@@ -2269,7 +2284,9 @@ void Sweeper::doCheck(const BoxVal cur, const SweepVal sv, size_t t) {
 
     auto res = check(a, b.get(), t);
 
-    _stats[t].timeHisto(b->geom.rawLine().size(), TOOK(totTime));
+    auto tokTime = TOOK(totTime);
+    _stats[t].timeHisto(b->geom.rawLine().size(), tokTime);
+    _stats[t].timeWeightedHisto(b->geom.getMaxSegLen(), tokTime);
 
     if (std::get<0>(res)) {
       auto ts = TIME();
@@ -2339,7 +2356,10 @@ void Sweeper::doCheck(const BoxVal cur, const SweepVal sv, size_t t) {
 
     auto res = check(a, b, t);
 
-    _stats[t].timeHisto(b->geom.getOuter().rawRing().size(), TOOK(totTime));
+    auto tokTime = TOOK(totTime);
+
+    _stats[t].timeHisto(b->geom.getOuter().rawRing().size(), tokTime);
+    _stats[t].timeWeightedHisto(b->geom.getOuter().getMaxSegLen(), tokTime);
 
     if (res.second) {
       auto ts = TIME();

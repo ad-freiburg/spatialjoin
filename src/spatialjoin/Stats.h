@@ -58,9 +58,11 @@ struct Stats {
   size_t totalComps = 0;
 
   uint64_t timeSums[7] = {0, 0, 0, 0, 0, 0, 0};
+  uint64_t timeSegLenSum[7] = {0, 0, 0, 0, 0, 0, 0};
 
   std::string toString();
   void timeHisto(size_t numPoints, uint64_t time);
+  void timeWeightedHisto(uint64_t maxSegLen, uint64_t time);
 };
 
 inline std::string Stats::toString() {
@@ -231,6 +233,40 @@ inline std::string Stats::toString() {
   ss << "comparisons inv. > 1 points on one side: " << t << " s ("
      << ((t / histoSum) * 100.0) << "%)\n";
 
+
+  double histoSegLenSum = ((timeSegLenSum[0] + timeSegLenSum[1] + timeSegLenSum[2] + timeSegLenSum[3] +
+      timeSegLenSum[4] + timeSegLenSum[5] + timeSegLenSum[6]) *
+      1.0) /
+      1000000000.0;
+
+  t = (timeSegLenSum[6] * 1.0) / 1000000000.0;
+  ss << "comparisons inv. seg len > 1000000 on one side: " << t << " s ("
+     << ((t / histoSegLenSum) * 100.0) << "%)\n";
+
+  t = (timeSegLenSum[5] * 1.0) / 1000000000.0;
+  ss << "comparisons inv. seg len > 100000 on one side: " << t << " s ("
+     << ((t / histoSegLenSum) * 100.0) << "%)\n";
+
+  t = (timeSegLenSum[4] * 1.0) / 1000000000.0;
+  ss << "comparisons inv. seg len > 10000 on one side: " << t << " s ("
+     << ((t / histoSegLenSum) * 100.0) << "%)\n";
+
+  t = (timeSegLenSum[3] * 1.0) / 1000000000.0;
+  ss << "comparisons inv. seg len > 1000 on one side: " << t << " s ("
+     << ((t / histoSegLenSum) * 100.0) << "%)\n";
+
+  t = (timeSegLenSum[2] * 1.0) / 1000000000.0;
+  ss << "comparisons inv. seg len > 100 on one side: " << t << " s ("
+     << ((t / histoSegLenSum) * 100.0) << "%)\n";
+
+  t = (timeSegLenSum[1] * 1.0) / 1000000000.0;
+  ss << "comparisons inv. seg len > 10 on one side: " << t << " s ("
+     << ((t / histoSegLenSum) * 100.0) << "%)\n";
+
+  t = (timeSegLenSum[0] * 1.0) / 1000000000.0;
+  ss << "comparisons inv. seg len > 1 on one side: " << t << " s ("
+     << ((t / histoSegLenSum) * 100.0) << "%)\n";
+
   ss << "\n    SUM: " << sum << " s\n";
   ss << "    TOTAL COMPARISONS: " << totalComps << "\n";
   return ss.str();
@@ -263,6 +299,36 @@ inline void Stats::timeHisto(size_t numPoints, uint64_t time) {
   }
 
   timeSums[0] += time;
+  return;
+}
+
+inline void Stats::timeWeightedHisto(uint64_t maxSegLen, uint64_t time) {
+  if (maxSegLen > 1000000) {
+    timeSegLenSum[6] += time;
+    return;
+  }
+  if (maxSegLen > 100000) {
+    timeSegLenSum[5] += time;
+    return;
+  }
+  if (maxSegLen > 10000) {
+    timeSegLenSum[4] += time;
+    return;
+  }
+  if (maxSegLen > 1000) {
+    timeSegLenSum[3] += time;
+    return;
+  }
+  if (maxSegLen > 100) {
+    timeSegLenSum[2] += time;
+    return;
+  }
+  if (maxSegLen > 10) {
+    timeSegLenSum[1] += time;
+    return;
+  }
+
+  timeSegLenSum[0] += time;
   return;
 }
 
@@ -310,7 +376,11 @@ inline Stats operator+(const Stats& a, const Stats& b) {
                {a.timeSums[0] + b.timeSums[0], a.timeSums[1] + b.timeSums[1],
                 a.timeSums[2] + b.timeSums[2], a.timeSums[3] + b.timeSums[3],
                 a.timeSums[4] + b.timeSums[4], a.timeSums[5] + b.timeSums[5],
-                a.timeSums[6] + b.timeSums[6]}};
+                a.timeSums[6] + b.timeSums[6]},
+               {a.timeSegLenSum[0] + b.timeSegLenSum[0], a.timeSegLenSum[1] + b.timeSegLenSum[1],
+                a.timeSegLenSum[2] + b.timeSegLenSum[2], a.timeSegLenSum[3] + b.timeSegLenSum[3],
+                a.timeSegLenSum[4] + b.timeSegLenSum[4], a.timeSegLenSum[5] + b.timeSegLenSum[5],
+                a.timeSegLenSum[6] + b.timeSegLenSum[6]}};
 }
 
 inline void operator+=(Stats& a, const Stats& b) { a = a + b; }
