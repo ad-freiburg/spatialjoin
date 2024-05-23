@@ -180,11 +180,11 @@ sj::Line sj::GeometryCache<sj::Line>::getFromDisk(size_t off,
     ret.cutouts[boxid] = cutout;
   }
 
-  // convex hull
-  readPoly(_geomsFReads[tid], ret.convexHull);
-
   // OBB
   readPoly(_geomsFReads[tid], ret.obb);
+
+  // convex hull
+  readPoly(_geomsFReads[tid], ret.convexHull);
 
   return ret;
 }
@@ -244,11 +244,11 @@ sj::Area sj::GeometryCache<sj::Area>::getFromDisk(size_t off,
     ret.cutouts[boxid] = cutout;
   }
 
-  // convex hull
-  readPoly(_geomsFReads[tid], ret.convexHull);
-
   // OBB
   readPoly(_geomsFReads[tid], ret.obb);
+
+  // convex hull
+  readPoly(_geomsFReads[tid], ret.convexHull);
 
   // simplified inner
   readPoly(_geomsFReads[tid], ret.inner);
@@ -417,11 +417,11 @@ size_t sj::GeometryCache<sj::Line>::writeTo(const sj::Line& val,
     ret += sizeof(int32_t) + sizeof(int32_t);
   }
 
-  // convex hull
-  writePoly(val.convexHull);
-
   // OBB
   ret += writePoly(val.obb, str);
+
+  // convex hull
+  ret += writePoly(val.convexHull, str);
 
   return ret;
 }
@@ -482,11 +482,11 @@ size_t sj::GeometryCache<sj::Area>::writeTo(const sj::Area& val,
     ret += sizeof(int32_t) + sizeof(int32_t);
   }
 
-  // convex hull
-  writePoly(val.convexHull);
-
   // OBB
   ret += writePoly(val.obb, str);
+
+  // convex hull
+  ret += writePoly(val.convexHull, str);
 
   // innerGeom
   ret += writePoly(val.inner, str);
