@@ -74,6 +74,8 @@ void printHelp(int argc, char** argv) {
       << "disable cutouts\n"
       << std::setw(41) << "  --no-diag-box"
       << "disable diagonal bounding-box based pre-filter\n"
+      << std::setw(41) << "  --no-convex-hulls"
+      << "disable convex hulls\n"
       << std::setw(41) << "  --no-fast-sweep-skip"
       << "disable fast sweep skip using binary search\n"
       << std::setw(41) << "  --use-inner-outer"
@@ -118,6 +120,7 @@ int main(int argc, char** argv) {
   bool useOBB = true;
   bool useCutouts = true;
   bool useDiagBox = true;
+  bool useConvexHulls = true;
   bool useFastSweepSkip = true;
   bool useInnerOuter = false;
 
@@ -170,6 +173,8 @@ int main(int argc, char** argv) {
           useCutouts = false;
         } else if (cur == "--no-diag-box") {
           useDiagBox = false;
+        } else if (cur == "--no-convex-hulls") {
+          useConvexHulls = false;
         } else if (cur == "--no-fast-sweep-skip") {
           useFastSweepSkip = false;
         } else if (cur == "--use-inner-outer") {
@@ -245,7 +250,7 @@ int main(int argc, char** argv) {
   Sweeper sweeper(
       {numThreads, numCaches, prefix, intersects, contains, covers, touches,
        equals, overlaps, crosses, suffix, useBoxIds, useArea, useOBB,
-       useCutouts, useDiagBox, useFastSweepSkip, useInnerOuter},
+       useCutouts, useDiagBox, useConvexHulls, useFastSweepSkip, useInnerOuter},
       cache, output);
 
   LOGTO(INFO, std::cerr) << "Parsing input geometries...";
