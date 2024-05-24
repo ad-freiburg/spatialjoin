@@ -203,7 +203,7 @@ class Sweeper {
 
   void flush();
 
-  void sweep();
+  RelStats sweep();
   void sortCache();
 
  private:
@@ -225,6 +225,8 @@ class Sweeper {
   std::vector<size_t> _checks;
   std::vector<int32_t> _curX;
   std::vector<std::atomic<int32_t>> _atomicCurX;
+
+  std::vector<RelStats> _relStats;
 
   mutable std::vector<Stats> _stats;
 
@@ -297,6 +299,8 @@ class Sweeper {
 
   void writeIntersect(size_t t, const std::string& a, const std::string& b);
   void writeContains(size_t t, const std::string& a, const std::string& b);
+  void writeEquals(size_t t, const std::string& a, const std::string& b);
+  void writeTouches(size_t t, const std::string& a, const std::string& b);
   void writeCovers(size_t t, const std::string& a, const std::string& b);
   void writeOverlaps(size_t t, const std::string& a, const std::string& b);
   void writeCrosses(size_t t, const std::string& a, const std::string& b);
@@ -308,9 +312,9 @@ class Sweeper {
                           size_t bSub);
   void writeCoversMulti(size_t t, const std::string& a, const std::string& b,
                         size_t bSub);
-  void writeEquals(size_t t, const std::string& a, size_t aSub,
+  void writeEqualsMulti(size_t t, const std::string& a, size_t aSub,
                    const std::string& b, size_t bSub);
-  void writeTouches(size_t t, const std::string& a, size_t aSub,
+  void writeTouchesMulti(size_t t, const std::string& a, size_t aSub,
                     const std::string& b, size_t bSub);
   void writeNotTouches(size_t t, const std::string& a, size_t aSub,
                        const std::string& b, size_t bSub);
@@ -351,7 +355,7 @@ class Sweeper {
     if (boxa->type != POLYGON && boxa->type != SIMPLE_POLYGON &&
         (boxb->type == POLYGON || boxb->type == SIMPLE_POLYGON))
       return -1;
-    if ((boxa->type == POLYGON || boxb->type == SIMPLE_POLYGON) &&
+    if ((boxa->type == POLYGON || boxa->type == SIMPLE_POLYGON) &&
         boxb->type != POLYGON && boxb->type != SIMPLE_POLYGON)
       return 1;
 

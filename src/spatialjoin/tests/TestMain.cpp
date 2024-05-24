@@ -474,5 +474,12 @@ int main(int, char**) {
       TEST(res.find("$2 intersects 1$") != std::string::npos);
       TEST(res.find("$2 crosses 1$") != std::string::npos);
     }
+
+    {
+      auto res = fullRun("../src/spatialjoin/tests/datasets/touchfail2", cfg);
+      TEST(res.find("$1 covers 2$") != std::string::npos);
+      TEST(res.find("$1 intersects 2$") != std::string::npos);
+      TEST(res.find("$2 intersects 1$") != std::string::npos);
+    }
   }
 }

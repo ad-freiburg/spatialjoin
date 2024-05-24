@@ -232,7 +232,7 @@ inline std::string Stats::toString() {
      << ((t / histoSum) * 100.0) << "%)\n";
 
   ss << "\n    SUM: " << sum << " s\n";
-  ss << "    TOTAL COMPARISONS: " << totalComps << "\n";
+  ss << "    TOTAL COMPARISONS: " << totalComps;
   return ss.str();
 }
 
@@ -315,5 +315,34 @@ inline Stats operator+(const Stats& a, const Stats& b) {
 
 inline void operator+=(Stats& a, const Stats& b) { a = a + b; }
 }  // namespace sj
+   //
+
+struct RelStats {
+  size_t intersects = 0;
+  size_t equals = 0;
+  size_t covers = 0;
+  size_t contains = 0;
+  size_t overlaps = 0;
+  size_t crosses = 0;
+  size_t touches = 0;
+
+  std::string toString() {
+    std::stringstream ss;
+    ss << intersects << " intersection, " << equals << " equals, " << covers
+       << " covers, " << contains << " contains, " << overlaps << " overlaps, "
+       << crosses << " crosses, " << touches << " touches relations"
+       << std::endl;
+    return ss.str();
+  }
+};
+
+inline RelStats operator+(const RelStats& a, const RelStats& b) {
+  return {a.intersects + b.intersects, a.equals + b.equals,
+          a.covers + b.covers,         a.contains + b.contains,
+          a.overlaps + b.overlaps,     a.crosses + b.crosses,
+          a.touches + b.touches};
+}
+
+inline void operator+=(RelStats& a, const RelStats& b) { a = a + b; }
 
 #endif
