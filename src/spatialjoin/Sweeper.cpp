@@ -1541,13 +1541,6 @@ std::pair<bool, bool> Sweeper::check(const I32Point& a, const Area* b,
     if (!std::get<1>(r)) return {0, 0};
   }
 
-  if (_cfg.useConvexHull && !b->convexHull.empty()) {
-    auto ts = TIME();
-    auto r = containsCovers(a, b->convexHull);
-    _stats[t].timeConvexHullIsectAreaPoint += TOOK(ts);
-    if (!std::get<1>(r)) return {0, 0};
-  }
-
   if (_cfg.useInnerOuter && !b->outer.empty()) {
     auto ts = TIME();
     auto r = containsCovers(a, b->outer);
