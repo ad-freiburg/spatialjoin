@@ -231,9 +231,11 @@ void Sweeper::add(const I32Polygon& poly, const std::string& gid, size_t subid,
       convexHull = util::geo::convexHull(poly);
 
       // drop redundant convex hull
-      if (convexHull.getOuter().size() == obb.getOuter().size() && outerArea(convexHull) == outerArea(obb))
-        convexHull = {};
       if (convexHull.getOuter().size() >= poly.getOuter().size())
+        convexHull = {};
+      if (!obb.getOuter().empty() && convexHull.getOuter().size() == obb.getOuter().size() && outerArea(convexHull) == outerArea(obb))
+        convexHull = {};
+      if (!outer.empty() && convexHull.getOuter().size() == outer.getOuter().rawRing().size())
         convexHull = {};
     }
 
@@ -359,9 +361,9 @@ void Sweeper::add(const I32Line& line, const std::string& gid, size_t subid,
       convexHull = util::geo::convexHull(line);
 
       // drop redundant hull
-      if (convexHull.getOuter().size() == obb.getOuter().size() && outerArea(convexHull) == outerArea(obb))
-        convexHull = {};
       if (convexHull.getOuter().size() >= line.size()) convexHull = {};
+      if (!obb.getOuter().empty() && convexHull.getOuter().size() == obb.getOuter().size() && outerArea(convexHull) == outerArea(obb))
+        convexHull = {};
     }
 
     if (!_cfg.useFastSweepSkip) {
