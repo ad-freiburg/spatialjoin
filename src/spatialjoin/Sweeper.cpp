@@ -216,8 +216,6 @@ void Sweeper::add(const I32Polygon& poly, const std::string& gid, size_t subid,
     }
 
     util::geo::I32Polygon obb;
-    obb = util::geo::convexHull(util::geo::getOrientedEnvelope(poly));
-
     if (_cfg.useOBB && poly.getOuter().size() >= OBB_MIN_SIZE) {
       obb = util::geo::convexHull(
           util::geo::pad(util::geo::getOrientedEnvelope(poly), 10));
@@ -300,14 +298,6 @@ void Sweeper::add(const I32Line& line, const std::string& gid, size_t subid,
   }
 
   const double len = util::geo::len(line);
-
-  util::geo::I32Polygon convexHull;
-  if (_cfg.useConvexHull) {
-    convexHull = util::geo::convexHull(line);
-  }
-
-  util::geo::I32Polygon obb;
-  obb = util::geo::convexHull(util::geo::getOrientedEnvelope(line));
 
   I32Box box45;
   if (_cfg.useDiagBox) {
