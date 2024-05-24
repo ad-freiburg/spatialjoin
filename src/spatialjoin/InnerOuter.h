@@ -161,6 +161,7 @@ util::geo::Polygon<T> simplifiedPoly(const util::geo::Polygon<T>& poly,
     innerOuterDouglasPeucker<MODE>(origInner, retDP, 0, m, eps);
     innerOuterDouglasPeucker<MODE>(origInner, retDP, m + 1,
                                    origInner.size() - 1, eps);
+    if (retDP.size() == 0) return {};
     retDP.push_back(retDP.front());  // ensure valid polygon
     simplified.getInners().push_back(retDP);
     numPointsNew += retDP.size();
@@ -179,6 +180,7 @@ util::geo::Polygon<T> simplifiedPoly(const util::geo::Polygon<T>& poly,
     innerOuterDouglasPeucker<MODE>(poly.getOuter(), retDP, 0, m, eps);
     innerOuterDouglasPeucker<MODE>(poly.getOuter(), retDP, m + 1,
                                    poly.getOuter().size() - 1, eps);
+    if (retDP.size() == 0) return {};
     retDP.push_back(retDP.front());  // ensure valid polygon
     numPointsNew += retDP.size();
     simplified.getOuter() = retDP;

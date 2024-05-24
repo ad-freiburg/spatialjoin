@@ -16,7 +16,6 @@ bool operator==(const ParseJob& a, const ParseJob& b) {
   return a.line == b.line && a.str == b.str;
 }
 
-typedef std::vector<sj::WriteCand> WriteBatch;
 typedef std::vector<ParseJob> ParseBatch;
 
 // _____________________________________________________________________________
@@ -61,7 +60,7 @@ util::geo::I32Point parsePoint(const char* c) {
 
 // _____________________________________________________________________________
 void parseLine(char* c, size_t len, size_t gid, sj::Sweeper* sweeper,
-               WriteBatch& batch) {
+               sj::WriteBatch& batch) {
   char* idp = reinterpret_cast<char*>(strchr(c, '\t'));
 
   std::string id;
@@ -146,8 +145,7 @@ void parseLine(char* c, size_t len, size_t gid, sj::Sweeper* sweeper,
 void processQueue(util::JobQueue<ParseBatch>* jobs, size_t, sj::Sweeper* idx) {
   ParseBatch batch;
   while ((batch = jobs->get()).size()) {
-    WriteBatch w;
-    w.reserve(batch.size());
+    sj::WriteBatch w;
     for (const auto& job : batch) {
       parseLine(const_cast<char*>(job.str.c_str()), job.str.size(), job.line,
                 idx, w);
@@ -163,6 +161,7 @@ void parse(char* c, size_t size, std::string& dang, size_t* gid,
   size_t p = 0;
 
   ParseBatch curBatch;
+  curBatch.reserve(1000);
 
   while (true) {
     char* newLine = reinterpret_cast<char*>(memchr(c + p, '\n', size - p));

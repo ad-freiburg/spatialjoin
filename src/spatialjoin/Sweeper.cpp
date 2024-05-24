@@ -52,7 +52,7 @@ const static double cos45 = 1.0 / sqrt(2);
 
 // _____________________________________________________________________________
 void Sweeper::add(const I32MultiPolygon& a, const std::string& gid,
-                  std::vector<WriteCand>& batch) {
+                  WriteBatch& batch) {
   uint16_t subid = 0;  // a subid of 0 means "single polygon"
   if (a.size() > 1) subid = 1;
 
@@ -61,7 +61,7 @@ void Sweeper::add(const I32MultiPolygon& a, const std::string& gid,
 
 // _____________________________________________________________________________
 void Sweeper::add(const I32MultiLine& a, const std::string& gid,
-                  std::vector<WriteCand>& batch) {
+                  WriteBatch& batch) {
   uint16_t subid = 0;  // a subid of 0 means "single line"
   if (a.size() > 1) subid = 1;
 
@@ -70,7 +70,7 @@ void Sweeper::add(const I32MultiLine& a, const std::string& gid,
 
 // _____________________________________________________________________________
 void Sweeper::addMp(const I32MultiPoint& a, const std::string& gid,
-                    std::vector<WriteCand>& batch) {
+                    WriteBatch& batch) {
   uint16_t subid = 0;  // a subid of 0 means "single point"
   if (a.size() > 1) subid = 1;
 
@@ -79,7 +79,7 @@ void Sweeper::addMp(const I32MultiPoint& a, const std::string& gid,
 
 // _____________________________________________________________________________
 void Sweeper::add(const I32MultiPolygon& a, const std::string& gid,
-                  size_t subId, std::vector<WriteCand>& batch) {
+                  size_t subId, WriteBatch& batch) {
   for (const auto& poly : a) {
     if (poly.getOuter().size() < 2) continue;
     add(poly, gid, subId, batch);
@@ -89,7 +89,7 @@ void Sweeper::add(const I32MultiPolygon& a, const std::string& gid,
 
 // _____________________________________________________________________________
 void Sweeper::add(const I32MultiLine& a, const std::string& gid, size_t subId,
-                  std::vector<WriteCand>& batch) {
+                  WriteBatch& batch) {
   for (const auto& line : a) {
     if (line.size() < 2) continue;
     add(line, gid, subId, batch);
@@ -99,9 +99,7 @@ void Sweeper::add(const I32MultiLine& a, const std::string& gid, size_t subId,
 
 // _____________________________________________________________________________
 void Sweeper::addMp(const I32MultiPoint& a, const std::string& gid,
-                    size_t subid, std::vector<WriteCand>& batch) {
-  // if (subid > 0) _subSizes[gid] = _subSizes[gid] + a.size();
-
+                    size_t subid, WriteBatch& batch) {
   size_t newId = subid;
   for (const auto& point : a) {
     add(point, gid, newId, batch);
@@ -129,13 +127,13 @@ void Sweeper::multiAdd(const std::string& gid, int32_t xLeft, int32_t xRight) {
 
 // _____________________________________________________________________________
 void Sweeper::add(const I32Polygon& poly, const std::string& gid,
-                  std::vector<WriteCand>& batch) {
+                  WriteBatch& batch) {
   add(poly, gid, 0, batch);
 }
 
 // _____________________________________________________________________________
 void Sweeper::add(const I32Polygon& poly, const std::string& gid, size_t subid,
-                  std::vector<WriteCand>& batch) {
+                  WriteBatch& batch) {
   WriteCand cur;
   const auto& box = getBoundingBox(poly);
   I32XSortedPolygon spoly(poly);
@@ -168,7 +166,7 @@ void Sweeper::add(const I32Polygon& poly, const std::string& gid, size_t subid,
     GeometryCache<SimpleArea>::writeTo({poly.getOuter(), gid}, str);
     cur.raw = str.str();
 
-    cur.boxvalIn = {0,
+    cur.boxvalIn = {0,  // placeholder, will be overwritten later on
                     box.getLowerLeft().getY(),
                     box.getUpperRight().getY(),
                     box.getLowerLeft().getX(),
@@ -176,7 +174,7 @@ void Sweeper::add(const I32Polygon& poly, const std::string& gid, size_t subid,
                     SIMPLE_POLYGON,
                     areaSize,
                     box45};
-    cur.boxvalOut = {0,
+    cur.boxvalOut = {0,  // placeholder, will be overwritten later on
                      box.getLowerLeft().getY(),
                      box.getUpperRight().getY(),
                      box.getUpperRight().getX(),
@@ -184,6 +182,7 @@ void Sweeper::add(const I32Polygon& poly, const std::string& gid, size_t subid,
                      SIMPLE_POLYGON,
                      areaSize,
                      box45};
+    batch.simpleAreas.emplace_back(cur);
   } else {
     if (!_cfg.useFastSweepSkip) {
       spoly.setInnerMaxSegLen(std::numeric_limits<int32_t>::max());
@@ -224,11 +223,6 @@ void Sweeper::add(const I32Polygon& poly, const std::string& gid, size_t subid,
       if (obb.getOuter().size() >= poly.getOuter().size()) obb = {};
     }
 
-    // if (subid > 0) {
-    // std::unique_lock<std::mutex> lock(_multiAddMtx);
-    // multiAdd(gid, box.getLowerLeft().getX(), box.getUpperRight().getX());
-    // }
-
     std::stringstream str;
     GeometryCache<Area>::writeTo(
         {spoly, box, gid, subid, areaSize, _cfg.useArea ? outerAreaSize : 0,
@@ -239,7 +233,7 @@ void Sweeper::add(const I32Polygon& poly, const std::string& gid, size_t subid,
 
     cur.raw = str.str();
 
-    cur.boxvalIn = {0,
+    cur.boxvalIn = {0,  // placeholder, will be overwritten later on
                     box.getLowerLeft().getY(),
                     box.getUpperRight().getY(),
                     box.getLowerLeft().getX(),
@@ -247,7 +241,7 @@ void Sweeper::add(const I32Polygon& poly, const std::string& gid, size_t subid,
                     POLYGON,
                     areaSize,
                     box45};
-    cur.boxvalOut = {0,
+    cur.boxvalOut = {0,  // placeholder, will be overwritten later on
                      box.getLowerLeft().getY(),
                      box.getUpperRight().getY(),
                      box.getUpperRight().getX(),
@@ -255,20 +249,19 @@ void Sweeper::add(const I32Polygon& poly, const std::string& gid, size_t subid,
                      POLYGON,
                      areaSize,
                      box45};
+    batch.areas.emplace_back(cur);
   }
-
-  batch.emplace_back(cur);
 }
 
 // _____________________________________________________________________________
 void Sweeper::add(const I32Line& line, const std::string& gid,
-                  std::vector<WriteCand>& batch) {
+                  WriteBatch& batch) {
   add(line, gid, 0, batch);
 }
 
 // _____________________________________________________________________________
 void Sweeper::add(const I32Line& line, const std::string& gid, size_t subid,
-                  std::vector<WriteCand>& batch) {
+                  WriteBatch& batch) {
   if (line.size() < 2) return;
 
   WriteCand cur;
@@ -293,11 +286,6 @@ void Sweeper::add(const I32Line& line, const std::string& gid, size_t subid,
     box45 = getBoundingBox(polyR);
   }
 
-  // if (subid > 0) {
-  // std::unique_lock<std::mutex> lock(_multiAddMtx);
-  // multiAdd(gid, box.getLowerLeft().getX(), box.getUpperRight().getX());
-  // }
-
   cur.subid = subid;
   cur.gid = gid;
 
@@ -310,7 +298,7 @@ void Sweeper::add(const I32Line& line, const std::string& gid, size_t subid,
 
     cur.raw = str.str();
 
-    cur.boxvalIn = {0,
+    cur.boxvalIn = {0,  // placeholder, will be overwritten later on
                     box.getLowerLeft().getY(),
                     box.getUpperRight().getY(),
                     box.getLowerLeft().getX(),
@@ -318,7 +306,7 @@ void Sweeper::add(const I32Line& line, const std::string& gid, size_t subid,
                     SIMPLE_LINE,
                     len,
                     box45};
-    cur.boxvalOut = {0,
+    cur.boxvalOut = {0,  // placeholder, will be overwritten later on,
                      box.getLowerLeft().getY(),
                      box.getUpperRight().getY(),
                      box.getUpperRight().getX(),
@@ -326,6 +314,7 @@ void Sweeper::add(const I32Line& line, const std::string& gid, size_t subid,
                      SIMPLE_LINE,
                      len,
                      box45};
+    batch.simpleLines.emplace_back(cur);
   } else {
     // normal line
     I32XSortedLine sline(line);
@@ -347,7 +336,7 @@ void Sweeper::add(const I32Line& line, const std::string& gid, size_t subid,
         {sline, box, gid, subid, len, boxIds, cutouts, obb}, str);
     cur.raw = str.str();
 
-    cur.boxvalIn = {0,
+    cur.boxvalIn = {0,  // placeholder, will be overwritten later on
                     box.getLowerLeft().getY(),
                     box.getUpperRight().getY(),
                     box.getLowerLeft().getX(),
@@ -355,7 +344,7 @@ void Sweeper::add(const I32Line& line, const std::string& gid, size_t subid,
                     LINE,
                     len,
                     box45};
-    cur.boxvalOut = {0,
+    cur.boxvalOut = {0,  // placeholder, will be overwritten later on
                      box.getLowerLeft().getY(),
                      box.getUpperRight().getY(),
                      box.getUpperRight().getX(),
@@ -363,20 +352,19 @@ void Sweeper::add(const I32Line& line, const std::string& gid, size_t subid,
                      LINE,
                      len,
                      box45};
+    batch.lines.emplace_back(cur);
   }
-
-  batch.emplace_back(cur);
 }
 
 // _____________________________________________________________________________
 void Sweeper::add(const I32Point& point, const std::string& gid,
-                  std::vector<WriteCand>& batch) {
+                  WriteBatch& batch) {
   add(point, gid, 0, batch);
 }
 
 // _____________________________________________________________________________
 void Sweeper::add(const I32Point& point, const std::string& gid, size_t subid,
-                  std::vector<WriteCand>& batch) {
+                  WriteBatch& batch) {
   WriteCand cur;
 
   std::stringstream str;
@@ -388,7 +376,7 @@ void Sweeper::add(const I32Point& point, const std::string& gid, size_t subid,
   cur.gid = gid;
 
   auto pointR = util::geo::rotateSinCos(point, sin45, cos45, I32Point(0, 0));
-  cur.boxvalIn = {0,
+  cur.boxvalIn = {0,  // placeholder, will be overwritten later on
                   point.getY(),
                   point.getY(),
                   point.getX(),
@@ -396,7 +384,7 @@ void Sweeper::add(const I32Point& point, const std::string& gid, size_t subid,
                   POINT,
                   0,
                   util::geo::getBoundingBox(pointR)};
-  cur.boxvalOut = {0,
+  cur.boxvalOut = {0,  // placeholder, will be overwritten later on
                    point.getY(),
                    point.getY(),
                    point.getX(),
@@ -405,53 +393,113 @@ void Sweeper::add(const I32Point& point, const std::string& gid, size_t subid,
                    0,
                    util::geo::getBoundingBox(pointR)};
 
-  batch.emplace_back(cur);
+  batch.points.emplace_back(cur);
 }
 
 // _____________________________________________________________________________
-void Sweeper::addBatch(std::vector<WriteCand>& cands) {
+void Sweeper::addBatch(WriteBatch& cands) {
   {
-    for (auto& cand : cands) {
-      std::unique_lock<std::mutex> lock(_pointGeomCacheWriteMtx);
-      if (cand.boxvalIn.type == POINT) {
-        cand.boxvalIn.id = _pointCache.add(cand.raw);
-        cand.boxvalOut.id = cand.boxvalIn.id;
-      }
+    std::unique_lock<std::mutex> lock(_pointGeomCacheWriteMtx);
+    for (auto& cand : cands.points) {
+      cand.boxvalIn.id = _pointCache.add(cand.raw);
+      cand.boxvalOut.id = cand.boxvalIn.id;
+    }
+  }
 
-      if (cand.boxvalIn.type == LINE) {
-        std::unique_lock<std::mutex> lock(_lineGeomCacheWriteMtx);
-        cand.boxvalIn.id = _lineCache.add(cand.raw);
-        cand.boxvalOut.id = cand.boxvalIn.id;
-      }
+  {
+    std::unique_lock<std::mutex> lock(_lineGeomCacheWriteMtx);
+    for (auto& cand : cands.lines) {
+      cand.boxvalIn.id = _lineCache.add(cand.raw);
+      cand.boxvalOut.id = cand.boxvalIn.id;
+    }
+  }
 
-      if (cand.boxvalIn.type == SIMPLE_LINE) {
-        std::unique_lock<std::mutex> lock(_simpleLineGeomCacheWriteMtx);
-        cand.boxvalIn.id = _simpleLineCache.add(cand.raw);
-        cand.boxvalOut.id = cand.boxvalIn.id;
-      }
+  {
+    std::unique_lock<std::mutex> lock(_simpleLineGeomCacheWriteMtx);
+    for (auto& cand : cands.simpleLines) {
+      cand.boxvalIn.id = _simpleLineCache.add(cand.raw);
+      cand.boxvalOut.id = cand.boxvalIn.id;
+    }
+  }
 
-      if (cand.boxvalIn.type == SIMPLE_POLYGON) {
-        std::unique_lock<std::mutex> lock(_simpleAreaGeomCacheWriteMtx);
-        cand.boxvalIn.id = _simpleAreaCache.add(cand.raw);
-        cand.boxvalOut.id = cand.boxvalIn.id;
-      }
+  {
+    std::unique_lock<std::mutex> lock(_simpleAreaGeomCacheWriteMtx);
+    for (auto& cand : cands.simpleAreas) {
+      cand.boxvalIn.id = _simpleAreaCache.add(cand.raw);
+      cand.boxvalOut.id = cand.boxvalIn.id;
+    }
+  }
 
-      if (cand.boxvalIn.type == POLYGON) {
-        std::unique_lock<std::mutex> lock(_areaGeomCacheWriteMtx);
-        cand.boxvalIn.id = _areaCache.add(cand.raw);
-        cand.boxvalOut.id = cand.boxvalIn.id;
-      }
+  {
+    std::unique_lock<std::mutex> lock(_areaGeomCacheWriteMtx);
+    for (auto& cand : cands.areas) {
+      cand.boxvalIn.id = _areaCache.add(cand.raw);
+      cand.boxvalOut.id = cand.boxvalIn.id;
+    }
+  }
 
-      if (cand.subid > 0) {
-        std::unique_lock<std::mutex> lock(_multiAddMtx);
-        multiAdd(cand.gid, cand.boxvalIn.val, cand.boxvalOut.val);
-      }
+  for (const auto& cand : cands.points) {
+    if (cand.subid > 0) {
+      std::unique_lock<std::mutex> lock(_multiAddMtx);
+      multiAdd(cand.gid, cand.boxvalIn.val, cand.boxvalOut.val);
+    }
+  }
+
+  for (const auto& cand : cands.simpleLines) {
+    if (cand.subid > 0) {
+      std::unique_lock<std::mutex> lock(_multiAddMtx);
+      multiAdd(cand.gid, cand.boxvalIn.val, cand.boxvalOut.val);
+    }
+  }
+
+  for (const auto& cand : cands.lines) {
+    if (cand.subid > 0) {
+      std::unique_lock<std::mutex> lock(_multiAddMtx);
+      multiAdd(cand.gid, cand.boxvalIn.val, cand.boxvalOut.val);
+    }
+  }
+
+  for (const auto& cand : cands.simpleAreas) {
+    if (cand.subid > 0) {
+      std::unique_lock<std::mutex> lock(_multiAddMtx);
+      multiAdd(cand.gid, cand.boxvalIn.val, cand.boxvalOut.val);
+    }
+  }
+
+  for (const auto& cand : cands.areas) {
+    if (cand.subid > 0) {
+      std::unique_lock<std::mutex> lock(_multiAddMtx);
+      multiAdd(cand.gid, cand.boxvalIn.val, cand.boxvalOut.val);
     }
   }
 
   {
     std::unique_lock<std::mutex> lock(_sweepEventWriteMtx);
-    for (const auto& cand : cands) {
+    for (const auto& cand : cands.points) {
+      diskAdd(cand.boxvalIn);
+      diskAdd(cand.boxvalOut);
+      if (_curSweepId / 2 % 1000000 == 0)
+        LOGTO(INFO, std::cerr) << "@ " << _curSweepId / 2;
+    }
+    for (const auto& cand : cands.simpleLines) {
+      diskAdd(cand.boxvalIn);
+      diskAdd(cand.boxvalOut);
+      if (_curSweepId / 2 % 1000000 == 0)
+        LOGTO(INFO, std::cerr) << "@ " << _curSweepId / 2;
+    }
+    for (const auto& cand : cands.lines) {
+      diskAdd(cand.boxvalIn);
+      diskAdd(cand.boxvalOut);
+      if (_curSweepId / 2 % 1000000 == 0)
+        LOGTO(INFO, std::cerr) << "@ " << _curSweepId / 2;
+    }
+    for (const auto& cand : cands.simpleAreas) {
+      diskAdd(cand.boxvalIn);
+      diskAdd(cand.boxvalOut);
+      if (_curSweepId / 2 % 1000000 == 0)
+        LOGTO(INFO, std::cerr) << "@ " << _curSweepId / 2;
+    }
+    for (const auto& cand : cands.areas) {
       diskAdd(cand.boxvalIn);
       diskAdd(cand.boxvalOut);
       if (_curSweepId / 2 % 1000000 == 0)
@@ -697,7 +745,7 @@ void Sweeper::sortCache() {
   lseek(_file, 0, SEEK_SET);
 
   const size_t RBUF_SIZE = 100000;
-  char* buf = new char[sizeof(BoxVal) * RBUF_SIZE];
+  unsigned char* buf = new unsigned char[sizeof(BoxVal) * RBUF_SIZE];
 
   ssize_t len;
   size_t jj = 0;
@@ -732,7 +780,7 @@ void Sweeper::sortCache() {
   size_t numEvents = _curSweepId;
   _curSweepId = 0;
 
-  while ((len = read(oldFile, buf, sizeof(BoxVal) * RBUF_SIZE)) > 0) {
+  while ((len = util::readAll(oldFile, buf, sizeof(BoxVal) * RBUF_SIZE)) > 0) {
     for (ssize_t i = 0; i < len; i += sizeof(BoxVal)) {
       auto cur = reinterpret_cast<const BoxVal*>(buf + i);
       jj++;

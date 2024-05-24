@@ -58,6 +58,14 @@ struct WriteCand {
   size_t subid;
 };
 
+struct WriteBatch {
+  std::vector<WriteCand> points;
+  std::vector<WriteCand> simpleLines;
+  std::vector<WriteCand> lines;
+  std::vector<WriteCand> simpleAreas;
+  std::vector<WriteCand> areas;
+};
+
 inline bool operator==(const BoxVal& a, const BoxVal& b) {
   return a.id == b.id && a.loY == b.loY && a.upY == b.upY && a.type == b.type;
 }
@@ -173,33 +181,33 @@ class Sweeper {
   }
 
   void add(const util::geo::I32MultiPolygon& a, const std::string& gid,
-           std::vector<WriteCand>& batch);
+           WriteBatch& batch);
   void add(const util::geo::I32MultiPolygon& a, const std::string& gid, size_t,
-           std::vector<WriteCand>& batch);
+           WriteBatch& batch);
   void add(const util::geo::I32Polygon& a, const std::string& gid,
-           std::vector<WriteCand>& batch);
+           WriteBatch& batch);
   void add(const util::geo::I32Polygon& a, const std::string& gid, size_t subId,
-           std::vector<WriteCand>& batch);
+           WriteBatch& batch);
 
   void add(const util::geo::I32MultiLine& a, const std::string& gid, size_t,
-           std::vector<WriteCand>& batch);
+           WriteBatch& batch);
   void add(const util::geo::I32MultiLine& a, const std::string& gid,
-           std::vector<WriteCand>& batch);
+           WriteBatch& batch);
   void add(const util::geo::I32Line& a, const std::string& gid,
-           std::vector<WriteCand>& batch);
+           WriteBatch& batch);
   void add(const util::geo::I32Line& a, const std::string& gid, size_t subid,
-           std::vector<WriteCand>& batch);
+           WriteBatch& batch);
 
   void add(const util::geo::I32Point& a, const std::string& gid,
-           std::vector<WriteCand>& batch);
+           WriteBatch& batch);
   void add(const util::geo::I32Point& a, const std::string& gid, size_t subid,
-           std::vector<WriteCand>& batch);
+           WriteBatch& batch);
   void addMp(const util::geo::I32MultiPoint& a, const std::string& gid, size_t,
-             std::vector<WriteCand>& batch);
+             WriteBatch& batch);
   void addMp(const util::geo::I32MultiPoint& a, const std::string& gid,
-             std::vector<WriteCand>& batch);
+             WriteBatch& batch);
 
-  void addBatch(std::vector<WriteCand>& cands);
+  void addBatch(WriteBatch& cands);
 
   void flush();
 
@@ -313,9 +321,9 @@ class Sweeper {
   void writeCoversMulti(size_t t, const std::string& a, const std::string& b,
                         size_t bSub);
   void writeEqualsMulti(size_t t, const std::string& a, size_t aSub,
-                   const std::string& b, size_t bSub);
+                        const std::string& b, size_t bSub);
   void writeTouchesMulti(size_t t, const std::string& a, size_t aSub,
-                    const std::string& b, size_t bSub);
+                         const std::string& b, size_t bSub);
   void writeNotTouches(size_t t, const std::string& a, size_t aSub,
                        const std::string& b, size_t bSub);
 
