@@ -138,6 +138,8 @@ void Sweeper::add(const I32Polygon& poly, const std::string& gid, size_t subid,
   const auto& box = getBoundingBox(poly);
   I32XSortedPolygon spoly(poly);
 
+  if (spoly.empty()) return;
+
   double areaSize = area(poly);
   double outerAreaSize = outerArea(poly);
   BoxIdList boxIds;
@@ -318,6 +320,7 @@ void Sweeper::add(const I32Line& line, const std::string& gid, size_t subid,
   } else {
     // normal line
     I32XSortedLine sline(line);
+    if (line.empty()) return;
     util::geo::I32Polygon obb;
     if (_cfg.useOBB && line.size() >= OBB_MIN_SIZE) {
       obb = util::geo::convexHull(
@@ -892,7 +895,7 @@ RelStats Sweeper::sweep() {
   _curX.resize(_cfg.numThreads);
   _atomicCurX = std::vector<std::atomic<int32_t>>(_cfg.numThreads);
 
-  size_t counts = 0, checkCount = 0, jj = 0, checkPairs = 0;
+  size_t counts = 0, totalCheckCount = 0, jj = 0, checkPairs = 0;
   auto t = TIME();
 
   prepareOutputFiles();
@@ -918,13 +921,13 @@ RelStats Sweeper::sweep() {
 
         if (jj % 500000 == 0) {
           auto lon = webMercToLatLng<double>((1.0 * cur->val) / PREC, 0).getX();
-          checkCount += checkPairs;
+          totalCheckCount += checkPairs;
           LOGTO(INFO, std::cerr)
               << jj / 2 << " / " << _curSweepId / 2 << " ("
               << (((1.0 * jj) / (1.0 * _curSweepId)) * 100) << "%, "
               << (500000.0 / double(TOOK(t))) * 1000000000.0 << " geoms/s, "
               << (checkPairs / double(TOOK(t))) * 1000000000.0
-              << " pairs/s), avg. " << ((1.0 * checkCount) / (1.0 * counts))
+              << " pairs/s), avg. " << ((1.0 * totalCheckCount) / (1.0 * counts))
               << " checks/geom, sweepLon=" << lon << "°, |A|=" << actives.size()
               << ", |JQ|=" << _jobs.size() << " (x" << batchSize
               << "), |A_mult|=" << _activeMultis.size();
@@ -965,6 +968,9 @@ RelStats Sweeper::sweep() {
 
   flushOutputFiles();
 
+  // final check count aggregation
+  totalCheckCount += checkPairs;
+
   // aggregate total stats
   Stats sum;
   for (auto s : _stats) sum += s;
@@ -977,6 +983,8 @@ RelStats Sweeper::sweep() {
 
   std::cerr << std::endl;
   std::cerr << sumRel.toString() << std::endl;
+  std::cerr << "Checked " << totalCheckCount
+            << " candidates (with overlapping bounding box)\n" << std::endl;
 
   return sumRel;
 }
@@ -1695,6 +1703,11 @@ void Sweeper::doCheck(const BoxVal cur, const SweepVal sv, size_t t) {
 
     if (a->id == b->id) return;  // no self-checks in multigeometries
 
+    _stats[t].areaCmps++;
+    _stats[t].areaSizeSum += std::max(a->area, b->area);
+
+    _stats[t].anchorSum += std::max(a->geom.size() / 2, b->geom.size() / 2);
+
     _stats[t].totalComps++;
     auto totTime = TIME();
 
@@ -1785,6 +1798,14 @@ void Sweeper::doCheck(const BoxVal cur, const SweepVal sv, size_t t) {
 
     if (a->id == b->id) return;  // no self-checks in multigeometries
 
+    _stats[t].areaCmps++;
+    _stats[t].areaSizeSum += b->area;
+
+    _stats[t].lineCmps++;
+    _stats[t].lineLenSum += a->length;
+
+    _stats[t].anchorSum += std::max(a->geom.size() / 2, b->geom.size() / 2);
+
     _stats[t].totalComps++;
     auto totTime = TIME();
 
@@ -1859,6 +1880,14 @@ void Sweeper::doCheck(const BoxVal cur, const SweepVal sv, size_t t) {
     _stats[t].timeGeoCacheRetrievalArea += TOOK(ts);
 
     if (a->id == b->id) return;  // no self-checks in multigeometries
+                                 //
+    _stats[t].areaCmps++;
+    _stats[t].areaSizeSum += b->area;
+
+    _stats[t].lineCmps++;
+    _stats[t].lineLenSum += util::geo::dist(a->a, a->b);
+
+    _stats[t].anchorSum += std::max((size_t)2, b->geom.size() / 2);
 
     _stats[t].totalComps++;
     auto totTime = TIME();
@@ -1918,6 +1947,14 @@ void Sweeper::doCheck(const BoxVal cur, const SweepVal sv, size_t t) {
     _stats[t].timeGeoCacheRetrievalLine += TOOK(ts);
 
     if (a->id == b->id) return;  // no self-checks in multigeometries
+                                 //
+    _stats[t].areaCmps++;
+    _stats[t].areaSizeSum += a->area;
+
+    _stats[t].lineCmps++;
+    _stats[t].lineLenSum += b->length;
+
+    _stats[t].anchorSum += std::max(a->geom.size() /2, b->geom.size() / 2);
 
     _stats[t].totalComps++;
     auto totTime = TIME();
@@ -1992,6 +2029,14 @@ void Sweeper::doCheck(const BoxVal cur, const SweepVal sv, size_t t) {
     auto b = _simpleLineCache.get(sv.id, t);
     _stats[t].timeGeoCacheRetrievalLine += TOOK(ts);
 
+    _stats[t].areaCmps++;
+    _stats[t].areaSizeSum += a->area;
+
+    _stats[t].lineCmps++;
+    _stats[t].lineLenSum += util::geo::dist(b->a, b->b);
+
+    _stats[t].anchorSum += std::max(a->geom.size() / 2, (size_t) 2);
+
     _stats[t].totalComps++;
     auto totTime = TIME();
 
@@ -2037,6 +2082,11 @@ void Sweeper::doCheck(const BoxVal cur, const SweepVal sv, size_t t) {
     _stats[t].timeGeoCacheRetrievalLine += TOOK(ts);
 
     if (a->id == b->id) return;  // no self-checks in multigeometries
+                                 //
+    _stats[t].lineCmps++;
+    _stats[t].lineLenSum += std::max(a->length, b->length);
+
+    _stats[t].anchorSum += std::max(a->geom.size() / 2, b->geom.size() / 2);
 
     _stats[t].totalComps++;
     auto totTime = TIME();
@@ -2108,6 +2158,11 @@ void Sweeper::doCheck(const BoxVal cur, const SweepVal sv, size_t t) {
     auto b = _simpleLineCache.get(sv.id, t);
     _stats[t].timeGeoCacheRetrievalLine += TOOK(ts);
 
+    _stats[t].lineCmps++;
+    _stats[t].lineLenSum += std::max(a->length, util::geo::dist(b->a, b->b));
+
+    _stats[t].anchorSum += std::max(a->geom.size() / 2, (size_t)2);
+
     _stats[t].totalComps++;
     auto totTime = TIME();
 
@@ -2166,6 +2221,11 @@ void Sweeper::doCheck(const BoxVal cur, const SweepVal sv, size_t t) {
     auto a = _simpleLineCache.get(cur.id, t);
     auto b = _lineCache.get(sv.id, t);
     _stats[t].timeGeoCacheRetrievalLine += TOOK(ts);
+
+    _stats[t].lineCmps++;
+    _stats[t].lineLenSum += std::max(b->length, util::geo::dist(a->a, a->b));
+
+    _stats[t].anchorSum += std::max(b->geom.size() / 2, (size_t)2);
 
     _stats[t].totalComps++;
     auto totTime = TIME();
@@ -2226,6 +2286,11 @@ void Sweeper::doCheck(const BoxVal cur, const SweepVal sv, size_t t) {
     auto b = _simpleLineCache.get(sv.id, t);
     _stats[t].timeGeoCacheRetrievalLine += TOOK(ts);
 
+    _stats[t].lineCmps++;
+    _stats[t].lineLenSum += std::max(util::geo::dist(a->a, a->b), util::geo::dist(b->a, b->b));
+
+    _stats[t].anchorSum += 2;
+
     _stats[t].totalComps++;
     auto totTime = TIME();
 
@@ -2271,6 +2336,8 @@ void Sweeper::doCheck(const BoxVal cur, const SweepVal sv, size_t t) {
     auto b = _pointCache.get(sv.id, t);
     _stats[t].timeGeoCacheRetrievalPoint += TOOK(ts);
 
+    _stats[t].anchorSum += 1;
+
     if (a->id == b->id) return;  // no self-checks in multigeometries
 
     writeIntersect(t, a->id, b->id);
@@ -2303,6 +2370,11 @@ void Sweeper::doCheck(const BoxVal cur, const SweepVal sv, size_t t) {
     auto ts = TIME();
     auto b = _simpleLineCache.get(sv.id, t);
     _stats[t].timeGeoCacheRetrievalLine += TOOK(ts);
+
+    _stats[t].lineCmps++;
+    _stats[t].lineLenSum += util::geo::dist(b->a, b->b);
+
+    _stats[t].anchorSum += 2;
 
     if (util::geo::contains(p, LineSegment<int32_t>(b->a, b->b))) {
       auto ts = TIME();
@@ -2340,6 +2412,11 @@ void Sweeper::doCheck(const BoxVal cur, const SweepVal sv, size_t t) {
     auto a = I32Point(cur.val, cur.loY);
     auto b = _lineCache.get(sv.id, t);
     _stats[t].timeGeoCacheRetrievalLine += TOOK(ts);
+
+    _stats[t].lineCmps++;
+    _stats[t].lineLenSum += b->length;
+
+    _stats[t].anchorSum += b->geom.size() / 2;
 
     _stats[t].totalComps++;
     auto totTime = TIME();

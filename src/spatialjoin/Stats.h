@@ -59,6 +59,14 @@ struct Stats {
 
   uint64_t timeSums[7] = {0, 0, 0, 0, 0, 0, 0};
 
+  double areaSizeSum = 0;
+  size_t areaCmps = 0;
+
+  double lineLenSum = 0;
+  size_t lineCmps = 0;
+
+  size_t anchorSum = 0;
+
   std::string toString();
   void timeHisto(size_t numPoints, uint64_t time);
 };
@@ -204,6 +212,7 @@ inline std::string Stats::toString() {
                     1000000000.0;
 
   t = (timeSums[6] * 1.0) / 1000000000.0;
+  ss << "\n";
   ss << "comparisons inv. > 1000000 points on one side: " << t << " s ("
      << ((t / histoSum) * 100.0) << "%)\n";
 
@@ -231,8 +240,19 @@ inline std::string Stats::toString() {
   ss << "comparisons inv. > 1 points on one side: " << t << " s ("
      << ((t / histoSum) * 100.0) << "%)\n";
 
+  t = (timeSums[0] * 1.0) / 1000000000.0;
+  ss << "comparisons inv. > 1 points on one side: " << t << " s ("
+     << ((t / histoSum) * 100.0) << "%)\n";
+
+  ss << "\n";
+
+  ss << "    Avg. max surface area between cmps: " << std::fixed << (areaSizeSum / (areaCmps * 1.0)) / 100.0 << " (map units)^2\n";
+  ss << "    Avg. max line length between cmps: " <<  std::fixed << (lineLenSum / (lineCmps * 1.0)) / 10.0 << " map units\n";
+
+  ss << "    Avg. max num anchor points between cmps: " <<  std::fixed << (anchorSum * 1.0) / (totalComps * 1.0) << "\n";
+
   ss << "\n    SUM: " << sum << " s\n";
-  ss << "    TOTAL COMPARISONS: " << totalComps;
+  ss << "    TOTAL COMPARISONS (after bbox / diag box filter): " << totalComps;
   return ss.str();
 }
 
@@ -310,7 +330,7 @@ inline Stats operator+(const Stats& a, const Stats& b) {
                {a.timeSums[0] + b.timeSums[0], a.timeSums[1] + b.timeSums[1],
                 a.timeSums[2] + b.timeSums[2], a.timeSums[3] + b.timeSums[3],
                 a.timeSums[4] + b.timeSums[4], a.timeSums[5] + b.timeSums[5],
-                a.timeSums[6] + b.timeSums[6]}};
+                a.timeSums[6] + b.timeSums[6]}, a.areaSizeSum + b.areaSizeSum, a.areaCmps + b.areaCmps, a.lineLenSum + b.lineLenSum, a.lineCmps + b.lineCmps, a.anchorSum + b.anchorSum};
 }
 
 inline void operator+=(Stats& a, const Stats& b) { a = a + b; }

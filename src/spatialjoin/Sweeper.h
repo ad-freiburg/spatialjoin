@@ -230,6 +230,7 @@ class Sweeper {
   std::vector<size_t> _outBufPos;
   std::vector<unsigned char*> _outBuffers;
 
+
   std::vector<size_t> _checks;
   std::vector<int32_t> _curX;
   std::vector<std::atomic<int32_t>> _atomicCurX;

@@ -481,5 +481,21 @@ int main(int, char**) {
       TEST(res.find("$1 intersects 2$") != std::string::npos);
       TEST(res.find("$2 intersects 1$") != std::string::npos);
     }
+
+    // {
+      // auto res = fullRun("../src/spatialjoin/tests/datasets/boxidfail", cfg);
+      // TEST(res.find("$osmway:312944635 intersects osmway:312944634$") != std::string::npos);
+      // TEST(res.find("$osmway:312944634 intersects osmway:312944635$") != std::string::npos);
+    // }
+    // {
+      // auto res = fullRun("../src/spatialjoin/tests/datasets/boxidfail2", cfg);
+      // TEST(res.find("$osmway:205756242 intersects osmway:50218266$") != std::string::npos);
+      // TEST(res.find("$osmway:50218266 intersects osmway:205756242$") != std::string::npos);
+    // }
+    // {
+      // auto res = fullRun("../src/spatialjoin/tests/datasets/boxidfail3", cfg);
+      // TEST(res.find("$osmway:901094335 intersects osmnode:8370757906$") != std::string::npos);
+      // TEST(res.find("$osmnode:8370757906 intersects osmway:901094335$") != std::string::npos);
+    // }
   }
 }
