@@ -13,13 +13,14 @@ const static int PREC = 10;
 namespace sj {
 namespace boxids {
 
-const static int NUM_GRID_CELLS = 5000;
+const static int NUM_GRID_CELLS = 45000;
+// const static int NUM_GRID_CELLS = 5000;
 
-const static double WORLD_W = 20037508.3427892 * PREC * 2;
-const static double WORLD_H = 20037508.3427892 * PREC * 2;
+const static double WORLD_W = 20037508.3427892 * PREC * 2.0;
+const static double WORLD_H = 20037508.3427892 * PREC * 2.0;
 
-const static double GRID_W = WORLD_W / NUM_GRID_CELLS;
-const static double GRID_H = WORLD_H / NUM_GRID_CELLS;
+const static double GRID_W = WORLD_W / (NUM_GRID_CELLS * 1.0);
+const static double GRID_H = WORLD_H / (NUM_GRID_CELLS * 1.0);
 
 const static double GRID_AREA = GRID_W * GRID_H;
 
@@ -60,9 +61,9 @@ inline void getBoxIds(const util::geo::I32XSortedLine& line,
       int localYHeight = std::min(yTo - y, yHeight);
 
       util::geo::I32Box box(
-          {(x * GRID_W - WORLD_W / 2), (y * GRID_H - WORLD_H / 2)},
-          {(x + localXWidth + 1) * GRID_W - WORLD_W / 2,
-           (y + localYHeight + 1) * GRID_H - WORLD_H / 2});
+          {(x * GRID_W - WORLD_W / 2.0), (y * GRID_H - WORLD_H / 2.0)},
+          {(x + localXWidth) * GRID_W - WORLD_W / 2.0,
+           (y + localYHeight) * GRID_H - WORLD_H / 2.0});
 
       if (!util::geo::intersects(box, envelope)) continue;
 
@@ -112,15 +113,15 @@ inline void getBoxIds(const util::geo::I32XSortedPolygon& poly,
       int localYHeight = std::min(yTo - y, yHeight);
 
       util::geo::I32Box box(
-          {(x * GRID_W - WORLD_W / 2), (y * GRID_H - WORLD_H / 2)},
-          {(x + localXWidth + 1) * GRID_W - WORLD_W / 2,
-           (y + localYHeight + 1) * GRID_H - WORLD_H / 2});
+          {(x * GRID_W - WORLD_W / 2.0), (y * GRID_H - WORLD_H / 2.0)},
+          {(x + localXWidth) * GRID_W - WORLD_W / 2.0,
+           (y + localYHeight) * GRID_H - WORLD_H / 2.0});
 
       if (!util::geo::intersects(box, envelope)) continue;
 
       const util::geo::I32XSortedPolygon boxPoly{util::geo::I32Polygon(box)};
 
-      double boxArea = GRID_AREA * (localXWidth + 1) * (localYHeight + 1);
+      double boxArea = GRID_AREA * (localXWidth) * (localYHeight);
 
       auto check = util::geo::intersectsContainsCovers(
           boxPoly, box, boxArea, poly, envelope, area, &firstInA, &firstInB);
@@ -172,6 +173,7 @@ inline BoxIdList getBoxIds(const util::geo::I32XSortedLine& line,
   int32_t a = getBoxId(envelope.getLowerLeft());
   int32_t b = getBoxId(envelope.getUpperRight());
   if (a == b) return {{a, 0}};  // shortcut
+
 
   int32_t startX = std::floor(
       (1.0 * envelope.getLowerLeft().getX() + WORLD_W / 2.0) / GRID_W);
