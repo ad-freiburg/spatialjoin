@@ -118,17 +118,23 @@ static const size_t BUFFER_S_PAIRS = 1024 * 1024 * 10;
 
 static const size_t MAX_OUT_LINE_LENGTH = 1000;
 
+static const size_t POINT_CACHE_SIZE = 1000;
+static const size_t AREA_CACHE_SIZE = 10000;
+static const size_t SIMPLE_AREA_CACHE_SIZE = 10000;
+static const size_t LINE_CACHE_SIZE = 10000;
+static const size_t SIMPLE_LINE_CACHE_SIZE = 10000;
+
 class Sweeper {
  public:
   explicit Sweeper(SweeperCfg cfg, const std::string cache,
                    const std::string out)
       : _cfg(cfg),
         _obufpos(0),
-        _pointCache(100000, cfg.numCacheThreads, cache),
-        _areaCache(100000, cfg.numCacheThreads, cache),
-        _simpleAreaCache(100000, cfg.numCacheThreads, cache),
-        _lineCache(100000, cfg.numCacheThreads, cache),
-        _simpleLineCache(100000, cfg.numCacheThreads, cache),
+        _pointCache(POINT_CACHE_SIZE, cfg.numCacheThreads, cache),
+        _areaCache(AREA_CACHE_SIZE, cfg.numCacheThreads, cache),
+        _simpleAreaCache(SIMPLE_AREA_CACHE_SIZE, cfg.numCacheThreads, cache),
+        _lineCache(LINE_CACHE_SIZE, cfg.numCacheThreads, cache),
+        _simpleLineCache(SIMPLE_LINE_CACHE_SIZE, cfg.numCacheThreads, cache),
         _cache(cache),
         _out(out),
         _jobs(100) {
@@ -181,31 +187,31 @@ class Sweeper {
   }
 
   void add(const util::geo::I32MultiPolygon& a, const std::string& gid,
-           WriteBatch& batch);
+           WriteBatch& batch) const;
   void add(const util::geo::I32MultiPolygon& a, const std::string& gid, size_t,
-           WriteBatch& batch);
+           WriteBatch& batch) const;
   void add(const util::geo::I32Polygon& a, const std::string& gid,
-           WriteBatch& batch);
+           WriteBatch& batch) const;
   void add(const util::geo::I32Polygon& a, const std::string& gid, size_t subId,
-           WriteBatch& batch);
+           WriteBatch& batch) const;
 
   void add(const util::geo::I32MultiLine& a, const std::string& gid, size_t,
-           WriteBatch& batch);
+           WriteBatch& batch) const;
   void add(const util::geo::I32MultiLine& a, const std::string& gid,
-           WriteBatch& batch);
+           WriteBatch& batch) const;
   void add(const util::geo::I32Line& a, const std::string& gid,
-           WriteBatch& batch);
+           WriteBatch& batch) const;
   void add(const util::geo::I32Line& a, const std::string& gid, size_t subid,
-           WriteBatch& batch);
+           WriteBatch& batch) const;
 
   void add(const util::geo::I32Point& a, const std::string& gid,
-           WriteBatch& batch);
+           WriteBatch& batch) const;
   void add(const util::geo::I32Point& a, const std::string& gid, size_t subid,
-           WriteBatch& batch);
+           WriteBatch& batch) const;
   void addMp(const util::geo::I32MultiPoint& a, const std::string& gid, size_t,
-             WriteBatch& batch);
+             WriteBatch& batch) const;
   void addMp(const util::geo::I32MultiPoint& a, const std::string& gid,
-             WriteBatch& batch);
+             WriteBatch& batch) const;
 
   void addBatch(WriteBatch& cands);
 

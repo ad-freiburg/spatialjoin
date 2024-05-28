@@ -537,7 +537,7 @@ void sj::GeometryCache<W>::readPoly(std::fstream& str,
   str.read(reinterpret_cast<char*>(&numInners), sizeof(uint32_t));
 
   double innerMaxSegLen;
-  str.read(reinterpret_cast<char*>(&innerMaxSegLen), sizeof(size_t));
+  str.read(reinterpret_cast<char*>(&innerMaxSegLen), sizeof(double));
 
   ret.setInnerMaxSegLen(innerMaxSegLen);
 

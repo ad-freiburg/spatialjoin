@@ -52,7 +52,7 @@ const static double cos45 = 1.0 / sqrt(2);
 
 // _____________________________________________________________________________
 void Sweeper::add(const I32MultiPolygon& a, const std::string& gid,
-                  WriteBatch& batch) {
+                  WriteBatch& batch) const {
   uint16_t subid = 0;  // a subid of 0 means "single polygon"
   if (a.size() > 1) subid = 1;
 
@@ -61,7 +61,7 @@ void Sweeper::add(const I32MultiPolygon& a, const std::string& gid,
 
 // _____________________________________________________________________________
 void Sweeper::add(const I32MultiLine& a, const std::string& gid,
-                  WriteBatch& batch) {
+                  WriteBatch& batch) const {
   uint16_t subid = 0;  // a subid of 0 means "single line"
   if (a.size() > 1) subid = 1;
 
@@ -70,7 +70,7 @@ void Sweeper::add(const I32MultiLine& a, const std::string& gid,
 
 // _____________________________________________________________________________
 void Sweeper::addMp(const I32MultiPoint& a, const std::string& gid,
-                    WriteBatch& batch) {
+                    WriteBatch& batch) const {
   uint16_t subid = 0;  // a subid of 0 means "single point"
   if (a.size() > 1) subid = 1;
 
@@ -79,7 +79,7 @@ void Sweeper::addMp(const I32MultiPoint& a, const std::string& gid,
 
 // _____________________________________________________________________________
 void Sweeper::add(const I32MultiPolygon& a, const std::string& gid,
-                  size_t subId, WriteBatch& batch) {
+                  size_t subId, WriteBatch& batch) const {
   for (const auto& poly : a) {
     if (poly.getOuter().size() < 2) continue;
     add(poly, gid, subId, batch);
@@ -89,7 +89,7 @@ void Sweeper::add(const I32MultiPolygon& a, const std::string& gid,
 
 // _____________________________________________________________________________
 void Sweeper::add(const I32MultiLine& a, const std::string& gid, size_t subId,
-                  WriteBatch& batch) {
+                  WriteBatch& batch) const {
   for (const auto& line : a) {
     if (line.size() < 2) continue;
     add(line, gid, subId, batch);
@@ -99,7 +99,7 @@ void Sweeper::add(const I32MultiLine& a, const std::string& gid, size_t subId,
 
 // _____________________________________________________________________________
 void Sweeper::addMp(const I32MultiPoint& a, const std::string& gid,
-                    size_t subid, WriteBatch& batch) {
+                    size_t subid, WriteBatch& batch) const {
   size_t newId = subid;
   for (const auto& point : a) {
     add(point, gid, newId, batch);
@@ -127,13 +127,13 @@ void Sweeper::multiAdd(const std::string& gid, int32_t xLeft, int32_t xRight) {
 
 // _____________________________________________________________________________
 void Sweeper::add(const I32Polygon& poly, const std::string& gid,
-                  WriteBatch& batch) {
+                  WriteBatch& batch) const {
   add(poly, gid, 0, batch);
 }
 
 // _____________________________________________________________________________
 void Sweeper::add(const I32Polygon& poly, const std::string& gid, size_t subid,
-                  WriteBatch& batch) {
+                  WriteBatch& batch) const {
   WriteCand cur;
   const auto& box = getBoundingBox(poly);
   I32XSortedPolygon spoly(poly);
@@ -257,13 +257,13 @@ void Sweeper::add(const I32Polygon& poly, const std::string& gid, size_t subid,
 
 // _____________________________________________________________________________
 void Sweeper::add(const I32Line& line, const std::string& gid,
-                  WriteBatch& batch) {
+                  WriteBatch& batch) const {
   add(line, gid, 0, batch);
 }
 
 // _____________________________________________________________________________
 void Sweeper::add(const I32Line& line, const std::string& gid, size_t subid,
-                  WriteBatch& batch) {
+                  WriteBatch& batch) const {
   if (line.size() < 2) return;
 
   WriteCand cur;
@@ -361,13 +361,13 @@ void Sweeper::add(const I32Line& line, const std::string& gid, size_t subid,
 
 // _____________________________________________________________________________
 void Sweeper::add(const I32Point& point, const std::string& gid,
-                  WriteBatch& batch) {
+                  WriteBatch& batch) const {
   add(point, gid, 0, batch);
 }
 
 // _____________________________________________________________________________
 void Sweeper::add(const I32Point& point, const std::string& gid, size_t subid,
-                  WriteBatch& batch) {
+                  WriteBatch& batch) const {
   WriteCand cur;
 
   std::stringstream str;
@@ -754,12 +754,12 @@ void Sweeper::sortCache() {
   size_t jj = 0;
 
   // new caches
-  GeometryCache<Point> _pointCacheNew(100000, _cfg.numCacheThreads, _cache);
-  GeometryCache<SimpleLine> _simpleLineCacheNew(100000, _cfg.numCacheThreads,
+  GeometryCache<Point> _pointCacheNew(POINT_CACHE_SIZE, _cfg.numCacheThreads, _cache);
+  GeometryCache<SimpleLine> _simpleLineCacheNew(SIMPLE_LINE_CACHE_SIZE, _cfg.numCacheThreads,
                                                 _cache);
-  GeometryCache<Line> _lineCacheNew(100000, _cfg.numCacheThreads, _cache);
-  GeometryCache<Area> _areaCacheNew(100000, _cfg.numCacheThreads, _cache);
-  GeometryCache<SimpleArea> _simpleAreaCacheNew(100000, _cfg.numCacheThreads,
+  GeometryCache<Line> _lineCacheNew(LINE_CACHE_SIZE, _cfg.numCacheThreads, _cache);
+  GeometryCache<Area> _areaCacheNew(AREA_CACHE_SIZE, _cfg.numCacheThreads, _cache);
+  GeometryCache<SimpleArea> _simpleAreaCacheNew(SIMPLE_AREA_CACHE_SIZE, _cfg.numCacheThreads,
                                                 _cache);
 
   int oldFile = _file;
