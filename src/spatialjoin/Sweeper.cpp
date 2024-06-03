@@ -40,7 +40,6 @@ using util::geo::I32XSortedLine;
 using util::geo::I32XSortedPolygon;
 using util::geo::intersectsContainsCovers;
 using util::geo::intersectsCovers;
-using util::geo::intersectsLineStrict;
 using util::geo::LineSegment;
 using util::geo::webMercToLatLng;
 
@@ -1335,7 +1334,7 @@ std::tuple<bool, bool, bool, bool, bool> Sweeper::check(const SimpleLine* a,
   // no need to do a full sweep for two simple lines with all the required
   // datastructures, just unroll the individual checks here
 
-  auto r = intersectsLineStrict(LineSegment<int32_t>(a->a, a->b), 32767, 32767,
+  auto r = util::geo::IntersectorLine<int32_t>::check(LineSegment<int32_t>(a->a, a->b), 32767, 32767,
                                 LineSegment<int32_t>(b->a, b->b), 32767, 32767);
 
   bool weakIntersect = (r >> 0) & 1;
