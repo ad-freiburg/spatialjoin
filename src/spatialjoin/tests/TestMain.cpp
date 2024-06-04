@@ -35,7 +35,7 @@ std::string fullRun(const std::string& file, const sj::SweeperCfg& cfg) {
     thrds[i] = std::thread(&processQueue, &jobs, i, &sweeper);
 
   while ((len = read(f, buf, BUFF_SIZE)) > 0) {
-    parse(buf, len, dangling, &gid, jobs);
+    parse(buf, len, dangling, &gid, jobs, 0);
   }
 
   jobs.add({});
@@ -319,6 +319,7 @@ int main(int, char**) {
     {
       auto res = fullRun("../src/spatialjoin/tests/datasets/brandenburg", cfg);
       TEST(res.find("$Brandenburg covers Brandenburg2$") != std::string::npos);
+      TEST(res.find("$Brandenburg intersects Brandenburg-Way$") != std::string::npos);
       TEST(res.find("$Brandenburg equals Brandenburg2$") != std::string::npos);
       TEST(res.find("$Brandenburg2 equals Brandenburg$") != std::string::npos);
       TEST(res.find("$Brandenburg intersects Grenzpart$") != std::string::npos);
@@ -335,6 +336,40 @@ int main(int, char**) {
 
       TEST(res.find("$Berlin intersects Grenzpart$") != std::string::npos);
       TEST(res.find("$Berlin covers Grenzpart$") != std::string::npos);
+      TEST(res.find("$Berlin contains Grenzpart$") == std::string::npos);
+
+      TEST(res.find("$Haus overlaps Brandenburg$") != std::string::npos);
+      TEST(res.find("$Haus-Way intersects Brandenburg$") != std::string::npos);
+      TEST(res.find("$Haus intersects Brandenburg-Way$") != std::string::npos);
+      TEST(res.find("$Haus-Way intersects Brandenburg-Way$") !=
+           std::string::npos);
+
+      TEST(res.find("$Brandenburg-Point intersects Brandenburg-Way$") !=
+           std::string::npos);
+      TEST(res.find("$Brandenburg-Point intersects Brandenburg$") !=
+           std::string::npos);
+    }
+
+    {
+      auto res = fullRun("../src/spatialjoin/tests/datasets/brandenburg_nonself", cfg);
+      TEST(res.find("$Brandenburg covers Brandenburg2$") == std::string::npos);
+      TEST(res.find("$Brandenburg intersects Brandenburg-Way$") == std::string::npos);
+      TEST(res.find("$Brandenburg equals Brandenburg2$") == std::string::npos);
+      TEST(res.find("$Brandenburg2 equals Brandenburg$") == std::string::npos);
+      TEST(res.find("$Brandenburg intersects Grenzpart$") != std::string::npos);
+      TEST(res.find("$Brandenburg covers Grenzpart$") != std::string::npos);
+      TEST(res.find("$Brandenburg contains Grenzpart$") == std::string::npos);
+
+      TEST(res.find("$Brandenburg intersects Berlin$") != std::string::npos);
+      TEST(res.find("$Brandenburg touches Berlin$") != std::string::npos);
+      TEST(res.find("$Brandenburg overlaps Berlin$") == std::string::npos);
+      TEST(res.find("$Berlin touches Brandenburg$") != std::string::npos);
+      TEST(res.find("$Berlin overlaps Brandenburg$") == std::string::npos);
+      TEST(res.find("$Brandenburg contains Berlin$") == std::string::npos);
+      TEST(res.find("$Brandenburg covers Berlin$") == std::string::npos);
+
+      TEST(res.find("$Berlin intersects Grenzpart$") == std::string::npos);
+      TEST(res.find("$Berlin covers Grenzpart$") == std::string::npos);
       TEST(res.find("$Berlin contains Grenzpart$") == std::string::npos);
 
       TEST(res.find("$Haus overlaps Brandenburg$") != std::string::npos);

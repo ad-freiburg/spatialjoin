@@ -257,7 +257,7 @@ int main(int argc, char** argv) {
     thrds[i] = std::thread(&processQueue, &jobs, i, &sweeper);
 
   while ((len = util::readAll(0, buf, CACHE_SIZE)) > 0) {
-    parse(reinterpret_cast<char*>(buf), len, dangling, &gid, jobs);
+    parse(reinterpret_cast<char*>(buf), len, dangling, &gid, jobs, 0);
   }
 
   // end event
