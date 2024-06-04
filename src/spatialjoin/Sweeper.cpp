@@ -50,7 +50,7 @@ const static double sin45 = 1.0 / sqrt(2);
 const static double cos45 = 1.0 / sqrt(2);
 
 // _____________________________________________________________________________
-void Sweeper::add(const I32MultiPolygon& a, const std::string& gid,bool side,
+void Sweeper::add(const I32MultiPolygon& a, const std::string& gid, bool side,
                   WriteBatch& batch) const {
   uint16_t subid = 0;  // a subid of 0 means "single polygon"
   if (a.size() > 1) subid = 1;
@@ -59,7 +59,7 @@ void Sweeper::add(const I32MultiPolygon& a, const std::string& gid,bool side,
 }
 
 // _____________________________________________________________________________
-void Sweeper::add(const I32MultiLine& a, const std::string& gid,bool side,
+void Sweeper::add(const I32MultiLine& a, const std::string& gid, bool side,
                   WriteBatch& batch) const {
   uint16_t subid = 0;  // a subid of 0 means "single line"
   if (a.size() > 1) subid = 1;
@@ -68,7 +68,7 @@ void Sweeper::add(const I32MultiLine& a, const std::string& gid,bool side,
 }
 
 // _____________________________________________________________________________
-void Sweeper::addMp(const I32MultiPoint& a, const std::string& gid,bool side,
+void Sweeper::addMp(const I32MultiPoint& a, const std::string& gid, bool side,
                     WriteBatch& batch) const {
   uint16_t subid = 0;  // a subid of 0 means "single point"
   if (a.size() > 1) subid = 1;
@@ -78,7 +78,7 @@ void Sweeper::addMp(const I32MultiPoint& a, const std::string& gid,bool side,
 
 // _____________________________________________________________________________
 void Sweeper::add(const I32MultiPolygon& a, const std::string& gid,
-                  size_t subId,bool side, WriteBatch& batch) const {
+                  size_t subId, bool side, WriteBatch& batch) const {
   for (const auto& poly : a) {
     if (poly.getOuter().size() < 2) continue;
     add(poly, gid, subId, side, batch);
@@ -87,8 +87,8 @@ void Sweeper::add(const I32MultiPolygon& a, const std::string& gid,
 }
 
 // _____________________________________________________________________________
-void Sweeper::add(const I32MultiLine& a, const std::string& gid, size_t subId,bool side,
-                  WriteBatch& batch) const {
+void Sweeper::add(const I32MultiLine& a, const std::string& gid, size_t subId,
+                  bool side, WriteBatch& batch) const {
   for (const auto& line : a) {
     if (line.size() < 2) continue;
     add(line, gid, subId, side, batch);
@@ -98,7 +98,7 @@ void Sweeper::add(const I32MultiLine& a, const std::string& gid, size_t subId,bo
 
 // _____________________________________________________________________________
 void Sweeper::addMp(const I32MultiPoint& a, const std::string& gid,
-                    size_t subid,bool side, WriteBatch& batch) const {
+                    size_t subid, bool side, WriteBatch& batch) const {
   size_t newId = subid;
   for (const auto& point : a) {
     add(point, gid, newId, side, batch);
@@ -107,7 +107,8 @@ void Sweeper::addMp(const I32MultiPoint& a, const std::string& gid,
 }
 
 // _____________________________________________________________________________
-void Sweeper::multiAdd(const std::string& gid, bool side, int32_t xLeft, int32_t xRight) {
+void Sweeper::multiAdd(const std::string& gid, bool side, int32_t xLeft,
+                       int32_t xRight) {
   auto i = _multiGidToId[side].find(gid);
 
   if (i == _multiGidToId[side].end()) {
@@ -125,14 +126,14 @@ void Sweeper::multiAdd(const std::string& gid, bool side, int32_t xLeft, int32_t
 }
 
 // _____________________________________________________________________________
-void Sweeper::add(const I32Polygon& poly, const std::string& gid,bool side,
+void Sweeper::add(const I32Polygon& poly, const std::string& gid, bool side,
                   WriteBatch& batch) const {
   add(poly, gid, 0, side, batch);
 }
 
 // _____________________________________________________________________________
-void Sweeper::add(const I32Polygon& poly, const std::string& gid, size_t subid,bool side,
-                  WriteBatch& batch) const {
+void Sweeper::add(const I32Polygon& poly, const std::string& gid, size_t subid,
+                  bool side, WriteBatch& batch) const {
   WriteCand cur;
   const auto& box = getBoundingBox(poly);
   I32XSortedPolygon spoly(poly);
@@ -184,7 +185,7 @@ void Sweeper::add(const I32Polygon& poly, const std::string& gid, size_t subid,b
                      SIMPLE_POLYGON,
                      areaSize,
                      box45,
-    side};
+                     side};
     batch.simpleAreas.emplace_back(cur);
   } else {
     if (!_cfg.useFastSweepSkip) {
@@ -244,7 +245,7 @@ void Sweeper::add(const I32Polygon& poly, const std::string& gid, size_t subid,b
                     POLYGON,
                     areaSize,
                     box45,
-    side};
+                    side};
     cur.boxvalOut = {0,  // placeholder, will be overwritten later on
                      box.getLowerLeft().getY(),
                      box.getUpperRight().getY(),
@@ -253,20 +254,20 @@ void Sweeper::add(const I32Polygon& poly, const std::string& gid, size_t subid,b
                      POLYGON,
                      areaSize,
                      box45,
-    side};
+                     side};
     batch.areas.emplace_back(cur);
   }
 }
 
 // _____________________________________________________________________________
-void Sweeper::add(const I32Line& line, const std::string& gid,bool side,
+void Sweeper::add(const I32Line& line, const std::string& gid, bool side,
                   WriteBatch& batch) const {
   add(line, gid, 0, side, batch);
 }
 
 // _____________________________________________________________________________
-void Sweeper::add(const I32Line& line, const std::string& gid, size_t subid,bool side,
-                  WriteBatch& batch) const {
+void Sweeper::add(const I32Line& line, const std::string& gid, size_t subid,
+                  bool side, WriteBatch& batch) const {
   if (line.size() < 2) return;
 
   WriteCand cur;
@@ -319,7 +320,8 @@ void Sweeper::add(const I32Line& line, const std::string& gid, size_t subid,bool
                      true,
                      SIMPLE_LINE,
                      len,
-                     box45, side};
+                     box45,
+                     side};
     batch.simpleLines.emplace_back(cur);
   } else {
     // normal line
@@ -350,7 +352,8 @@ void Sweeper::add(const I32Line& line, const std::string& gid, size_t subid,bool
                     false,
                     LINE,
                     len,
-                    box45, side};
+                    box45,
+                    side};
     cur.boxvalOut = {0,  // placeholder, will be overwritten later on
                      box.getLowerLeft().getY(),
                      box.getUpperRight().getY(),
@@ -358,20 +361,21 @@ void Sweeper::add(const I32Line& line, const std::string& gid, size_t subid,bool
                      true,
                      LINE,
                      len,
-                     box45, side};
+                     box45,
+                     side};
     batch.lines.emplace_back(cur);
   }
 }
 
 // _____________________________________________________________________________
-void Sweeper::add(const I32Point& point, const std::string& gid,bool side,
+void Sweeper::add(const I32Point& point, const std::string& gid, bool side,
                   WriteBatch& batch) const {
   add(point, gid, 0, side, batch);
 }
 
 // _____________________________________________________________________________
-void Sweeper::add(const I32Point& point, const std::string& gid, size_t subid,bool side,
-                  WriteBatch& batch) const {
+void Sweeper::add(const I32Point& point, const std::string& gid, size_t subid,
+                  bool side, WriteBatch& batch) const {
   WriteCand cur;
 
   std::stringstream str;
@@ -390,7 +394,8 @@ void Sweeper::add(const I32Point& point, const std::string& gid, size_t subid,bo
                   false,
                   POINT,
                   0,
-                  util::geo::getBoundingBox(pointR), side};
+                  util::geo::getBoundingBox(pointR),
+                  side};
   cur.boxvalOut = {0,  // placeholder, will be overwritten later on
                    point.getY(),
                    point.getY(),
@@ -398,7 +403,8 @@ void Sweeper::add(const I32Point& point, const std::string& gid, size_t subid,bo
                    true,
                    POINT,
                    0,
-                   util::geo::getBoundingBox(pointR), side};
+                   util::geo::getBoundingBox(pointR),
+                   side};
 
   batch.points.emplace_back(cur);
 }
@@ -453,35 +459,40 @@ void Sweeper::addBatch(WriteBatch& cands) {
   for (const auto& cand : cands.points) {
     if (cand.subid > 0) {
       std::unique_lock<std::mutex> lock(_multiAddMtx);
-      multiAdd(cand.gid, cand.boxvalIn.side, cand.boxvalIn.val, cand.boxvalOut.val);
+      multiAdd(cand.gid, cand.boxvalIn.side, cand.boxvalIn.val,
+               cand.boxvalOut.val);
     }
   }
 
   for (const auto& cand : cands.simpleLines) {
     if (cand.subid > 0) {
       std::unique_lock<std::mutex> lock(_multiAddMtx);
-      multiAdd(cand.gid, cand.boxvalIn.side, cand.boxvalIn.val, cand.boxvalOut.val);
+      multiAdd(cand.gid, cand.boxvalIn.side, cand.boxvalIn.val,
+               cand.boxvalOut.val);
     }
   }
 
   for (const auto& cand : cands.lines) {
     if (cand.subid > 0) {
       std::unique_lock<std::mutex> lock(_multiAddMtx);
-      multiAdd(cand.gid, cand.boxvalIn.side, cand.boxvalIn.val, cand.boxvalOut.val);
+      multiAdd(cand.gid, cand.boxvalIn.side, cand.boxvalIn.val,
+               cand.boxvalOut.val);
     }
   }
 
   for (const auto& cand : cands.simpleAreas) {
     if (cand.subid > 0) {
       std::unique_lock<std::mutex> lock(_multiAddMtx);
-      multiAdd(cand.gid, cand.boxvalIn.side, cand.boxvalIn.val, cand.boxvalOut.val);
+      multiAdd(cand.gid, cand.boxvalIn.side, cand.boxvalIn.val,
+               cand.boxvalOut.val);
     }
   }
 
   for (const auto& cand : cands.areas) {
     if (cand.subid > 0) {
       std::unique_lock<std::mutex> lock(_multiAddMtx);
-      multiAdd(cand.gid, cand.boxvalIn.side, cand.boxvalIn.val, cand.boxvalOut.val);
+      multiAdd(cand.gid, cand.boxvalIn.side, cand.boxvalIn.val,
+               cand.boxvalOut.val);
     }
   }
 
@@ -701,7 +712,8 @@ void Sweeper::flush() {
   if (_numSides > 1)
     LOGTO(INFO, std::cerr) << "(Non-self join between 2 datasets)";
 
-  LOGTO(INFO, std::cerr) << _multiIds[0].size() + _multiIds[1].size() << " multi geometries";
+  LOGTO(INFO, std::cerr) << _multiIds[0].size() + _multiIds[1].size()
+                         << " multi geometries";
 
   for (size_t side = 0; side < 2; side++) {
     for (size_t i = 0; i < _multiIds[side].size(); i++) {
@@ -771,13 +783,16 @@ void Sweeper::sortCache() {
   size_t jj = 0;
 
   // new caches
-  GeometryCache<Point> _pointCacheNew(POINT_CACHE_SIZE, _cfg.numCacheThreads, _cache);
-  GeometryCache<SimpleLine> _simpleLineCacheNew(SIMPLE_LINE_CACHE_SIZE, _cfg.numCacheThreads,
-                                                _cache);
-  GeometryCache<Line> _lineCacheNew(LINE_CACHE_SIZE, _cfg.numCacheThreads, _cache);
-  GeometryCache<Area> _areaCacheNew(AREA_CACHE_SIZE, _cfg.numCacheThreads, _cache);
-  GeometryCache<SimpleArea> _simpleAreaCacheNew(SIMPLE_AREA_CACHE_SIZE, _cfg.numCacheThreads,
-                                                _cache);
+  GeometryCache<Point> _pointCacheNew(POINT_CACHE_SIZE, _cfg.numCacheThreads,
+                                      _cache);
+  GeometryCache<SimpleLine> _simpleLineCacheNew(SIMPLE_LINE_CACHE_SIZE,
+                                                _cfg.numCacheThreads, _cache);
+  GeometryCache<Line> _lineCacheNew(LINE_CACHE_SIZE, _cfg.numCacheThreads,
+                                    _cache);
+  GeometryCache<Area> _areaCacheNew(AREA_CACHE_SIZE, _cfg.numCacheThreads,
+                                    _cache);
+  GeometryCache<SimpleArea> _simpleAreaCacheNew(SIMPLE_AREA_CACHE_SIZE,
+                                                _cfg.numCacheThreads, _cache);
 
   int oldFile = _file;
 
@@ -934,7 +949,8 @@ RelStats Sweeper::sweep() {
         _activeMultis[cur->side].insert(cur->id);
       } else if (!cur->out) {
         // IN event
-        actives[cur->side].insert({cur->loY, cur->upY}, {cur->id, cur->type, cur->b45, cur->side});
+        actives[cur->side].insert({cur->loY, cur->upY},
+                                  {cur->id, cur->type, cur->b45, cur->side});
 
         if (jj % 500000 == 0) {
           auto lon = webMercToLatLng<double>((1.0 * cur->val) / PREC, 0).getX();
@@ -944,10 +960,13 @@ RelStats Sweeper::sweep() {
               << (((1.0 * jj) / (1.0 * _curSweepId)) * 100) << "%, "
               << (500000.0 / double(TOOK(t))) * 1000000000.0 << " geoms/s, "
               << (checkPairs / double(TOOK(t))) * 1000000000.0
-              << " pairs/s), avg. " << ((1.0 * totalCheckCount) / (1.0 * counts))
-              << " checks/geom, sweepLon=" << lon << "°, |A|=" << actives[0].size() + actives[1].size()
+              << " pairs/s), avg. "
+              << ((1.0 * totalCheckCount) / (1.0 * counts))
+              << " checks/geom, sweepLon=" << lon
+              << "°, |A|=" << actives[0].size() + actives[1].size()
               << ", |JQ|=" << _jobs.size() << " (x" << batchSize
-              << "), |A_mult|=" << _activeMultis[0].size() + _activeMultis[1].size();
+              << "), |A_mult|="
+              << _activeMultis[0].size() + _activeMultis[1].size();
           t = TIME();
           checkPairs = 0;
         }
@@ -1001,7 +1020,8 @@ RelStats Sweeper::sweep() {
   std::cerr << std::endl;
   std::cerr << sumRel.toString() << std::endl;
   std::cerr << "Checked " << totalCheckCount
-            << " candidates (with overlapping bounding box)\n" << std::endl;
+            << " candidates (with overlapping bounding box)\n"
+            << std::endl;
 
   return sumRel;
 }
@@ -1352,8 +1372,9 @@ std::tuple<bool, bool, bool, bool, bool> Sweeper::check(const SimpleLine* a,
   // no need to do a full sweep for two simple lines with all the required
   // datastructures, just unroll the individual checks here
 
-  auto r = util::geo::IntersectorLine<int32_t>::check(LineSegment<int32_t>(a->a, a->b), 32767, 32767,
-                                LineSegment<int32_t>(b->a, b->b), 32767, 32767);
+  auto r = util::geo::IntersectorLine<int32_t>::check(
+      LineSegment<int32_t>(a->a, a->b), 32767, 32767,
+      LineSegment<int32_t>(b->a, b->b), 32767, 32767);
 
   bool weakIntersect = (r >> 0) & 1;
   bool strictIntersect = (r >> 1) & 1;
@@ -1896,8 +1917,9 @@ void Sweeper::doCheck(const BoxVal cur, const SweepVal sv, size_t t) {
     }
     _stats[t].timeGeoCacheRetrievalArea += TOOK(ts);
 
-    if (a->id == b->id) return;  // no self-checks in multigeometries
-                                 //
+    if (a->id == b->id)
+      return;  // no self-checks in multigeometries
+               //
     _stats[t].areaCmps++;
     _stats[t].areaSizeSum += b->area;
 
@@ -1963,15 +1985,16 @@ void Sweeper::doCheck(const BoxVal cur, const SweepVal sv, size_t t) {
     auto b = _lineCache.get(sv.id, t);
     _stats[t].timeGeoCacheRetrievalLine += TOOK(ts);
 
-    if (a->id == b->id) return;  // no self-checks in multigeometries
-                                 //
+    if (a->id == b->id)
+      return;  // no self-checks in multigeometries
+               //
     _stats[t].areaCmps++;
     _stats[t].areaSizeSum += a->area;
 
     _stats[t].lineCmps++;
     _stats[t].lineLenSum += b->length;
 
-    _stats[t].anchorSum += std::max(a->geom.size() /2, b->geom.size() / 2);
+    _stats[t].anchorSum += std::max(a->geom.size() / 2, b->geom.size() / 2);
 
     _stats[t].totalComps++;
     auto totTime = TIME();
@@ -2052,7 +2075,7 @@ void Sweeper::doCheck(const BoxVal cur, const SweepVal sv, size_t t) {
     _stats[t].lineCmps++;
     _stats[t].lineLenSum += util::geo::dist(b->a, b->b);
 
-    _stats[t].anchorSum += std::max(a->geom.size() / 2, (size_t) 2);
+    _stats[t].anchorSum += std::max(a->geom.size() / 2, (size_t)2);
 
     _stats[t].totalComps++;
     auto totTime = TIME();
@@ -2098,8 +2121,9 @@ void Sweeper::doCheck(const BoxVal cur, const SweepVal sv, size_t t) {
     auto b = _lineCache.get(sv.id, t);
     _stats[t].timeGeoCacheRetrievalLine += TOOK(ts);
 
-    if (a->id == b->id) return;  // no self-checks in multigeometries
-                                 //
+    if (a->id == b->id)
+      return;  // no self-checks in multigeometries
+               //
     _stats[t].lineCmps++;
     _stats[t].lineLenSum += std::max(a->length, b->length);
 
@@ -2304,7 +2328,8 @@ void Sweeper::doCheck(const BoxVal cur, const SweepVal sv, size_t t) {
     _stats[t].timeGeoCacheRetrievalLine += TOOK(ts);
 
     _stats[t].lineCmps++;
-    _stats[t].lineLenSum += std::max(util::geo::dist(a->a, a->b), util::geo::dist(b->a, b->b));
+    _stats[t].lineLenSum +=
+        std::max(util::geo::dist(a->a, a->b), util::geo::dist(b->a, b->b));
 
     _stats[t].anchorSum += 2;
 

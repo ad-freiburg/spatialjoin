@@ -188,32 +188,32 @@ class Sweeper {
     }
   }
 
-  void add(const util::geo::I32MultiPolygon& a, const std::string& gid, bool side,
+  void add(const util::geo::I32MultiPolygon& a, const std::string& gid,
+           bool side, WriteBatch& batch) const;
+  void add(const util::geo::I32MultiPolygon& a, const std::string& gid, size_t,
+           bool side, WriteBatch& batch) const;
+  void add(const util::geo::I32Polygon& a, const std::string& gid, bool side,
            WriteBatch& batch) const;
-  void add(const util::geo::I32MultiPolygon& a, const std::string& gid, size_t,bool side,
-           WriteBatch& batch) const;
-  void add(const util::geo::I32Polygon& a, const std::string& gid,bool side,
-           WriteBatch& batch) const;
-  void add(const util::geo::I32Polygon& a, const std::string& gid, size_t subId,bool side,
-           WriteBatch& batch) const;
+  void add(const util::geo::I32Polygon& a, const std::string& gid, size_t subId,
+           bool side, WriteBatch& batch) const;
 
-  void add(const util::geo::I32MultiLine& a, const std::string& gid, size_t,bool side,
+  void add(const util::geo::I32MultiLine& a, const std::string& gid, size_t,
+           bool side, WriteBatch& batch) const;
+  void add(const util::geo::I32MultiLine& a, const std::string& gid, bool side,
            WriteBatch& batch) const;
-  void add(const util::geo::I32MultiLine& a, const std::string& gid,bool side,
+  void add(const util::geo::I32Line& a, const std::string& gid, bool side,
            WriteBatch& batch) const;
-  void add(const util::geo::I32Line& a, const std::string& gid,bool side,
-           WriteBatch& batch) const;
-  void add(const util::geo::I32Line& a, const std::string& gid, size_t subid,bool side,
-           WriteBatch& batch) const;
+  void add(const util::geo::I32Line& a, const std::string& gid, size_t subid,
+           bool side, WriteBatch& batch) const;
 
-  void add(const util::geo::I32Point& a, const std::string& gid,bool side,
+  void add(const util::geo::I32Point& a, const std::string& gid, bool side,
            WriteBatch& batch) const;
-  void add(const util::geo::I32Point& a, const std::string& gid, size_t subid,bool side,
-           WriteBatch& batch) const;
-  void addMp(const util::geo::I32MultiPoint& a, const std::string& gid, size_t,bool side,
-             WriteBatch& batch) const;
-  void addMp(const util::geo::I32MultiPoint& a, const std::string& gid,bool side,
-             WriteBatch& batch) const;
+  void add(const util::geo::I32Point& a, const std::string& gid, size_t subid,
+           bool side, WriteBatch& batch) const;
+  void addMp(const util::geo::I32MultiPoint& a, const std::string& gid, size_t,
+             bool side, WriteBatch& batch) const;
+  void addMp(const util::geo::I32MultiPoint& a, const std::string& gid,
+             bool side, WriteBatch& batch) const;
 
   void addBatch(WriteBatch& cands);
 
@@ -237,7 +237,6 @@ class Sweeper {
   std::vector<gzFile> _gzFiles;
   std::vector<size_t> _outBufPos;
   std::vector<unsigned char*> _outBuffers;
-
 
   std::vector<size_t> _checks;
   std::vector<int32_t> _curX;
@@ -313,7 +312,8 @@ class Sweeper {
   void diskAdd(const BoxVal& bv);
 
   void multiOut(size_t t, const std::string& gid);
-  void multiAdd(const std::string& gid, bool side, int32_t xLeft, int32_t xRight);
+  void multiAdd(const std::string& gid, bool side, int32_t xLeft,
+                int32_t xRight);
   void clearMultis(bool force);
 
   void writeIntersect(size_t t, const std::string& a, const std::string& b);
