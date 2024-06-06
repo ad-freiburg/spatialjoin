@@ -6,14 +6,13 @@
 #include "util/log/Log.h"
 
 struct ParseJob {
-  // char* begin;
-  // size_t len;
   std::string str;
   size_t line;
+  bool side;
 };
 
 bool operator==(const ParseJob& a, const ParseJob& b) {
-  return a.line == b.line && a.str == b.str;
+  return a.line == b.line && a.str == b.str && a.side == b.side;
 }
 
 typedef std::vector<ParseJob> ParseBatch;
@@ -60,7 +59,7 @@ util::geo::I32Point parsePoint(const char* c) {
 
 // _____________________________________________________________________________
 void parseLine(char* c, size_t len, size_t gid, sj::Sweeper* sweeper,
-               sj::WriteBatch& batch) {
+               sj::WriteBatch& batch, bool side) {
   char* idp = reinterpret_cast<char*>(strchr(c, '\t'));
 
   std::string id;
@@ -73,20 +72,28 @@ void parseLine(char* c, size_t len, size_t gid, sj::Sweeper* sweeper,
     id = std::to_string(gid);
   }
 
+  idp = reinterpret_cast<char*>(strchr(c, '\t'));
+
+  if (idp) {
+    *idp = 0;
+    side = atoi(c);
+    c = idp + 1;
+  }
+
   if (len > 6 && memcmp(c, "POINT(", 6) == 0) {
     c += 6;
     auto point = parsePoint(c);
-    sweeper->add(point, id, batch);
+    sweeper->add(point, id, side, batch);
     return;
   } else if (len > 11 && memcmp(c, "MULTIPOINT(", 11) == 0) {
     c += 11;
     const auto& mp = parseLineString(c, (len - 11) / 20);
-    if (mp.size() != 0) sweeper->addMp(mp, id, batch);
+    if (mp.size() != 0) sweeper->addMp(mp, id, side, batch);
     return;
   } else if (len > 11 && memcmp(c, "LINESTRING(", 11) == 0) {
     c += 11;
     const auto& line = parseLineString(c, (len - 11) / 20);
-    if (line.size() > 1) sweeper->add(line, id, batch);
+    if (line.size() > 1) sweeper->add(line, id, side, batch);
   } else if (len > 16 && memcmp(c, "MULTILINESTRING(", 16) == 0) {
     util::geo::I32MultiLine ml;
     c += 16;
@@ -95,7 +102,7 @@ void parseLine(char* c, size_t len, size_t gid, sj::Sweeper* sweeper,
       const auto& line = parseLineString(c, 10);
       if (line.size() != 0) ml.push_back(std::move(line));
     }
-    sweeper->add(ml, id, batch);
+    sweeper->add(ml, id, side, batch);
   } else if (len > 8 && memcmp(c, "POLYGON(", 8) == 0) {
     c += 7;
     size_t i = 0;
@@ -109,7 +116,7 @@ void parseLine(char* c, size_t len, size_t gid, sj::Sweeper* sweeper,
         poly.getInners().push_back(std::move(line));
       i++;
     }
-    if (poly.getOuter().size() > 1) sweeper->add(poly, id, batch);
+    if (poly.getOuter().size() > 1) sweeper->add(poly, id, side, batch);
   } else if (len > 13 && memcmp(c, "MULTIPOLYGON(", 13) == 0) {
     c += 12;
     util::geo::I32MultiPolygon mp;
@@ -137,7 +144,7 @@ void parseLine(char* c, size_t len, size_t gid, sj::Sweeper* sweeper,
       }
       mp.push_back(std::move(poly));
     }
-    sweeper->add(mp, id, batch);
+    sweeper->add(mp, id, side, batch);
   }
 }
 
@@ -148,7 +155,7 @@ void processQueue(util::JobQueue<ParseBatch>* jobs, size_t, sj::Sweeper* idx) {
     sj::WriteBatch w;
     for (const auto& job : batch) {
       parseLine(const_cast<char*>(job.str.c_str()), job.str.size(), job.line,
-                idx, w);
+                idx, w, job.side);
     }
 
     idx->addBatch(w);
@@ -157,7 +164,7 @@ void processQueue(util::JobQueue<ParseBatch>* jobs, size_t, sj::Sweeper* idx) {
 
 // _____________________________________________________________________________
 void parse(char* c, size_t size, std::string& dang, size_t* gid,
-           util::JobQueue<ParseBatch>& jobs) {
+           util::JobQueue<ParseBatch>& jobs, bool side) {
   size_t p = 0;
 
   ParseBatch curBatch;
@@ -172,10 +179,10 @@ void parse(char* c, size_t size, std::string& dang, size_t* gid,
 
       if (dang.size()) {
         dang += (c + p);  // guaranteed to be null terminated
-        curBatch.push_back({dang, *gid});
+        curBatch.push_back({dang, *gid, side});
         dang.clear();
       } else {
-        curBatch.push_back({c + p, *gid});
+        curBatch.push_back({c + p, *gid, side});
 
         if (curBatch.size() > 1000) {
           jobs.add(std::move(curBatch));

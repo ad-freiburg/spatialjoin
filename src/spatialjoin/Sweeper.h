@@ -48,6 +48,7 @@ struct BoxVal {
   GeomType type : 3;
   double areaOrLen;
   util::geo::I32Box b45;
+  bool side;
 };
 
 struct WriteCand {
@@ -72,12 +73,13 @@ inline bool operator==(const BoxVal& a, const BoxVal& b) {
 
 struct SweepVal {
   SweepVal(size_t id, GeomType type) : id(id), type(type) {}
-  SweepVal(size_t id, GeomType type, util::geo::I32Box b45)
-      : id(id), type(type), b45(b45) {}
+  SweepVal(size_t id, GeomType type, util::geo::I32Box b45, bool side)
+      : id(id), type(type), b45(b45), side(side) {}
   SweepVal() : id(0), type(POLYGON) {}
   size_t id : 60;
   GeomType type : 3;
   util::geo::I32Box b45;
+  bool side;
 };
 
 inline bool operator==(const SweepVal& a, const SweepVal& b) {
@@ -187,31 +189,31 @@ class Sweeper {
   }
 
   void add(const util::geo::I32MultiPolygon& a, const std::string& gid,
-           WriteBatch& batch) const;
+           bool side, WriteBatch& batch) const;
   void add(const util::geo::I32MultiPolygon& a, const std::string& gid, size_t,
-           WriteBatch& batch) const;
-  void add(const util::geo::I32Polygon& a, const std::string& gid,
+           bool side, WriteBatch& batch) const;
+  void add(const util::geo::I32Polygon& a, const std::string& gid, bool side,
            WriteBatch& batch) const;
   void add(const util::geo::I32Polygon& a, const std::string& gid, size_t subId,
-           WriteBatch& batch) const;
+           bool side, WriteBatch& batch) const;
 
   void add(const util::geo::I32MultiLine& a, const std::string& gid, size_t,
+           bool side, WriteBatch& batch) const;
+  void add(const util::geo::I32MultiLine& a, const std::string& gid, bool side,
            WriteBatch& batch) const;
-  void add(const util::geo::I32MultiLine& a, const std::string& gid,
-           WriteBatch& batch) const;
-  void add(const util::geo::I32Line& a, const std::string& gid,
+  void add(const util::geo::I32Line& a, const std::string& gid, bool side,
            WriteBatch& batch) const;
   void add(const util::geo::I32Line& a, const std::string& gid, size_t subid,
-           WriteBatch& batch) const;
+           bool side, WriteBatch& batch) const;
 
-  void add(const util::geo::I32Point& a, const std::string& gid,
+  void add(const util::geo::I32Point& a, const std::string& gid, bool side,
            WriteBatch& batch) const;
   void add(const util::geo::I32Point& a, const std::string& gid, size_t subid,
-           WriteBatch& batch) const;
+           bool side, WriteBatch& batch) const;
   void addMp(const util::geo::I32MultiPoint& a, const std::string& gid, size_t,
-             WriteBatch& batch) const;
+             bool side, WriteBatch& batch) const;
   void addMp(const util::geo::I32MultiPoint& a, const std::string& gid,
-             WriteBatch& batch) const;
+             bool side, WriteBatch& batch) const;
 
   void addBatch(WriteBatch& cands);
 
@@ -235,7 +237,6 @@ class Sweeper {
   std::vector<gzFile> _gzFiles;
   std::vector<size_t> _outBufPos;
   std::vector<unsigned char*> _outBuffers;
-
 
   std::vector<size_t> _checks;
   std::vector<int32_t> _curX;
@@ -262,16 +263,18 @@ class Sweeper {
   std::map<std::string, std::set<std::string>> _subNotOverlaps;
   std::map<std::string, size_t> _subSizes;
 
-  std::set<size_t> _activeMultis;
-  std::vector<std::string> _multiIds;
-  std::vector<int32_t> _multiRightX;
-  std::vector<int32_t> _multiLeftX;
-  std::map<std::string, size_t> _multiGidToId;
+  std::set<size_t> _activeMultis[2];
+  std::vector<std::string> _multiIds[2];
+  std::vector<int32_t> _multiRightX[2];
+  std::vector<int32_t> _multiLeftX[2];
+  std::map<std::string, size_t> _multiGidToId[2];
 
   std::string _cache;
   std::string _out;
 
   util::JobQueue<JobBatch> _jobs;
+
+  uint8_t _numSides = 1;
 
   std::mutex _mutEquals;
   std::mutex _mutCovers;
@@ -309,7 +312,8 @@ class Sweeper {
   void diskAdd(const BoxVal& bv);
 
   void multiOut(size_t t, const std::string& gid);
-  void multiAdd(const std::string& gid, int32_t xLeft, int32_t xRight);
+  void multiAdd(const std::string& gid, bool side, int32_t xLeft,
+                int32_t xRight);
   void clearMultis(bool force);
 
   void writeIntersect(size_t t, const std::string& a, const std::string& b);

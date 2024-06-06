@@ -53,6 +53,47 @@ $ spatialjoin < example.txt
 [...]
 ```
 
+### Custom IDs
+
+You may specify a custom geometry string ID, outputted instead of the line number, before the WKT, separated by a tab:
+
+```
+$ cat example.txt
+polygon1	POLYGON((0 0, 10  0 ,10 10, 0 10, 0 0))
+polygon2	POLYGON((0 0, 10 0, 10 10, 0 10, 0 0), (1 1, 9 1, 9 9, 1 9, 1 1))
+multipolygon3	MULTIPOLYGON(((0 0, 10 0, 10 10, 0 10, 0 0), (1 1, 9 1, 9 9, 1 9, 1 1)))
+polygon4	POLYGON((4 4, 5 4, 5 5, 4 5, 4 4))
+polygon5	POLYGON((4 4, 5 4, 5 11, 4 11, 4 4))
+linestring6	LINESTRING(1 1, 1 2)
+linestring7	LINESTRING(0.5 1.5, 1.5 1.5)
+linestring8	LINESTRING(-10 1, 100 1)
+point9	POINT(0.5 0.5)
+```
+
+```
+$ spatialjoin < example.txt
+polygon1 contains point9
+point9 intersects polygon1
+[...]
+```
+
+### Non-self joins
+
+You may specify a "side" (either 0 or 1) per geometry, as an additional tab-separated field after the custom geometry ID. If sides are defined, only geometries from different sides are compared. Note that a custom geometry ID *must* be given, otherwise the side will be interpreted as the custom geometry ID. The default side is 0.
+
+```
+$ cat example.txt
+polygon1	0	POLYGON((0 0, 10  0 ,10 10, 0 10, 0 0))
+polygon2	0	POLYGON((0 0, 10 0, 10 10, 0 10, 0 0), (1 1, 9 1, 9 9, 1 9, 1 1))
+multipolygon3	0	MULTIPOLYGON(((0 0, 10 0, 10 10, 0 10, 0 0), (1 1, 9 1, 9 9, 1 9, 1 1)))
+polygon4	1	POLYGON((4 4, 5 4, 5 5, 4 5, 4 4))
+polygon5	1	POLYGON((4 4, 5 4, 5 11, 4 11, 4 4))
+linestring6	1	LINESTRING(1 1, 1 2)
+linestring7	1	LINESTRING(0.5 1.5, 1.5 1.5)
+linestring8	0	LINESTRING(-10 1, 100 1)
+point9	1	POINT(0.5 0.5)
+```
+
 ## Use with QLever and osm2rdf
 
 One use case of `spatialjoin` is to add triples for the relations `contains` and
