@@ -88,7 +88,11 @@ void printHelp(int argc, char** argv) {
       << "  --num-caches (default: " + std::to_string(NUM_THREADS) + ")"
       << "number of geometry caches (if < --num-threads, syncing\n"
       << std::setw(41) << " "
-      << "is done via locks)" << std::endl;
+      << "is done via locks)\n"
+      << std::setw(41) << "  --no-geometry-checks"
+      << "do not compute geometric relations, only report number of "
+         "candidates\n"
+      << std::endl;
 }
 
 // _____________________________________________________________________________
@@ -120,6 +124,7 @@ int main(int argc, char** argv) {
   bool useDiagBox = true;
   bool useFastSweepSkip = true;
   bool useInnerOuter = false;
+  bool noGeometryChecks = false;
 
   bool preSortCache = false;
 
@@ -170,6 +175,8 @@ int main(int argc, char** argv) {
           useCutouts = false;
         } else if (cur == "--no-diag-box") {
           useDiagBox = false;
+        } else if (cur == "--no-geometry-checks") {
+          noGeometryChecks = true;
         } else if (cur == "--no-fast-sweep-skip") {
           useFastSweepSkip = false;
         } else if (cur == "--use-inner-outer") {
@@ -242,11 +249,11 @@ int main(int argc, char** argv) {
   std::string dangling;
   size_t gid = 1;
 
-  Sweeper sweeper(
-      {numThreads, numCaches, prefix, intersects, contains, covers, touches,
-       equals, overlaps, crosses, suffix, useBoxIds, useArea, useOBB,
-       useCutouts, useDiagBox, useFastSweepSkip, useInnerOuter},
-      cache, output);
+  Sweeper sweeper({numThreads, numCaches, prefix, intersects, contains, covers,
+                   touches, equals, overlaps, crosses, suffix, useBoxIds,
+                   useArea, useOBB, useCutouts, useDiagBox, useFastSweepSkip,
+                   useInnerOuter, noGeometryChecks},
+                  cache, output);
 
   LOGTO(INFO, std::cerr) << "Parsing input geometries...";
   auto ts = TIME();
