@@ -982,7 +982,7 @@ RelStats Sweeper::sweep() {
 
         if (curBatch.size() > batchSize) {
           checkPairs += curBatch.size();
-          _jobs.add(std::move(curBatch));
+          if (!_cfg.noGeometryChecks) _jobs.add(std::move(curBatch));
           curBatch.clear();  // std doesnt guarantee that after move
           curBatch.reserve(batchSize + 100);
         }
@@ -992,7 +992,7 @@ RelStats Sweeper::sweep() {
 
   delete[] buf;
 
-  if (curBatch.size()) _jobs.add(std::move(curBatch));
+  if (!_cfg.noGeometryChecks && curBatch.size()) _jobs.add(std::move(curBatch));
 
   // the DONE element on the job queue to signal all threads to shut down
   _jobs.add({});
@@ -1020,7 +1020,9 @@ RelStats Sweeper::sweep() {
   std::cerr << std::endl;
   std::cerr << sumRel.toString() << std::endl;
   std::cerr << "Checked " << totalCheckCount
-            << " candidates (with overlapping bounding box)\n"
+            << " candidates (with overlapping bounding box"
+            << (_cfg.useDiagBox ? " and overlapping diagonal box" : "")
+            << ")\n"
             << std::endl;
 
   return sumRel;

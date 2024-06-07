@@ -64,58 +64,58 @@ std::string fullRun(const std::string& file, const sj::SweeperCfg& cfg) {
 // _____________________________________________________________________________
 int main(int, char**) {
   sj::SweeperCfg baseline{
-      1, 1,           "$",        " intersects ", " contains ", " covers ",
-      " touches ", " equals ", " overlaps ",   " crosses ",  "$\n",
-      false,       false,      false,          false,        false,
-      false,       false};
+      1,          1,           "$",        " intersects ", " contains ",
+      " covers ", " touches ", " equals ", " overlaps ",   " crosses ",
+      "$\n",      false,       false,      false,          false,
+      false,      false,       false,      false};
 
-  sj::SweeperCfg all{1, 1,           "$",         " intersects ", " contains ",
-                     " covers ",  " touches ", " equals ",     " overlaps ",
-                     " crosses ", "$\n",       true,           true,
-                     true,        true,        true,           true,
-                     true};
+  sj::SweeperCfg all{
+      1,          1,           "$",        " intersects ", " contains ",
+      " covers ", " touches ", " equals ", " overlaps ",   " crosses ",
+      "$\n",      true,        true,       true,           true,
+      true,       true,        true,       false};
 
   sj::SweeperCfg noSurfaceArea{
-      1, 1,           "$",        " intersects ", " contains ", " covers ",
-      " touches ", " equals ", " overlaps ",   " crosses ",  "$\n",
-      true,        false,      true,           true,         true,
-      true,        true};
+      1,          1,           "$",        " intersects ", " contains ",
+      " covers ", " touches ", " equals ", " overlaps ",   " crosses ",
+      "$\n",      true,        false,      true,           true,
+      true,       true,        true,       false};
 
   sj::SweeperCfg noBoxIds{
-      1, 1,           "$",        " intersects ", " contains ", " covers ",
-      " touches ", " equals ", " overlaps ",   " crosses ",  "$\n",
-      false,       true,       true,           true,         true,
-      true,        true};
+      1,          1,           "$",        " intersects ", " contains ",
+      " covers ", " touches ", " equals ", " overlaps ",   " crosses ",
+      "$\n",      false,       true,       true,           true,
+      true,       true,        true,       false};
 
-  sj::SweeperCfg noObb{1, 1,           "$",         " intersects ", " contains ",
-                       " covers ",  " touches ", " equals ",     " overlaps ",
-                       " crosses ", "$\n",       true,           true,
-                       false,       true,        true,           true,
-                       true};
+  sj::SweeperCfg noObb{
+      1,          1,           "$",        " intersects ", " contains ",
+      " covers ", " touches ", " equals ", " overlaps ",   " crosses ",
+      "$\n",      true,        true,       false,          true,
+      true,       true,        true,       false};
 
   sj::SweeperCfg noCutouts{
-      1, 1,           "$",        " intersects ", " contains ", " covers ",
-      " touches ", " equals ", " overlaps ",   " crosses ",  "$\n",
-      true,        true,       true,           false,        true,
-      true,        true};
+      1,          1,           "$",        " intersects ", " contains ",
+      " covers ", " touches ", " equals ", " overlaps ",   " crosses ",
+      "$\n",      true,        true,       true,           false,
+      true,       true,        true,       false};
 
   sj::SweeperCfg noDiagBox{
-      1, 1,           "$",        " intersects ", " contains ", " covers ",
-      " touches ", " equals ", " overlaps ",   " crosses ",  "$\n",
-      true,        true,       true,           true,         false,
-      true,        true};
+      1,          1,           "$",        " intersects ", " contains ",
+      " covers ", " touches ", " equals ", " overlaps ",   " crosses ",
+      "$\n",      true,        true,       true,           true,
+      false,      true,        true,       false};
 
   sj::SweeperCfg noFastSweep{
-      1, 1,           "$",        " intersects ", " contains ", " covers ",
-      " touches ", " equals ", " overlaps ",   " crosses ",  "$\n",
-      true,        true,       true,           true,         true,
-      false,       true};
+      1,          1,           "$",        " intersects ", " contains ",
+      " covers ", " touches ", " equals ", " overlaps ",   " crosses ",
+      "$\n",      true,        true,       true,           true,
+      true,       false,       true,       false};
 
   sj::SweeperCfg noInnerOuter{
-      1, 1,           "$",        " intersects ", " contains ", " covers ",
-      " touches ", " equals ", " overlaps ",   " crosses ",  "$\n",
-      true,        true,       true,           true,         true,
-      true,        false};
+      1,          1,           "$",        " intersects ", " contains ",
+      " covers ", " touches ", " equals ", " overlaps ",   " crosses ",
+      "$\n",      true,        true,       true,           true,
+      true,       true,        false,      false};
 
   std::vector<sj::SweeperCfg> cfgs{baseline,  all,         noSurfaceArea,
                                    noBoxIds,  noObb,       noCutouts,
@@ -319,7 +319,8 @@ int main(int, char**) {
     {
       auto res = fullRun("../src/spatialjoin/tests/datasets/brandenburg", cfg);
       TEST(res.find("$Brandenburg covers Brandenburg2$") != std::string::npos);
-      TEST(res.find("$Brandenburg intersects Brandenburg-Way$") != std::string::npos);
+      TEST(res.find("$Brandenburg intersects Brandenburg-Way$") !=
+           std::string::npos);
       TEST(res.find("$Brandenburg equals Brandenburg2$") != std::string::npos);
       TEST(res.find("$Brandenburg2 equals Brandenburg$") != std::string::npos);
       TEST(res.find("$Brandenburg intersects Grenzpart$") != std::string::npos);
@@ -351,9 +352,11 @@ int main(int, char**) {
     }
 
     {
-      auto res = fullRun("../src/spatialjoin/tests/datasets/brandenburg_nonself", cfg);
+      auto res =
+          fullRun("../src/spatialjoin/tests/datasets/brandenburg_nonself", cfg);
       TEST(res.find("$Brandenburg covers Brandenburg2$") == std::string::npos);
-      TEST(res.find("$Brandenburg intersects Brandenburg-Way$") == std::string::npos);
+      TEST(res.find("$Brandenburg intersects Brandenburg-Way$") ==
+           std::string::npos);
       TEST(res.find("$Brandenburg equals Brandenburg2$") == std::string::npos);
       TEST(res.find("$Brandenburg2 equals Brandenburg$") == std::string::npos);
       TEST(res.find("$Brandenburg intersects Grenzpart$") != std::string::npos);
@@ -504,7 +507,8 @@ int main(int, char**) {
     }
 
     {
-      auto res = fullRun("../src/spatialjoin/tests/datasets/simpleareafail", cfg);
+      auto res =
+          fullRun("../src/spatialjoin/tests/datasets/simpleareafail", cfg);
       TEST(res.find("$1 intersects 2$") != std::string::npos);
       TEST(res.find("$2 intersects 1$") != std::string::npos);
       TEST(res.find("$2 crosses 1$") != std::string::npos);
@@ -519,18 +523,24 @@ int main(int, char**) {
 
     {
       auto res = fullRun("../src/spatialjoin/tests/datasets/boxidfail", cfg);
-      TEST(res.find("$osmway:312944635 intersects osmway:312944634$") != std::string::npos);
-      TEST(res.find("$osmway:312944634 intersects osmway:312944635$") != std::string::npos);
+      TEST(res.find("$osmway:312944635 intersects osmway:312944634$") !=
+           std::string::npos);
+      TEST(res.find("$osmway:312944634 intersects osmway:312944635$") !=
+           std::string::npos);
     }
     {
       auto res = fullRun("../src/spatialjoin/tests/datasets/boxidfail2", cfg);
-      TEST(res.find("$osmway:205756242 intersects osmway:50218266$") != std::string::npos);
-      TEST(res.find("$osmway:50218266 intersects osmway:205756242$") != std::string::npos);
+      TEST(res.find("$osmway:205756242 intersects osmway:50218266$") !=
+           std::string::npos);
+      TEST(res.find("$osmway:50218266 intersects osmway:205756242$") !=
+           std::string::npos);
     }
     {
       auto res = fullRun("../src/spatialjoin/tests/datasets/boxidfail3", cfg);
-      TEST(res.find("$osmway:901094335 intersects osmnode:8370757906$") != std::string::npos);
-      TEST(res.find("$osmnode:8370757906 intersects osmway:901094335$") != std::string::npos);
+      TEST(res.find("$osmway:901094335 intersects osmnode:8370757906$") !=
+           std::string::npos);
+      TEST(res.find("$osmnode:8370757906 intersects osmway:901094335$") !=
+           std::string::npos);
     }
   }
 }
