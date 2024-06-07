@@ -181,7 +181,10 @@ def analyze_selected(args: argparse.Namespace):
         time = results[name]
         if first_name is None:
             first_name, first_time = name, time
-            print(f"{name} -> {time:6.1f}s")
+            if args.minutes:
+                print(f"{name} -> {time / 60:6.1f} min")
+            else:
+                print(f"{name} -> {time:6.1f} s")
         else:
             # Find previous to compare with (must have prefix in common,
             # depending on how you go back in the list of `names`).
@@ -190,9 +193,13 @@ def analyze_selected(args: argparse.Namespace):
                     previous_name = names[j]
             previous_time = results[previous_name]
             # Show the speedup.
-            print(f"{name} -> {time:6.1f}s, "
-                  f"{first_time / time:5.2f}x speedup over {first_name}"
+            if args.minutes:
+                print(f"{name} -> {time / 60:6.1f} min, ", end="")
+            else:
+                print(f"{name} -> {time:6.1f} s, ", end="")
+            print(f"{first_time / time:5.2f}x speedup over {first_name}"
                   f" ({previous_time / time:5.2f}x over {previous_name})")
+
 
 
 def analyze_all(args: argparse.Namespace):
@@ -330,6 +337,9 @@ if __name__ == "__main__":
                         "(default: <basename>.spatialjoin-evaluation.log)")
     parser.add_argument("--rdf-output", action="store_true", default=False,
                         help="Generate RDF output")
+    parser.add_argument("--minutes",
+                        action="store_true", default=False,
+                        help="Show times in minutes instead of seconds")
     argcomplete.autocomplete(parser, always_complete_options="long")
     args = parser.parse_args()
 
