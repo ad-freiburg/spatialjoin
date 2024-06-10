@@ -6,6 +6,10 @@ Relations are written to stdout (or to a BZ2 file specified with `-o`).
 
 Can handle massive amounts of input data (for example, all ~1.5 B geometries stored in OpenStreetMap).
 
+## Reproducibility materials for SIGSPATIAL'24 submission 192
+
+Additional materials required to do a full evaluation of our tool and a comparison against PostgreSQL+PostGIS can be found [here](https://github.com/ad-freiburg/spatialjoin/blob/master/sigspatial-reproducibility/README.md).
+
 ## Requirements
 
  * `cmake`
