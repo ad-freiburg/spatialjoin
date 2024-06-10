@@ -37,7 +37,7 @@ bunzip2 OSM.spatialjoin.input.tsv.bz2
 
 ### Running the evalation and analyzing the results for Table 3
 
-For each of the datasets `OHM, FIN, GER` and `OSM`, run the following:
+For each of the datasets `OHM, FIN, GER` and `OSM`, run the evaluation script in folder `scripts` as follows:
 
 ```
 spatialjoin-evaluation.py $DATASET --combinations bcsdoi,Bcsdoi,BCsdoi,BCSdoi,BCSDoi,BCSdOi,BCSdoI 2>&1 | tee $DATASET.spatialjoin-evaluation.tsv
