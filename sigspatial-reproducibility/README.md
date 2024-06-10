@@ -22,7 +22,31 @@ Datasets from Section 4.3.2:
 [administrative regions](https://ad-publications.cs.uni-freiburg.de/SIGSPATIAL_spatialjoin_BBKL_2024.materials/administrative-regions.tsv),
 [powerlines](https://ad-publications.cs.uni-freiburg.de/SIGSPATIAL_spatialjoin_BBKL_2024.materials/powerlines.tsv).
 
-## Preparing data for spatialjoin
+
+## Comparison of our standalone tool (Section 4.2)
+
+### Preparing data for spatialjoin
+
+```
+wget https://ad-publications.cs.uni-freiburg.de/SIGSPATIAL_spatialjoin_BBKL_2024.materials/OHM.tsv -o OHM.spatialjoin.input.tsv
+wget https://ad-publications.cs.uni-freiburg.de/SIGSPATIAL_spatialjoin_BBKL_2024.materials/FIN.tsv -o FIN.spatialjoin.input.tsv
+wget https://ad-publications.cs.uni-freiburg.de/SIGSPATIAL_spatialjoin_BBKL_2024.materials/GER.tsv -o GET.spatialjoin.input.tsv
+wget https://ad-publications.cs.uni-freiburg.de/SIGSPATIAL_spatialjoin_BBKL_2024.materials/OSM.tsv.bz2 -o OSM.spatialjoin.input.tsv.bz2
+bunzip2 OSM.spatialjoin.input.tsv.bz2
+```
+
+### Running the evalation and analyzing the results for Table 3
+
+For each of the datasets `OHM, FIN, GER` and `OSM`, run the following:
+
+```
+spatialjoin-evaluation.py $DATASET --combinations bcsdoi,Bcsdoi,BCsdoi,BCSdoi,BCSDoi,BCSdOi,BCSdoI 2>&1 | tee $DATASET.spatialjoin-evaluation.tsv
+spatialjoin-evaluation.py $DATASET --combinations bcsdoi,Bcsdoi,BCsdoi,BCSdoi,BCSDoi,BCSdOi,BCSdoI --analyze total --minutes
+```
+
+## Comparison against PostgreSQL+PostGIS (Section 4.3)
+
+### Preparing data for spatialjoin
 
 To mark a non-selfjoin spatialjoin expects the data of the second side to be marked with a non-zero value.
 To create the duplicate dataset we replace `\t` with `\t1\t` and generate `.1` variants of each dataset.
@@ -35,13 +59,13 @@ cat administrative-regions.tsv | sed 's/    /       1       /' > administrative-
 cat powerlines.tsv | sed 's/    /       1       /' > powerlines.1.tsv
 ```
 
-## Preparing data into PostgreSQL+PostGIS
+### Preparing data into PostgreSQL+PostGIS
 
-### Install PostgreSQL 16 with PostGIS 3.4.2
+#### Install PostgreSQL 16 with PostGIS 3.4.2
 
 Ubuntu 22.04 (`jammy`) requires additional package sources.
 
-#### PostgreSQL 16
+##### PostgreSQL 16
 ```
 apt install gnupg2 curl
 echo "deb http://apt.postgresql.org/pub/repos/apt jammy-pgdg main" > /etc/apt/sources.list.d/pgdg.list
@@ -50,7 +74,7 @@ apt update
 apt install postgresql-16 postgresql-contrib-16
 ```
 
-#### PostGIS 3.4.2
+##### PostGIS 3.4.2
 ```
 apt install software-properties-common
 add-apt-repository ppa:ubuntugis/ppa
@@ -58,14 +82,14 @@ apt update
 apt install postgresql-16-postgis-3
 ```
 
-### Create Database and enable PostGIS
+#### Create Database and enable PostGIS
 
 ```
 createdb spatialjoin_db
 psql -d spatialjoin_db -c "CREATE EXTENSION postgis;"
 ```
 
-### Create tables and geom index
+#### Create tables and geom index
 
 ```
 psql -d spatialjoin_db -c "CREATE TABLE IF NOT EXISTS ohm_planet (id VARCHAR PRIMARY KEY, geom GEOMETRY);"
@@ -140,11 +164,11 @@ psql -d spatialjoin_db -c "DROP table powerlines_loader;"
 psql -d spatialjoin_db -c "CREATE INDEX powerlines_geom_idx ON powerlines USING GIST (geom);"
 ```
 
-## Queries used for data generation
+### Queries used for data generation
 
-### Queries used for Table 2
+#### Queries used for Table 2
 
-#### PostgreSQL+PostGIS
+##### PostgreSQL+PostGIS
 ```
 # candidates
 psql -d spatialjoin_db -c "\timing" -c "SELECT COUNT(*) FROM ohm_planet a, ohm_planet b WHERE a.geom && b.geom;"
@@ -170,7 +194,7 @@ psql -d spatialjoin_db -c "\timing" -c "SELECT COUNT(*) FROM osm_planet a, osm_p
 psql -d spatialjoin_db -c "\timing" -c "SELECT COUNT(*) FROM osm_planet a, osm_planet b WHERE ST_Intersects(a.geom, b.geom);"
 ```
 
-#### spatialjoin
+##### spatialjoin
 ```
 # candidates
 spatialjoin --num-threads 2 --no-geometry-checks --no-diag-box -o /dev/null < /path/to/OHM.tsv
@@ -196,9 +220,9 @@ spatialjoin --num-threads 2 --no-geometry-checks --no-diag-box -o /dev/null < /p
 spatialjoin --num-threads 2 -o /dev/null < /path/to/OSM.tsv
 ```
 
-### Queries used for Table 5
+#### Queries used for Table 5
 
-#### PostgreSQL+PostGIS
+##### PostgreSQL+PostGIS
 ```
 # candidates
 psql -d spatialjoin_db -c "\timing" -c "SELECT COUNT(*) FROM restaurants a, transit_stops b WHERE a.geom && b.geom;"
@@ -224,7 +248,7 @@ psql -d spatialjoin_db -c "\timing" -c "SELECT COUNT(*) FROM powerlines a, resid
 psql -d spatialjoin_db -c "\timing" -c "SELECT COUNT(*) FROM powerlines a, residential_streets b WHERE ST_Intersects(a.geom, b.geom);"
 ```
 
-#### spatialjoin
+##### spatialjoin
 ```
 # candidates
 cat /path/to/restaurants.tsv /path/to/transit-stops.1.tsv | spatialjoin --num-threads 2 --no-geometry-checks --no-diag-box -o /dev/null
