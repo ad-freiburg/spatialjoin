@@ -28,11 +28,30 @@ Datasets from Section 4.3.2:
 ### Preparing data for spatialjoin
 
 ```
-wget https://ad-publications.cs.uni-freiburg.de/SIGSPATIAL_spatialjoin_BBKL_2024.materials/OHM.tsv -o OHM.spatialjoin.input.tsv
-wget https://ad-publications.cs.uni-freiburg.de/SIGSPATIAL_spatialjoin_BBKL_2024.materials/FIN.tsv -o FIN.spatialjoin.input.tsv
-wget https://ad-publications.cs.uni-freiburg.de/SIGSPATIAL_spatialjoin_BBKL_2024.materials/GER.tsv -o GET.spatialjoin.input.tsv
-wget https://ad-publications.cs.uni-freiburg.de/SIGSPATIAL_spatialjoin_BBKL_2024.materials/OSM.tsv.bz2 -o OSM.spatialjoin.input.tsv.bz2
+wget https://ad-publications.cs.uni-freiburg.de/SIGSPATIAL_spatialjoin_BBKL_2024.materials/OHM.tsv -o OHM.spatialjoin-input.tsv
+wget https://ad-publications.cs.uni-freiburg.de/SIGSPATIAL_spatialjoin_BBKL_2024.materials/FIN.tsv -o FIN.spatialjoin-input.tsv
+wget https://ad-publications.cs.uni-freiburg.de/SIGSPATIAL_spatialjoin_BBKL_2024.materials/GER.tsv -o GET.spatialjoin-input.tsv
+wget https://ad-publications.cs.uni-freiburg.de/SIGSPATIAL_spatialjoin_BBKL_2024.materials/OSM.tsv.bz2 -o OSM.spatialjoin-input.tsv.bz2
 bunzip2 OSM.spatialjoin.input.tsv.bz2
+```
+
+### Build and install spatialjoin
+
+Fetch this repository and init submodules:
+
+```
+git clone --recurse-submodules https://github.com/ad-freiburg/spatialjoin
+```
+
+```
+mkdir build && cd build
+cmake ..
+make -j
+```
+
+To install, type
+```
+make install
 ```
 
 ### Running the evalation and analyzing the results for Table 3
@@ -40,8 +59,8 @@ bunzip2 OSM.spatialjoin.input.tsv.bz2
 For each of the datasets `OHM, FIN, GER` and `OSM`, run the evaluation script in folder `scripts` as follows:
 
 ```
-spatialjoin-evaluation.py $DATASET --combinations bcsdoi,Bcsdoi,BCsdoi,BCSdoi,BCSDoi,BCSdOi,BCSdoI 2>&1 | tee $DATASET.spatialjoin-evaluation.tsv
-spatialjoin-evaluation.py $DATASET --combinations bcsdoi,Bcsdoi,BCsdoi,BCSdoi,BCSDoi,BCSdOi,BCSdoI --analyze total --minutes
+./scripts/spatialjoin-evaluation.py $DATASET --combinations bcsdoi,Bcsdoi,BCsdoi,BCSdoi,BCSDoi,BCSdOi,BCSdoI 2>&1 | tee $DATASET.spatialjoin-evaluation.tsv
+./scripts/spatialjoin-evaluation.py $DATASET --combinations bcsdoi,Bcsdoi,BCsdoi,BCSdoi,BCSDoi,BCSdOi,BCSdoI --analyze total --minutes
 ```
 
 ## Comparison against PostgreSQL+PostGIS (Section 4.3)
@@ -52,11 +71,11 @@ To mark a non-selfjoin spatialjoin expects the data of the second side to be mar
 To create the duplicate dataset we replace `\t` with `\t1\t` and generate `.1` variants of each dataset.
 
 ```
-cat restaurants.tsv | sed 's/    /       1       /' > restaurants.1.tsv
-cat transit-stops.tsv | sed 's/    /       1       /' > transit-stops.1.tsv
-cat residential-streets.tsv | sed 's/    /       1       /' > residential-streets.1.tsv
-cat administrative-regions.tsv | sed 's/    /       1       /' > administrative-regions.1.tsv
-cat powerlines.tsv | sed 's/    /       1       /' > powerlines.1.tsv
+cat restaurants.tsv | sed 's/\t/\t1\t/' > restaurants.1.tsv
+cat transit-stops.tsv | sed 's/\t/\t1\t/' > transit-stops.1.tsv
+cat residential-streets.tsv | sed 's/\t/\t1\t/' > residential-streets.1.tsv
+cat administrative-regions.tsv | sed 's/\t/\t1\t/' > administrative-regions.1.tsv
+cat powerlines.tsv | sed 's/\t/\t1\t/' > powerlines.1.tsv
 ```
 
 ### Preparing data into PostgreSQL+PostGIS
@@ -90,6 +109,7 @@ psql -d spatialjoin_db -c "CREATE EXTENSION postgis;"
 ```
 
 #### Create tables and geom index
+
 
 ```
 psql -d spatialjoin_db -c "CREATE TABLE IF NOT EXISTS ohm_planet (id VARCHAR PRIMARY KEY, geom GEOMETRY);"
