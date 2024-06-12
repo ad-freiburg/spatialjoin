@@ -114,41 +114,41 @@ psql -d spatialjoin_db -c "CREATE EXTENSION postgis;"
 
 #### Create tables and geom index
 
-For each of the datasets `OHM`, `FIN`, `GER`, `OSM`, `restaurants`, `transit_stops`, `residential-streets`, `administrative-regions`, and `powerlines`, do the following, where `$(DATASET)` is the dataset name, and `$(DATASET/-/_)` is the dataset name with `-` replaced by `_`:
+For each of the datasets `OHM`, `FIN`, `GER`, `OSM`, `restaurants`, `transit_stops`, `residential-streets`, `administrative-regions`, and `powerlines`, do the following, where `${DATASET}` is the dataset name, and `${DATASET/-/_}` is the dataset name with `-` replaced by `_`:
 
 
 
 ```
-psql -d spatialjoin_db -c "CREATE TABLE IF NOT EXISTS $(DATASET/-/_) (id VARCHAR PRIMARY KEY, geom GEOMETRY);"
-psql -d spatialjoin_db -c "CREATE TABLE IF NOT EXISTS $(DATASET/-/_)_loader (id VARCHAR, geom_text VARCHAR);"
-psql -d spatialjoin_db -c "\copy $(DATASET/-/_)_loader FROM '$(DATASET)' WITH (FORMAT csv, DELIMITER E'\t', HEADER false);"
-psql -d spatialjoin_db -c "INSERT INTO $(DATASET/-/_) (id, geom) SELECT id, ST_GeomFromText(geom_text, 4326) FROM $(DATASET/-/_)_loader;"
-psql -d spatialjoin_db -c "DROP table $(DATASET/-/_)_loader;"
-psql -d spatialjoin_db -c "CREATE INDEX $(DATASET/-/_)_geom_idx ON $(DATASET/-/_) USING GIST (geom);"
+psql -d spatialjoin_db -c "CREATE TABLE IF NOT EXISTS ${DATASET/-/_} (id VARCHAR PRIMARY KEY, geom GEOMETRY);"
+psql -d spatialjoin_db -c "CREATE TABLE IF NOT EXISTS ${DATASET/-/_}_loader (id VARCHAR, geom_text VARCHAR);"
+psql -d spatialjoin_db -c "\copy ${DATASET/-/_}_loader FROM '${DATASET}' WITH (FORMAT csv, DELIMITER E'\t', HEADER false);"
+psql -d spatialjoin_db -c "INSERT INTO ${DATASET/-/_} (id, geom) SELECT id, ST_GeomFromText(geom_text, 4326) FROM ${DATASET/-/_}_loader;"
+psql -d spatialjoin_db -c "DROP table ${DATASET/-/_}_loader;"
+psql -d spatialjoin_db -c "CREATE INDEX ${DATASET/-/_}_geom_idx ON ${DATASET/-/_} USING GIST (geom);"
 ```
 
 ### Queries used for table data generation
 
 #### Queries used for Table 4
 
-For each of the datasets `OHM`, `FIN`, `GER`, `OSM`, do the following, where `$(DATASET)` is again the dataset name:
+For each of the datasets `OHM`, `FIN`, `GER`, `OSM`, do the following, where `${DATASET}` is again the dataset name:
 
 ##### PostgreSQL+PostGIS
 
 ```
 # Compute #candidates
-psql -d spatialjoin_db -c "\timing" -c "SELECT COUNT(*) FROM $(DATASET) a, $(DATASET) b WHERE a.geom && b.geom;"
+psql -d spatialjoin_db -c "\timing" -c "SELECT COUNT(*) FROM ${DATASET} a, ${DATASET} b WHERE a.geom && b.geom;"
 
 # Compute #results
-psql -d spatialjoin_db -c "\timing" -c "SELECT COUNT(*) FROM $(DATASET) a, $(DATASET) b WHERE ST_Intersects(a.geom, b.geom);"
+psql -d spatialjoin_db -c "\timing" -c "SELECT COUNT(*) FROM ${DATASET} a, ${DATASET} b WHERE ST_Intersects(a.geom, b.geom);"
 ```
 
 ##### spatialjoin
 ```
 # Compute #candidates
-spatialjoin --num-threads 2 --no-geometry-checks --no-diag-box -o /dev/null < $(DATASET).tsv
+spatialjoin --num-threads 2 --no-geometry-checks --no-diag-box -o /dev/null < ${DATASET}.tsv
 # Compute #results
-spatialjoin --num-threads 2 -o /dev/null < $(DATASET).tsv
+spatialjoin --num-threads 2 -o /dev/null < ${DATASET}.tsv
 ```
 
 #### Queries used for Table 5
