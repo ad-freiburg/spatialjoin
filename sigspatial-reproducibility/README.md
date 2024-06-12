@@ -110,134 +110,41 @@ psql -d spatialjoin_db -c "CREATE EXTENSION postgis;"
 
 #### Create tables and geom index
 
+For each of the datasets `OHM`, `FIN`, `GER`, `OSM`, `restaurants`, `transit_stops`, `residential-streets`, `administrative-regions`, and `powerlines`, do the following, where `$(DATASET)` is the dataset name, and `$(DATASET/-/_)` is the dataset name with `-` replaced by `_`:
+
+
 
 ```
-psql -d spatialjoin_db -c "CREATE TABLE IF NOT EXISTS ohm_planet (id VARCHAR PRIMARY KEY, geom GEOMETRY);"
-psql -d spatialjoin_db -c "CREATE TABLE IF NOT EXISTS ohm_planet_loader (id VARCHAR, geom_text VARCHAR);"
-psql -d spatialjoin_db -c "\copy ohm_planet_loader FROM '/path/to/OHM.tsv' WITH (FORMAT csv, DELIMITER E'\t', HEADER false);"
-psql -d spatialjoin_db -c "INSERT INTO ohm_planet (id, geom) SELECT id, ST_GeomFromText(geom_text, 4326) FROM ohm_planet_loader;"
-psql -d spatialjoin_db -c "DROP table ohm_planet_loader;"
-psql -d spatialjoin_db -c "CREATE INDEX ohm_planet_geom_idx ON ohm_planet USING GIST (geom);"
-```
-```
-psql -d spatialjoin_db -c "CREATE TABLE IF NOT EXISTS osm_finland (id VARCHAR PRIMARY KEY, geom GEOMETRY);"
-psql -d spatialjoin_db -c "CREATE TABLE IF NOT EXISTS osm_finland_loader (id VARCHAR, geom_text VARCHAR);"
-psql -d spatialjoin_db -c "\copy osm_finland_loader FROM '/path/to/FIN.tsv' WITH (FORMAT csv, DELIMITER E'\t', HEADER false);"
-psql -d spatialjoin_db -c "INSERT INTO osm_finland (id, geom) SELECT id, ST_GeomFromText(geom_text, 4326) FROM osm_finland_loader;"
-psql -d spatialjoin_db -c "DROP table osm_finland_loader;"
-psql -d spatialjoin_db -c "CREATE INDEX osm_finland_geom_idx ON osm_finland USING GIST (geom);"
-```
-```
-psql -d spatialjoin_db -c "CREATE TABLE IF NOT EXISTS osm_germany (id VARCHAR PRIMARY KEY, geom GEOMETRY);"
-psql -d spatialjoin_db -c "CREATE TABLE IF NOT EXISTS osm_germany_loader (id VARCHAR, geom_text VARCHAR);"
-psql -d spatialjoin_db -c "\copy osm_germany_loader FROM '/path/to/GER.tsv' WITH (FORMAT csv, DELIMITER E'\t', HEADER false);"
-psql -d spatialjoin_db -c "INSERT INTO osm_germany (id, geom) SELECT id, ST_GeomFromText(geom_text, 4326) FROM osm_germany_loader;"
-psql -d spatialjoin_db -c "DROP table osm_germany_loader;"
-psql -d spatialjoin_db -c "CREATE INDEX osm_germany_geom_idx ON osm_germany USING GIST (geom);"
-```
-```
-psql -d spatialjoin_db -c "CREATE TABLE IF NOT EXISTS osm_planet (id VARCHAR PRIMARY KEY, geom GEOMETRY);"
-psql -d spatialjoin_db -c "CREATE TABLE IF NOT EXISTS osm_planet_loader (id VARCHAR, geom_text VARCHAR);"
-psql -d spatialjoin_db -c "\copy osm_planet_loader FROM '/path/to/OSM.tsv' WITH (FORMAT csv, DELIMITER E'\t', HEADER false);"
-psql -d spatialjoin_db -c "INSERT INTO osm_planet (id, geom) SELECT id, ST_GeomFromText(geom_text, 4326) FROM osm_planet_loader;"
-psql -d spatialjoin_db -c "DROP table osm_planet_loader;"
-psql -d spatialjoin_db -c "CREATE INDEX osm_planet_geom_idx ON osm_planet USING GIST (geom);"
-```
-```
-psql -d spatialjoin_db -c "CREATE TABLE IF NOT EXISTS restaurants (id VARCHAR PRIMARY KEY, geom GEOMETRY);"
-psql -d spatialjoin_db -c "CREATE TABLE IF NOT EXISTS restaurants_loader (id VARCHAR, geom_text VARCHAR);"
-psql -d spatialjoin_db -c "\copy restaurants_loader FROM '/path/to/restaurants.tsv' WITH (FORMAT csv, DELIMITER E'\t', HEADER false);"
-psql -d spatialjoin_db -c "INSERT INTO restaurants (id, geom) SELECT id, ST_GeomFromText(geom_text, 4326) FROM restaurants_loader;"
-psql -d spatialjoin_db -c "DROP table restaurants_loader;"
-psql -d spatialjoin_db -c "CREATE INDEX restaurants_geom_idx ON restaurants USING GIST (geom);"
-```
-```
-psql -d spatialjoin_db -c "CREATE TABLE IF NOT EXISTS transit_stops (id VARCHAR PRIMARY KEY, geom GEOMETRY);"
-psql -d spatialjoin_db -c "CREATE TABLE IF NOT EXISTS transit_stops_loader (id VARCHAR, geom_text VARCHAR);"
-psql -d spatialjoin_db -c "\copy transit_stops_loader FROM '/path/to/transit-stops.tsv' WITH (FORMAT csv, DELIMITER E'\t', HEADER false);"
-psql -d spatialjoin_db -c "INSERT INTO transit_stops (id, geom) SELECT id, ST_GeomFromText(geom_text, 4326) FROM transit_stops_loader;"
-psql -d spatialjoin_db -c "DROP table transit_stops_loader;"
-psql -d spatialjoin_db -c "CREATE INDEX transit_stops_geom_idx ON transit_stops USING GIST (geom);"
-```
-```
-psql -d spatialjoin_db -c "CREATE TABLE IF NOT EXISTS residential_streets (id VARCHAR PRIMARY KEY, geom GEOMETRY);"
-psql -d spatialjoin_db -c "CREATE TABLE IF NOT EXISTS residential_streets_loader (id VARCHAR, geom_text VARCHAR);"
-psql -d spatialjoin_db -c "\copy residential_streets_loader FROM '/path/to/residential-streets.tsv' WITH (FORMAT csv, DELIMITER E'\t', HEADER false);"
-psql -d spatialjoin_db -c "INSERT INTO residential_streets (id, geom) SELECT id, ST_GeomFromText(geom_text, 4326) FROM residential_streets_loader;"
-psql -d spatialjoin_db -c "DROP table residential_streets_loader;"
-psql -d spatialjoin_db -c "CREATE INDEX restaurants_geom_idx ON residential_streets USING GIST (geom);"
-```
-```
-psql -d spatialjoin_db -c "CREATE TABLE IF NOT EXISTS administrative_regions (id VARCHAR PRIMARY KEY, geom GEOMETRY);"
-psql -d spatialjoin_db -c "CREATE TABLE IF NOT EXISTS administrative_regions_loader (id VARCHAR, geom_text VARCHAR);"
-psql -d spatialjoin_db -c "\copy administrative_regions_loader FROM '/path/to/restaurants.tsv' WITH (FORMAT csv, DELIMITER E'\t', HEADER false);"
-psql -d spatialjoin_db -c "INSERT INTO administrative_regions (id, geom) SELECT id, ST_GeomFromText(geom_text, 4326) FROM administrative_regions_loader;"
-psql -d spatialjoin_db -c "DROP table administrative_regions_loader;"
-psql -d spatialjoin_db -c "CREATE INDEX administrative_regions_geom_idx ON administrative_regions USING GIST (geom);"
-```
-```
-psql -d spatialjoin_db -c "CREATE TABLE IF NOT EXISTS powerlines (id VARCHAR PRIMARY KEY, geom GEOMETRY);"
-psql -d spatialjoin_db -c "CREATE TABLE IF NOT EXISTS powerlines_loader (id VARCHAR, geom_text VARCHAR);"
-psql -d spatialjoin_db -c "\copy powerlines_loader FROM '/path/to/powerlines.tsv' WITH (FORMAT csv, DELIMITER E'\t', HEADER false);"
-psql -d spatialjoin_db -c "INSERT INTO powerlines (id, geom) SELECT id, ST_GeomFromText(geom_text, 4326) FROM powerlines_loader;"
-psql -d spatialjoin_db -c "DROP table powerlines_loader;"
-psql -d spatialjoin_db -c "CREATE INDEX powerlines_geom_idx ON powerlines USING GIST (geom);"
+psql -d spatialjoin_db -c "CREATE TABLE IF NOT EXISTS $(DATASET/-/_) (id VARCHAR PRIMARY KEY, geom GEOMETRY);"
+psql -d spatialjoin_db -c "CREATE TABLE IF NOT EXISTS $(DATASET/-/_)_loader (id VARCHAR, geom_text VARCHAR);"
+psql -d spatialjoin_db -c "\copy $(DATASET/-/_)_loader FROM '$(DATASET)' WITH (FORMAT csv, DELIMITER E'\t', HEADER false);"
+psql -d spatialjoin_db -c "INSERT INTO $(DATASET/-/_) (id, geom) SELECT id, ST_GeomFromText(geom_text, 4326) FROM $(DATASET/-/_)_loader;"
+psql -d spatialjoin_db -c "DROP table $(DATASET/-/_)_loader;"
+psql -d spatialjoin_db -c "CREATE INDEX $(DATASET/-/_)_geom_idx ON $(DATASET/-/_) USING GIST (geom);"
 ```
 
-### Queries used for data generation
+### Queries used for table data generation
 
-#### Queries used for Table 2
+#### Queries used for Table 4
+
+For each of the datasets `OHM`, `FIN`, `GER`, `OSM`, do the following, where `$(DATASET)` is again the dataset name:
 
 ##### PostgreSQL+PostGIS
+
 ```
-# candidates
-psql -d spatialjoin_db -c "\timing" -c "SELECT COUNT(*) FROM ohm_planet a, ohm_planet b WHERE a.geom && b.geom;"
-# intersects
-psql -d spatialjoin_db -c "\timing" -c "SELECT COUNT(*) FROM ohm_planet a, ohm_planet b WHERE ST_Intersects(a.geom, b.geom);"
-```
-```
-# candidates
-psql -d spatialjoin_db -c "\timing" -c "SELECT COUNT(*) FROM osm_finland a, osm_finland b WHERE a.geom && b.geom;"
-# intersects
-psql -d spatialjoin_db -c "\timing" -c "SELECT COUNT(*) FROM osm_finland a, osm_finland b WHERE ST_Intersects(a.geom, b.geom);"
-```
-```
-# candidates
-psql -d spatialjoin_db -c "\timing" -c "SELECT COUNT(*) FROM osm_germany a, osm_germany b WHERE a.geom && b.geom;"
-# intersects
-psql -d spatialjoin_db -c "\timing" -c "SELECT COUNT(*) FROM osm_germany a, osm_germany b WHERE ST_Intersects(a.geom, b.geom);"
-```
-```
-# candidates
-psql -d spatialjoin_db -c "\timing" -c "SELECT COUNT(*) FROM osm_planet a, osm_planet b WHERE a.geom && b.geom;"
-# intersects
-psql -d spatialjoin_db -c "\timing" -c "SELECT COUNT(*) FROM osm_planet a, osm_planet b WHERE ST_Intersects(a.geom, b.geom);"
+# Compute #candidates
+psql -d spatialjoin_db -c "\timing" -c "SELECT COUNT(*) FROM $(DATASET) a, $(DATASET) b WHERE a.geom && b.geom;"
+
+# Compute #results
+psql -d spatialjoin_db -c "\timing" -c "SELECT COUNT(*) FROM $(DATASET) a, $(DATASET) b WHERE ST_Intersects(a.geom, b.geom);"
 ```
 
 ##### spatialjoin
 ```
-# candidates
-spatialjoin --num-threads 2 --no-geometry-checks --no-diag-box -o /dev/null < /path/to/OHM.tsv
-# all predicates
-spatialjoin --num-threads 2 -o /dev/null < /path/to/OHM.tsv
-```
-```
-# candidates
-spatialjoin --num-threads 2 --no-geometry-checks --no-diag-box -o /dev/null < /path/to/FIN.tsv
-# all predicates
-spatialjoin --num-threads 2 -o /dev/null < /path/to/FIN.tsv
-```
-```
-# candidates
-spatialjoin --num-threads 2 --no-geometry-checks --no-diag-box -o /dev/null < /path/to/GER.tsv
-# all predicates
-spatialjoin --num-threads 2 -o /dev/null < /path/to/GER.tsv
-```
-```
-# candidates
-spatialjoin --num-threads 2 --no-geometry-checks --no-diag-box -o /dev/null < /path/to/OSM.tsv
-# all predicates
-spatialjoin --num-threads 2 -o /dev/null < /path/to/OSM.tsv
+# Compute #candidates
+spatialjoin --num-threads 2 --no-geometry-checks --no-diag-box -o /dev/null < $(DATASET).tsv
+# Compute #results
+spatialjoin --num-threads 2 -o /dev/null < $(DATASET).tsv
 ```
 
 #### Queries used for Table 5
@@ -271,25 +178,25 @@ psql -d spatialjoin_db -c "\timing" -c "SELECT COUNT(*) FROM powerlines a, resid
 ##### spatialjoin
 ```
 # candidates
-cat /path/to/restaurants.tsv /path/to/transit-stops.1.tsv | spatialjoin --num-threads 2 --no-geometry-checks --no-diag-box -o /dev/null
+cat restaurants.tsv transit-stops.1.tsv | spatialjoin --num-threads 2 --no-geometry-checks --no-diag-box -o /dev/null
 # all predicates
-cat /path/to/restaurants.tsv /path/to/transit-stops.1.tsv | spatialjoin --num-threads 2 -o /dev/null 
+cat restaurants.tsv transit-stops.1.tsv | spatialjoin --num-threads 2 -o /dev/null 
 ```
 ```
 # candidates
-cat /path/to/residential-streets.tsv /path/to/administrative-regions.1.tsv | spatialjoin --num-threads 2 --no-geometry-checks --no-diag-box -o /dev/null
+cat residential-streets.tsv administrative-regions.1.tsv | spatialjoin --num-threads 2 --no-geometry-checks --no-diag-box -o /dev/null
 # all predicates
-cat /path/to/residential-streets.tsv /path/to/administrative-regions.1.tsv | spatialjoin --num-threads 2 -o /dev/null 
+cat residential-streets.tsv administrative-regions.1.tsv | spatialjoin --num-threads 2 -o /dev/null 
 ```
 ```
 # candidates
-cat /path/to/residential-streets.tsv | spatialjoin --num-threads 2 --no-geometry-checks --no-diag-box -o /dev/null
+cat residential-streets.tsv | spatialjoin --num-threads 2 --no-geometry-checks --no-diag-box -o /dev/null
 # all predicates
-cat /path/to/residential-streets.tsv | spatialjoin --num-threads 2 -o /dev/null 
+cat residential-streets.tsv | spatialjoin --num-threads 2 -o /dev/null 
 ```
 ```
 # candidates
-cat /path/to/powerlines.tsv /path/to/residential-streets.1.tsv | spatialjoin --num-threads 2 --no-geometry-checks --no-diag-box -o /dev/null
+cat powerlines.tsv residential-streets.1.tsv | spatialjoin --num-threads 2 --no-geometry-checks --no-diag-box -o /dev/null
 # all predicates
-cat /path/to/powerlines.tsv /path/to/residential-streets.1.tsv | spatialjoin --num-threads 2 -o /dev/null 
+cat powerlines.tsv residential-streets.1.tsv | spatialjoin --num-threads 2 -o /dev/null 
 ```
