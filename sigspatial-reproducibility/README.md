@@ -30,7 +30,7 @@ Datasets from Section 4.3.2:
 ```
 wget https://ad-publications.cs.uni-freiburg.de/SIGSPATIAL_spatialjoin_BBKL_2024.materials/OHM.tsv -o OHM.spatialjoin-input.tsv
 wget https://ad-publications.cs.uni-freiburg.de/SIGSPATIAL_spatialjoin_BBKL_2024.materials/FIN.tsv -o FIN.spatialjoin-input.tsv
-wget https://ad-publications.cs.uni-freiburg.de/SIGSPATIAL_spatialjoin_BBKL_2024.materials/GER.tsv -o GET.spatialjoin-input.tsv
+wget https://ad-publications.cs.uni-freiburg.de/SIGSPATIAL_spatialjoin_BBKL_2024.materials/GER.tsv -o GER.spatialjoin-input.tsv
 wget https://ad-publications.cs.uni-freiburg.de/SIGSPATIAL_spatialjoin_BBKL_2024.materials/OSM.tsv.bz2 -o OSM.spatialjoin-input.tsv.bz2
 bunzip2 OSM.spatialjoin.input.tsv.bz2
 ```
