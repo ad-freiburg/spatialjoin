@@ -80,6 +80,10 @@ cat powerlines.tsv | sed 's/\t/\t1\t/' > powerlines.1.tsv
 
 ### Preparing data into PostgreSQL+PostGIS
 
+For PostgreSQL, we use the official package for version 16 provided on [postgresql.org](https://postgresql.org), with the default configuration.
+
+For PostGIS, we use the package for version 3.4.2 provided by UbuntuGIS, also with the default configuration.
+
 #### Install PostgreSQL 16 with PostGIS 3.4.2
 
 Ubuntu 22.04 (`jammy`) requires additional package sources.
