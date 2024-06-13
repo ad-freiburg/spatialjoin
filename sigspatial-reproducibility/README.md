@@ -118,6 +118,12 @@ apt install postgresql-16-postgis-3
 
 #### Create Database and enable PostGIS
 
+Change to user postgres:
+
+```
+su postgres
+```
+
 ```
 createdb spatialjoin_db
 psql -d spatialjoin_db -c "CREATE EXTENSION postgis;"
@@ -128,11 +134,10 @@ psql -d spatialjoin_db -c "CREATE EXTENSION postgis;"
 For each of the datasets `OHM`, `FIN`, `GER`, `OSM`, `restaurants`, `transit_stops`, `residential-streets`, `administrative-regions`, and `powerlines`, do the following, where `${DATASET}` is the dataset name, and `${DATASET/-/_}` is the dataset name with `-` replaced by `_`:
 
 
-
 ```
 psql -d spatialjoin_db -c "CREATE TABLE IF NOT EXISTS ${DATASET/-/_} (id VARCHAR PRIMARY KEY, geom GEOMETRY);"
 psql -d spatialjoin_db -c "CREATE TABLE IF NOT EXISTS ${DATASET/-/_}_loader (id VARCHAR, geom_text VARCHAR);"
-psql -d spatialjoin_db -c "\copy ${DATASET/-/_}_loader FROM '${DATASET}' WITH (FORMAT csv, DELIMITER E'\t', HEADER false);"
+psql -d spatialjoin_db -c "\copy ${DATASET/-/_}_loader FROM '${DATASET}.tsv' WITH (FORMAT csv, DELIMITER E'\t', HEADER false);"
 psql -d spatialjoin_db -c "INSERT INTO ${DATASET/-/_} (id, geom) SELECT id, ST_GeomFromText(geom_text, 4326) FROM ${DATASET/-/_}_loader;"
 psql -d spatialjoin_db -c "DROP table ${DATASET/-/_}_loader;"
 psql -d spatialjoin_db -c "CREATE INDEX ${DATASET/-/_}_geom_idx ON ${DATASET/-/_} USING GIST (geom);"
