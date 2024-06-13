@@ -25,16 +25,6 @@ Datasets from Section 4.3.2:
 
 ## Comparison of our standalone tool (Section 4.2)
 
-### Preparing data for spatialjoin
-
-```
-wget https://ad-publications.cs.uni-freiburg.de/SIGSPATIAL_spatialjoin_BBKL_2024.materials/OHM.tsv -o OHM.spatialjoin-input.tsv
-wget https://ad-publications.cs.uni-freiburg.de/SIGSPATIAL_spatialjoin_BBKL_2024.materials/FIN.tsv -o FIN.spatialjoin-input.tsv
-wget https://ad-publications.cs.uni-freiburg.de/SIGSPATIAL_spatialjoin_BBKL_2024.materials/GER.tsv -o GER.spatialjoin-input.tsv
-wget https://ad-publications.cs.uni-freiburg.de/SIGSPATIAL_spatialjoin_BBKL_2024.materials/OSM.tsv.bz2 -o OSM.spatialjoin-input.tsv.bz2
-bunzip2 OSM.spatialjoin.input.tsv.bz2
-```
-
 ### Build and install spatialjoin
 
 Fetch this repository and init submodules:
@@ -44,6 +34,7 @@ git clone --recurse-submodules https://github.com/ad-freiburg/spatialjoin
 ```
 
 ```
+cd spatialjoin
 mkdir build && cd build
 cmake ..
 make -j
@@ -54,7 +45,27 @@ To install, type
 make install
 ```
 
-### Running the evalation and analyzing the results for Table 3
+and go back to the root directory:
+```
+cd ..
+```
+### Preparing data for spatialjoin
+
+```
+wget https://ad-publications.cs.uni-freiburg.de/SIGSPATIAL_spatialjoin_BBKL_2024.materials/OHM.tsv -O OHM.spatialjoin-input.tsv
+wget https://ad-publications.cs.uni-freiburg.de/SIGSPATIAL_spatialjoin_BBKL_2024.materials/FIN.tsv -O FIN.spatialjoin-input.tsv
+wget https://ad-publications.cs.uni-freiburg.de/SIGSPATIAL_spatialjoin_BBKL_2024.materials/GER.tsv -O GER.spatialjoin-input.tsv
+wget https://ad-publications.cs.uni-freiburg.de/SIGSPATIAL_spatialjoin_BBKL_2024.materials/OSM.tsv.bz2 -O OSM.spatialjoin-input.tsv.bz2
+bunzip2 OSM.spatialjoin.input.tsv.bz2
+wget https://ad-publications.cs.uni-freiburg.de/SIGSPATIAL_spatialjoin_BBKL_2024.materials/restaurants.tsv
+wget https://ad-publications.cs.uni-freiburg.de/SIGSPATIAL_spatialjoin_BBKL_2024.materials/transit-stops.tsv
+wget https://ad-publications.cs.uni-freiburg.de/SIGSPATIAL_spatialjoin_BBKL_2024.materials/residential-streets.tsv.bz2
+bunzip2 residential-streets.tsv.bz2
+wget https://ad-publications.cs.uni-freiburg.de/SIGSPATIAL_spatialjoin_BBKL_2024.materials/administrative-regions.tsv
+wget https://ad-publications.cs.uni-freiburg.de/SIGSPATIAL_spatialjoin_BBKL_2024.materials/powerlines.tsv
+```
+
+### Running the evaluation and analyzing the results for Table 3
 
 For each of the datasets `OHM, FIN, GER` and `OSM`, run the evaluation script in folder `scripts` as follows:
 
@@ -86,7 +97,7 @@ For PostGIS, we use the package for version 3.4.2 provided by UbuntuGIS, also wi
 
 #### Install PostgreSQL 16 with PostGIS 3.4.2
 
-Ubuntu 22.04 (`jammy`) requires additional package sources.
+This installation guide is for Ubuntu 22.04. The process may be different for other distributions.
 
 ##### PostgreSQL 16
 ```
