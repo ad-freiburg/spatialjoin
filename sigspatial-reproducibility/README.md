@@ -45,7 +45,9 @@ To install, type
 make install
 ```
 
-and go back to the root directory:
+Alternatively, add the `build` directory to your `PATH`.
+
+Go back to the root directory:
 ```
 cd ..
 ```
@@ -118,7 +120,7 @@ apt install postgresql-16-postgis-3
 
 #### Create Database and enable PostGIS
 
-Change to user postgres:
+Change to user `postgres`:
 
 ```
 su postgres
