@@ -111,7 +111,7 @@ struct Point {
   // id
   std::string id;
 
-  // sub id (for multilines)
+  // sub id (for multipoints)
   uint16_t subId;
 };
 
