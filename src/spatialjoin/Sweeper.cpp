@@ -1021,8 +1021,7 @@ RelStats Sweeper::sweep() {
   std::cerr << sumRel.toString() << std::endl;
   std::cerr << "Checked " << totalCheckCount
             << " candidates (with overlapping bounding box"
-            << (_cfg.useDiagBox ? " and overlapping diagonal box" : "")
-            << ")\n"
+            << (_cfg.useDiagBox ? " and overlapping diagonal box" : "") << ")\n"
             << std::endl;
 
   return sumRel;
@@ -1632,50 +1631,54 @@ void Sweeper::writeRel(size_t t, const std::string& a, const std::string& b,
 
   if (_outMode == NONE) return;
 
-  size_t totSize = _cfg.pairStart.size() + a.size() + pred.size() + b.size() +
-                   _cfg.pairEnd.size();
+  if (_cfg.writeRelCb) {
+    _cfg.writeRelCb(t, a, b, pred);
+  } else {
+    size_t totSize = _cfg.pairStart.size() + a.size() + pred.size() + b.size() +
+                     _cfg.pairEnd.size();
 
-  if (_outMode == BZ2) {
-    if (_outBufPos[t] + totSize >= BUFFER_S_PAIRS) {
-      int err = 0;
-      BZ2_bzWrite(&err, _files[t], _outBuffers[t], _outBufPos[t]);
-      if (err == BZ_IO_ERROR) {
-        BZ2_bzWriteClose(&err, _files[t], 0, 0, 0);
-        throw std::runtime_error("Could not write to file.");
+    if (_outMode == BZ2) {
+      if (_outBufPos[t] + totSize >= BUFFER_S_PAIRS) {
+        int err = 0;
+        BZ2_bzWrite(&err, _files[t], _outBuffers[t], _outBufPos[t]);
+        if (err == BZ_IO_ERROR) {
+          BZ2_bzWriteClose(&err, _files[t], 0, 0, 0);
+          throw std::runtime_error("Could not write to file.");
+        }
+        _outBufPos[t] = 0;
       }
-      _outBufPos[t] = 0;
-    }
 
-    writeRelToBuf(t, a, b, pred);
-  } else if (_outMode == GZ) {
-    if (_outBufPos[t] + totSize >= BUFFER_S_PAIRS) {
-      int r = gzwrite(_gzFiles[t], _outBuffers[t], _outBufPos[t]);
-      if (r != (int)_outBufPos[t]) {
-        gzclose(_gzFiles[t]);
-        throw std::runtime_error("Could not write to file.");
+      writeRelToBuf(t, a, b, pred);
+    } else if (_outMode == GZ) {
+      if (_outBufPos[t] + totSize >= BUFFER_S_PAIRS) {
+        int r = gzwrite(_gzFiles[t], _outBuffers[t], _outBufPos[t]);
+        if (r != (int)_outBufPos[t]) {
+          gzclose(_gzFiles[t]);
+          throw std::runtime_error("Could not write to file.");
+        }
+        _outBufPos[t] = 0;
       }
-      _outBufPos[t] = 0;
-    }
 
-    writeRelToBuf(t, a, b, pred);
-  } else if (_outMode == PLAIN) {
-    if (_outBufPos[t] + totSize >= BUFFER_S_PAIRS) {
-      size_t r =
-          fwrite(_outBuffers[t], sizeof(char), _outBufPos[t], _rawFiles[t]);
-      if (r != _outBufPos[t]) {
-        throw std::runtime_error("Could not write to file.");
+      writeRelToBuf(t, a, b, pred);
+    } else if (_outMode == PLAIN) {
+      if (_outBufPos[t] + totSize >= BUFFER_S_PAIRS) {
+        size_t r =
+            fwrite(_outBuffers[t], sizeof(char), _outBufPos[t], _rawFiles[t]);
+        if (r != _outBufPos[t]) {
+          throw std::runtime_error("Could not write to file.");
+        }
+        _outBufPos[t] = 0;
       }
-      _outBufPos[t] = 0;
-    }
 
-    writeRelToBuf(t, a, b, pred);
-  } else if (_outMode == COUT) {
-    if (_outBufPos[t] + totSize + 1 >= BUFFER_S_PAIRS) {
-      _outBuffers[t][_outBufPos[t]] = 0;
-      fputs(reinterpret_cast<const char*>(_outBuffers[t]), stdout);
-      _outBufPos[t] = 0;
+      writeRelToBuf(t, a, b, pred);
+    } else if (_outMode == COUT) {
+      if (_outBufPos[t] + totSize + 1 >= BUFFER_S_PAIRS) {
+        _outBuffers[t][_outBufPos[t]] = 0;
+        fputs(reinterpret_cast<const char*>(_outBuffers[t]), stdout);
+        _outBufPos[t] = 0;
+      }
+      writeRelToBuf(t, a, b, pred);
     }
-    writeRelToBuf(t, a, b, pred);
   }
 
   _stats[t].timeWrite += TOOK(ts);
@@ -2577,6 +2580,8 @@ void Sweeper::doCheck(const BoxVal cur, const SweepVal sv, size_t t) {
 
 // _____________________________________________________________________________
 void Sweeper::flushOutputFiles() {
+  if (_cfg.writeRelCb) return;
+
   if (_outMode == COUT) {
     for (size_t i = 0; i < _cfg.numThreads + 1; i++) {
       _outBuffers[i][_outBufPos[i]] = 0;
@@ -2635,6 +2640,8 @@ void Sweeper::flushOutputFiles() {
 
 // _____________________________________________________________________________
 void Sweeper::prepareOutputFiles() {
+  if (_cfg.writeRelCb) return;
+
   if (_outMode == BZ2) {
     for (size_t i = 0; i < _cfg.numThreads + 1; i++) {
       _rawFiles[i] = fopen((_cache + "/.rels" + std::to_string(getpid()) + "-" +

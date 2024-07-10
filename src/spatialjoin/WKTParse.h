@@ -11,14 +11,14 @@ struct ParseJob {
   bool side;
 };
 
-bool operator==(const ParseJob& a, const ParseJob& b) {
+inline bool operator==(const ParseJob& a, const ParseJob& b) {
   return a.line == b.line && a.str == b.str && a.side == b.side;
 }
 
 typedef std::vector<ParseJob> ParseBatch;
 
 // _____________________________________________________________________________
-util::geo::I32Line parseLineString(const char* c, size_t res) {
+inline util::geo::I32Line parseLineString(const char* c, size_t res) {
   util::geo::I32Line line;
   auto end = strchr(c, ')');
   if (!end) return line;
@@ -47,7 +47,7 @@ util::geo::I32Line parseLineString(const char* c, size_t res) {
 }
 
 // _____________________________________________________________________________
-util::geo::I32Point parsePoint(const char* c) {
+inline util::geo::I32Point parsePoint(const char* c) {
   double x = util::atof(c, 10);
   const char* next = strchr(c, ' ');
   if (!next) return {0, 0};  // TODO!
@@ -58,8 +58,8 @@ util::geo::I32Point parsePoint(const char* c) {
 }
 
 // _____________________________________________________________________________
-void parseLine(char* c, size_t len, size_t gid, sj::Sweeper* sweeper,
-               sj::WriteBatch& batch, bool side) {
+inline void parseLine(char* c, size_t len, size_t gid, sj::Sweeper* sweeper,
+                      sj::WriteBatch& batch, bool side) {
   char* idp = reinterpret_cast<char*>(strchr(c, '\t'));
 
   std::string id;
@@ -149,7 +149,8 @@ void parseLine(char* c, size_t len, size_t gid, sj::Sweeper* sweeper,
 }
 
 // _____________________________________________________________________________
-void processQueue(util::JobQueue<ParseBatch>* jobs, size_t, sj::Sweeper* idx) {
+inline void processQueue(util::JobQueue<ParseBatch>* jobs, size_t,
+                         sj::Sweeper* idx) {
   ParseBatch batch;
   while ((batch = jobs->get()).size()) {
     sj::WriteBatch w;
@@ -163,8 +164,8 @@ void processQueue(util::JobQueue<ParseBatch>* jobs, size_t, sj::Sweeper* idx) {
 }
 
 // _____________________________________________________________________________
-void parse(char* c, size_t size, std::string& dang, size_t* gid,
-           util::JobQueue<ParseBatch>& jobs, bool side) {
+inline void parse(char* c, size_t size, std::string& dang, size_t* gid,
+                  util::JobQueue<ParseBatch>& jobs, bool side) {
   size_t p = 0;
 
   ParseBatch curBatch;

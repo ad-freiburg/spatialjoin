@@ -14,6 +14,7 @@
 
 #include <atomic>
 #include <condition_variable>
+#include <functional>
 #include <mutex>
 #include <queue>
 #include <thread>
@@ -65,6 +66,11 @@ struct WriteBatch {
   std::vector<WriteCand> lines;
   std::vector<WriteCand> simpleAreas;
   std::vector<WriteCand> areas;
+
+  size_t size() const {
+    return points.size() + simpleLines.size() + lines.size() +
+           simpleAreas.size() + areas.size();
+  }
 };
 
 inline bool operator==(const BoxVal& a, const BoxVal& b) {
@@ -112,6 +118,9 @@ struct SweeperCfg {
   bool useFastSweepSkip;
   bool useInnerOuter;
   bool noGeometryChecks;
+  std::function<void(size_t t, const std::string& a, const std::string& b,
+                     const std::string& pred)>
+      writeRelCb;
 };
 
 // buffer size _must_ be multiples of sizeof(BoxVal)
@@ -141,23 +150,25 @@ class Sweeper {
         _cache(cache),
         _out(out),
         _jobs(100) {
-    if (util::endsWith(_out, ".bz2"))
-      _outMode = BZ2;
-    else if (util::endsWith(_out, ".gz"))
-      _outMode = GZ;
-    else if (out.size())
-      _outMode = PLAIN;
-    else {
-      struct stat std_out;
-      struct stat dev_null;
-      if (fstat(STDOUT_FILENO, &std_out) == 0 && S_ISCHR(std_out.st_mode) &&
-          stat("/dev/null", &dev_null) == 0 &&
-          std_out.st_dev == dev_null.st_dev &&
-          std_out.st_ino == dev_null.st_ino) {
-        // output to /dev/null, print nothing
-        _outMode = NONE;
-      } else {
-        _outMode = COUT;
+    if (!_cfg.writeRelCb) {
+      if (util::endsWith(_out, ".bz2"))
+        _outMode = BZ2;
+      else if (util::endsWith(_out, ".gz"))
+        _outMode = GZ;
+      else if (out.size())
+        _outMode = PLAIN;
+      else {
+        struct stat std_out;
+        struct stat dev_null;
+        if (fstat(STDOUT_FILENO, &std_out) == 0 && S_ISCHR(std_out.st_mode) &&
+            stat("/dev/null", &dev_null) == 0 &&
+            std_out.st_dev == dev_null.st_dev &&
+            std_out.st_ino == dev_null.st_ino) {
+          // output to /dev/null, print nothing
+          _outMode = NONE;
+        } else {
+          _outMode = COUT;
+        }
       }
     }
 
