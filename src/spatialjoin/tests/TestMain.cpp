@@ -67,55 +67,55 @@ int main(int, char**) {
       1,          1,           "$",        " intersects ", " contains ",
       " covers ", " touches ", " equals ", " overlaps ",   " crosses ",
       "$\n",      false,       false,      false,          false,
-      false,      false,       false,      false};
+      false,      false,       false,      false, {}, {}, {}, {}};
 
   sj::SweeperCfg all{
       1,          1,           "$",        " intersects ", " contains ",
       " covers ", " touches ", " equals ", " overlaps ",   " crosses ",
       "$\n",      true,        true,       true,           true,
-      true,       true,        true,       false};
+      true,       true,        true,       false, {}, {}, {}, {}};
 
   sj::SweeperCfg noSurfaceArea{
       1,          1,           "$",        " intersects ", " contains ",
       " covers ", " touches ", " equals ", " overlaps ",   " crosses ",
       "$\n",      true,        false,      true,           true,
-      true,       true,        true,       false};
+      true,       true,        true,       false, {}, {}, {}, {}};
 
   sj::SweeperCfg noBoxIds{
       1,          1,           "$",        " intersects ", " contains ",
       " covers ", " touches ", " equals ", " overlaps ",   " crosses ",
       "$\n",      false,       true,       true,           true,
-      true,       true,        true,       false};
+      true,       true,        true,       false, {}, {}, {}, {}};
 
   sj::SweeperCfg noObb{
       1,          1,           "$",        " intersects ", " contains ",
       " covers ", " touches ", " equals ", " overlaps ",   " crosses ",
       "$\n",      true,        true,       false,          true,
-      true,       true,        true,       false};
+      true,       true,        true,       false, {}, {}, {}, {}};
 
   sj::SweeperCfg noCutouts{
       1,          1,           "$",        " intersects ", " contains ",
       " covers ", " touches ", " equals ", " overlaps ",   " crosses ",
       "$\n",      true,        true,       true,           false,
-      true,       true,        true,       false};
+      true,       true,        true,       false, {}, {}, {}, {}};
 
   sj::SweeperCfg noDiagBox{
       1,          1,           "$",        " intersects ", " contains ",
       " covers ", " touches ", " equals ", " overlaps ",   " crosses ",
       "$\n",      true,        true,       true,           true,
-      false,      true,        true,       false};
+      false,      true,        true,       false, {}, {}, {}, {}};
 
   sj::SweeperCfg noFastSweep{
       1,          1,           "$",        " intersects ", " contains ",
       " covers ", " touches ", " equals ", " overlaps ",   " crosses ",
       "$\n",      true,        true,       true,           true,
-      true,       false,       true,       false};
+      true,       false,       true,       false, {}, {}, {}, {}};
 
   sj::SweeperCfg noInnerOuter{
       1,          1,           "$",        " intersects ", " contains ",
       " covers ", " touches ", " equals ", " overlaps ",   " crosses ",
       "$\n",      true,        true,       true,           true,
-      true,       true,        false,      false};
+      true,       true,        false,      false, {}, {}, {}, {}};
 
   std::vector<sj::SweeperCfg> cfgs{baseline,  all,         noSurfaceArea,
                                    noBoxIds,  noObb,       noCutouts,
