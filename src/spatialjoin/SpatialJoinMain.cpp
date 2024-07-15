@@ -249,10 +249,29 @@ int main(int argc, char** argv) {
   std::string dangling;
   size_t gid = 1;
 
-  Sweeper sweeper({numThreads, numCaches, prefix, intersects, contains, covers,
-                   touches, equals, overlaps, crosses, suffix, useBoxIds,
-                   useArea, useOBB, useCutouts, useDiagBox, useFastSweepSkip,
-                   useInnerOuter, noGeometryChecks},
+  Sweeper sweeper({numThreads,
+                   numCaches,
+                   prefix,
+                   intersects,
+                   contains,
+                   covers,
+                   touches,
+                   equals,
+                   overlaps,
+                   crosses,
+                   suffix,
+                   useBoxIds,
+                   useArea,
+                   useOBB,
+                   useCutouts,
+                   useDiagBox,
+                   useFastSweepSkip,
+                   useInnerOuter,
+                   noGeometryChecks,
+                   {},
+                   [](const std::string& s) { LOGTO(INFO, std::cerr) << s; },
+                   [](const std::string& s) { std::cerr << s; },
+                   {}},
                   cache, output);
 
   LOGTO(INFO, std::cerr) << "Parsing input geometries...";

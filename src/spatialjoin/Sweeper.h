@@ -121,6 +121,12 @@ struct SweeperCfg {
   std::function<void(size_t t, const std::string& a, const std::string& b,
                      const std::string& pred)>
       writeRelCb;
+  std::function<void(const std::string&)>
+      logCb;
+  std::function<void(const std::string&)>
+      statsCb;
+  std::function<void(size_t)>
+      sweepProgressCb;
 };
 
 // buffer size _must_ be multiples of sizeof(BoxVal)
@@ -195,7 +201,7 @@ class Sweeper {
   ~Sweeper() {
     close(_file);
 
-    for (size_t i = 0; i < _cfg.numThreads + 1; i++) {
+    for (size_t i = 0; i < _outBuffers.size(); i++) {
       if (_outBuffers[i]) delete[] _outBuffers[i];
     }
   }
@@ -233,6 +239,8 @@ class Sweeper {
 
   RelStats sweep();
   void sortCache();
+
+  size_t numElements() const { return _curSweepId / 2; }
 
  private:
   const SweeperCfg _cfg;
@@ -366,6 +374,8 @@ class Sweeper {
 
   void prepareOutputFiles();
   void flushOutputFiles();
+
+  void log(const std::string& msg);
 
   bool notOverlaps(const std::string& a, const std::string& b) const;
 

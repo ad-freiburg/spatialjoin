@@ -10,6 +10,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <set>
+#include <sstream>
 
 #include "BoxIds.h"
 #include "InnerOuter.h"
@@ -502,31 +503,31 @@ void Sweeper::addBatch(WriteBatch& cands) {
       diskAdd(cand.boxvalIn);
       diskAdd(cand.boxvalOut);
       if (_curSweepId / 2 % 1000000 == 0)
-        LOGTO(INFO, std::cerr) << "@ " << _curSweepId / 2;
+        log("@ " + std::to_string(_curSweepId / 2));
     }
     for (const auto& cand : cands.simpleLines) {
       diskAdd(cand.boxvalIn);
       diskAdd(cand.boxvalOut);
       if (_curSweepId / 2 % 1000000 == 0)
-        LOGTO(INFO, std::cerr) << "@ " << _curSweepId / 2;
+        log("@ " + std::to_string(_curSweepId / 2));
     }
     for (const auto& cand : cands.lines) {
       diskAdd(cand.boxvalIn);
       diskAdd(cand.boxvalOut);
       if (_curSweepId / 2 % 1000000 == 0)
-        LOGTO(INFO, std::cerr) << "@ " << _curSweepId / 2;
+        log("@ " + std::to_string(_curSweepId / 2));
     }
     for (const auto& cand : cands.simpleAreas) {
       diskAdd(cand.boxvalIn);
       diskAdd(cand.boxvalOut);
       if (_curSweepId / 2 % 1000000 == 0)
-        LOGTO(INFO, std::cerr) << "@ " << _curSweepId / 2;
+        log("@ " + std::to_string(_curSweepId / 2));
     }
     for (const auto& cand : cands.areas) {
       diskAdd(cand.boxvalIn);
       diskAdd(cand.boxvalOut);
       if (_curSweepId / 2 % 1000000 == 0)
-        LOGTO(INFO, std::cerr) << "@ " << _curSweepId / 2;
+        log("@ " + std::to_string(_curSweepId / 2));
     }
   }
 }
@@ -709,11 +710,10 @@ void Sweeper::multiOut(size_t t, const std::string& gidA) {
 
 // _____________________________________________________________________________
 void Sweeper::flush() {
-  if (_numSides > 1)
-    LOGTO(INFO, std::cerr) << "(Non-self join between 2 datasets)";
+  if (_numSides > 1) log("(Non-self join between 2 datasets)");
 
-  LOGTO(INFO, std::cerr) << _multiIds[0].size() + _multiIds[1].size()
-                         << " multi geometries";
+  log(std::to_string(_multiIds[0].size() + _multiIds[1].size()) +
+      " multi geometries");
 
   for (size_t side = 0; side < 2; side++) {
     for (size_t i = 0; i < _multiIds[side].size(); i++) {
@@ -730,7 +730,7 @@ void Sweeper::flush() {
   _lineCache.flush();
   _simpleLineCache.flush();
 
-  LOGTO(INFO, std::cerr) << "Sorting events...";
+  log("Sorting events...");
 
   std::string newFName = util::getTmpFName(_cache, ".spatialjoin", "sorttmp");
   int newFile = open(newFName.c_str(), O_RDWR | O_CREAT, 0666);
@@ -756,7 +756,7 @@ void Sweeper::flush() {
   posix_fadvise(_file, 0, 0, POSIX_FADV_SEQUENTIAL);
 #endif
 
-  LOGTO(INFO, std::cerr) << "...done";
+  log("...done");
 }
 
 // _____________________________________________________________________________
@@ -821,9 +821,9 @@ void Sweeper::sortCache() {
       jj++;
 
       if (jj % 500000 == 0) {
-        LOGTO(INFO, std::cerr)
-            << jj / 2 << " / " << numEvents / 2 << " ("
-            << (((1.0 * jj) / (1.0 * numEvents)) * 100) << "%)";
+        log(std::to_string(jj / 2) + " / " + std::to_string(numEvents / 2) +
+            " (" + std::to_string((((1.0 * jj) / (1.0 * numEvents)) * 100)) +
+            "%)");
       }
 
       if (!cur->out) {
@@ -955,21 +955,27 @@ RelStats Sweeper::sweep() {
         if (jj % 500000 == 0) {
           auto lon = webMercToLatLng<double>((1.0 * cur->val) / PREC, 0).getX();
           totalCheckCount += checkPairs;
-          LOGTO(INFO, std::cerr)
-              << jj / 2 << " / " << _curSweepId / 2 << " ("
-              << (((1.0 * jj) / (1.0 * _curSweepId)) * 100) << "%, "
-              << (500000.0 / double(TOOK(t))) * 1000000000.0 << " geoms/s, "
-              << (checkPairs / double(TOOK(t))) * 1000000000.0
-              << " pairs/s), avg. "
-              << ((1.0 * totalCheckCount) / (1.0 * counts))
-              << " checks/geom, sweepLon=" << lon
-              << "°, |A|=" << actives[0].size() + actives[1].size()
-              << ", |JQ|=" << _jobs.size() << " (x" << batchSize
-              << "), |A_mult|="
-              << _activeMultis[0].size() + _activeMultis[1].size();
+          log(std::to_string(jj / 2) + " / " + std::to_string(_curSweepId / 2) +
+              " (" +
+              std::to_string((((1.0 * jj) / (1.0 * _curSweepId)) * 100)) +
+              "%, " +
+              std::to_string((500000.0 / double(TOOK(t))) * 1000000000.0) +
+              " geoms/s, " +
+              std::to_string((checkPairs / double(TOOK(t))) * 1000000000.0) +
+              " pairs/s), avg. " +
+              std::to_string(((1.0 * totalCheckCount) / (1.0 * counts))) +
+              " checks/geom, sweepLon=" + std::to_string(lon) + "°, |A|=" +
+              std::to_string(actives[0].size() + actives[1].size()) +
+              ", |JQ|=" + std::to_string(_jobs.size()) + " (x" +
+              std::to_string(batchSize) + "), |A_mult|=" +
+              std::to_string(_activeMultis[0].size() +
+                             _activeMultis[1].size()));
           t = TIME();
           checkPairs = 0;
         }
+
+        if ((jj % 100 == 0) && _cfg.sweepProgressCb)
+          _cfg.sweepProgressCb(jj / 2);
 
         if (jj % 100000 == 0) clearMultis(false);
       } else {
@@ -1015,14 +1021,14 @@ RelStats Sweeper::sweep() {
   RelStats sumRel;
   for (auto s : _relStats) sumRel += s;
 
-  std::cerr << sum.toString() << std::endl;
-
-  std::cerr << std::endl;
-  std::cerr << sumRel.toString() << std::endl;
-  std::cerr << "Checked " << totalCheckCount
-            << " candidates (with overlapping bounding box"
-            << (_cfg.useDiagBox ? " and overlapping diagonal box" : "") << ")\n"
-            << std::endl;
+  if (_cfg.statsCb) {
+    _cfg.statsCb(sum.toString() + "\n\n");
+    _cfg.statsCb(sumRel.toString() + "\n");
+    _cfg.statsCb(std::string("Checked ") + std::to_string(totalCheckCount) +
+                 " candidates (with overlapping bounding box" +
+                 (_cfg.useDiagBox ? " and overlapping diagonal box" : "") +
+                 ")\n\n");
+  }
 
   return sumRel;
 }
@@ -2889,4 +2895,9 @@ bool Sweeper::notOverlaps(const std::string& a, const std::string& b) const {
   }
 
   return false;
+}
+
+// _____________________________________________________________________________
+void Sweeper::log(const std::string& msg) {
+  if (_cfg.logCb) _cfg.logCb(msg);
 }
