@@ -7,7 +7,7 @@
 #include "spatialjoin/BoxIds.h"
 #include "spatialjoin/Sweeper.h"
 #include "spatialjoin/WKTParse.h"
-#include "util/Misc.h"
+#include "util/Test.h"
 #include "util/geo/Geo.h"
 #include "util/log/Log.h"
 
