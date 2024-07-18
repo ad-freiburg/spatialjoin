@@ -1,10 +1,11 @@
-# Spatialjoins
+# spatialjoin
 
 Compute a spatial self-join (on intersects, contains, covers, touches, crosses, overlaps and equals) on line-separated WKT geometries read from stdin.
 
 Relations are written to stdout (or to a BZ2/GZ/plain file specified with `-o`).
 
-Can handle massive amounts of input data (for example, all ~1.5 B geometries stored in OpenStreetMap).
+Can handle massive amounts of input data. For example, the full self-join on the complete ~1.5 B geometries of OpenStreetMap can be computed (excluding the time required for input parsing and output writing) in around 90 minutes on an AMD
+Ryzen 9 7950X machine with 16 physical and 32 virtual cores, 128 GB of RAM (DDR5), and 7.7 TB of disk space (NVMe SSD).
 
 ## Reproducibility materials for SIGSPATIAL'24 submission 192
 
