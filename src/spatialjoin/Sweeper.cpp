@@ -1635,7 +1635,7 @@ void Sweeper::writeRel(size_t t, const std::string& a, const std::string& b,
                        const std::string& pred) {
   auto ts = TIME();
 
-  if (_outMode == NONE) return;
+  if (!_cfg.writeRelCb && _outMode == NONE) return;
 
   if (_cfg.writeRelCb) {
     _cfg.writeRelCb(t, a, b, pred);
