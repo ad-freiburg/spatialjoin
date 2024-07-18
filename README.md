@@ -1,8 +1,8 @@
 # Spatialjoins
 
-Compute a spatial self-join (intersects and contains) on line-separated WKT geometries read from stdin.
+Compute a spatial self-join (on intersects, contains, covers, touches, crosses, overlaps and equals) on line-separated WKT geometries read from stdin.
 
-Relations are written to stdout (or to a BZ2 file specified with `-o`).
+Relations are written to stdout (or to a BZ2/GZ/plain file specified with `-o`).
 
 Can handle massive amounts of input data (for example, all ~1.5 B geometries stored in OpenStreetMap).
 
