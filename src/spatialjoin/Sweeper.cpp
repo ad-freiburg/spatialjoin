@@ -127,6 +127,26 @@ void Sweeper::multiAdd(const std::string& gid, bool side, int32_t xLeft,
 }
 
 // _____________________________________________________________________________
+void Sweeper::add(const std::string& parent, const util::geo::I32Box& box,
+                  const std::string& gid, bool side, WriteBatch& batch) const {
+  add(parent, box, gid, 0, side, batch);
+}
+
+// _____________________________________________________________________________
+void Sweeper::add(const std::string& parent, const util::geo::I32Box& box,
+                  const std::string& gid, size_t subid, bool side,
+                  WriteBatch& batch) const {
+  BoxVal boxl, boxr;
+  boxl.side = side;
+  boxr.side = side;
+
+  boxl.val = box.getLowerLeft().getX();
+  boxr.val = box.getUpperRight().getX();
+
+  batch.refs.push_back({parent, gid, boxl, boxr, subid});
+}
+
+// _____________________________________________________________________________
 void Sweeper::add(const I32Polygon& poly, const std::string& gid, bool side,
                   WriteBatch& batch) const {
   add(poly, gid, 0, side, batch);
@@ -497,6 +517,14 @@ void Sweeper::addBatch(WriteBatch& cands) {
     }
   }
 
+  for (const auto& cand : cands.refs) {
+    if (cand.subid > 0) {
+      std::unique_lock<std::mutex> lock(_multiAddMtx);
+      multiAdd(cand.gid, cand.boxvalIn.side, cand.boxvalIn.val,
+               cand.boxvalOut.val);
+    }
+  }
+
   {
     std::unique_lock<std::mutex> lock(_sweepEventWriteMtx);
     for (const auto& cand : cands.points) {
@@ -529,6 +557,11 @@ void Sweeper::addBatch(WriteBatch& cands) {
       if (_curSweepId / 2 % 1000000 == 0)
         log("@ " + std::to_string(_curSweepId / 2));
     }
+    for (const auto& cand : cands.refs) {
+      _refs[cand.raw].push_back({cand.gid, cand.subid});
+      if (_curSweepId / 2 % 1000000 == 0)
+        log("@ " + std::to_string(_curSweepId / 2));
+    }
   }
 }
 
@@ -554,6 +587,15 @@ void Sweeper::clearMultis(bool force) {
       int32_t rightX = _multiRightX[i][mid];
       if (force || rightX < curMinThreadX) {
         multiOut(_cfg.numThreads, gid);
+
+        if (_refs.size()) {
+          auto i = _refs.find(gid);
+          if (i != _refs.end()) {
+            for (const auto& ref : i->second) {
+              multiOut(_cfg.numThreads, ref.first);
+            }
+          }
+        }
         a = _activeMultis[i].erase(a);
         c++;
       } else {
@@ -577,8 +619,10 @@ void Sweeper::multiOut(size_t t, const std::string& gidA) {
         if (j != _subNotTouches.end()) {
           auto k = j->second.find(gidB);
           if (k == j->second.end()) {
-            writeTouches(t, gidA, gidB);
-            writeTouches(t, gidB, gidA);
+            _relStats[t].touches++;
+            writeRel(t, gidA, gidB, _cfg.sepTouches);
+            _relStats[t].touches++;
+            writeRel(t, gidB, gidA, _cfg.sepTouches);
 
             auto bEntry = _subTouches.find(gidB);
             if (bEntry != _subTouches.end()) bEntry->second.erase(gidA);
@@ -587,8 +631,10 @@ void Sweeper::multiOut(size_t t, const std::string& gidA) {
             if (bEntryN != _subNotTouches.end()) bEntryN->second.erase(gidA);
           }
         } else {
-          writeTouches(t, gidA, gidB);
-          writeTouches(t, gidB, gidA);
+          _relStats[t].touches++;
+          writeRel(t, gidA, gidB, _cfg.sepTouches);
+          _relStats[t].touches++;
+          writeRel(t, gidB, gidA, _cfg.sepTouches);
         }
       }
     }
@@ -606,8 +652,10 @@ void Sweeper::multiOut(size_t t, const std::string& gidA) {
         if (j != _subNotCrosses.end()) {
           auto k = j->second.find(gidB);
           if (k == j->second.end()) {
-            writeCrosses(t, gidA, gidB);
-            writeCrosses(t, gidB, gidA);
+            _relStats[t].crosses++;
+            writeRel(t, gidA, gidB, _cfg.sepCrosses);
+            _relStats[t].crosses++;
+            writeRel(t, gidB, gidA, _cfg.sepCrosses);
 
             auto bEntry = _subCrosses.find(gidB);
             if (bEntry != _subCrosses.end()) bEntry->second.erase(gidA);
@@ -616,8 +664,10 @@ void Sweeper::multiOut(size_t t, const std::string& gidA) {
             if (bEntryN != _subNotCrosses.end()) bEntryN->second.erase(gidA);
           }
         } else {
-          writeCrosses(t, gidA, gidB);
-          writeCrosses(t, gidB, gidA);
+          _relStats[t].crosses++;
+          writeRel(t, gidA, gidB, _cfg.sepCrosses);
+          _relStats[t].crosses++;
+          writeRel(t, gidB, gidA, _cfg.sepCrosses);
         }
       }
     }
@@ -632,8 +682,10 @@ void Sweeper::multiOut(size_t t, const std::string& gidA) {
         auto gidB = b;
         std::unique_lock<std::mutex> lock(_mutNotOverlaps);
         if (!notOverlaps(gidA, gidB)) {
-          writeOverlaps(t, gidA, gidB);
-          writeOverlaps(t, gidB, gidA);
+          _relStats[t].overlaps++;
+          writeRel(t, gidA, gidB, _cfg.sepOverlaps);
+          _relStats[t].overlaps++;
+          writeRel(t, gidB, gidA, _cfg.sepOverlaps);
 
           auto bEntry = _subOverlaps.find(gidB);
           if (bEntry != _subOverlaps.end()) bEntry->second.erase(gidA);
@@ -657,8 +709,10 @@ void Sweeper::multiOut(size_t t, const std::string& gidA) {
         std::unique_lock<std::mutex> lock(_mutOverlaps);
         std::unique_lock<std::mutex> lock2(_mutNotOverlaps);
         if (!notOverlaps(gidA, gidB)) {
-          writeOverlaps(t, gidA, gidB);
-          writeOverlaps(t, gidB, gidA);
+          _relStats[t].overlaps++;
+          writeRel(t, gidA, gidB, _cfg.sepOverlaps);
+          _relStats[t].overlaps++;
+          writeRel(t, gidB, gidA, _cfg.sepOverlaps);
 
           auto bEntry = _subOverlaps.find(gidB);
           if (bEntry != _subOverlaps.end()) bEntry->second.erase(gidA);
@@ -981,6 +1035,9 @@ RelStats Sweeper::sweep() {
       } else {
         // OUT event
         actives[cur->side].erase({cur->loY, cur->upY}, {cur->id, cur->type});
+
+        // optional self checks, required if we have reference geoms
+        if (_refs.size()) curBatch.push_back({*cur, {cur->id, cur->type}});
 
         counts++;
 
@@ -1586,34 +1643,6 @@ std::tuple<bool, bool> Sweeper::check(const I32Point& a, const Line* b,
 }
 
 // ____________________________________________________________________________
-void Sweeper::writeCrosses(size_t t, const std::string& a,
-                           const std::string& b) {
-  _relStats[t].crosses++;
-  writeRel(t, a, b, _cfg.sepCrosses);
-}
-
-// ____________________________________________________________________________
-void Sweeper::writeOverlaps(size_t t, const std::string& a,
-                            const std::string& b) {
-  _relStats[t].overlaps++;
-  writeRel(t, a, b, _cfg.sepOverlaps);
-}
-
-// ____________________________________________________________________________
-void Sweeper::writeCovers(size_t t, const std::string& a,
-                          const std::string& b) {
-  _relStats[t].covers++;
-  writeRel(t, a, b, _cfg.sepCovers);
-}
-
-// ____________________________________________________________________________
-void Sweeper::writeContains(size_t t, const std::string& a,
-                            const std::string& b) {
-  _relStats[t].contains++;
-  writeRel(t, a, b, _cfg.sepContains);
-}
-
-// ____________________________________________________________________________
 void Sweeper::writeRelToBuf(size_t t, const std::string& a,
                             const std::string& b, const std::string& pred) {
   memcpy(_outBuffers[t] + _outBufPos[t], _cfg.pairStart.c_str(),
@@ -1691,30 +1720,103 @@ void Sweeper::writeRel(size_t t, const std::string& a, const std::string& b,
 }
 
 // ____________________________________________________________________________
-void Sweeper::writeTouches(size_t t, const std::string& a,
-                           const std::string& b) {
-  _relStats[t].touches++;
-  writeRel(t, a, b, _cfg.sepTouches);
-}
-
-// ____________________________________________________________________________
-void Sweeper::writeEquals(size_t t, const std::string& a,
-                          const std::string& b) {
-  _relStats[t].equals++;
-  writeRel(t, a, b, _cfg.sepEquals);
-}
-
-// ____________________________________________________________________________
 void Sweeper::writeIntersect(size_t t, const std::string& a,
                              const std::string& b) {
-  _relStats[t].intersects++;
-  writeRel(t, a, b, _cfg.sepIsect);
+  if (a != b) {
+    _relStats[t].intersects++;
+    _relStats[t].intersects++;
+    writeRel(t, a, b, _cfg.sepIsect);
+    writeRel(t, b, a, _cfg.sepIsect);
+  }
+
+  if (_refs.size() == 0) return;
+
+  // handle references
+
+  auto referersA = _refs.find(a);
+  auto referersB = _refs.find(b);
+
+  if (referersB != _refs.end()) {
+    for (const auto& idB : referersB->second) {
+      writeIntersect(t, a, idB.first);
+
+      if (referersA != _refs.end()) {
+        for (const auto& idA : referersA->second) {
+          writeIntersect(t, idA.first, idB.first);
+        }
+      }
+    }
+  }
+
+  if (referersA != _refs.end()) {
+    for (const auto& idA : referersA->second) {
+      writeIntersect(t, idA.first, b);
+
+      if (referersB != _refs.end()) {
+        for (const auto& idB : referersB->second) {
+          writeIntersect(t, idA.first, idB.first);
+        }
+      }
+    }
+  }
+}
+
+// ____________________________________________________________________________
+void Sweeper::selfCheck(const BoxVal cur, size_t t) {
+  if (cur.type == POINT) {
+    auto ts = TIME();
+    auto a = _pointCache.get(cur.id, t);
+    _stats[t].timeGeoCacheRetrievalPoint += TOOK(ts);
+
+    writeIntersect(t, a->id, a->id);
+    writeEquals(t, a->id, a->subId, a->id, a->subId);
+    writeCovers(t, a->id, a->id, a->subId);
+    writeContains(t, a->id, a->id, a->subId);
+  } else if (cur.type == LINE) {
+    auto a = _lineCache.get(cur.id, t);
+
+    writeIntersect(t, a->id, a->id);
+    writeEquals(t, a->id, a->subId, a->id, a->subId);
+    writeCovers(t, a->id, a->id, a->subId);
+    writeNotCrosses(t, a->id, a->subId, a->id, a->subId);
+    writeNotOverlaps(t, a->id, a->subId, a->id, a->subId);
+    writeNotTouches(t, a->id, a->subId, a->id, a->subId);
+  } else if (cur.type == SIMPLE_LINE) {
+    auto a = _simpleLineCache.get(cur.id, t);
+
+    writeIntersect(t, a->id, a->id);
+    writeEquals(t, a->id, 0, a->id, 0);
+    writeCovers(t, a->id, a->id, 0);
+    writeNotCrosses(t, a->id, 0, a->id, 0);
+    writeNotOverlaps(t, a->id, 0, a->id, 0);
+    writeNotTouches(t, a->id, 0, a->id, 0);
+  } else if (cur.type == POLYGON) {
+    auto a = _areaCache.get(cur.id, t);
+
+    writeIntersect(t, a->id, a->id);
+    writeEquals(t, a->id, a->subId, a->id, a->subId);
+    writeCovers(t, a->id, a->id, a->subId);
+    writeNotCrosses(t, a->id, a->subId, a->id, a->subId);
+    writeNotOverlaps(t, a->id, a->subId, a->id, a->subId);
+    writeNotTouches(t, a->id, a->subId, a->id, a->subId);
+  } else if (cur.type == SIMPLE_POLYGON) {
+    auto a = _simpleAreaCache.get(cur.id, t);
+
+    writeIntersect(t, a->id, a->id);
+    writeEquals(t, a->id, 0, a->id, 0);
+    writeCovers(t, a->id, a->id, 0);
+    writeNotCrosses(t, a->id, 0, a->id, 0);
+    writeNotOverlaps(t, a->id, 0, a->id, 0);
+    writeNotTouches(t, a->id, 0, a->id, 0);
+  }
 }
 
 // ____________________________________________________________________________
 void Sweeper::doCheck(const BoxVal cur, const SweepVal sv, size_t t) {
   _checks[t]++;
   _curX[t] = cur.val;
+
+  if (cur.type == sv.type && cur.id == sv.id) return selfCheck(cur, t);
 
   // every 10000 checks, update our position
   if (_checks[t] % 10000 == 0) _atomicCurX[t] = _curX[t];
@@ -1769,62 +1871,42 @@ void Sweeper::doCheck(const BoxVal cur, const SweepVal sv, size_t t) {
     // intersects
     if (std::get<0>(res)) {
       writeIntersect(t, a->id, b->id);
-      writeIntersect(t, b->id, a->id);
     }
 
     // contained
     if (std::get<1>(res)) {
-      if (a->subId > 0) {
-        // a is a multigeometry, *all* its parts must be contained.
-        // we cache them, and write them as soon as we know that yes,
-        // they are all contained
-        writeContainsMulti(t, b->id, a->id, a->subId);
-      } else {
-        writeContains(t, b->id, a->id);
-      }
+      writeContains(t, b->id, a->id, a->subId);
     }
 
     // covered
     if (std::get<2>(res)) {
-      if (a->subId > 0) {
-        // a is a multigeometry, *all* its parts must be covered.
-        // we cache them, and write them as soon as we know that yes,
-        // they are all covered
-        writeCoversMulti(t, b->id, a->id, a->subId);
-      } else {
-        writeCovers(t, b->id, a->id);
-      }
+      writeCovers(t, b->id, a->id, a->subId);
 
       if (fabs(a->area - b->area) < util::geo::EPSILON) {
         // both areas were equivalent
-        writeEqualsMulti(t, a->id, a->subId, b->id, b->subId);
+        writeEquals(t, a->id, a->subId, b->id, b->subId);
 
-        if (b->subId > 0) {
-          // b is a multigeometry, *all* its parts must be equal.
-          // we cache them, and write them as soon as we know that yes,
-          // they are all equal
-          writeCoversMulti(t, a->id, b->id, b->subId);
-        } else {
-          writeCovers(t, a->id, b->id);
-        }
+        writeCovers(t, a->id, b->id, b->subId);
       }
     }
 
     // touches
     if (std::get<3>(res)) {
-      writeTouchesMulti(t, a->id, a->subId, b->id, b->subId);
+      writeTouches(t, a->id, a->subId, b->id, b->subId);
     } else if (std::get<0>(res)) {
       // if a is not a multi-geom, and is completey covered, we wont
       // be finding a touch as we assume non-self-intersecting geoms
-      if (!(a->subId == 0 && std::get<2>(res))) {
+      if (_refs.size() > 0 || !(a->subId == 0 && std::get<2>(res))) {
         writeNotTouches(t, a->id, a->subId, b->id, b->subId);
       }
     }
 
     // overlaps
     if (std::get<4>(res)) {
-      writeOverlaps(t, a->id, b->id);
-      writeOverlaps(t, b->id, a->id);
+      _relStats[t].overlaps++;
+      writeRel(t, a->id, b->id, _cfg.sepOverlaps);
+      _relStats[t].overlaps++;
+      writeRel(t, b->id, a->id, _cfg.sepOverlaps);
     }
   } else if (cur.type == LINE &&
              (sv.type == SIMPLE_POLYGON || sv.type == POLYGON)) {
@@ -1867,47 +1949,33 @@ void Sweeper::doCheck(const BoxVal cur, const SweepVal sv, size_t t) {
     // intersects
     if (std::get<0>(res)) {
       writeIntersect(t, a->id, b->id);
-      writeIntersect(t, b->id, a->id);
     }
 
     // contains
     if (std::get<1>(res)) {
-      if (a->subId > 0) {
-        // a is a multigeometry, *all* its parts must be contained.
-        // we cache them, and write them as soon as we know that yes,
-        // they are all contained
-        writeContainsMulti(t, b->id, a->id, a->subId);
-      } else {
-        writeContains(t, b->id, a->id);
-      }
+      writeContains(t, b->id, a->id, a->subId);
     }
 
     // covers
     if (std::get<2>(res)) {
-      if (a->subId > 0) {
-        // a is a multigeometry, *all* its parts must be covered.
-        // we cache them, and write them as soon as we know that yes,
-        // they are all covered
-        writeCoversMulti(t, b->id, a->id, a->subId);
-      } else {
-        writeCovers(t, b->id, a->id);
-      }
+      writeCovers(t, b->id, a->id, a->subId);
     }
 
     // touches
     if (std::get<3>(res)) {
-      writeTouchesMulti(t, a->id, a->subId, b->id, b->subId);
+      writeTouches(t, a->id, a->subId, b->id, b->subId);
     } else if (std::get<0>(res)) {
       // if a is not a multi-geom, and is completey covered, we wont
       // be finding a touch as we assume non-self-intersecting geoms
-      if (!(a->subId == 0 && std::get<2>(res))) {
+      if (_refs.size() > 0 || !(a->subId == 0 && std::get<2>(res))) {
         writeNotTouches(t, a->id, a->subId, b->id, b->subId);
       }
     }
 
     // crosses
     if (std::get<4>(res)) {
-      writeCrosses(t, a->id, b->id);
+      _relStats[t].crosses++;
+      writeRel(t, a->id, b->id, _cfg.sepCrosses);
     }
   } else if (cur.type == SIMPLE_LINE &&
              (sv.type == SIMPLE_POLYGON || sv.type == POLYGON)) {
@@ -1949,33 +2017,31 @@ void Sweeper::doCheck(const BoxVal cur, const SweepVal sv, size_t t) {
     // intersects
     if (std::get<0>(res)) {
       writeIntersect(t, a->id, b->id);
-      writeIntersect(t, b->id, a->id);
     }
 
     // contains
     if (std::get<1>(res)) {
-      writeContains(t, b->id, a->id);
+      writeContains(t, b->id, a->id, 0);
     }
 
     // covers
     if (std::get<2>(res)) {
-      writeCovers(t, b->id, a->id);
+      writeCovers(t, b->id, a->id, 0);
     }
 
     // touches
     if (std::get<3>(res)) {
-      writeTouchesMulti(t, a->id, 0, b->id, b->subId);
+      writeTouches(t, a->id, 0, b->id, b->subId);
     } else if (std::get<0>(res)) {
-      // if a is completey covered, we wont
-      // be finding a touch as we assume non-self-intersecting geoms
-      if (!(std::get<2>(res))) {
+      if (_refs.size() > 0 || !(std::get<2>(res))) {
         writeNotTouches(t, a->id, 0, b->id, b->subId);
       }
     }
 
     // crosses
     if (std::get<4>(res)) {
-      writeCrosses(t, a->id, b->id);
+      _relStats[t].crosses++;
+      writeRel(t, a->id, b->id, _cfg.sepCrosses);
     }
   } else if ((cur.type == SIMPLE_POLYGON || cur.type == POLYGON) &&
              sv.type == LINE) {
@@ -2019,47 +2085,33 @@ void Sweeper::doCheck(const BoxVal cur, const SweepVal sv, size_t t) {
     // intersects
     if (std::get<0>(res)) {
       writeIntersect(t, a->id, b->id);
-      writeIntersect(t, b->id, a->id);
     }
 
     // contains
     if (std::get<1>(res)) {
-      if (b->subId > 0) {
-        // b is a multigeometry, *all* its parts must be covered.
-        // we cache them, and write them as soon as we know that yes,
-        // they are all contained
-        writeContainsMulti(t, a->id, b->id, b->subId);
-      } else {
-        writeContains(t, a->id, b->id);
-      }
+      writeContains(t, a->id, b->id, b->subId);
     }
 
     // covers
     if (std::get<2>(res)) {
-      if (b->subId > 0) {
-        // b is a multigeometry, *all* its parts must be covered.
-        // we cache them, and write them as soon as we know that yes,
-        // they are all covered
-        writeCoversMulti(t, a->id, b->id, b->subId);
-      } else {
-        writeCovers(t, a->id, b->id);
-      }
+      writeCovers(t, a->id, b->id, b->subId);
     }
 
     // touches
     if (std::get<3>(res)) {
-      writeTouchesMulti(t, a->id, a->subId, b->id, b->subId);
+      writeTouches(t, a->id, a->subId, b->id, b->subId);
     } else if (std::get<0>(res)) {
       // if b is not a multi-geom, and is completey covered, we wont
       // be finding a touch as we assume non-self-intersecting geoms
-      if (!(b->subId == 0 && std::get<2>(res))) {
+      if (_refs.size() > 0 || !(b->subId == 0 && std::get<2>(res))) {
         writeNotTouches(t, a->id, a->subId, b->id, b->subId);
       }
     }
 
     // crosses
     if (std::get<4>(res)) {
-      writeCrosses(t, b->id, a->id);
+      _relStats[t].crosses++;
+      writeRel(t, b->id, a->id, _cfg.sepCrosses);
     }
   } else if ((cur.type == SIMPLE_POLYGON || cur.type == POLYGON) &&
              sv.type == SIMPLE_LINE) {
@@ -2098,33 +2150,31 @@ void Sweeper::doCheck(const BoxVal cur, const SweepVal sv, size_t t) {
     // intersects
     if (std::get<0>(res)) {
       writeIntersect(t, a->id, b->id);
-      writeIntersect(t, b->id, a->id);
     }
 
     // contains
     if (std::get<1>(res)) {
-      writeContains(t, a->id, b->id);
+      writeContains(t, a->id, b->id, 0);
     }
 
     // covers
     if (std::get<2>(res)) {
-      writeCovers(t, a->id, b->id);
+      writeCovers(t, a->id, b->id, 0);
     }
 
     // touches
     if (std::get<3>(res)) {
-      writeTouchesMulti(t, a->id, a->subId, b->id, 0);
+      writeTouches(t, a->id, a->subId, b->id, 0);
     } else if (std::get<0>(res)) {
-      // if b is completey covered, we wont
-      // be finding a touch as we assume non-self-intersecting geoms
-      if (!std::get<2>(res)) {
+      if (_refs.size() > 0 || !std::get<2>(res)) {
         writeNotTouches(t, a->id, a->subId, b->id, 0);
       }
     }
 
     // crosses
     if (std::get<4>(res)) {
-      writeCrosses(t, b->id, a->id);
+      _relStats[t].crosses++;
+      writeRel(t, b->id, a->id, _cfg.sepCrosses);
     }
   } else if (cur.type == LINE && sv.type == LINE) {
     auto ts = TIME();
@@ -2152,42 +2202,28 @@ void Sweeper::doCheck(const BoxVal cur, const SweepVal sv, size_t t) {
     // intersects
     if (std::get<0>(res)) {
       writeIntersect(t, a->id, b->id);
-      writeIntersect(t, b->id, a->id);
     }
 
     // covers
     if (std::get<1>(res)) {
       writeNotCrosses(t, a->id, a->subId, b->id, b->subId);
 
-      if (a->subId == 0) writeNotOverlaps(t, a->id, a->subId, b->id, b->subId);
+      if (_refs.size() > 0 || a->subId == 0)
+        writeNotOverlaps(t, a->id, a->subId, b->id, b->subId);
 
-      if (a->subId > 0) {
-        // a is a multigeometry, *all* its parts must be covered.
-        // we cache them, and write them as soon as we know that yes,
-        // they are all covered
-        writeCoversMulti(t, b->id, a->id, a->subId);
-      } else {
-        writeCovers(t, b->id, a->id);
-      }
+      writeCovers(t, b->id, a->id, a->subId);
 
       if (fabs(a->length - b->length) < util::geo::EPSILON) {
         // both lines were equivalent
-        writeEqualsMulti(t, a->id, a->subId, b->id, b->subId);
+        writeEquals(t, a->id, a->subId, b->id, b->subId);
 
-        if (b->subId > 0) {
-          // a is a multigeometry, *all* its parts must be covered.
-          // we cache them, and write them as soon as we know that yes,
-          // they are all covered
-          writeCoversMulti(t, a->id, b->id, b->subId);
-        } else {
-          writeCovers(t, a->id, b->id);
-        }
+        writeCovers(t, a->id, b->id, b->subId);
       }
     }
 
     // touches
     if (std::get<2>(res)) {
-      writeTouchesMulti(t, a->id, a->subId, b->id, b->subId);
+      writeTouches(t, a->id, a->subId, b->id, b->subId);
     } else if (std::get<0>(res)) {
       writeNotTouches(t, a->id, a->subId, b->id, b->subId);
     }
@@ -2225,34 +2261,26 @@ void Sweeper::doCheck(const BoxVal cur, const SweepVal sv, size_t t) {
     // intersects
     if (std::get<0>(res)) {
       writeIntersect(t, a->id, b->id);
-      writeIntersect(t, b->id, a->id);
     }
 
     // covers
     if (std::get<1>(res)) {
       writeNotCrosses(t, a->id, a->subId, b->id, 0);
 
-      if (a->subId > 0) {
-        // a is a multigeometry, *all* its parts must be covered.
-        // we cache them, and write them as soon as we know that yes,
-        // they are all covered
-        writeCoversMulti(t, b->id, a->id, a->subId);
-      } else {
-        writeCovers(t, b->id, a->id);
-      }
+      writeCovers(t, b->id, a->id, a->subId);
 
       if (fabs(a->length - util::geo::len(LineSegment<int32_t>(b->a, b->b))) <
           util::geo::EPSILON) {
         // both lines were equivalent
-        writeCovers(t, a->id, b->id);
+        writeCovers(t, a->id, b->id, 0);
 
-        writeEqualsMulti(t, a->id, a->subId, b->id, 0);
+        writeEquals(t, a->id, a->subId, b->id, 0);
       }
     }
 
     // touches
     if (std::get<2>(res)) {
-      writeTouchesMulti(t, a->id, a->subId, b->id, 0);
+      writeTouches(t, a->id, a->subId, b->id, 0);
     } else if (std::get<0>(res)) {
       writeNotTouches(t, a->id, a->subId, b->id, 0);
     }
@@ -2289,34 +2317,26 @@ void Sweeper::doCheck(const BoxVal cur, const SweepVal sv, size_t t) {
     // intersects
     if (std::get<0>(res)) {
       writeIntersect(t, a->id, b->id);
-      writeIntersect(t, b->id, a->id);
     }
 
     // covers
     if (std::get<1>(res)) {
       writeNotCrosses(t, a->id, 0, b->id, b->subId);
-      writeCovers(t, b->id, a->id);
+      writeCovers(t, b->id, a->id, 0);
 
       writeNotOverlaps(t, a->id, 0, b->id, b->subId);
 
       if (fabs(util::geo::len(LineSegment<int32_t>(a->a, a->b)) - b->length) <
           util::geo::EPSILON) {
-        writeEqualsMulti(t, a->id, 0, b->id, b->subId);
+        writeEquals(t, a->id, 0, b->id, b->subId);
 
-        if (b->subId > 0) {
-          // b is a multigeometry, *all* its parts must be covered.
-          // we cache them, and write them as soon as we know that yes,
-          // they are all covered
-          writeCoversMulti(t, a->id, b->id, b->subId);
-        } else {
-          writeCovers(t, a->id, b->id);
-        }
+        writeCovers(t, a->id, b->id, b->subId);
       }
     }
 
     // touches
     if (std::get<2>(res)) {
-      writeTouchesMulti(t, a->id, 0, b->id, b->subId);
+      writeTouches(t, a->id, 0, b->id, b->subId);
     } else if (std::get<0>(res)) {
       writeNotTouches(t, a->id, 0, b->id, b->subId);
     }
@@ -2353,23 +2373,22 @@ void Sweeper::doCheck(const BoxVal cur, const SweepVal sv, size_t t) {
 
     if (std::get<0>(res)) {
       writeIntersect(t, a->id, b->id);
-      writeIntersect(t, b->id, a->id);
     }
 
     if (std::get<1>(res)) {
-      writeCovers(t, b->id, a->id);
+      writeCovers(t, b->id, a->id, 0);
 
       if (fabs(util::geo::len(LineSegment<int32_t>(a->a, a->b)) -
                util::geo::len(LineSegment<int32_t>(b->a, b->b))) <
           util::geo::EPSILON) {
-        writeEqualsMulti(t, a->id, 0, b->id, 0);
-        writeCovers(t, a->id, b->id);
+        writeEquals(t, a->id, 0, b->id, 0);
+        writeCovers(t, a->id, b->id, 0);
       }
     }
 
     // touches
     if (std::get<2>(res)) {
-      writeTouchesMulti(t, a->id, 0, b->id, 0);
+      writeTouches(t, a->id, 0, b->id, 0);
     }
 
     // crosses
@@ -2394,30 +2413,13 @@ void Sweeper::doCheck(const BoxVal cur, const SweepVal sv, size_t t) {
     if (a->id == b->id) return;  // no self-checks in multigeometries
 
     writeIntersect(t, a->id, b->id);
-    writeIntersect(t, b->id, a->id);
-    writeEqualsMulti(t, a->id, a->subId, b->id, b->subId);
+    writeEquals(t, a->id, a->subId, b->id, b->subId);
 
-    if (a->subId > 0) {
-      // a is a multigeometry, *all* its parts must be covered.
-      // we cache them, and write them as soon as we know that yes,
-      // they are all covered
-      writeCoversMulti(t, b->id, a->id, a->subId);
-      writeContainsMulti(t, b->id, a->id, a->subId);
-    } else {
-      writeCovers(t, b->id, a->id);
-      writeContains(t, b->id, a->id);
-    }
+    writeCovers(t, b->id, a->id, a->subId);
+    writeContains(t, b->id, a->id, a->subId);
 
-    if (b->subId > 0) {
-      // b is a multigeometry, *all* its parts must be covered.
-      // we cache them, and write them as soon as we know that yes,
-      // they are all covered
-      writeCoversMulti(t, a->id, b->id, b->subId);
-      writeContainsMulti(t, a->id, b->id, b->subId);
-    } else {
-      writeCovers(t, a->id, b->id);
-      writeContains(t, a->id, b->id);
-    }
+    writeCovers(t, a->id, b->id, b->subId);
+    writeContains(t, a->id, b->id, b->subId);
   } else if (cur.type == POINT && sv.type == SIMPLE_LINE) {
     auto p = I32Point(cur.val, cur.loY);
     auto ts = TIME();
@@ -2434,30 +2436,15 @@ void Sweeper::doCheck(const BoxVal cur, const SweepVal sv, size_t t) {
       auto a = _pointCache.get(cur.id, t);
       _stats[t].timeGeoCacheRetrievalPoint += TOOK(ts);
       writeIntersect(t, a->id, b->id);
-      writeIntersect(t, b->id, a->id);
 
-      if (a->subId > 0) {
-        // a is a multigeometry, *all* its parts must be covered.
-        // we cache them, and write them as soon as we know that yes,
-        // they are all covered
-        writeCoversMulti(t, b->id, a->id, a->subId);
-      } else {
-        writeCovers(t, b->id, a->id);
-      }
+      writeCovers(t, b->id, a->id, a->subId);
 
       if (p != b->a && p != b->b) {
-        if (a->subId > 0) {
-          // a is a multigeometry, *all* its parts must be contained.
-          // we cache them, and write them as soon as we know that yes,
-          // they are all contained
-          writeContainsMulti(t, b->id, a->id, a->subId);
-        } else {
-          writeContains(t, b->id, a->id);
-        }
+        writeContains(t, b->id, a->id, a->subId);
 
         writeNotTouches(t, a->id, a->subId, b->id, 0);
       } else {
-        writeTouchesMulti(t, a->id, a->subId, b->id, 0);
+        writeTouches(t, a->id, a->subId, b->id, 0);
       }
     }
   } else if (cur.type == POINT && sv.type == LINE) {
@@ -2486,42 +2473,20 @@ void Sweeper::doCheck(const BoxVal cur, const SweepVal sv, size_t t) {
       if (a->id == b->id) return;  // no self-checks in multigeometries
 
       writeIntersect(t, a->id, b->id);
-      writeIntersect(t, b->id, a->id);
 
-      if (a->subId > 0) {
-        // a is a multigeometry, *all* its parts must be covered.
-        // we cache them, and write them as soon as we know that yes,
-        // they are all covered
-        writeCoversMulti(t, b->id, a->id, a->subId);
-      } else {
-        writeCovers(t, b->id, a->id);
-      }
+      writeCovers(t, b->id, a->id, a->subId);
 
       if (std::get<1>(res)) {
-        if (a->subId > 0) {
-          // a is a multigeometry, *all* its parts must be contained.
-          // we cache them, and write them as soon as we know that yes,
-          // they are all contained
-          writeContainsMulti(t, b->id, a->id, a->subId);
-        } else {
-          writeContains(t, b->id, a->id);
-        }
+        writeContains(t, b->id, a->id, a->subId);
         writeNotTouches(t, a->id, a->subId, b->id, b->subId);
       } else {
-        writeTouchesMulti(t, a->id, a->subId, b->id, b->subId);
+        writeTouches(t, a->id, a->subId, b->id, b->subId);
       }
 
       if (b->length == 0) {
         // zero length line, point also covers line
 
-        if (b->subId > 0) {
-          // a is a multigeometry, *all* its parts must be covered.
-          // we cache them, and write them as soon as we know that yes,
-          // they are all contained
-          writeCoversMulti(t, a->id, b->id, b->subId);
-        } else {
-          writeCovers(t, a->id, b->id);
-        }
+        writeCovers(t, a->id, b->id, b->subId);
       }
     }
   } else if (cur.type == POINT &&
@@ -2553,32 +2518,17 @@ void Sweeper::doCheck(const BoxVal cur, const SweepVal sv, size_t t) {
       auto a = _pointCache.get(cur.id, t);
       _stats[t].timeGeoCacheRetrievalPoint += TOOK(ts);
 
-      if (a->subId > 0) {
-        // a is a multigeometry, *all* its parts must be covered.
-        // we cache them, and write them as soon as we know that yes,
-        // they are all covered
-        writeCoversMulti(t, b->id, a->id, a->subId);
-      } else {
-        writeCovers(t, b->id, a->id);
-      }
+      writeCovers(t, b->id, a->id, a->subId);
       writeIntersect(t, a->id, b->id);
-      writeIntersect(t, b->id, a->id);
 
       if (res.first) {
-        if (a->subId > 0) {
-          // a is a multigeometry, *all* its parts must be covered.
-          // we cache them, and write them as soon as we know that yes,
-          // they are all contained
-          writeContainsMulti(t, b->id, a->id, a->subId);
-        } else {
-          writeContains(t, b->id, a->id);
-        }
+        writeContains(t, b->id, a->id, a->subId);
 
-        if (a->subId != 0) {
+        if (_refs.size() > 0 || a->subId != 0) {
           writeNotTouches(t, a->id, a->subId, b->id, b->subId);
         }
       } else {
-        writeTouchesMulti(t, a->id, a->subId, b->id, b->subId);
+        writeTouches(t, a->id, a->subId, b->id, b->subId);
       }
     }
   }
@@ -2634,7 +2584,8 @@ void Sweeper::flushOutputFiles() {
       std::string fName = _cache + "/.rels" + std::to_string(getpid()) + "-" +
                           std::to_string(i);
       std::ifstream ifCur(fName, std::ios_base::binary);
-      out << ifCur.rdbuf();
+      if (ifCur.peek() != std::ifstream::traits_type::eof())
+        out << ifCur.rdbuf();
       std::remove(fName.c_str());
     }
 
@@ -2678,6 +2629,9 @@ void Sweeper::prepareOutputFiles() {
                             std::to_string(i))
                                .c_str(),
                            "w");
+      if (_rawFiles[i] == 0) {
+        throw std::runtime_error("Could not open file for writing.");
+      }
       _outBuffers[i] = new unsigned char[BUFFER_S_PAIRS];
     }
   } else if (_outMode == COUT) {
@@ -2713,170 +2667,449 @@ void Sweeper::fillBatch(JobBatch* batch,
 // _____________________________________________________________________________
 void Sweeper::writeOverlaps(size_t t, const std::string& a, size_t aSub,
                             const std::string& b, size_t bSub) {
-  if (a == b) return;
-  if (aSub == 0 && bSub == 0) {
-    writeOverlaps(t, a, b);
-    writeOverlaps(t, b, a);
-    return;
+  if (a != b) {
+    if (aSub == 0 && bSub == 0) {
+      _relStats[t].overlaps++;
+      writeRel(t, a, b, _cfg.sepOverlaps);
+      _relStats[t].overlaps++;
+      writeRel(t, b, a, _cfg.sepOverlaps);
+    } else {
+      std::unique_lock<std::mutex> lock(_mutOverlaps);
+
+      if (bSub != 0) _subOverlaps[b].insert(a);
+      if (aSub != 0) _subOverlaps[a].insert(b);
+    }
   }
 
-  {
-    std::unique_lock<std::mutex> lock(_mutOverlaps);
+  if (_refs.size() == 0) return;
 
-    if (bSub != 0) _subOverlaps[b].insert(a);
-    if (aSub != 0) _subOverlaps[a].insert(b);
+  // handle references
+
+  auto referersA = _refs.find(a);
+  auto referersB = _refs.find(b);
+
+  if (referersB != _refs.end()) {
+    for (const auto& idB : referersB->second) {
+      writeOverlaps(t, a, aSub, idB.first, idB.second);
+
+      if (referersA != _refs.end()) {
+        for (const auto& idA : referersA->second) {
+          writeOverlaps(t, idA.first, idA.second, idB.first, idB.second);
+        }
+      }
+    }
+  }
+
+  if (referersA != _refs.end()) {
+    for (const auto& idA : referersA->second) {
+      writeOverlaps(t, idA.first, idA.second, b, bSub);
+
+      if (referersB != _refs.end()) {
+        for (const auto& idB : referersB->second) {
+          writeOverlaps(t, idA.first, idA.second, idB.first, idB.second);
+        }
+      }
+    }
   }
 }
 
 // _____________________________________________________________________________
-void Sweeper::writeNotOverlaps(size_t, const std::string& a, size_t aSub,
+void Sweeper::writeNotOverlaps(size_t t, const std::string& a, size_t aSub,
                                const std::string& b, size_t bSub) {
-  if (a == b) return;
-  if (aSub == 0 && bSub == 0) return;
+  if (a != b) {
+    if (aSub != 0 || bSub != 0) {
+      std::unique_lock<std::mutex> lock(_mutNotOverlaps);
 
-  {
-    std::unique_lock<std::mutex> lock(_mutNotOverlaps);
+      _subNotOverlaps[b].insert(a);
+      _subNotOverlaps[a].insert(b);
+    }
+  }
 
-    _subNotOverlaps[b].insert(a);
-    _subNotOverlaps[a].insert(b);
+  if (_refs.size() == 0) return;
+
+  // handle references
+
+  auto referersA = _refs.find(a);
+  auto referersB = _refs.find(b);
+
+  if (referersB != _refs.end()) {
+    for (const auto& idB : referersB->second) {
+      writeNotOverlaps(t, a, aSub, idB.first, idB.second);
+
+      if (referersA != _refs.end()) {
+        for (const auto& idA : referersA->second) {
+          writeNotOverlaps(t, idA.first, idA.second, idB.first, idB.second);
+        }
+      }
+    }
+  }
+
+  if (referersA != _refs.end()) {
+    for (const auto& idA : referersA->second) {
+      writeNotOverlaps(t, idA.first, idA.second, b, bSub);
+
+      if (referersB != _refs.end()) {
+        for (const auto& idB : referersB->second) {
+          writeNotOverlaps(t, idA.first, idA.second, idB.first, idB.second);
+        }
+      }
+    }
   }
 }
 
 // _____________________________________________________________________________
 void Sweeper::writeCrosses(size_t t, const std::string& a, size_t aSub,
                            const std::string& b, size_t bSub) {
-  if (a == b) return;
-  if (aSub == 0 && bSub == 0) {
-    writeCrosses(t, a, b);
-    writeCrosses(t, b, a);
-    return;
+  if (a != b) {
+    if (aSub == 0 && bSub == 0) {
+      _relStats[t].crosses++;
+      writeRel(t, a, b, _cfg.sepCrosses);
+      _relStats[t].crosses++;
+      writeRel(t, b, a, _cfg.sepCrosses);
+    } else {
+      std::unique_lock<std::mutex> lock(_mutCrosses);
+
+      if (bSub != 0) _subCrosses[b].insert(a);
+      if (aSub != 0) _subCrosses[a].insert(b);
+    }
   }
 
-  {
-    // TODO: distinct locks for individual methods
-    std::unique_lock<std::mutex> lock(_mutCrosses);
+  if (_refs.size() == 0) return;
 
-    if (bSub != 0) _subCrosses[b].insert(a);
-    if (aSub != 0) _subCrosses[a].insert(b);
+  // handle references
+
+  auto referersA = _refs.find(a);
+  auto referersB = _refs.find(b);
+
+  if (referersB != _refs.end()) {
+    for (const auto& idB : referersB->second) {
+      writeCrosses(t, a, aSub, idB.first, idB.second);
+
+      if (referersA != _refs.end()) {
+        for (const auto& idA : referersA->second) {
+          writeCrosses(t, idA.first, idA.second, idB.first, idB.second);
+        }
+      }
+    }
+  }
+
+  if (referersA != _refs.end()) {
+    for (const auto& idA : referersA->second) {
+      writeCrosses(t, idA.first, idA.second, b, bSub);
+
+      if (referersB != _refs.end()) {
+        for (const auto& idB : referersB->second) {
+          writeCrosses(t, idA.first, idA.second, idB.first, idB.second);
+        }
+      }
+    }
   }
 }
 
 // _____________________________________________________________________________
-void Sweeper::writeNotCrosses(size_t, const std::string& a, size_t aSub,
+void Sweeper::writeNotCrosses(size_t t, const std::string& a, size_t aSub,
                               const std::string& b, size_t bSub) {
-  if (a == b) return;
-  if (aSub == 0 && bSub == 0) return;
+  if (a != b) {
+    if (aSub != 0 || bSub != 0) {
+      std::unique_lock<std::mutex> lock(_mutNotCrosses);
 
-  {
-    std::unique_lock<std::mutex> lock(_mutNotCrosses);
+      if (bSub != 0) _subNotCrosses[b].insert(a);
+      if (aSub != 0) _subNotCrosses[a].insert(b);
+    }
+  }
 
-    if (bSub != 0) _subNotCrosses[b].insert(a);
-    if (aSub != 0) _subNotCrosses[a].insert(b);
+  if (_refs.size() == 0) return;
+
+  // handle references
+
+  auto referersA = _refs.find(a);
+  auto referersB = _refs.find(b);
+
+  if (referersB != _refs.end()) {
+    for (const auto& idB : referersB->second) {
+      writeNotCrosses(t, a, aSub, idB.first, idB.second);
+
+      if (referersA != _refs.end()) {
+        for (const auto& idA : referersA->second) {
+          writeNotCrosses(t, idA.first, idA.second, idB.first, idB.second);
+        }
+      }
+    }
+  }
+
+  if (referersA != _refs.end()) {
+    for (const auto& idA : referersA->second) {
+      writeNotCrosses(t, idA.first, idA.second, b, bSub);
+
+      if (referersB != _refs.end()) {
+        for (const auto& idB : referersB->second) {
+          writeNotCrosses(t, idA.first, idA.second, idB.first, idB.second);
+        }
+      }
+    }
   }
 }
 
 // _____________________________________________________________________________
-void Sweeper::writeTouchesMulti(size_t t, const std::string& a, size_t aSub,
-                                const std::string& b, size_t bSub) {
-  if (a == b) return;
-  if (aSub == 0 && bSub == 0) {
-    writeTouches(t, a, b);
-    writeTouches(t, b, a);
-    return;
+void Sweeper::writeTouches(size_t t, const std::string& a, size_t aSub,
+                           const std::string& b, size_t bSub) {
+  if (a != b) {
+    if (aSub == 0 && bSub == 0) {
+      _relStats[t].touches++;
+      writeRel(t, a, b, _cfg.sepTouches);
+      _relStats[t].touches++;
+      writeRel(t, b, a, _cfg.sepTouches);
+    } else {
+      std::unique_lock<std::mutex> lock(_mutTouches);
+
+      if (bSub != 0) _subTouches[b].insert(a);
+      if (aSub != 0) _subTouches[a].insert(b);
+    }
   }
 
-  {
-    std::unique_lock<std::mutex> lock(_mutTouches);
+  if (_refs.size() == 0) return;
 
-    if (bSub != 0) _subTouches[b].insert(a);
-    if (aSub != 0) _subTouches[a].insert(b);
+  // handle references
+
+  auto referersA = _refs.find(a);
+  auto referersB = _refs.find(b);
+
+  if (referersB != _refs.end()) {
+    for (const auto& idB : referersB->second) {
+      writeTouches(t, a, aSub, idB.first, idB.second);
+
+      if (referersA != _refs.end()) {
+        for (const auto& idA : referersA->second) {
+          writeTouches(t, idA.first, idA.second, idB.first, idB.second);
+        }
+      }
+    }
+  }
+
+  if (referersA != _refs.end()) {
+    for (const auto& idA : referersA->second) {
+      writeTouches(t, idA.first, idA.second, b, bSub);
+
+      if (referersB != _refs.end()) {
+        for (const auto& idB : referersB->second) {
+          writeTouches(t, idA.first, idA.second, idB.first, idB.second);
+        }
+      }
+    }
   }
 }
 
 // _____________________________________________________________________________
-void Sweeper::writeNotTouches(size_t, const std::string& a, size_t aSub,
+void Sweeper::writeNotTouches(size_t t, const std::string& a, size_t aSub,
                               const std::string& b, size_t bSub) {
-  if (a == b) return;
-  if (aSub == 0 && bSub == 0) return;
+  if (a != b) {
+    if (aSub != 0 || bSub != 0) {
+      std::unique_lock<std::mutex> lock(_mutNotTouches);
 
-  {
-    std::unique_lock<std::mutex> lock(_mutNotTouches);
+      if (bSub != 0) _subNotTouches[b].insert(a);
+      if (aSub != 0) _subNotTouches[a].insert(b);
+    }
+  }
 
-    if (bSub != 0) _subNotTouches[b].insert(a);
-    if (aSub != 0) _subNotTouches[a].insert(b);
+  if (_refs.size() == 0) return;
+
+  // handle references
+
+  auto referersA = _refs.find(a);
+  auto referersB = _refs.find(b);
+
+  if (referersB != _refs.end()) {
+    for (const auto& idB : referersB->second) {
+      writeNotTouches(t, a, aSub, idB.first, idB.second);
+
+      if (referersA != _refs.end()) {
+        for (const auto& idA : referersA->second) {
+          writeNotTouches(t, idA.first, idA.second, idB.first, idB.second);
+        }
+      }
+    }
+  }
+
+  if (referersA != _refs.end()) {
+    for (const auto& idA : referersA->second) {
+      writeNotTouches(t, idA.first, idA.second, b, bSub);
+
+      if (referersB != _refs.end()) {
+        for (const auto& idB : referersB->second) {
+          writeNotTouches(t, idA.first, idA.second, idB.first, idB.second);
+        }
+      }
+    }
   }
 }
 
 // _____________________________________________________________________________
-void Sweeper::writeEqualsMulti(size_t t, const std::string& a, size_t aSub,
-                               const std::string& b, size_t bSub) {
-  if (a == b) return;
-  if (aSub == 0 && bSub == 0) {
-    writeEquals(t, a, b);
-    writeEquals(t, b, a);
-    return;
+void Sweeper::writeEquals(size_t t, const std::string& a, size_t aSub,
+                          const std::string& b, size_t bSub) {
+  if (a != b) {
+    if (aSub == 0 && bSub == 0) {
+      writeRel(t, a, b, _cfg.sepEquals);
+      _relStats[t].equals++;
+      writeRel(t, b, a, _cfg.sepEquals);
+      _relStats[t].equals++;
+    } else if (aSub == 0 || bSub == 0) {
+      writeNotOverlaps(t, a, aSub, b, bSub);
+    } else if (_subSizes[a] != _subSizes[b]) {
+    } else {
+      std::unique_lock<std::mutex> lock(_mutEquals);
+
+      _subEquals[b][a].insert(aSub);
+      _subEquals[a][b].insert(bSub);
+
+      if (_subEquals[a][b].size() == _subSizes[a] &&
+          _subEquals[b][a].size() == _subSizes[b]) {
+        _subEquals[b].erase(a);
+        _subEquals[a].erase(b);
+        writeRel(t, a, b, _cfg.sepEquals);
+        _relStats[t].equals++;
+        writeRel(t, b, a, _cfg.sepEquals);
+        _relStats[t].equals++;
+      }
+    }
   }
 
-  if (aSub == 0 || bSub == 0) {
-    writeNotOverlaps(t, a, aSub, b, bSub);
-    return;  // multi and non-multi cannot be equal
+  if (_refs.size() == 0) return;
+
+  // handle references
+
+  auto referersA = _refs.find(a);
+  auto referersB = _refs.find(b);
+
+  if (referersB != _refs.end()) {
+    for (const auto& idB : referersB->second) {
+      writeEquals(t, a, aSub, idB.first, idB.second);
+
+      if (referersA != _refs.end()) {
+        for (const auto& idA : referersA->second) {
+          writeEquals(t, idA.first, idA.second, idB.first, idB.second);
+        }
+      }
+    }
   }
 
-  if (_subSizes[a] != _subSizes[b]) {
-    return;  // multi of different sizes cannot be equal
+  if (referersA != _refs.end()) {
+    for (const auto& idA : referersA->second) {
+      writeEquals(t, idA.first, idA.second, b, bSub);
+
+      if (referersB != _refs.end()) {
+        for (const auto& idB : referersB->second) {
+          writeEquals(t, idA.first, idA.second, idB.first, idB.second);
+        }
+      }
+    }
   }
-
-  {
-    std::unique_lock<std::mutex> lock(_mutEquals);
-
-    _subEquals[b][a].insert(aSub);
-    _subEquals[a][b].insert(bSub);
-
-    if (_subEquals[a][b].size() != _subSizes[a] ||
-        _subEquals[b][a].size() != _subSizes[b])
-      return;
-
-    _subEquals[b].erase(a);
-    _subEquals[a].erase(b);
-  }
-
-  writeEquals(t, a, b);
-  writeEquals(t, b, a);
 }
 
 // _____________________________________________________________________________
-void Sweeper::writeCoversMulti(size_t t, const std::string& a,
-                               const std::string& b, size_t bSub) {
-  if (a == b) return;
-  {
-    std::unique_lock<std::mutex> lock(_mutCovers);
+void Sweeper::writeCovers(size_t t, const std::string& a, const std::string& b,
+                          size_t bSub) {
+  if (a != b) {
+    if (bSub > 0) {
+      {
+        std::unique_lock<std::mutex> lock(_mutCovers);
 
-    _subCovered[b][a].insert(bSub);
+        _subCovered[b][a].insert(bSub);
 
-    if (_subCovered[b][a].size() != _subSizes[b]) return;
-
-    _subCovered[b].erase(a);
+        if (_subCovered[b][a].size() == _subSizes[b]) {
+          _subCovered[b].erase(a);
+          writeNotOverlaps(t, a, 0, b, bSub);
+          writeRel(t, a, b, _cfg.sepCovers);
+          _relStats[t].covers++;
+        }
+      }
+    } else {
+      writeRel(t, a, b, _cfg.sepCovers);
+      _relStats[t].covers++;
+    }
   }
 
-  writeNotOverlaps(t, a, 0, b, bSub);
-  writeCovers(t, a, b);
+  if (_refs.size() == 0) return;
+
+  // handle references
+
+  auto referersA = _refs.find(a);
+  auto referersB = _refs.find(b);
+
+  if (referersB != _refs.end()) {
+    for (const auto& idB : referersB->second) {
+      writeCovers(t, a, idB.first, idB.second);
+
+      if (referersA != _refs.end()) {
+        for (const auto& idA : referersA->second) {
+          writeCovers(t, idA.first, idB.first, idB.second);
+        }
+      }
+    }
+  }
+
+  if (referersA != _refs.end()) {
+    for (const auto& idA : referersA->second) {
+      writeCovers(t, idA.first, b, bSub);
+
+      if (referersB != _refs.end()) {
+        for (const auto& idB : referersB->second) {
+          writeCovers(t, idA.first, idB.first, idB.second);
+        }
+      }
+    }
+  }
 }
 
 // _____________________________________________________________________________
-void Sweeper::writeContainsMulti(size_t t, const std::string& a,
-                                 const std::string& b, size_t bSub) {
-  if (a == b) return;
-  {
-    std::unique_lock<std::mutex> lock(_mutContains);
+void Sweeper::writeContains(size_t t, const std::string& a,
+                            const std::string& b, size_t bSub) {
+  if (a != b) {
+    if (bSub > 0) {
+      std::unique_lock<std::mutex> lock(_mutContains);
 
-    _subContains[b][a].insert(bSub);
+      _subContains[b][a].insert(bSub);
 
-    if (_subContains[b][a].size() != _subSizes[b]) return;
-
-    _subContains[b].erase(a);
+      if (_subContains[b][a].size() == _subSizes[b]) {
+        writeRel(t, a, b, _cfg.sepContains);
+        _relStats[t].contains++;
+        _subContains[b].erase(a);
+      }
+    } else {
+      writeRel(t, a, b, _cfg.sepContains);
+      _relStats[t].contains++;
+    }
   }
 
-  writeContains(t, a, b);
+  if (_refs.size() == 0) return;
+
+  // handle references
+
+  auto referersA = _refs.find(a);
+  auto referersB = _refs.find(b);
+
+  if (referersB != _refs.end()) {
+    for (const auto& idB : referersB->second) {
+      writeContains(t, a, idB.first, idB.second);
+
+      if (referersA != _refs.end()) {
+        for (const auto& idA : referersA->second) {
+          writeContains(t, idA.first, idB.first, idB.second);
+        }
+      }
+    }
+  }
+
+  if (referersA != _refs.end()) {
+    for (const auto& idA : referersA->second) {
+      writeContains(t, idA.first, b, bSub);
+
+      if (referersB != _refs.end()) {
+        for (const auto& idB : referersB->second) {
+          writeContains(t, idA.first, idB.first, idB.second);
+        }
+      }
+    }
+  }
 }
 
 // _____________________________________________________________________________

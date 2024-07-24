@@ -66,10 +66,11 @@ struct WriteBatch {
   std::vector<WriteCand> lines;
   std::vector<WriteCand> simpleAreas;
   std::vector<WriteCand> areas;
+  std::vector<WriteCand> refs;
 
   size_t size() const {
     return points.size() + simpleLines.size() + lines.size() +
-           simpleAreas.size() + areas.size();
+           simpleAreas.size() + areas.size() + refs.size();
   }
 };
 
@@ -121,12 +122,9 @@ struct SweeperCfg {
   std::function<void(size_t t, const std::string& a, const std::string& b,
                      const std::string& pred)>
       writeRelCb;
-  std::function<void(const std::string&)>
-      logCb;
-  std::function<void(const std::string&)>
-      statsCb;
-  std::function<void(size_t)>
-      sweepProgressCb;
+  std::function<void(const std::string&)> logCb;
+  std::function<void(const std::string&)> statsCb;
+  std::function<void(size_t)> sweepProgressCb;
 };
 
 // buffer size _must_ be multiples of sizeof(BoxVal)
@@ -233,6 +231,12 @@ class Sweeper {
   void addMp(const util::geo::I32MultiPoint& a, const std::string& gid,
              bool side, WriteBatch& batch) const;
 
+  void add(const std::string& a, const util::geo::I32Box& box,
+           const std::string& gid, bool side, WriteBatch& batch) const;
+  void add(const std::string& a, const util::geo::I32Box& box,
+           const std::string& gid, size_t subid, bool side,
+           WriteBatch& batch) const;
+
   void addBatch(WriteBatch& cands);
 
   void flush();
@@ -337,23 +341,17 @@ class Sweeper {
   void clearMultis(bool force);
 
   void writeIntersect(size_t t, const std::string& a, const std::string& b);
-  void writeContains(size_t t, const std::string& a, const std::string& b);
-  void writeEquals(size_t t, const std::string& a, const std::string& b);
-  void writeTouches(size_t t, const std::string& a, const std::string& b);
-  void writeCovers(size_t t, const std::string& a, const std::string& b);
-  void writeOverlaps(size_t t, const std::string& a, const std::string& b);
-  void writeCrosses(size_t t, const std::string& a, const std::string& b);
   void writeRel(size_t t, const std::string& a, const std::string& b,
                 const std::string& pred);
   void writeRelToBuf(size_t t, const std::string& a, const std::string& b,
                      const std::string& pred);
-  void writeContainsMulti(size_t t, const std::string& a, const std::string& b,
+  void writeContains(size_t t, const std::string& a, const std::string& b,
                           size_t bSub);
-  void writeCoversMulti(size_t t, const std::string& a, const std::string& b,
+  void writeCovers(size_t t, const std::string& a, const std::string& b,
                         size_t bSub);
-  void writeEqualsMulti(size_t t, const std::string& a, size_t aSub,
+  void writeEquals(size_t t, const std::string& a, size_t aSub,
                         const std::string& b, size_t bSub);
-  void writeTouchesMulti(size_t t, const std::string& a, size_t aSub,
+  void writeTouches(size_t t, const std::string& a, size_t aSub,
                          const std::string& b, size_t bSub);
   void writeNotTouches(size_t t, const std::string& a, size_t aSub,
                        const std::string& b, size_t bSub);
@@ -369,6 +367,7 @@ class Sweeper {
                        const std::string& b, size_t bSub);
 
   void doCheck(BoxVal cur, SweepVal sv, size_t t);
+  void selfCheck(BoxVal cur, size_t t);
 
   void processQueue(size_t t);
 
@@ -438,6 +437,8 @@ class Sweeper {
   mutable std::mutex _simpleLineGeomCacheWriteMtx;
   mutable std::mutex _areaGeomCacheWriteMtx;
   mutable std::mutex _simpleAreaGeomCacheWriteMtx;
+
+  std::unordered_map<std::string, std::vector<std::pair<std::string, size_t>>> _refs;
 };
 }  // namespace sj
 

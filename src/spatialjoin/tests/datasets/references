@@ -1,0 +1,14 @@
+TestA	LINESTRING(20 20, 30 30)
+TestB	LINESTRING(30 20, 20 30)
+TestC	LINESTRING(20 25, 25 20)
+<>	POINT(1, 1)
+RefA	<TestA,TestB>
+RefB	<TestA>
+RefC	<TestA, TestB>
+RefD	<TestA, TestB,>
+RefE	<,>
+RefF	<>
+RefG	<<>>
+RefH
+RefI	
+RefJ	<RefG>

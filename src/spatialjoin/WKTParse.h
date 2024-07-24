@@ -67,6 +67,7 @@ inline void parseLine(char* c, size_t len, size_t gid, sj::Sweeper* sweeper,
   if (idp) {
     *idp = 0;
     id = c;
+    len -= (idp - c) + 1;
     c = idp + 1;
   } else {
     id = std::to_string(gid);
@@ -77,10 +78,39 @@ inline void parseLine(char* c, size_t len, size_t gid, sj::Sweeper* sweeper,
   if (idp) {
     *idp = 0;
     side = atoi(c);
+    len -= (idp - c) + 1;
     c = idp + 1;
   }
 
-  if (len > 6 && memcmp(c, "POINT(", 6) == 0) {
+  if (len > 2 && *c == '<') {
+    char* end = strchr(c, ',');
+    size_t subId = 0;
+    c += 1;
+    if (end) {
+      subId = 1;
+      do {
+        *end = 0;
+        sweeper->add(c,
+
+                     util::geo::I32Box({std::numeric_limits<int32_t>::min(),
+                                        std::numeric_limits<int32_t>::min()},
+                                       {std::numeric_limits<int32_t>::max(),
+                                        std::numeric_limits<int32_t>::max()}),
+                     id, subId, side, batch);
+        len -= (end - c) + 1;
+        c = end + 1;
+      } while (len > 0 && (end = strchr(c, ',')));
+    }
+
+    c[len - 2] = 0;
+    sweeper->add(c,
+
+                 util::geo::I32Box({std::numeric_limits<int32_t>::min(),
+                                    std::numeric_limits<int32_t>::min()},
+                                   {std::numeric_limits<int32_t>::max(),
+                                    std::numeric_limits<int32_t>::max()}),
+                 id, subId, side, batch);
+  } else if (len > 6 && memcmp(c, "POINT(", 6) == 0) {
     c += 6;
     auto point = parsePoint(c);
     sweeper->add(point, id, side, batch);
