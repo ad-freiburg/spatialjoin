@@ -18,7 +18,7 @@ jobs:
       - name: make
         run: cd build && make
       - name: tests
-        run: cd build && ctest --output-on-failure
+        run: cd build && ctest --output-on-failure --verbose
   ubuntu-latest-build-gcc:
     runs-on: ubuntu-latest
     steps:
@@ -35,7 +35,7 @@ jobs:
       - name: make
         run: cd build && make
       - name: tests
-        run: cd build && ctest --output-on-failure
+        run: cd build && ctest --output-on-failure --verbose
   ubuntu-20-04-build-clang:
     runs-on: ubuntu-20.04
     steps:
@@ -56,7 +56,7 @@ jobs:
       - name: make
         run: cd build && make
       - name: tests
-        run: cd build && ctest --output-on-failure
+        run: cd build && ctest --output-on-failure --verbose
   ubuntu-latest-build-clang:
     runs-on: ubuntu-latest
     steps:
@@ -77,7 +77,7 @@ jobs:
       - name: make
         run: cd build && make
       - name: tests
-        run: cd build && ctest --output-on-failure
+        run: cd build && ctest --output-on-failure --verbose
   macos-latest-build:
     runs-on: macOS-latest
     steps:
@@ -92,7 +92,7 @@ jobs:
       - name: make
         run: cd build && make
       - name: tests
-        run: cd build && ctest --output-on-failure
+        run: cd build && ctest --output-on-failure --verbose
   macos-12-build:
     runs-on: macOS-12
     steps:
@@ -107,4 +107,4 @@ jobs:
       - name: make
         run: cd build && make
       - name: tests
-        run: cd build && ctest --output-on-failure
+        run: cd build && ctest --output-on-failure --verbose
