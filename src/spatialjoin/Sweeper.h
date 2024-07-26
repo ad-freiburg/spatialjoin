@@ -18,6 +18,8 @@
 #include <mutex>
 #include <queue>
 #include <thread>
+#include <unordered_map>
+#include <unordered_set>
 
 #include "GeometryCache.h"
 #include "IntervalIdx.h"
@@ -97,7 +99,18 @@ inline bool operator<(const SweepVal& a, const SweepVal& b) {
   return a.id < b.id || (a.id == b.id && a.type < b.type);
 }
 
-typedef std::vector<std::pair<BoxVal, SweepVal>> JobBatch;
+struct Job {
+  BoxVal boxVal;
+  SweepVal sweepVal;
+  std::string multiOut;
+};
+
+inline bool operator==(const Job& a, const Job& b) {
+  return a.boxVal == b.boxVal && a.sweepVal == b.sweepVal &&
+         a.multiOut == b.multiOut;
+}
+
+typedef std::vector<Job> JobBatch;
 
 struct SweeperCfg {
   size_t numThreads;
@@ -276,15 +289,18 @@ class Sweeper {
   GeometryCache<Line> _lineCache;
   GeometryCache<SimpleLine> _simpleLineCache;
 
-  std::map<std::string, std::map<std::string, std::set<size_t>>> _subContains;
-  std::map<std::string, std::map<std::string, std::set<size_t>>> _subCovered;
-  std::map<std::string, std::map<std::string, std::set<size_t>>> _subEquals;
-  std::map<std::string, std::set<std::string>> _subTouches;
-  std::map<std::string, std::set<std::string>> _subNotTouches;
-  std::map<std::string, std::set<std::string>> _subCrosses;
-  std::map<std::string, std::set<std::string>> _subNotCrosses;
-  std::map<std::string, std::set<std::string>> _subOverlaps;
-  std::map<std::string, std::set<std::string>> _subNotOverlaps;
+  std::vector<std::map<std::string, std::map<std::string, std::set<size_t>>>>
+      _subContainss;
+  std::vector<std::map<std::string, std::map<std::string, std::set<size_t>>>>
+      _subCovereds;
+  std::vector<std::map<std::string, std::map<std::string, std::set<size_t>>>>
+      _subEqualss;
+  std::vector<std::map<std::string, std::set<std::string>>> _subTouchess;
+  std::vector<std::map<std::string, std::set<std::string>>> _subNotTouchess;
+  std::vector<std::map<std::string, std::set<std::string>>> _subCrossess;
+  std::vector<std::map<std::string, std::set<std::string>>> _subNotCrossess;
+  std::vector<std::map<std::string, std::set<std::string>>> _subOverlapss;
+  std::vector<std::map<std::string, std::set<std::string>>> _subNotOverlapss;
   std::map<std::string, size_t> _subSizes;
 
   std::set<size_t> _activeMultis[2];
@@ -300,15 +316,15 @@ class Sweeper {
 
   uint8_t _numSides = 1;
 
-  std::mutex _mutEquals;
-  std::mutex _mutCovers;
-  std::mutex _mutContains;
-  std::mutex _mutTouches;
-  std::mutex _mutNotTouches;
-  std::mutex _mutCrosses;
-  std::mutex _mutNotCrosses;
-  std::mutex _mutOverlaps;
-  std::mutex _mutNotOverlaps;
+  std::vector<std::mutex> _mutsEquals;
+  std::vector<std::mutex> _mutsCovers;
+  std::vector<std::mutex> _mutsContains;
+  std::vector<std::mutex> _mutsTouches;
+  std::vector<std::mutex> _mutsNotTouches;
+  std::vector<std::mutex> _mutsCrosses;
+  std::vector<std::mutex> _mutsNotCrosses;
+  std::vector<std::mutex> _mutsOverlaps;
+  std::vector<std::mutex> _mutsNotOverlaps;
 
   Area areaFromSimpleArea(const SimpleArea* sa) const;
 
@@ -333,6 +349,8 @@ class Sweeper {
   std::tuple<bool, bool> check(const util::geo::I32Point& a, const Line* b,
                                size_t t) const;
 
+  bool refRelated(const std::string& a, const std::string& b) const;
+
   void diskAdd(const BoxVal& bv);
 
   void multiOut(size_t t, const std::string& gid);
@@ -346,13 +364,13 @@ class Sweeper {
   void writeRelToBuf(size_t t, const std::string& a, const std::string& b,
                      const std::string& pred);
   void writeContains(size_t t, const std::string& a, const std::string& b,
-                          size_t bSub);
+                     size_t bSub);
   void writeCovers(size_t t, const std::string& a, const std::string& b,
-                        size_t bSub);
+                   size_t bSub);
   void writeEquals(size_t t, const std::string& a, size_t aSub,
-                        const std::string& b, size_t bSub);
+                   const std::string& b, size_t bSub);
   void writeTouches(size_t t, const std::string& a, size_t aSub,
-                         const std::string& b, size_t bSub);
+                    const std::string& b, size_t bSub);
   void writeNotTouches(size_t t, const std::string& a, size_t aSub,
                        const std::string& b, size_t bSub);
 
@@ -376,7 +394,9 @@ class Sweeper {
 
   void log(const std::string& msg);
 
-  bool notOverlaps(const std::string& a, const std::string& b) const;
+  bool notOverlaps(const std::string& a, const std::string& b);
+  bool notTouches(const std::string& a, const std::string& b);
+  bool notCrosses(const std::string& a, const std::string& b);
 
   void fillBatch(JobBatch* batch,
                  const sj::IntervalIdx<int32_t, SweepVal>* actives,
@@ -438,7 +458,8 @@ class Sweeper {
   mutable std::mutex _areaGeomCacheWriteMtx;
   mutable std::mutex _simpleAreaGeomCacheWriteMtx;
 
-  std::unordered_map<std::string, std::vector<std::pair<std::string, size_t>>> _refs;
+  std::unordered_map<std::string, std::unordered_map<std::string, size_t>>
+      _refs;
 };
 }  // namespace sj
 
