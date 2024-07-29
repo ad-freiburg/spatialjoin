@@ -693,19 +693,16 @@ void Sweeper::multiOut(size_t tOut, const std::string& gidA) {
     }
   }
 
-  // write touches
+  // write touches, aggregate first to avoid locking during I/O
+  std::vector<std::pair<std::string, std::string>> touchesTmp;
+
   for (size_t t = 0; t < _cfg.numThreads + 1; t++) {
     std::unique_lock<std::mutex> lock(_mutsTouches[t]);
     auto i = _subTouchess[t].find(gidA);
     if (i != _subTouchess[t].end()) {
       for (const auto& b : i->second) {
         auto gidB = b;
-        if (!notTouches(gidA, gidB)) {
-          _relStats[tOut].touches++;
-          writeRel(tOut, gidA, gidB, _cfg.sepTouches);
-          _relStats[tOut].touches++;
-          writeRel(tOut, gidB, gidA, _cfg.sepTouches);
-        }
+        if (!notTouches(gidA, gidB)) touchesTmp.push_back({gidA, gidB});
 
         {
           std::unique_lock<std::mutex> lock2(_mutsNotTouches[t]);
@@ -724,19 +721,22 @@ void Sweeper::multiOut(size_t tOut, const std::string& gidA) {
     }
   }
 
-  // write crosses
+  for (const auto& p : touchesTmp) {
+    _relStats[tOut].touches++;
+    writeRel(tOut, p.first, p.second, _cfg.sepTouches);
+    _relStats[tOut].touches++;
+    writeRel(tOut, p.second, p.first, _cfg.sepTouches);
+  }
+
+  // write crosses, aggregate first to avoid locking during I/O
+  std::vector<std::pair<std::string, std::string>> crossesTmp;
   for (size_t t = 0; t < _cfg.numThreads + 1; t++) {
     std::unique_lock<std::mutex> lock(_mutsCrosses[t]);
     auto i = _subCrossess[t].find(gidA);
     if (i != _subCrossess[t].end()) {
       for (const auto& b : i->second) {
         auto gidB = b;
-        if (!notCrosses(gidA, gidB)) {
-          _relStats[t].crosses++;
-          writeRel(tOut, gidA, gidB, _cfg.sepCrosses);
-          _relStats[t].crosses++;
-          writeRel(tOut, gidB, gidA, _cfg.sepCrosses);
-        }
+        if (!notCrosses(gidA, gidB)) crossesTmp.push_back({gidA, gidB});
 
         {
           std::unique_lock<std::mutex> lock2(_mutsNotCrosses[t]);
@@ -755,6 +755,13 @@ void Sweeper::multiOut(size_t tOut, const std::string& gidA) {
     }
   }
 
+  for (const auto& p : crossesTmp) {
+    _relStats[tOut].crosses++;
+    writeRel(tOut, p.first, p.second, _cfg.sepCrosses);
+    _relStats[tOut].crosses++;
+    writeRel(tOut, p.second, p.first, _cfg.sepCrosses);
+  }
+
   // write overlaps caused by incomplete covers
   {
     for (const auto& b : subCovered) {
@@ -770,19 +777,15 @@ void Sweeper::multiOut(size_t tOut, const std::string& gidA) {
     }
   }
 
-  // write overlaps
+  // write overlaps, aggregate first to avoid locking during I/O
+  std::vector<std::pair<std::string, std::string>> overlapsTmp;
   for (size_t t = 0; t < _cfg.numThreads + 1; t++) {
     std::unique_lock<std::mutex> lock(_mutsOverlaps[t]);
     auto i = _subOverlapss[t].find(gidA);
     if (i != _subOverlapss[t].end()) {
       for (const auto& b : i->second) {
         auto gidB = b;
-        if (!notOverlaps(gidA, gidB)) {
-          _relStats[tOut].overlaps++;
-          writeRel(tOut, gidA, gidB, _cfg.sepOverlaps);
-          _relStats[tOut].overlaps++;
-          writeRel(tOut, gidB, gidA, _cfg.sepOverlaps);
-        }
+        if (!notOverlaps(gidA, gidB)) overlapsTmp.push_back({gidA, gidB});
 
         {
           std::unique_lock<std::mutex> lock2(_mutsNotOverlaps[t]);
@@ -799,6 +802,13 @@ void Sweeper::multiOut(size_t tOut, const std::string& gidA) {
       std::unique_lock<std::mutex> lock2(_mutsNotOverlaps[t]);
       _subNotOverlapss[t].erase(gidA);
     }
+  }
+
+  for (const auto& p : overlapsTmp) {
+    _relStats[tOut].overlaps++;
+    writeRel(tOut, p.first, p.second, _cfg.sepOverlaps);
+    _relStats[tOut].overlaps++;
+    writeRel(tOut, p.second, p.first, _cfg.sepOverlaps);
   }
 }
 
