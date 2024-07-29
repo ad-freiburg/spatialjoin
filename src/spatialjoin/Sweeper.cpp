@@ -615,7 +615,7 @@ void Sweeper::clearMultis(bool force) {
 }
 
 // _____________________________________________________________________________
-void Sweeper::multiOut(size_t t, const std::string& gidA) {
+void Sweeper::multiOut(size_t tOut, const std::string& gidA) {
   std::unordered_map<std::string, size_t> subContains, subCovered;
 
   std::unordered_map<std::string, std::unordered_map<std::string, size_t>>
@@ -669,27 +669,27 @@ void Sweeper::multiOut(size_t t, const std::string& gidA) {
   for (auto i : subEquals[gidA]) {
     if (i.second == _subSizes[gidA] &&
         subEquals[i.first][gidA] == _subSizes[i.first]) {
-      writeRel(t, i.first, gidA, _cfg.sepEquals);
-      _relStats[t].equals++;
-      writeRel(t, gidA, i.first, _cfg.sepEquals);
-      _relStats[t].equals++;
+      writeRel(tOut, i.first, gidA, _cfg.sepEquals);
+      _relStats[tOut].equals++;
+      writeRel(tOut, gidA, i.first, _cfg.sepEquals);
+      _relStats[tOut].equals++;
     }
   }
 
   // write contains
   for (auto i : subContains) {
     if (i.second == _subSizes[gidA]) {
-      writeRel(t, i.first, gidA, _cfg.sepContains);
-      _relStats[t].contains++;
+      writeRel(tOut, i.first, gidA, _cfg.sepContains);
+      _relStats[tOut].contains++;
     }
   }
 
   // write covers
   for (auto i : subCovered) {
     if (i.second == _subSizes[gidA]) {
-      writeNotOverlaps(t, i.first, 0, gidA, 1);
-      writeRel(t, i.first, gidA, _cfg.sepCovers);
-      _relStats[t].covers++;
+      writeNotOverlaps(tOut, i.first, 0, gidA, 1);
+      writeRel(tOut, i.first, gidA, _cfg.sepCovers);
+      _relStats[tOut].covers++;
     }
   }
 
@@ -701,10 +701,10 @@ void Sweeper::multiOut(size_t t, const std::string& gidA) {
       for (const auto& b : i->second) {
         auto gidB = b;
         if (!notTouches(gidA, gidB)) {
-          _relStats[t].touches++;
-          writeRel(t, gidA, gidB, _cfg.sepTouches);
-          _relStats[t].touches++;
-          writeRel(t, gidB, gidA, _cfg.sepTouches);
+          _relStats[tOut].touches++;
+          writeRel(tOut, gidA, gidB, _cfg.sepTouches);
+          _relStats[tOut].touches++;
+          writeRel(tOut, gidB, gidA, _cfg.sepTouches);
         }
 
         {
@@ -733,9 +733,9 @@ void Sweeper::multiOut(size_t t, const std::string& gidA) {
         auto gidB = b;
         if (!notCrosses(gidA, gidB)) {
           _relStats[t].crosses++;
-          writeRel(t, gidA, gidB, _cfg.sepCrosses);
+          writeRel(tOut, gidA, gidB, _cfg.sepCrosses);
           _relStats[t].crosses++;
-          writeRel(t, gidB, gidA, _cfg.sepCrosses);
+          writeRel(tOut, gidB, gidA, _cfg.sepCrosses);
         }
 
         {
@@ -762,10 +762,10 @@ void Sweeper::multiOut(size_t t, const std::string& gidA) {
       if (b.second == _subSizes[gidA]) continue;
 
       if (!notOverlaps(gidA, gidB)) {
-        _relStats[t].overlaps++;
-        writeRel(t, gidA, gidB, _cfg.sepOverlaps);
-        _relStats[t].overlaps++;
-        writeRel(t, gidB, gidA, _cfg.sepOverlaps);
+        _relStats[tOut].overlaps++;
+        writeRel(tOut, gidA, gidB, _cfg.sepOverlaps);
+        _relStats[tOut].overlaps++;
+        writeRel(tOut, gidB, gidA, _cfg.sepOverlaps);
       }
     }
   }
@@ -778,10 +778,10 @@ void Sweeper::multiOut(size_t t, const std::string& gidA) {
       for (const auto& b : i->second) {
         auto gidB = b;
         if (!notOverlaps(gidA, gidB)) {
-          _relStats[t].overlaps++;
-          writeRel(t, gidA, gidB, _cfg.sepOverlaps);
-          _relStats[t].overlaps++;
-          writeRel(t, gidB, gidA, _cfg.sepOverlaps);
+          _relStats[tOut].overlaps++;
+          writeRel(tOut, gidA, gidB, _cfg.sepOverlaps);
+          _relStats[tOut].overlaps++;
+          writeRel(tOut, gidB, gidA, _cfg.sepOverlaps);
         }
 
         {
