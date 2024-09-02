@@ -403,6 +403,101 @@ int main(int, char**) {
     }
 
     {
+      auto res = fullRun("../src/spatialjoin/tests/datasets/collectiontests", cfg);
+
+      TEST(res.find("$28 covers 27$") != std::string::npos);
+
+      TEST(res.find("$27 overlaps 28$") == std::string::npos);
+      TEST(res.find("$28 overlaps 27$") == std::string::npos);
+
+      TEST(res.find("$17 touches 18$") != std::string::npos);
+      TEST(res.find("$19 touches 18$") != std::string::npos);
+      TEST(res.find("$17 touches 16$") != std::string::npos);
+
+      TEST(res.find("$1 equals 2$") != std::string::npos);
+      TEST(res.find("$1 overlaps 2$") == std::string::npos);
+      TEST(res.find("$2 equals 1$") != std::string::npos);
+      TEST(res.find("$3 equals 1$") == std::string::npos);
+      TEST(res.find("$3 equals 2$") == std::string::npos);
+      TEST(res.find("$3 equals 4$") != std::string::npos);
+      TEST(res.find("$3 equals 5$") != std::string::npos);
+      TEST(res.find("$4 equals 3$") != std::string::npos);
+      TEST(res.find("$5 equals 3$") != std::string::npos);
+      TEST(res.find("$5 equals 4$") != std::string::npos);
+      TEST(res.find("$4 equals 5$") != std::string::npos);
+      TEST(res.find("$4 overlaps 5$") == std::string::npos);
+      TEST(res.find("$1 touches 6$") != std::string::npos);
+      TEST(res.find("$6 touches 1$") != std::string::npos);
+      TEST(res.find("$2 touches 6$") != std::string::npos);
+      TEST(res.find("$6 touches 2$") != std::string::npos);
+      TEST(res.find("$3 touches 6$") != std::string::npos);
+      TEST(res.find("$6 touches 3$") != std::string::npos);
+      TEST(res.find("$4 touches 6$") != std::string::npos);
+      TEST(res.find("$6 touches 4$") != std::string::npos);
+      TEST(res.find("$6 touches 7$") == std::string::npos);
+      TEST(res.find("$7 touches 6$") == std::string::npos);
+
+      TEST(res.find("$8 touches 9$") != std::string::npos);
+      TEST(res.find("$9 touches 8$") != std::string::npos);
+
+      TEST(res.find("$8 touches 11$") == std::string::npos);
+
+      TEST(res.find("$9 touches 10$") == std::string::npos);
+      TEST(res.find("$8 touches 10$") == std::string::npos);
+      TEST(res.find("$12 touches 10$") != std::string::npos);
+      TEST(res.find("$13 equals 10$") != std::string::npos);
+      TEST(res.find("$13 equals 53$") != std::string::npos);
+      TEST(res.find("$10 equals 53$") != std::string::npos);
+
+      TEST(res.find("$28 equals 54$") != std::string::npos);
+
+      TEST(res.find("$6 equals 14$") != std::string::npos);
+      TEST(res.find("$15 touches 16$") != std::string::npos);
+      TEST(res.find("$17 touches 6$") == std::string::npos);
+      TEST(res.find("$17 intersects 16$") != std::string::npos);
+      TEST(res.find("$17 intersects 18$") != std::string::npos);
+
+      TEST(res.find("$8 overlaps 20$") != std::string::npos);
+      TEST(res.find("$20 overlaps 8$") != std::string::npos);
+
+      TEST(res.find("$17 crosses 21$") != std::string::npos);
+      TEST(res.find("$21 crosses 17$") != std::string::npos);
+
+      TEST(res.find("$17 crosses 22$") == std::string::npos);
+      TEST(res.find("$22 crosses 17$") == std::string::npos);
+
+      TEST(res.find("$17 overlaps 22$") == std::string::npos);
+      TEST(res.find("$22 overlaps 17$") == std::string::npos);
+
+      TEST(res.find("$24 covers 25$") != std::string::npos);
+
+      TEST(res.find("$25 overlaps 24$") == std::string::npos);
+      TEST(res.find("$24 overlaps 25$") == std::string::npos);
+
+      TEST(res.find("$23 overlaps 24$") == std::string::npos);
+      TEST(res.find("$24 overlaps 23$") == std::string::npos);
+
+      TEST(res.find("$26 overlaps 24$") != std::string::npos);
+      TEST(res.find("$24 overlaps 26$") != std::string::npos);
+
+      TEST(res.find("$26 overlaps 27$") != std::string::npos);
+      TEST(res.find("$27 overlaps 26$") != std::string::npos);
+
+      TEST(res.find("$26 overlaps 28$") != std::string::npos);
+      TEST(res.find("$28 overlaps 26$") != std::string::npos);
+
+      TEST(res.find("8 overlaps 29$") == std::string::npos);
+      TEST(res.find("8 overlaps 29$") == std::string::npos);
+      TEST(res.find("30 covers 8$") != std::string::npos);
+      TEST(res.find("8 overlaps 30$") == std::string::npos);
+      TEST(res.find("29 overlaps 30$") == std::string::npos);
+      TEST(res.find("30 overlaps 29") == std::string::npos);
+
+      TEST(res.find("31 overlaps 30$") != std::string::npos);
+      TEST(res.find("30 overlaps 31") != std::string::npos);
+    }
+
+    {
       auto res = fullRun("../src/spatialjoin/tests/datasets/multitests", cfg);
 
       TEST(res.find("$28 covers 27$") != std::string::npos);
