@@ -461,8 +461,6 @@ class Sweeper {
 
   std::unordered_map<std::string, std::unordered_map<std::string, size_t>>
       _refs;
-
-  std::unordered_set<size_t> _lateRefGeoms;
 };
 }  // namespace sj
 

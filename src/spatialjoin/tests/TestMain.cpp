@@ -49,7 +49,6 @@ std::string fullRun(const std::string& file, const sj::SweeperCfg& cfg) {
 
 
     sweeper.flush();
-    sweeper.refDuplicates();
 
     sweeper.sweep();
 

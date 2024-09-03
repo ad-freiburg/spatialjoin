@@ -876,114 +876,6 @@ void Sweeper::diskAdd(const BoxVal& bv) {
 }
 
 // _____________________________________________________________________________
-void Sweeper::refDuplicates() {
-  // start at beginning of _file
-  lseek(_file, 0, SEEK_SET);
-
-  const size_t RBUF_SIZE = 100000;
-  unsigned char* buf = new unsigned char[sizeof(BoxVal) * RBUF_SIZE];
-
-  ssize_t len;
-  size_t jj = 0;
-
-  size_t numEvents = _curSweepId;
-
-  BoxVal prev{0, 0, 0, 0, 0, POLYGON, 0, {}, 0};
-  bool first = false;
-
-  while ((len = util::readAll(_file, buf, sizeof(BoxVal) * RBUF_SIZE)) > 0) {
-    for (ssize_t i = 0; i < len; i += sizeof(BoxVal)) {
-      auto cur = reinterpret_cast<const BoxVal*>(buf + i);
-      jj++;
-
-      if (jj % 500000 == 0) {
-        log(std::to_string(jj / 2) + " / " + std::to_string(numEvents / 2) +
-            " (" + std::to_string((((1.0 * jj) / (1.0 * numEvents)) * 100)) +
-            "%)");
-      }
-
-      if (!cur->out) {
-        if (!first) {
-          // filter special event
-          if (cur->type != POINT || !(cur->loY == 1 && cur->upY == 0)) {
-            prev = *cur;
-            first = true;
-          }
-          continue;
-        }
-
-        if (cur->type == POINT && !(cur->loY == 1 && cur->upY == 0) &&
-            cur->type == prev.type && cur->val == prev.val &&
-            cur->loY == prev.loY && cur->upY == prev.upY &&
-            cur->b45 == prev.b45 && cur->side == prev.side) {
-          const auto prevC = _pointCache.get(prev.id, 0);
-          if (prevC->subId == 0) {
-          const auto curC = _pointCache.get(cur->id, 0);
-          _refs[prevC->id][curC->id] = curC->subId;
-          _lateRefGeoms.insert(cur->id);
-          }
-        }
-
-        if (cur->type == SIMPLE_LINE && cur->type == prev.type &&
-            cur->val == prev.val && cur->loY == prev.loY &&
-            cur->upY == prev.upY && cur->areaOrLen == prev.areaOrLen &&
-            cur->b45 == prev.b45 && cur->side == prev.side) {
-          const auto prevC = _simpleLineCache.get(prev.id, 0);
-          const auto curC = _simpleLineCache.get(cur->id, 0);
-          if (prevC->a == curC->a && prevC->b == curC->b) {
-            _refs[prevC->id][curC->id] = 0;
-            _lateRefGeoms.insert(cur->id);
-          }
-        }
-
-        if (cur->type == LINE && cur->type == prev.type &&
-            cur->val == prev.val && cur->loY == prev.loY &&
-            cur->upY == prev.upY && cur->areaOrLen == prev.areaOrLen &&
-            cur->b45 == prev.b45 && cur->side == prev.side) {
-          const auto prevC = _lineCache.get(prev.id, 0);
-          const auto curC = _lineCache.get(cur->id, 0);
-          if (prevC->subId == 0 && prevC->box == curC->box && prevC->geom == curC->geom) {
-            _refs[prevC->id][curC->id] = curC->subId;
-            _lateRefGeoms.insert(cur->id);
-          }
-        }
-
-        if (cur->type == POLYGON && cur->type == prev.type &&
-            cur->val == prev.val && cur->loY == prev.loY &&
-            cur->upY == prev.upY && cur->areaOrLen == prev.areaOrLen &&
-            cur->b45 == prev.b45 && cur->side == prev.side) {
-          const auto prevC = _areaCache.get(prev.id, 0);
-          const auto curC = _areaCache.get(cur->id, 0);
-          if (prevC->subId == 0 && prevC->box == curC->box && prevC->area == curC->area &&
-              prevC->geom == curC->geom) {
-            _refs[prevC->id][curC->id] = curC->subId;
-            _lateRefGeoms.insert(cur->id);
-          }
-        }
-
-        if (cur->type == SIMPLE_POLYGON && cur->type == prev.type &&
-            cur->val == prev.val && cur->loY == prev.loY &&
-            cur->upY == prev.upY && cur->areaOrLen == prev.areaOrLen &&
-            cur->b45 == prev.b45 && cur->side == prev.side) {
-          const auto prevC = _simpleAreaCache.get(prev.id, 0);
-          const auto curC = _simpleAreaCache.get(cur->id, 0);
-          if (prevC->geom == curC->geom) {
-            _refs[prevC->id][curC->id] = 0;
-            _lateRefGeoms.insert(cur->id);
-          }
-        }
-
-        if (cur->type != POINT || !(cur->loY == 1 && cur->upY == 0)) {
-          prev = *cur;
-        }
-      }
-    }
-  }
-
-  delete[] buf;
-}
-
-// _____________________________________________________________________________
 void Sweeper::sortCache() {
   // start at beginning of _file
   lseek(_file, 0, SEEK_SET);
@@ -1177,8 +1069,7 @@ RelStats Sweeper::sweep() {
       if (!cur->out && cur->loY == 1 && cur->upY == 0 && cur->type == POINT) {
         // special multi-IN
         _activeMultis[cur->side].insert(cur->id);
-      } else if (!cur->out &&
-                 _lateRefGeoms.find(cur->id) == _lateRefGeoms.end()) {
+      } else if (!cur->out) {
         // IN event
         actives[cur->side].insert({cur->loY, cur->upY},
                                   {cur->id, cur->type, cur->b45, cur->side});
@@ -1209,7 +1100,7 @@ RelStats Sweeper::sweep() {
           _cfg.sweepProgressCb(jj / 2);
 
         if (jj % 200000 == 0) clearMultis(false);
-      } else if (_lateRefGeoms.find(cur->id) == _lateRefGeoms.end()) {
+      } else{
         // OUT event
         actives[cur->side].erase({cur->loY, cur->upY}, {cur->id, cur->type});
 
