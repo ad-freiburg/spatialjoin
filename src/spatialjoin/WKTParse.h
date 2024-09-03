@@ -181,7 +181,6 @@ inline void parseLine(char* c, size_t len, size_t gid, sj::Sweeper* sweeper,
       do {
         *end = 0;
         sweeper->add(c,
-
                      util::geo::I32Box({std::numeric_limits<int32_t>::min(),
                                         std::numeric_limits<int32_t>::min()},
                                        {std::numeric_limits<int32_t>::max(),
@@ -194,7 +193,6 @@ inline void parseLine(char* c, size_t len, size_t gid, sj::Sweeper* sweeper,
 
     c[len - 2] = 0;
     sweeper->add(c,
-
                  util::geo::I32Box({std::numeric_limits<int32_t>::min(),
                                     std::numeric_limits<int32_t>::min()},
                                    {std::numeric_limits<int32_t>::max(),

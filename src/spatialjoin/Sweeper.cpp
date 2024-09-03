@@ -1190,6 +1190,13 @@ sj::Area Sweeper::areaFromSimpleArea(const SimpleArea* sa) const {
 std::tuple<bool, bool, bool, bool, bool> Sweeper::check(const Area* a,
                                                         const Area* b,
                                                         size_t t) const {
+
+  // cheap equivalence check
+  if (a->box == b->box && a->area == b->area && a->geom == b->geom) {
+    // equivalent!
+    return {1, 0, 1, 0, 0};
+  }
+
   if (_cfg.useBoxIds) {
     auto ts = TIME();
     auto r = boxIdIsect(a->boxIds, b->boxIds);
@@ -1367,6 +1374,12 @@ std::tuple<bool, bool, bool, bool, bool> Sweeper::check(const Line* a,
 std::tuple<bool, bool, bool, bool, bool> Sweeper::check(const Line* a,
                                                         const Line* b,
                                                         size_t t) const {
+  // cheap equivalence check
+  if (a->box == b->box && a->geom == b->geom) {
+    // equivalent!
+    return {1, 1, 0, 0, 0};
+  }
+
   if (_cfg.useBoxIds) {
     auto ts = TIME();
     auto r = boxIdIsect(a->boxIds, b->boxIds);
@@ -2227,7 +2240,7 @@ void Sweeper::doCheck(const BoxVal cur, const SweepVal sv, size_t t) {
 
     if (a->id == b->id)
       return;  // no self-checks in multigeometries
-               //
+
     _stats[t].lineCmps++;
     _stats[t].lineLenSum += std::max(a->length, b->length);
 
