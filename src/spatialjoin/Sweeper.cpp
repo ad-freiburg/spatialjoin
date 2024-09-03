@@ -68,12 +68,12 @@ void Sweeper::add(const I32MultiLine& a, const std::string& gid, bool side,
 }
 
 // _____________________________________________________________________________
-void Sweeper::addMp(const I32MultiPoint& a, const std::string& gid, bool side,
+void Sweeper::add(const I32MultiPoint& a, const std::string& gid, bool side,
                     WriteBatch& batch) const {
   uint16_t subid = 0;  // a subid of 0 means "single point"
   if (a.size() > 1) subid = 1;
 
-  addMp(a, gid, subid, side, batch);
+  add(a, gid, subid, side, batch);
 }
 
 // _____________________________________________________________________________
@@ -97,7 +97,7 @@ void Sweeper::add(const I32MultiLine& a, const std::string& gid, size_t subId,
 }
 
 // _____________________________________________________________________________
-void Sweeper::addMp(const I32MultiPoint& a, const std::string& gid,
+void Sweeper::add(const I32MultiPoint& a, const std::string& gid,
                     size_t subid, bool side, WriteBatch& batch) const {
   size_t newId = subid;
   for (const auto& point : a) {

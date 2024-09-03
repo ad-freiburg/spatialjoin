@@ -239,9 +239,9 @@ class Sweeper {
            WriteBatch& batch) const;
   void add(const util::geo::I32Point& a, const std::string& gid, size_t subid,
            bool side, WriteBatch& batch) const;
-  void addMp(const util::geo::I32MultiPoint& a, const std::string& gid, size_t,
+  void add(const util::geo::I32MultiPoint& a, const std::string& gid, size_t,
              bool side, WriteBatch& batch) const;
-  void addMp(const util::geo::I32MultiPoint& a, const std::string& gid,
+  void add(const util::geo::I32MultiPoint& a, const std::string& gid,
              bool side, WriteBatch& batch) const;
 
   void add(const std::string& a, const util::geo::I32Box& box,

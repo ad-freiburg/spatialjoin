@@ -65,7 +65,7 @@ inline util::geo::I32Polygon parsePolygon(const char* c, const char** endr) {
   util::geo::I32Polygon poly;
   while ((c = strchr(c, '('))) {
     c++;
-    const char* end  = 0;
+    const char* end = 0;
     const auto& line = parseLineString(c, &end);
 
     if (!end) return {};  // parse error
@@ -77,7 +77,6 @@ inline util::geo::I32Polygon parsePolygon(const char* c, const char** endr) {
     else
       poly.getInners().push_back(std::move(line));
     i++;
-
 
     auto q = strchr(c + 1, ')');
     auto cc = strchr(c + 1, '(');
@@ -95,7 +94,8 @@ inline util::geo::I32Polygon parsePolygon(const char* c, const char** endr) {
 }
 
 // _____________________________________________________________________________
-inline util::geo::I32MultiLine parseMultiLineString(const char* c, const char** endr) {
+inline util::geo::I32MultiLine parseMultiLineString(const char* c,
+                                                    const char** endr) {
   util::geo::I32MultiLine ml;
   while ((c = strchr(c, '('))) {
     c++;
@@ -106,7 +106,8 @@ inline util::geo::I32MultiLine parseMultiLineString(const char* c, const char** 
     auto nextComma = strchr(end + 1, ',');
     auto nextCloseBracket = strchr(end + 1, ')');
 
-    if (!nextComma || (nextComma && nextCloseBracket && nextComma > nextCloseBracket)) {
+    if (!nextComma ||
+        (nextComma && nextCloseBracket && nextComma > nextCloseBracket)) {
       if (endr) (*endr) = nextCloseBracket;
       return ml;
     }
@@ -118,7 +119,8 @@ inline util::geo::I32MultiLine parseMultiLineString(const char* c, const char** 
 }
 
 // _____________________________________________________________________________
-inline util::geo::I32MultiPolygon parseMultiPolygon(const char* c, const char** endr) {
+inline util::geo::I32MultiPolygon parseMultiPolygon(const char* c,
+                                                    const char** endr) {
   util::geo::I32MultiPolygon mp;
   do {
     c = strchr(c, '(');
@@ -133,7 +135,8 @@ inline util::geo::I32MultiPolygon parseMultiPolygon(const char* c, const char** 
     auto nextComma = strchr(end + 1, ',');
     auto nextCloseBracket = strchr(end + 1, ')');
 
-    if (!nextComma || (nextComma && nextCloseBracket && nextComma > nextCloseBracket)) {
+    if (!nextComma ||
+        (nextComma && nextCloseBracket && nextComma > nextCloseBracket)) {
       if (endr) (*endr) = nextCloseBracket;
       return mp;
     }
@@ -201,12 +204,10 @@ inline void parseLine(char* c, size_t len, size_t gid, sj::Sweeper* sweeper,
     c += 6;
     const auto& point = parsePoint(c);
     sweeper->add(point, id, side, batch);
-    return;
   } else if (len > 11 && memcmp(c, "MULTIPOINT(", 11) == 0) {
     c += 11;
-    const auto& mp = parseLineString(c, 0);
-    if (mp.size() != 0) sweeper->addMp(mp, id, side, batch);
-    return;
+    const auto& mp = util::geo::I32MultiPoint(parseLineString(c, 0));
+    if (mp.size() != 0) sweeper->add(mp, id, side, batch);
   } else if (len > 11 && memcmp(c, "LINESTRING(", 11) == 0) {
     c += 11;
     const auto& line = parseLineString(c, 0);
@@ -225,7 +226,9 @@ inline void parseLine(char* c, size_t len, size_t gid, sj::Sweeper* sweeper,
     if (mp.size()) sweeper->add(mp, id, side, batch);
   } else if (len > 19 && memcmp(c, "GEOMETRYCOLLECTION(", 19) == 0) {
     c += 18;
-    size_t subId = 1;
+
+    util::geo::I32Collection col;
+    size_t numGeoms = 0;
 
     do {
       c++;
@@ -238,8 +241,8 @@ inline void parseLine(char* c, size_t len, size_t gid, sj::Sweeper* sweeper,
 
         if (!end) break;
 
-        sweeper->add(point, id, subId, side, batch);
-        subId++;
+        col.push_back(point);
+        numGeoms++;
         c = const_cast<char*>(strchr(end, ','));
       } else if (memcmp(c, "POLYGON(", 8) == 0) {
         c += 7;
@@ -248,8 +251,8 @@ inline void parseLine(char* c, size_t len, size_t gid, sj::Sweeper* sweeper,
 
         if (!end) break;
         if (poly.getOuter().size() > 1) {
-          sweeper->add(poly, id, subId, side, batch);
-          subId++;
+          col.push_back(poly);
+          numGeoms++;
         }
         c = const_cast<char*>(strchr(end, ','));
       } else if (memcmp(c, "LINESTRING(", 11) == 0) {
@@ -259,8 +262,19 @@ inline void parseLine(char* c, size_t len, size_t gid, sj::Sweeper* sweeper,
 
         if (!end) break;
         if (line.size() > 1) {
-          sweeper->add(line, id, subId, side, batch);
-          subId++;
+          col.push_back(line);
+          numGeoms++;
+        }
+        c = const_cast<char*>(strchr(end, ','));
+      } else if (memcmp(c, "MULTIPOINT(", 11) == 0) {
+        c += 11;
+        const char* end = 0;
+        const auto& line = parseLineString(c, &end);
+
+        if (!end) break;
+        if (line.size() > 1) {
+          col.push_back(util::geo::I32MultiPoint(std::move(line)));
+          numGeoms += line.size();
         }
         c = const_cast<char*>(strchr(end, ','));
       } else if (memcmp(c, "MULTIPOLYGON(", 13) == 0) {
@@ -270,8 +284,8 @@ inline void parseLine(char* c, size_t len, size_t gid, sj::Sweeper* sweeper,
 
         if (!end) break;
         if (mp.size()) {
-          sweeper->add(mp, id, subId, side, batch);
-          subId++;
+          col.push_back(mp);
+          numGeoms += mp.size();
         }
         c = const_cast<char*>(strchr(end, ','));
       } else if (memcmp(c, "MULTILINESTRING(", 16) == 0) {
@@ -281,12 +295,28 @@ inline void parseLine(char* c, size_t len, size_t gid, sj::Sweeper* sweeper,
 
         if (!end) break;
         if (ml.size()) {
-          sweeper->add(ml, id, subId, side, batch);
-          subId++;
+          col.push_back(ml);
+          numGeoms += ml.size();
         }
         c = const_cast<char*>(strchr(end, ','));
       }
     } while (c && *c);
+
+    size_t subId = numGeoms > 1 ? 1 : 0;
+
+    for (const auto& a : col) {
+      if (a.getType() == 0) sweeper->add(a.getPoint(), id, subId, side, batch);
+      if (a.getType() == 1) sweeper->add(a.getLine(), id, subId, side, batch);
+      if (a.getType() == 2)
+        sweeper->add(a.getPolygon(), id, subId, side, batch);
+      if (a.getType() == 3)
+        sweeper->add(a.getMultiLine(), id, subId, side, batch);
+      if (a.getType() == 4)
+        sweeper->add(a.getMultiPolygon(), id, subId, side, batch);
+      if (a.getType() == 6)
+        sweeper->add(a.getMultiPoint(), id, subId, side, batch);
+      subId++;
+    }
   }
 }
 
