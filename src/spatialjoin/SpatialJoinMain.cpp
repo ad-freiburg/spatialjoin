@@ -295,6 +295,11 @@ int main(int argc, char** argv) {
 
   LOGTO(INFO, std::cerr) << "done (" << TOOK(ts) / 1000000000.0 << "s).";
 
+  ts = TIME();
+  LOGTO(INFO, std::cerr) << "Ref'ing duplicates...";
+  sweeper.refDuplicates();
+  LOGTO(INFO, std::cerr) << "done (" << TOOK(ts) / 1000000000.0 << "s).";
+
   if (preSortCache) {
     ts = TIME();
     LOGTO(INFO, std::cerr) << "Pre-sorting cache...";

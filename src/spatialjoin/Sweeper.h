@@ -256,6 +256,7 @@ class Sweeper {
 
   RelStats sweep();
   void sortCache();
+  void refDuplicates();
 
   size_t numElements() const { return _curSweepId / 2; }
 
@@ -460,6 +461,8 @@ class Sweeper {
 
   std::unordered_map<std::string, std::unordered_map<std::string, size_t>>
       _refs;
+
+  std::unordered_set<size_t> _lateRefGeoms;
 };
 }  // namespace sj
 
