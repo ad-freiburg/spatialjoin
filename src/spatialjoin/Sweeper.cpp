@@ -833,7 +833,14 @@ void Sweeper::flush() {
     }
   }
 
-  writeAll(_file, _outBuffer, _obufpos);
+  ssize_t r = writeAll(_file, _outBuffer, _obufpos);
+  if (r < 0) {
+    std::stringstream ss;
+    ss << "Could not write to events file '" << _fname << "'\n";
+    ss << strerror(errno) << std::endl;
+    throw std::runtime_error(ss.str());
+  }
+
   _obufpos = 0;
 
   _pointCache.flush();
@@ -856,7 +863,14 @@ void Sweeper::flush() {
 #ifdef __unix__
   posix_fadvise(newFile, 0, 0, POSIX_FADV_SEQUENTIAL);
 #endif
-  util::externalSort(_file, newFile, sizeof(BoxVal), _curSweepId, boxCmp);
+  r = util::externalSort(_file, newFile, sizeof(BoxVal), _curSweepId, boxCmp);
+
+  if (r < 0) {
+    std::stringstream ss;
+    ss << "Could not sort events file '" << _fname << "'\n";
+    ss << strerror(errno) << std::endl;
+    throw std::runtime_error(ss.str());
+  }
 
   fsync(newFile);
 
@@ -877,7 +891,13 @@ void Sweeper::diskAdd(const BoxVal& bv) {
   _obufpos += sizeof(BoxVal);
 
   if (_obufpos + sizeof(BoxVal) > BUFFER_S) {
-    writeAll(_file, _outBuffer, _obufpos);
+    ssize_t r = writeAll(_file, _outBuffer, _obufpos);
+    if (r < 0) {
+      std::stringstream ss;
+      ss << "Could not write to events file '" << _fname << "'\n";
+      ss << strerror(errno) << std::endl;
+      throw std::runtime_error(ss.str());
+    }
     _obufpos = 0;
   }
   _curSweepId++;
@@ -927,7 +947,14 @@ void Sweeper::sortCache() {
   size_t numEvents = _curSweepId;
   _curSweepId = 0;
 
-  while ((len = util::readAll(oldFile, buf, sizeof(BoxVal) * RBUF_SIZE)) > 0) {
+  while ((len = util::readAll(oldFile, buf, sizeof(BoxVal) * RBUF_SIZE)) != 0) {
+    if (len < 0) {
+      std::stringstream ss;
+      ss << "Could not read from events file '" << _fname << "'\n";
+      ss << strerror(errno) << std::endl;
+      throw std::runtime_error(ss.str());
+    }
+
     for (ssize_t i = 0; i < len; i += sizeof(BoxVal)) {
       auto cur = reinterpret_cast<const BoxVal*>(buf + i);
       jj++;
@@ -1069,7 +1096,14 @@ RelStats Sweeper::sweep() {
 
   ssize_t len;
 
-  while ((len = util::readAll(_file, buf, sizeof(BoxVal) * RBUF_SIZE)) > 0) {
+  while ((len = util::readAll(_file, buf, sizeof(BoxVal) * RBUF_SIZE)) != 0) {
+    if (len < 0) {
+      std::stringstream ss;
+      ss << "Could not read from events file '" << _fname << "'\n";
+      ss << strerror(errno) << std::endl;
+      throw std::runtime_error(ss.str());
+    }
+
     for (ssize_t i = 0; i < len; i += sizeof(BoxVal)) {
       auto cur = reinterpret_cast<const BoxVal*>(buf + i);
       jj++;
