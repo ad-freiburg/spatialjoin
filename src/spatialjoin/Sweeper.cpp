@@ -1,3 +1,4 @@
+#include <errno.h>
 #include <stdio.h>
 #include <unistd.h>
 #include <zlib.h>
@@ -1758,7 +1759,13 @@ void Sweeper::writeRel(size_t t, const std::string& a, const std::string& b,
         BZ2_bzWrite(&err, _files[t], _outBuffers[t], _outBufPos[t]);
         if (err == BZ_IO_ERROR) {
           BZ2_bzWriteClose(&err, _files[t], 0, 0, 0);
-          throw std::runtime_error("Could not write to file.");
+          std::string fname = _cache + "/.rels" + std::to_string(getpid()) +
+                              "-" + std::to_string(t);
+          std::stringstream ss;
+          ss << "Could not write spatial relation to temporary bzip2 file '"
+             << fname << "':\n";
+          ss << strerror(errno) << std::endl;
+          throw std::runtime_error(ss.str());
         }
         _outBufPos[t] = 0;
       }
@@ -1769,7 +1776,13 @@ void Sweeper::writeRel(size_t t, const std::string& a, const std::string& b,
         int r = gzwrite(_gzFiles[t], _outBuffers[t], _outBufPos[t]);
         if (r != (int)_outBufPos[t]) {
           gzclose(_gzFiles[t]);
-          throw std::runtime_error("Could not write to file.");
+          std::string fname = _cache + "/.rels" + std::to_string(getpid()) +
+                              "-" + std::to_string(t);
+          std::stringstream ss;
+          ss << "Could not write spatial relation to temporary gzip file '"
+             << fname << "':\n";
+          ss << strerror(errno) << std::endl;
+          throw std::runtime_error(ss.str());
         }
         _outBufPos[t] = 0;
       }
@@ -1780,7 +1793,13 @@ void Sweeper::writeRel(size_t t, const std::string& a, const std::string& b,
         size_t r =
             fwrite(_outBuffers[t], sizeof(char), _outBufPos[t], _rawFiles[t]);
         if (r != _outBufPos[t]) {
-          throw std::runtime_error("Could not write to file.");
+          std::string fname = _cache + "/.rels" + std::to_string(getpid()) +
+                              "-" + std::to_string(t);
+          std::stringstream ss;
+          ss << "Could not write spatial relation to temporary file '" << fname
+             << "':\n";
+          ss << strerror(errno) << std::endl;
+          throw std::runtime_error(ss.str());
         }
         _outBufPos[t] = 0;
       }
@@ -2604,7 +2623,13 @@ void Sweeper::flushOutputFiles() {
         BZ2_bzWrite(&err, _files[i], _outBuffers[i], _outBufPos[i]);
         if (err == BZ_IO_ERROR) {
           BZ2_bzWriteClose(&err, _files[i], 0, 0, 0);
-          throw std::runtime_error("Could not write to file.");
+          std::string fname = _cache + "/.rels" + std::to_string(getpid()) +
+                              "-" + std::to_string(i);
+          std::stringstream ss;
+          ss << "Could not write spatial relation to temporary bzip2 file '"
+             << fname << "':\n";
+          ss << strerror(errno) << std::endl;
+          throw std::runtime_error(ss.str());
         }
         BZ2_bzWriteClose(&err, _files[i], 0, 0, 0);
         fclose(_rawFiles[i]);
@@ -2614,7 +2639,13 @@ void Sweeper::flushOutputFiles() {
         int r = gzwrite(_gzFiles[i], _outBuffers[i], _outBufPos[i]);
         if (r != (int)_outBufPos[i]) {
           gzclose(_gzFiles[i]);
-          throw std::runtime_error("Could not write to file.");
+          std::string fname = _cache + "/.rels" + std::to_string(getpid()) +
+                              "-" + std::to_string(i);
+          std::stringstream ss;
+          ss << "Could not write spatial relation to temporary gzip file '"
+             << fname << "':\n";
+          ss << strerror(errno) << std::endl;
+          throw std::runtime_error(ss.str());
         }
         gzclose(_gzFiles[i]);
       }
@@ -2623,7 +2654,13 @@ void Sweeper::flushOutputFiles() {
         size_t r =
             fwrite(_outBuffers[i], sizeof(char), _outBufPos[i], _rawFiles[i]);
         if (r != _outBufPos[i]) {
-          throw std::runtime_error("Could not write to file.");
+          std::string fname = _cache + "/.rels" + std::to_string(getpid()) +
+                              "-" + std::to_string(i);
+          std::stringstream ss;
+          ss << "Could not write spatial relation to temporary file '"
+             << fname << "':\n";
+          ss << strerror(errno) << std::endl;
+          throw std::runtime_error(ss.str());
         }
         fclose(_rawFiles[i]);
       }
@@ -2654,37 +2691,56 @@ void Sweeper::prepareOutputFiles() {
 
   if (_outMode == BZ2) {
     for (size_t i = 0; i < _cfg.numThreads + 1; i++) {
-      _rawFiles[i] = fopen((_cache + "/.rels" + std::to_string(getpid()) + "-" +
-                            std::to_string(i))
-                               .c_str(),
-                           "w");
+      std::string fname = _cache + "/.rels" + std::to_string(getpid()) + "-" +
+                          std::to_string(i);
+      _rawFiles[i] = fopen(fname.c_str(), "w");
+
+      if (_rawFiles[i] == NULL) {
+        std::stringstream ss;
+        ss << "Could not open temporary bzip2 file '" << fname
+           << "' for writing:\n";
+        ss << strerror(errno) << std::endl;
+        throw std::runtime_error(ss.str());
+      }
+
       int err = 0;
       _files[i] = BZ2_bzWriteOpen(&err, _rawFiles[i], 6, 0, 30);
       if (err != BZ_OK) {
-        throw std::runtime_error("Could not open bzip file for writing.");
+        std::stringstream ss;
+        ss << "Could not open temporary bzip2 file '" << fname
+           << "' for writing:\n";
+        ss << strerror(errno) << std::endl;
+        throw std::runtime_error(ss.str());
       }
       _outBuffers[i] = new unsigned char[BUFFER_S_PAIRS];
     }
   } else if (_outMode == GZ) {
     for (size_t i = 0; i < _cfg.numThreads + 1; i++) {
-      _gzFiles[i] = gzopen((_cache + "/.rels" + std::to_string(getpid()) + "-" +
-                            std::to_string(i))
-                               .c_str(),
-                           "w");
+      std::string fname = _cache + "/.rels" + std::to_string(getpid()) + "-" +
+                          std::to_string(i);
+      _gzFiles[i] = gzopen(fname.c_str(), "w");
       if (_gzFiles[i] == Z_NULL) {
-        throw std::runtime_error("Could not open bzip file for writing.");
+        std::stringstream ss;
+        ss << "Could not open temporary gzip file '" << fname
+           << "' for writing:\n";
+        ss << strerror(errno) << std::endl;
+        throw std::runtime_error(ss.str());
       }
       _outBuffers[i] = new unsigned char[BUFFER_S_PAIRS];
     }
   } else if (_outMode == PLAIN) {
     for (size_t i = 0; i < _cfg.numThreads + 1; i++) {
-      _rawFiles[i] = fopen((_cache + "/.rels" + std::to_string(getpid()) + "-" +
-                            std::to_string(i))
-                               .c_str(),
-                           "w");
-      if (_rawFiles[i] == 0) {
-        throw std::runtime_error("Could not open file for writing.");
+      std::string fname = _cache + "/.rels" + std::to_string(getpid()) + "-" +
+                          std::to_string(i);
+      _rawFiles[i] = fopen(fname.c_str(), "w");
+
+      if (_rawFiles[i] == NULL) {
+        std::stringstream ss;
+        ss << "Could not open temporary file '" << fname << "' for writing:\n";
+        ss << strerror(errno) << std::endl;
+        throw std::runtime_error(ss.str());
       }
+
       _outBuffers[i] = new unsigned char[BUFFER_S_PAIRS];
     }
   } else if (_outMode == COUT) {
