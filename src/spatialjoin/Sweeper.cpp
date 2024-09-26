@@ -625,12 +625,12 @@ void Sweeper::multiOut(size_t tOut, const std::string& gidA) {
   // collect equals
   for (size_t t = 0; t < _cfg.numThreads + 1; t++) {
     std::unique_lock<std::mutex> lock(_mutsEquals[t]);
-    auto i = _subEqualss[t].find(gidA);
-    if (i != _subEqualss[t].end()) {
+    auto i = _subEquals[t].find(gidA);
+    if (i != _subEquals[t].end()) {
       for (const auto& a : i->second) {
         subEquals[gidA][a.first] += a.second.size();
-        auto j = _subEqualss[t].find(a.first);
-        if (j != _subEqualss[t].end()) {
+        auto j = _subEquals[t].find(a.first);
+        if (j != _subEquals[t].end()) {
           auto k = j->second.find(gidA);
           if (k != j->second.end()) {
             subEquals[a.first][gidA] += k->second.size();
@@ -638,31 +638,31 @@ void Sweeper::multiOut(size_t tOut, const std::string& gidA) {
           }
         }
       }
-      _subEqualss[t].erase(gidA);
+      _subEquals[t].erase(i);
     }
   }
 
   // collect contains
   for (size_t t = 0; t < _cfg.numThreads + 1; t++) {
     std::unique_lock<std::mutex> lock(_mutsContains[t]);
-    auto i = _subContainss[t].find(gidA);
-    if (i != _subContainss[t].end()) {
+    auto i = _subContains[t].find(gidA);
+    if (i != _subContains[t].end()) {
       for (const auto& a : i->second) {
         subContains[a.first] += a.second.size();
       }
-      _subContainss[t].erase(gidA);
+      _subContains[t].erase(i);
     }
   }
 
   // collect covers
   for (size_t t = 0; t < _cfg.numThreads + 1; t++) {
     std::unique_lock<std::mutex> lock(_mutsCovers[t]);
-    auto i = _subCovereds[t].find(gidA);
-    if (i != _subCovereds[t].end()) {
+    auto i = _subCovered[t].find(gidA);
+    if (i != _subCovered[t].end()) {
       for (const auto& a : i->second) {
         subCovered[a.first] += a.second.size();
       }
-      _subCovereds[t].erase(gidA);
+      _subCovered[t].erase(i);
     }
   }
 
@@ -688,7 +688,9 @@ void Sweeper::multiOut(size_t tOut, const std::string& gidA) {
   // write covers
   for (auto i : subCovered) {
     if (i.second == _subSizes[gidA]) {
-      writeNotOverlaps(tOut, i.first, 0, gidA, 1);
+      writeNotOverlaps(tOut, i.first,
+                       _subSizes.find(i.first) != _subSizes.end() ? 1 : 0, gidA,
+                       1);
       writeRel(tOut, i.first, gidA, _cfg.sepCovers);
       _relStats[tOut].covers++;
     }
@@ -698,28 +700,30 @@ void Sweeper::multiOut(size_t tOut, const std::string& gidA) {
   std::vector<std::pair<std::string, std::string>> touchesTmp;
 
   for (size_t t = 0; t < _cfg.numThreads + 1; t++) {
-    std::unique_lock<std::mutex> lock(_mutsTouches[t]);
-    auto i = _subTouchess[t].find(gidA);
-    if (i != _subTouchess[t].end()) {
-      for (const auto& b : i->second) {
-        auto gidB = b;
-        if (!notTouches(gidA, gidB)) touchesTmp.push_back({gidA, gidB});
+    {
+      std::unique_lock<std::mutex> lock(_mutsTouches[t]);
+      auto i = _subTouches[t].find(gidA);
+      if (i != _subTouches[t].end()) {
+        for (const auto& b : i->second) {
+          auto gidB = b;
+          if (!notTouches(gidA, gidB)) touchesTmp.push_back({gidA, gidB});
 
-        {
-          std::unique_lock<std::mutex> lock2(_mutsNotTouches[t]);
-          auto j = _subNotTouchess[t].find(gidB);
-          if (j != _subNotTouchess[t].end()) j->second.erase(gidA);
+          {
+            std::unique_lock<std::mutex> lock2(_mutsNotTouches[t]);
+            auto j = _subNotTouches[t].find(gidB);
+            if (j != _subNotTouches[t].end()) j->second.erase(gidA);
+          }
+
+          auto k = _subTouches[t].find(gidB);
+          if (k != _subTouches[t].end()) k->second.erase(gidA);
         }
 
-        auto k = _subTouchess[t].find(gidB);
-        if (k != _subTouchess[t].end()) k->second.erase(gidA);
+        _subTouches[t].erase(i);
       }
-
-      _subTouchess[t].erase(gidA);
-
-      std::unique_lock<std::mutex> lock2(_mutsNotTouches[t]);
-      _subNotTouchess[t].erase(gidA);
     }
+
+    std::unique_lock<std::mutex> lock2(_mutsNotTouches[t]);
+    _subNotTouches[t].erase(gidA);
   }
 
   for (const auto& p : touchesTmp) {
@@ -732,28 +736,30 @@ void Sweeper::multiOut(size_t tOut, const std::string& gidA) {
   // write crosses, aggregate first to avoid locking during I/O
   std::vector<std::pair<std::string, std::string>> crossesTmp;
   for (size_t t = 0; t < _cfg.numThreads + 1; t++) {
-    std::unique_lock<std::mutex> lock(_mutsCrosses[t]);
-    auto i = _subCrossess[t].find(gidA);
-    if (i != _subCrossess[t].end()) {
-      for (const auto& b : i->second) {
-        auto gidB = b;
-        if (!notCrosses(gidA, gidB)) crossesTmp.push_back({gidA, gidB});
+    {
+      std::unique_lock<std::mutex> lock(_mutsCrosses[t]);
+      auto i = _subCrosses[t].find(gidA);
+      if (i != _subCrosses[t].end()) {
+        for (const auto& b : i->second) {
+          auto gidB = b;
+          if (!notCrosses(gidA, gidB)) crossesTmp.push_back({gidA, gidB});
 
-        {
-          std::unique_lock<std::mutex> lock2(_mutsNotCrosses[t]);
-          auto j = _subNotCrossess[t].find(gidB);
-          if (j != _subNotCrossess[t].end()) j->second.erase(gidA);
+          {
+            std::unique_lock<std::mutex> lock2(_mutsNotCrosses[t]);
+            auto j = _subNotCrosses[t].find(gidB);
+            if (j != _subNotCrosses[t].end()) j->second.erase(gidA);
+          }
+
+          auto k = _subCrosses[t].find(gidB);
+          if (k != _subCrosses[t].end()) k->second.erase(gidA);
         }
 
-        auto k = _subCrossess[t].find(gidB);
-        if (k != _subCrossess[t].end()) k->second.erase(gidA);
+        _subCrosses[t].erase(i);
       }
-
-      _subCrossess[t].erase(gidA);
-
-      std::unique_lock<std::mutex> lock2(_mutsNotCrosses[t]);
-      _subNotCrossess[t].erase(gidA);
     }
+
+    std::unique_lock<std::mutex> lock2(_mutsNotCrosses[t]);
+    _subNotCrosses[t].erase(gidA);
   }
 
   for (const auto& p : crossesTmp) {
@@ -781,28 +787,29 @@ void Sweeper::multiOut(size_t tOut, const std::string& gidA) {
   // write overlaps, aggregate first to avoid locking during I/O
   std::vector<std::pair<std::string, std::string>> overlapsTmp;
   for (size_t t = 0; t < _cfg.numThreads + 1; t++) {
-    std::unique_lock<std::mutex> lock(_mutsOverlaps[t]);
-    auto i = _subOverlapss[t].find(gidA);
-    if (i != _subOverlapss[t].end()) {
-      for (const auto& b : i->second) {
-        auto gidB = b;
-        if (!notOverlaps(gidA, gidB)) overlapsTmp.push_back({gidA, gidB});
+    {
+      std::unique_lock<std::mutex> lock(_mutsOverlaps[t]);
+      auto i = _subOverlaps[t].find(gidA);
+      if (i != _subOverlaps[t].end()) {
+        for (const auto& b : i->second) {
+          auto gidB = b;
+          if (!notOverlaps(gidA, gidB)) overlapsTmp.push_back({gidA, gidB});
 
-        {
-          std::unique_lock<std::mutex> lock2(_mutsNotOverlaps[t]);
-          auto j = _subNotOverlapss[t].find(gidB);
-          if (j != _subNotOverlapss[t].end()) j->second.erase(gidA);
+          {
+            std::unique_lock<std::mutex> lock2(_mutsNotOverlaps[t]);
+            auto j = _subNotOverlaps[t].find(gidB);
+            if (j != _subNotOverlaps[t].end()) j->second.erase(gidA);
+          }
+
+          auto k = _subOverlaps[t].find(gidB);
+          if (k != _subOverlaps[t].end()) k->second.erase(gidA);
         }
 
-        auto k = _subOverlapss[t].find(gidB);
-        if (k != _subOverlapss[t].end()) k->second.erase(gidA);
+        _subOverlaps[t].erase(i);
       }
-
-      _subOverlapss[t].erase(gidA);
-
-      std::unique_lock<std::mutex> lock2(_mutsNotOverlaps[t]);
-      _subNotOverlapss[t].erase(gidA);
     }
+    std::unique_lock<std::mutex> lock2(_mutsNotOverlaps[t]);
+    _subNotOverlaps[t].erase(gidA);
   }
 
   for (const auto& p : overlapsTmp) {
@@ -1030,15 +1037,15 @@ RelStats Sweeper::sweep() {
   _relStats.resize(_cfg.numThreads + 1);
   _checks.resize(_cfg.numThreads);
   _curX.resize(_cfg.numThreads);
-  _subEqualss.resize(_cfg.numThreads + 1);
-  _subCovereds.resize(_cfg.numThreads + 1);
-  _subContainss.resize(_cfg.numThreads + 1);
-  _subNotOverlapss.resize(_cfg.numThreads + 1);
-  _subOverlapss.resize(_cfg.numThreads + 1);
-  _subNotTouchess.resize(_cfg.numThreads + 1);
-  _subNotCrossess.resize(_cfg.numThreads + 1);
-  _subCrossess.resize(_cfg.numThreads + 1);
-  _subTouchess.resize(_cfg.numThreads + 1);
+  _subEquals.resize(_cfg.numThreads + 1);
+  _subCovered.resize(_cfg.numThreads + 1);
+  _subContains.resize(_cfg.numThreads + 1);
+  _subNotOverlaps.resize(_cfg.numThreads + 1);
+  _subOverlaps.resize(_cfg.numThreads + 1);
+  _subNotTouches.resize(_cfg.numThreads + 1);
+  _subNotCrosses.resize(_cfg.numThreads + 1);
+  _subCrosses.resize(_cfg.numThreads + 1);
+  _subTouches.resize(_cfg.numThreads + 1);
   _mutsEquals = std::vector<std::mutex>(_cfg.numThreads + 1);
   _mutsCovers = std::vector<std::mutex>(_cfg.numThreads + 1);
   _mutsContains = std::vector<std::mutex>(_cfg.numThreads + 1);
@@ -1101,7 +1108,7 @@ RelStats Sweeper::sweep() {
           _cfg.sweepProgressCb(jj / 2);
 
         if (jj % 200000 == 0) clearMultis(false);
-      } else{
+      } else {
         // OUT event
         actives[cur->side].erase({cur->loY, cur->upY}, {cur->id, cur->type});
 
@@ -2657,8 +2664,8 @@ void Sweeper::flushOutputFiles() {
           std::string fname = _cache + "/.rels" + std::to_string(getpid()) +
                               "-" + std::to_string(i);
           std::stringstream ss;
-          ss << "Could not write spatial relation to temporary file '"
-             << fname << "':\n";
+          ss << "Could not write spatial relation to temporary file '" << fname
+             << "':\n";
           ss << strerror(errno) << std::endl;
           throw std::runtime_error(ss.str());
         }
@@ -2790,8 +2797,8 @@ void Sweeper::writeOverlaps(size_t t, const std::string& a, size_t aSub,
     } else {
       std::unique_lock<std::mutex> lock(_mutsOverlaps[t]);
 
-      if (bSub != 0) _subOverlapss[t][b].insert(a);
-      if (aSub != 0) _subOverlapss[t][a].insert(b);
+      if (bSub != 0) _subOverlaps[t][b].insert(a);
+      if (aSub != 0) _subOverlaps[t][a].insert(b);
     }
   }
 
@@ -2823,8 +2830,8 @@ void Sweeper::writeNotOverlaps(size_t t, const std::string& a, size_t aSub,
   if ((aSub != 0 || bSub != 0) && !refRelated(a, b)) {
     std::unique_lock<std::mutex> lock(_mutsNotOverlaps[t]);
 
-    _subNotOverlapss[t][a].insert(b);
-    _subNotOverlapss[t][b].insert(a);
+    if (bSub != 0) _subNotOverlaps[t][b].insert(a);
+    if (aSub != 0) _subNotOverlaps[t][a].insert(b);
   }
 
   if (_refs.size() == 0) return;
@@ -2860,8 +2867,8 @@ void Sweeper::writeCrosses(size_t t, const std::string& a, size_t aSub,
   } else {
     std::unique_lock<std::mutex> lock(_mutsCrosses[t]);
 
-    if (bSub != 0) _subCrossess[t][b].insert(a);
-    if (aSub != 0) _subCrossess[t][a].insert(b);
+    if (bSub != 0) _subCrosses[t][b].insert(a);
+    if (aSub != 0) _subCrosses[t][a].insert(b);
   }
 
   if (_refs.size() == 0) return;
@@ -2891,8 +2898,8 @@ void Sweeper::writeNotCrosses(size_t t, const std::string& a, size_t aSub,
   if ((aSub != 0 || bSub != 0) && !refRelated(a, b)) {
     std::unique_lock<std::mutex> lock(_mutsNotCrosses[t]);
 
-    if (bSub != 0) _subNotCrossess[t][b].insert(a);
-    if (aSub != 0) _subNotCrossess[t][a].insert(b);
+    if (bSub != 0) _subNotCrosses[t][b].insert(a);
+    if (aSub != 0) _subNotCrosses[t][a].insert(b);
   }
 
   if (_refs.size() == 0) return;
@@ -2928,8 +2935,8 @@ void Sweeper::writeTouches(size_t t, const std::string& a, size_t aSub,
   } else {
     std::unique_lock<std::mutex> lock(_mutsTouches[t]);
 
-    if (bSub != 0) _subTouchess[t][b].insert(a);
-    if (aSub != 0) _subTouchess[t][a].insert(b);
+    if (bSub != 0) _subTouches[t][b].insert(a);
+    if (aSub != 0) _subTouches[t][a].insert(b);
   }
 
   if (_refs.size() == 0) return;
@@ -2960,8 +2967,8 @@ void Sweeper::writeNotTouches(size_t t, const std::string& a, size_t aSub,
   if ((aSub != 0 || bSub != 0) && !refRelated(a, b)) {
     std::unique_lock<std::mutex> lock(_mutsNotTouches[t]);
 
-    if (bSub != 0) _subNotTouchess[t][b].insert(a);
-    if (aSub != 0) _subNotTouchess[t][a].insert(b);
+    if (bSub != 0) _subNotTouches[t][b].insert(a);
+    if (aSub != 0) _subNotTouches[t][a].insert(b);
   }
 
   if (_refs.size() == 0) return;
@@ -2999,8 +3006,8 @@ void Sweeper::writeEquals(size_t t, const std::string& a, size_t aSub,
     } else {
       std::unique_lock<std::mutex> lock(_mutsEquals[t]);
 
-      _subEqualss[t][b][a].insert(aSub);
-      _subEqualss[t][a][b].insert(bSub);
+      _subEquals[t][b][a].insert(aSub);
+      _subEquals[t][a][b].insert(bSub);
     }
   }
 
@@ -3031,7 +3038,7 @@ void Sweeper::writeCovers(size_t t, const std::string& a, const std::string& b,
     if (bSub > 0) {
       {
         std::unique_lock<std::mutex> lock(_mutsCovers[t]);
-        _subCovereds[t][b][a].insert(bSub);
+        _subCovered[t][b][a].insert(bSub);
       }
     } else {
       writeRel(t, a, b, _cfg.sepCovers);
@@ -3065,7 +3072,7 @@ void Sweeper::writeContains(size_t t, const std::string& a,
   if (a != b) {
     if (bSub > 0) {
       std::unique_lock<std::mutex> lock(_mutsContains[t]);
-      _subContainss[t][b][a].insert(bSub);
+      _subContains[t][b][a].insert(bSub);
     } else {
       writeRel(t, a, b, _cfg.sepContains);
       _relStats[t].contains++;
@@ -3098,8 +3105,8 @@ bool Sweeper::notCrosses(const std::string& a, const std::string& b) {
 
   for (size_t t = 0; t < _cfg.numThreads + 1; t++) {
     std::unique_lock<std::mutex> lock(_mutsNotCrosses[t]);
-    auto i = _subNotCrossess[t].find(a);
-    if (i != _subNotCrossess[t].end() && i->second.count(b)) return true;
+    auto i = _subNotCrosses[t].find(a);
+    if (i != _subNotCrosses[t].end() && i->second.count(b)) return true;
   }
 
   return false;
@@ -3111,8 +3118,8 @@ bool Sweeper::notTouches(const std::string& a, const std::string& b) {
 
   for (size_t t = 0; t < _cfg.numThreads + 1; t++) {
     std::unique_lock<std::mutex> lock(_mutsNotTouches[t]);
-    auto i = _subNotTouchess[t].find(a);
-    if (i != _subNotTouchess[t].end() && i->second.count(b)) return true;
+    auto i = _subNotTouches[t].find(a);
+    if (i != _subNotTouches[t].end() && i->second.count(b)) return true;
   }
 
   return false;
@@ -3124,8 +3131,8 @@ bool Sweeper::notOverlaps(const std::string& a, const std::string& b) {
 
   for (size_t t = 0; t < _cfg.numThreads + 1; t++) {
     std::unique_lock<std::mutex> lock(_mutsNotOverlaps[t]);
-    auto i = _subNotOverlapss[t].find(a);
-    if (i != _subNotOverlapss[t].end() && i->second.find(b) != i->second.end())
+    auto i = _subNotOverlaps[t].find(a);
+    if (i != _subNotOverlaps[t].end() && i->second.find(b) != i->second.end())
       return true;
   }
 

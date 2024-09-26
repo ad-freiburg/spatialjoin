@@ -291,17 +291,17 @@ class Sweeper {
   GeometryCache<SimpleLine> _simpleLineCache;
 
   std::vector<std::map<std::string, std::map<std::string, std::set<size_t>>>>
-      _subContainss;
+      _subContains;
   std::vector<std::map<std::string, std::map<std::string, std::set<size_t>>>>
-      _subCovereds;
+      _subCovered;
   std::vector<std::map<std::string, std::map<std::string, std::set<size_t>>>>
-      _subEqualss;
-  std::vector<std::map<std::string, std::set<std::string>>> _subTouchess;
-  std::vector<std::map<std::string, std::set<std::string>>> _subNotTouchess;
-  std::vector<std::map<std::string, std::set<std::string>>> _subCrossess;
-  std::vector<std::map<std::string, std::set<std::string>>> _subNotCrossess;
-  std::vector<std::map<std::string, std::set<std::string>>> _subOverlapss;
-  std::vector<std::map<std::string, std::set<std::string>>> _subNotOverlapss;
+      _subEquals;
+  std::vector<std::map<std::string, std::set<std::string>>> _subTouches;
+  std::vector<std::map<std::string, std::set<std::string>>> _subNotTouches;
+  std::vector<std::map<std::string, std::set<std::string>>> _subCrosses;
+  std::vector<std::map<std::string, std::set<std::string>>> _subNotCrosses;
+  std::vector<std::map<std::string, std::set<std::string>>> _subOverlaps;
+  std::vector<std::map<std::string, std::set<std::string>>> _subNotOverlaps;
   std::map<std::string, size_t> _subSizes;
 
   std::set<size_t> _activeMultis[2];
