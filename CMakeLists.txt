@@ -58,8 +58,10 @@ endif()
 add_subdirectory(src)
 
 # tests
-add_test("utilTest" utilTest)
-add_test("spatialjoinTest" spatialjoinTest)
+if(PROJECT_IS_TOP_LEVEL)
+  add_test("utilTest" utilTest)
+  add_test("spatialjoinTest" spatialjoinTest)
+endif()
 
 # install target
 install(
