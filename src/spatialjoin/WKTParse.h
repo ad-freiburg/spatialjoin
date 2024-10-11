@@ -45,7 +45,8 @@ inline util::geo::I32Line parseLineString(const char* c, const char** endr) {
     double y = util::atof(next, 10);
     auto projPoint = latLngToWebMerc(util::geo::DPoint(x, y));
 
-    line.push_back({projPoint.getX() * PREC, projPoint.getY() * PREC});
+    line.push_back({static_cast<int>(projPoint.getX() * PREC),
+                    static_cast<int>(projPoint.getY() * PREC)});
 
     auto n = strchr(next, ',');
     if (!n || n > end) break;
@@ -70,7 +71,8 @@ inline util::geo::I32Point parsePoint(const char* c) {
   double y = util::atof(next, 10);
   auto point = latLngToWebMerc(util::geo::DPoint(x, y));
 
-  return {point.getX() * PREC, point.getY() * PREC};
+  return {static_cast<int>(point.getX() * PREC),
+          static_cast<int>(point.getY() * PREC)};
 }
 
 // _____________________________________________________________________________

@@ -148,15 +148,6 @@ class GeometryCache {
   }
 
   ~GeometryCache() {
-    size_t access = 0;
-    size_t diskAccess = 0;
-    for (size_t i = 0; i < _accessCount.size(); i++) {
-      access += _accessCount[i];
-      diskAccess += _diskAccessCount[i];
-    }
-    // std::cerr << "Geometry cache <" << getFName() << ">: " << access
-              // << " accesses, " << diskAccess << " disk lookups" << std::endl;
-
     if (_geomsF.is_open()) _geomsF.close();
     for (size_t i = 0; i < _geomsFReads.size(); i++) {
       if (_geomsFReads[i].is_open()) _geomsFReads[i].close();

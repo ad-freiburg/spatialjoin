@@ -51,7 +51,6 @@ inline void getBoxIds(const util::geo::I32XSortedLine& line,
                       int yFrom, int yTo, int xWidth, int yHeight,
                       BoxIdList* ret, std::map<int32_t, size_t>* cutouts,
                       size_t startA, size_t startB) {
-
   for (int32_t y = yFrom; y < yTo; y += yHeight) {
     size_t firstInA = startA;
     size_t firstInB = startB;
@@ -61,9 +60,10 @@ inline void getBoxIds(const util::geo::I32XSortedLine& line,
       int localYHeight = std::min(yTo - y, yHeight);
 
       util::geo::I32Box box(
-          {(x * GRID_W - WORLD_W / 2.0), (y * GRID_H - WORLD_H / 2.0)},
-          {(x + localXWidth) * GRID_W - WORLD_W / 2.0,
-           (y + localYHeight) * GRID_H - WORLD_H / 2.0});
+          {static_cast<int>((x * GRID_W - WORLD_W / 2.0)),
+           static_cast<int>((y * GRID_H - WORLD_H / 2.0))},
+          {static_cast<int>((x + localXWidth) * GRID_W - WORLD_W / 2.0),
+           static_cast<int>((y + localYHeight) * GRID_H - WORLD_H / 2.0)});
 
       if (!util::geo::intersects(box, envelope)) continue;
 
@@ -113,9 +113,10 @@ inline void getBoxIds(const util::geo::I32XSortedPolygon& poly,
       int localYHeight = std::min(yTo - y, yHeight);
 
       util::geo::I32Box box(
-          {(x * GRID_W - WORLD_W / 2.0), (y * GRID_H - WORLD_H / 2.0)},
-          {(x + localXWidth) * GRID_W - WORLD_W / 2.0,
-           (y + localYHeight) * GRID_H - WORLD_H / 2.0});
+          {static_cast<int>((x * GRID_W - WORLD_W / 2.0)),
+           static_cast<int>((y * GRID_H - WORLD_H / 2.0))},
+          {static_cast<int>((x + localXWidth) * GRID_W - WORLD_W / 2.0),
+           static_cast<int>((y + localYHeight) * GRID_H - WORLD_H / 2.0)});
 
       if (!util::geo::intersects(box, envelope)) continue;
 
@@ -173,7 +174,6 @@ inline BoxIdList getBoxIds(const util::geo::I32XSortedLine& line,
   int32_t a = getBoxId(envelope.getLowerLeft());
   int32_t b = getBoxId(envelope.getUpperRight());
   if (a == b) return {{a, 0}};  // shortcut
-
 
   int32_t startX = std::floor(
       (1.0 * envelope.getLowerLeft().getX() + WORLD_W / 2.0) / GRID_W);
