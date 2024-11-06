@@ -141,7 +141,7 @@ struct SweeperCfg {
 };
 
 // buffer size _must_ be multiples of sizeof(BoxVal)
-static const ssize_t BUFFER_S = sizeof(BoxVal) * 64 * 1024 * 1024;
+static const ssize_t BUFFER_S = sizeof(BoxVal) * 64 * 1024 * 512;
 
 static const size_t BUFFER_S_PAIRS = 1024 * 1024 * 10;
 

@@ -841,6 +841,8 @@ void Sweeper::flush() {
     throw std::runtime_error(ss.str());
   }
 
+  delete[] _outBuffer;
+
   _obufpos = 0;
 
   _pointCache.flush();
