@@ -865,7 +865,7 @@ void Sweeper::flush() {
 #ifdef __unix__
   posix_fadvise(newFile, 0, 0, POSIX_FADV_SEQUENTIAL);
 #endif
-  r = util::externalSort(_file, newFile, sizeof(BoxVal), _curSweepId, boxCmp);
+  r = util::externalSort(_file, newFile, sizeof(BoxVal), _curSweepId, _cfg.numThreads, boxCmp);
 
   if (r < 0) {
     std::stringstream ss;
