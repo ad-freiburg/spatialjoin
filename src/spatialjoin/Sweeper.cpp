@@ -2795,6 +2795,7 @@ void Sweeper::prepareOutputFiles() {
 
 // _____________________________________________________________________________
 void Sweeper::processQueue(size_t t) {
+  try {
   JobBatch batch;
   while ((batch = _jobs.get()).size()) {
     for (const auto& job : batch) {
@@ -2803,6 +2804,12 @@ void Sweeper::processQueue(size_t t) {
       else
         multiOut(t, job.multiOut);
     }
+  }
+  } catch (const std::runtime_error& e) {
+    std::stringstream ss;
+    ss << "libspatialjoin: " << e.what();
+    std::cerr << ss.str() << std::endl;
+    std::exit(1);
   }
 
   _atomicCurX[t] = _curX[t];
