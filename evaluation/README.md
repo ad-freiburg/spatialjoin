@@ -126,3 +126,28 @@ psql -U postgres -d spatialjoin_db -c "CREATE INDEX ${NAME}_geom_idx ON ${NAME} 
 psql -U postgres -d spatialjoin_db -c "\dt+ public.${NAME}*"
 psql -U postgres -d spatialjoin_db -c "\di+ public.${NAME}*"
 ```
+
+# Compare variants of our own spatial join
+
+First build the `spatialjoin` executable and include it in the `PATH`:
+
+```
+mkdir build && cd build
+cmake ..
+make -j
+cd ..
+export PATH=PATH:$(pwd)/build:$(pwd)/scripts
+
+```
+
+Create a file `${NAME}.spatialjoin-input.tsv` with two columns (id and
+geometry) and no header, following the instructions above. The you can
+und and evaluate variants of our spatial join as follows:
+
+```
+./spatialjoin-evaluation.py ${NAME} --combinations bcsdoi,Bcsdoi,BCsdoi,BCSdoi,BCSDoi,BCSdOi,BCSdoI 2>&1 | tee ${NAME}.spatialjoin-evaluation.tsv
+./spatialjoin-evaluation.py ${NAME} --combinations bcsdoi,Bcsdoi,BCsdoi,BCSdoi,BCSDoi,BCSdOi,BCSdoI --analyze total --minutes
+```
+
+For the commands needed to produce the other results from our original paper,
+see sigspatial-reproducibility/README.md.
