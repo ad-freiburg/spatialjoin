@@ -37,7 +37,8 @@ not persistent), and create a simple `.bashrc` file for the `postgres` user.
 
 ```
 export POSTGRES_UID=$(stat -c %u ${POSTGIS_DIR})
-sudo groupadd -g 114 postgres && sudo useradd -u 115 -g 114 -s /bin/bash -m -d /local/data-ssd/postgis postgres
+export POSTGRES_GID=$(stat -c %g ${POSTGIS_DIR})
+sudo groupadd -g ${POSTGRES_GID} postgres && sudo useradd -u ${POSTGRES_UID} -g ${POSTGRES_GID} -s /bin/bash -m -d ${POSTGIS_DIR} postgres
 echo -e 'export PS1="\u@\h:\W$ "\nalias ll="ls -alh"' > .bashrc
 ln -s .bashrc .bash_profile
 ```
@@ -64,7 +65,7 @@ psql -U postgres -d spatialjoin_db -c "DROP TABLE public.freiburg*;"
 psql -U postgres -d spatialjoin_db -c "DROP INDEX public.freiburg*;"
 ```
 
-## Get data, load it into the database, and query it
+## Get all OSM data for a region, load it into the database, and query it
 
 The following `curl` command produces a TSV file from a SPARQL query that
 contains all geometries that are contained in the region specified by the
@@ -102,7 +103,7 @@ psql -U postgres -d spatialjoin_db -c "SELECT COUNT(*) FROM ${NAME} AS a, ${NAME
 psql -U postgres -d spatialjoin_db -c "SELECT COUNT(*) FROM ${NAME} AS a, ${NAME} AS b WHERE ST_Intersects(a.geom, b.geom);"
 ```
 
-# Create table for complete OSM data
+## Create table for complete OSM data
 
 The following produces a TSV file for all OSM objects of a certain class. The
 TSV file has four columns: the OSM id, the class name, the type, and the
@@ -127,11 +128,13 @@ psql -U postgres -d spatialjoin_db -c "\dt+ public.${NAME}*"
 psql -U postgres -d spatialjoin_db -c "\di+ public.${NAME}*"
 ```
 
-# Compare variants of our own spatial join
+## Compare variants of our own spatial join
 
 First build the `spatialjoin` executable and include it in the `PATH`:
 
 ```
+git clone --recurse-submodules https://github.com/ad-freiburg/spatialjoin
+cd spatialjoin
 mkdir build && cd build
 cmake ..
 make -j
@@ -141,7 +144,7 @@ export PATH=PATH:$(pwd)/build:$(pwd)/scripts
 ```
 
 Create a file `${NAME}.spatialjoin-input.tsv` with two columns (id and
-geometry) and no header, following the instructions above. The you can
+geometry) and no header, following the instructions [above](#get-all-osm-data-for-a-region-load-it-into-the-database-and-query-it). The you can
 und and evaluate variants of our spatial join as follows:
 
 ```
