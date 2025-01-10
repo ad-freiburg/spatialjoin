@@ -93,14 +93,14 @@ psql -U postgres -d spatialjoin_db -c "\dt+ public.${NAME}*"
 psql -U postgres -d spatialjoin_db -c "\di+ public.${NAME}*"
 ```
 
-The following commands compute the complete spatial self-join and output its
-size. The first command only computes the number of candidate pairs (that is,
+The following commands compute the complete spatial self-join, output its
+size and reports the query time. The first command only computes the number of candidate pairs (that is,
 the number of pairs of geometries that have a bounding box overlap). The second
 command computes the exact number of pairs that intersect.
 
 ```
-psql -U postgres -d spatialjoin_db -c "SELECT COUNT(*) FROM ${NAME} AS a, ${NAME} AS b WHERE a.geom && b.geom;"
-psql -U postgres -d spatialjoin_db -c "SELECT COUNT(*) FROM ${NAME} AS a, ${NAME} AS b WHERE ST_Intersects(a.geom, b.geom);"
+psql -U postgres -d spatialjoin_db -c "\timing" -c "SELECT COUNT(*) FROM ${NAME} AS a, ${NAME} AS b WHERE a.geom && b.geom;"
+psql -U postgres -d spatialjoin_db -c "\timing" -c "SELECT COUNT(*) FROM ${NAME} AS a, ${NAME} AS b WHERE ST_Intersects(a.geom, b.geom);"
 ```
 
 ## Create table for complete OSM data
