@@ -11,12 +11,12 @@ We first install the required packages:
 
 ```
 sudo apt update
-sudo apt install postgresql postgresql-contrib postgis
+sudo apt install postgresql postgresql-contrib postgis postgresql-16-postgis-3 
 sudo apt-get install gdal-bin
 ```
 
 Next, we create a new database in a directory of our choice.
-
+postgresql-16-postgis-3
 ```
 export POSTGIS_DIR=/local/data-ssd/postgis/spatialjoin
 sudo mkdir -p ${POSTGIS_DIR} && sudo chown postgres:postgres ${POSTGIS_DIR}
