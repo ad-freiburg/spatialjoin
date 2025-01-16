@@ -80,7 +80,7 @@ def compute(args: argparse.Namespace):
 
         # The command line for this combination.
         cmd = (f"cat {args.basename}.spatialjoin-input.tsv |"
-               f" spatialjoin{sweep_mode} {combination}")
+               f" {args.spatialjoin}{sweep_mode} {combination}")
 
         # Optionally, generate RDF output.
         if args.rdf_output:
@@ -340,6 +340,9 @@ if __name__ == "__main__":
     parser.add_argument("--minutes",
                         action="store_true", default=False,
                         help="Show times in minutes instead of seconds")
+    parser.add_argument("--spatialjoin",
+                        default="spatialjoin",
+                        help="spatialjoin executable")
     argcomplete.autocomplete(parser, always_complete_options="long")
     args = parser.parse_args()
 

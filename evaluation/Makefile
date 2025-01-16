@@ -1,8 +1,22 @@
 POSTGRES_USER = postgres
 POSTGRES_DB = spatialjoin_db
 SPATIALJOIN_EVAL_SCRIPT = spatialjoin-evaluation.py
+SPATIALJOIN = ../build/spatialjoin
 
-check_installation:
+help:
+	@echo "spatialjoin evaluation script\n"
+	@echo "Supported datasets"
+	@echo "  region-freiburg, region-finland, region-germany, region-ohm-planet, region-osm-planet"
+	@echo "\nGeneral targets\n"
+	@echo "  make check\n    check PostgreSQL/PostGIS and spatialjoin installation"
+	@echo "  make eval\n    run entire evaluation"
+	@echo "\nIndividual targets\n"
+	@echo "  make <DATASET>-table\n    prepare PostGIS table for <DATASET>"
+	@echo "  make eval-self-join-<DATASET>-postgres\n    run self-join evaluation on <DATASET> for PostGIS"
+	@echo "  make eval-self-join-<DATASET>-spatial\n    run self-join evaluation on <DATASET> for spatialjoin"
+	@echo "  make table-class\n    create a table 'classes' containing all objects of predefined classes"
+
+check:
 	@echo -n "PostgreSQL data directory:  "
 	@psql -U $(POSTGRES_USER) -tA -c "SHOW data_directory;"
 	@echo -n "PostgreSQL working memory:  "
@@ -15,6 +29,10 @@ check_installation:
 	@psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) -tA -c "SELECT version();"
 	@echo -n "PostGIS version:            "
 	@psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) -tA -c "SELECT PostGIS_Version();"
+	@echo -n "spatialjoin eval script:   "
+	@[ -f $(SPATIALJOIN_EVAL_SCRIPT) ] && realpath $(SPATIALJOIN_EVAL_SCRIPT) || echo " NOT FOUND"
+	@echo -n "spatialjoin version:   "
+	@$(SPATIALJOIN) --version
 
 region-osm-planet.tsv:
 	curl -s https://qlever.cs.uni-freiburg.de/api/osm-planet -H "Accept: text/csv" -H "Content-type: application/sparql-query" --data "PREFIX geo: <http://www.opengis.net/ont/geosparql#> PREFIX ogc: <http://www.opengis.net/rdf#> PREFIX osmrel: <https://www.openstreetmap.org/relation/> SELECT ?osm_id ?geometry WHERE { ?osm_id geo:hasGeometry/geo:asWKT ?geometry }" | sed 's/,/\t/;s|https://www.openstreetmap.org/|osm|;s|/|:|;s/"//g' > $@
@@ -62,18 +80,25 @@ table-class: class-building.tsv class-highway.tsv class-amenity.tsv class-power.
 	psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) -c "\di+ public.classes*"
 
 eval-self-join-%-postgres:
+	@echo Starting postgres full self-join evaluation for \'$*\':
 	@psql -q -U $(POSTGRES_USER) -d $(POSTGRES_DB) -tA -c "SELECT FROM $* LIMIT 1" > /dev/null 2>&1 || echo Table $* does not yet exist, run make $*-table first
-	@echo Full self-join candidates for \'$*\':
+	@echo Postgres full self-join candidates for \'$*\':
 	@psql -q -U $(POSTGRES_USER) -d $(POSTGRES_DB) -tA -c "\timing" -c "SELECT COUNT(*)::text || ' rows retrieved' FROM $* AS a, $* AS b WHERE a.geom && b.geom;"
-	@echo Full self-join on ST_Intersects for \'$*\':
+	@echo Postgres full self-join on ST_Intersects for \'$*\':
 	@psql -q -U $(POSTGRES_USER) -d $(POSTGRES_DB) -tA -c "\timing" -c "SELECT COUNT(*)::text || ' rows retrieved' FROM $* AS a, $* AS b WHERE ST_Intersects(a.geom, b.geom);"
+	@echo Finished postgres full self-join evaluation for \'$*\':
+
+eval-self-join-%-spatialjoin: %.spatialjoin-input.tsv
+	$(SPATIALJOIN) < $< > /dev/null
 
 %.spatialjoin-input.tsv: %.tsv
 	((head $< -n1 | wc -w | grep -q 4 && cut -d'	' -f 1,4 $< | tail -n +2 | head) || (tail -n +2 $<))  > $@
 
-eval-self-join-%-spatialjoin: %.spatialjoin-input.tsv
-	$(SPATIALJOIN_EVAL_SCRIPT) $* --combinations bcsdoi,Bcsdoi,BCsdoi,BCSdoi,BCSDoi,BCSdOi,BCSdoI 2>&1 | tee ${NAME}.spatialjoin-evaluation.tsv
-	$(SPATIALJOIN_EVAL_SCRIPT) $* --combinations bcsdoi,Bcsdoi,BCsdoi,BCSdoi,BCSDoi,BCSdOi,BCSdoI --analyze total --minutes
+eval-combinations-%-spatialjoin: %.spatialjoin-input.tsv
+	$(SPATIALJOIN_EVAL_SCRIPT) $* --spatialjoin $(SPATIALJOIN) --combinations bcsdoi,Bcsdoi,BCsdoi,BCSdoi,BCSDoi,BCSdOi,BCSdoI 2>&1 | tee ${NAME}.spatialjoin-evaluation.tsv
+	$(SPATIALJOIN_EVAL_SCRIPT) $* --spatialjoin $(SPATIALJOIN) --combinations bcsdoi,Bcsdoi,BCsdoi,BCSdoi,BCSDoi,BCSdOi,BCSdoI --analyze total --minutes
 
 
 eval-self-join-%: eval-self-join-%-spatialjoin eval-self-join-%-postgres
+
+eval: eval-self-join-region-ohm-planet eval-selfjoin-region-finland eval-selfjoin-region-germany eval-selfjoin-region-osm-planet
