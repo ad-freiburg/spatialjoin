@@ -11,35 +11,32 @@ Install the required packages:
 
 ```
 sudo apt update
-sudo apt install postgresql postgresql-contrib postgis postgresql-16-postgis-3
-sudo apt-get install gdal-bin
+sudo apt install postgresql postgresql-contrib postgis postgresql-16-postgis-3 gdal-bin
 ```
 
-Next, create a new database in a directory of your choice.
+Next, create a new database storage in a directory of your choice.
 ```
 export POSTGIS_DIR=/local/data-ssd/postgis/spatialjoin
 sudo mkdir -p ${POSTGIS_DIR} && sudo chown postgres:postgres ${POSTGIS_DIR}
 sudo -u postgres /usr/lib/postgresql/16/bin/initdb -D ${POSTGIS_DIR}
 sudo vim ${POSTGIS_DIR}/postgresql.conf
 ```
-In the file `${POSTGIS_DIR}/postgresql.conf`, set the following: 
+In the file `${POSTGIS_DIR}/postgresql.conf`, set the following:
 ```
 work_mem = 4MB
 max_worker_processes = 8
 max_parallel_workers_per_gather = 2
 max_parallel_workers = 8
 ```
-Afterwards, restart Postgres with the selected data dir:
+Afterwards, restart Postgres with the selected database storage directory:
 
 ```
 sudo su - postgres -c "/usr/lib/postgresql/16/bin/pg_ctl -D ${POSTGIS_DIR} -l logfile start"
 ```
 
-## Create a database (if not already created), and list existing tables and indexes
+## Create a database
 
-Create a database `spatialjoin_db` and enable PostGIS. These commands will do nothing if
-the database and extension were already created before.
-
+Create a database `spatialjoin_db` and enable PostGIS.
 ```
 sudo su - postgres -c "createdb spatialjoin_db"
 psql -U postgres -d spatialjoin_db -c "CREATE EXTENSION postgis;"
