@@ -12,7 +12,7 @@ QUERY_4_POSTGRES = SELECT COUNT(*) FROM classes AS a, classes AS b WHERE a.class
 
 # TODO: QUERY 5, Number of postboxes by country
 
-.PHONY: eval
+.PHONY: eval help tables check
 
 .PRECIOUS: %.tsv
 
@@ -78,12 +78,11 @@ region-%-table: region-%.tsv
 	psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) -c "DELETE FROM \"region-$*\";"
 	psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) -c "DELETE FROM \"region-$*_loader\";"
 	psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) -c "\copy \"region-$*_loader\" FROM '$(shell pwd)/$^' WITH (FORMAT csv, DELIMITER E'\t', HEADER true);"
-	psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) -c "INSERT INTO \"region-$*\" (id, geom) SELECT id, ST_GeomFromText(geom_text, 4326) FROM \"region-$*_loader\";"
+	@# filter invalid single-point LINESTRINGs here, they are still present in the old OHM QLever instance
+	psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) -c "INSERT INTO \"region-$*\" (id, geom) SELECT id, ST_GeomFromText(geom_text, 4326) FROM \"region-$*_loader\" WHERE NOT starts_with(geom_text, 'LINESTRING') OR POSITION(',' IN geom_text) > 0;"
 	psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) -c "DROP table \"region-$*_loader\";"
 	psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) -tA -c "SELECT COUNT(*) FROM \"region-$*\";"
-	psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) -c "CREATE INDEX IF NOT EXISTS \"region-$*_geom_idx\" ON region_$* USING GIST (geom);"
-	psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) -tA -c "\dt+ public.region-$**"
-	psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) -tA -c "\di+ public.region-$**"
+	psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) -c "CREATE INDEX IF NOT EXISTS \"region-$*_geom_idx\" ON \"region-$*\" USING GIST (geom);"
 
 class-%.tsv:
 	curl -s https://qlever.cs.uni-freiburg.de/api/osm-planet -H "Accept: text/csv" -H "Content-type: application/sparql-query" --data "PREFIX osm: <https://www.openstreetmap.org/> PREFIX geo: <http://www.opengis.net/ont/geosparql#> PREFIX ogc: <http://www.opengis.net/rdf#> PREFIX osmrel: <https://www.openstreetmap.org/relation/> PREFIX osmkey: <https://www.openstreetmap.org/wiki/Key:> SELECT (REPLACE(REPLACE(STR(?osm_id_), STR(osm:), \"osm\"), \"/\", \":\") AS ?osm_id) (REPLACE(STR(osmkey:$*), STR(osmkey:), \"\") AS ?predicate) ?type ?geometry WHERE { { SELECT ?osm_id_ (SAMPLE(?type_) AS ?type) WHERE { ?osm_id_ osmkey:$* ?type_ } GROUP BY ?osm_id_ } ?osm_id_ geo:hasGeometry/geo:asWKT ?geometry }" | sed 's/,/\t/g;s|https://www.openstreetmap.org/|osm|;s|/|:|;s/"//g' | sed 's/"//g;s/\^\^<http[^\t]*>$$//' > $@
@@ -99,13 +98,15 @@ classes-table: class-building.tsv class-highway.tsv class-amenity.tsv class-powe
 	psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) -c "DROP table classes_loader;"
 	psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) -c "SELECT COUNT(*) FROM classes;"
 	psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) -c "CREATE INDEX classes_geom_idx ON classes USING GIST (geom);"
-	psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) -c "\dt+ public.classes*"
-	psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) -c "\di+ public.classes*"
+
+%-table:
+	@echo ERROR: Not a supported dataset: $*;false
+
 
 eval-self-join-%-postgres:
 	@echo
 	@echo ++ Starting postgres full self-join evaluation for \'$*\':
-	@psql -q -U $(POSTGRES_USER) -d $(POSTGRES_DB) -tA -c "SELECT FROM \"$*\" LIMIT 1" > /dev/null 2>&1 || echo "Table $* does not yet exist, run make $*-table first\\n"
+	@psql -q -U $(POSTGRES_USER) -d $(POSTGRES_DB) -tA -c "SELECT FROM \"$*\" LIMIT 1" > /dev/null 2>&1 || (echo "ERROR: Table $* does not yet exist, run 'make $*-table' first\\n";false)
 	@echo Postgres full self-join candidates for \'$*\':
 	@psql -q -U $(POSTGRES_USER) -d $(POSTGRES_DB) -tA -c "\timing" -c "SET statement_timeout = '$(POSTGRES_TIMEOUT)'; SELECT COUNT(*)::text || ' rows retrieved' FROM \"$*\" AS a, \"$*\" AS b WHERE a.geom && b.geom;" || true
 	@echo Postgres full self-join on ST_Intersects for \'$*\':
@@ -140,10 +141,10 @@ eval-query-%:
 	@echo
 	@echo ++ Starting postgres evaluation for query $*:
 	@echo "(Query is: '$(QUERY_$*_POSTGRES)' )"
-	@psql -q -U $(POSTGRES_USER) -d $(POSTGRES_DB) -tA -c "SELECT FROM classes LIMIT 1" > /dev/null 2>&1 || echo "Table classes does not yet exist, run make classes-table first\\n"
+	@psql -q -U $(POSTGRES_USER) -d $(POSTGRES_DB) -tA -c "SELECT FROM classes LIMIT 1" > /dev/null 2>&1 || (echo "ERROR: Table classes does not yet exist, run 'make classes-table' first\\n";false)
 	@echo Postgres result size and time:
 	@psql -q -U $(POSTGRES_USER) -d $(POSTGRES_DB) -tA -c "\timing" -c "SET statement_timeout = '$(POSTGRES_TIMEOUT)'; $(QUERY_$*_POSTGRES);" || true
 
-tables: region-freiburg-table region-germany-table region-finland-table region-ohm-planet-table region-osm-planet-table classes
+tables: region-freiburg-table region-germany-table region-finland-table region-ohm-planet-table region-osm-planet-table classes-table
 
 eval: eval-combinations-region-osm-planet eval-self-join-region-ohm-planet eval-selfjoin-region-finland eval-selfjoin-region-germany eval-selfjoin-region-osm-planet
