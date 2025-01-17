@@ -4,9 +4,10 @@
 
 #include <iostream>
 
-#include "BoxIds.h"
-#include "Sweeper.h"
-#include "WKTParse.h"
+#include "spatialjoin/BoxIds.h"
+#include "spatialjoin/Sweeper.h"
+#include "spatialjoin/WKTParse.h"
+#include "spatialjoin/_config.h"
 #include "util/Misc.h"
 #include "util/geo/Geo.h"
 #include "util/log/Log.h"
@@ -32,6 +33,8 @@ void printHelp(int argc, char** argv) {
   UNUSED(argc);
   std::cout
       << "\n"
+      << VERSION_FULL << "\n(built " << __DATE__ << " " << __TIME__
+      << ")\n\n"
       << "(C) 2023-" << YEAR << " " << COPY << "\n"
       << "Authors: " << AUTHORS << "\n\n"
       << "Usage: " << argv[0] << " [--help] [-h] <input>\n\n"
@@ -127,6 +130,7 @@ int main(int argc, char** argv) {
   bool noGeometryChecks = false;
 
   bool preSortCache = false;
+  bool printStats = false;
 
   size_t numThreads = NUM_THREADS;
   size_t numCaches = NUM_THREADS;
@@ -183,6 +187,13 @@ int main(int argc, char** argv) {
           useInnerOuter = true;
         } else if (cur == "--pre-sort-cache") {
           preSortCache = true;
+        } else if (cur == "--print-stats") {
+          printStats = true;
+        } else if (cur == "--version") {
+          std::cout
+              << "spatialjoin " << VERSION_FULL << " (built " << __DATE__ << " " << __TIME__
+              << ")\n";
+          exit(0);
         } else {
           std::cerr << "Unknown option '" << cur << "', see -h" << std::endl;
           exit(1);
@@ -249,6 +260,10 @@ int main(int argc, char** argv) {
   std::string dangling;
   size_t gid = 1;
 
+  std::function<void(const std::string&)> statsCb;
+
+  if (printStats) statsCb = [](const std::string& s) { std::cerr << s; };
+
   Sweeper sweeper({numThreads,
                    numCaches,
                    prefix,
@@ -270,7 +285,7 @@ int main(int argc, char** argv) {
                    noGeometryChecks,
                    {},
                    [](const std::string& s) { LOGTO(INFO, std::cerr) << s; },
-                   [](const std::string& s) { std::cerr << s; },
+                   statsCb,
                    {}},
                   cache, output);
 
@@ -288,25 +303,30 @@ int main(int argc, char** argv) {
 
   // end event
   jobs.add({});
+
+  LOGTO(INFO, std::cerr) << "Done parsing (" << TOOK(ts) / 1000000000.0 << "s).";
+
   // wait for all workers to finish
   for (auto& thr : thrds) thr.join();
 
+  LOGTO(INFO, std::cerr) << "Sorting sweep events...";
+
   sweeper.flush();
 
-  LOGTO(INFO, std::cerr) << "done (" << TOOK(ts) / 1000000000.0 << "s).";
+  LOGTO(INFO, std::cerr) << "Done sorting sweep events (" << TOOK(ts) / 1000000000.0 << "s).";
 
   if (preSortCache) {
     ts = TIME();
     LOGTO(INFO, std::cerr) << "Pre-sorting cache...";
     sweeper.sortCache();
     sweeper.flush();
-    LOGTO(INFO, std::cerr) << "done (" << TOOK(ts) / 1000000000.0 << "s).";
+    LOGTO(INFO, std::cerr) << "Done pre-sorting cache (" << TOOK(ts) / 1000000000.0 << "s).";
   }
 
   LOGTO(INFO, std::cerr) << "Sweeping...";
   ts = TIME();
   sweeper.sweep();
-  LOGTO(INFO, std::cerr) << "done (" << TOOK(ts) / 1000000000.0 << "s).";
+  LOGTO(INFO, std::cerr) << "Done sweeping (" << TOOK(ts) / 1000000000.0 << "s).";
 
   delete[] buf;
 }

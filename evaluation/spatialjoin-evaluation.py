@@ -132,12 +132,13 @@ def compute(args: argparse.Namespace):
         parse_time = "[not found]"
         sweep_time = "[not found]"
         for line in result.stderr.decode().split("\n"):
-            match = re.match(".*INFO : done \\(([0-9.]+)s\\)\\.", line)
+            match = re.match(".*INFO : Done parsing \\(([0-9.]+)s\\)\\.", line)
             if match:
-                if parse_time == "[not found]":
-                    parse_time = f"{float(match.group(1)):.3f}"
-                elif sweep_time == "[not found]":
-                    sweep_time = f"{float(match.group(1)):.3f}"
+                parse_time = f"{float(match.group(1)):.3f}"
+
+            match = re.match(".*INFO : Done sweeping \\(([0-9.]+)s\\)\\.", line)
+            if match:
+                sweep_time = f"{float(match.group(1)):.3f}"
 
         print(f"{name}\t{total_time}\t{parse_time}\t{sweep_time}", flush=True)
 

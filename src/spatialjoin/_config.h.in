@@ -1,0 +1,13 @@
+// Copyright 2025
+// Author: Patrick Brosi
+
+#ifndef SRC_SPATIALJOIN_CONFIG_H_
+#define SRC_SPATIALJOIN_CONFIG_H_
+
+// version number from cmake version module
+#define VERSION_FULL "@VERSION_GIT_FULL@"
+
+// version number from cmake version module
+#define INSTALL_PREFIX "@CMAKE_INSTALL_PREFIX@"
+
+#endif  // SRC_SPATIALJOIN_CONFIG_H_N
