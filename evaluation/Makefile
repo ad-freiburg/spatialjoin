@@ -5,6 +5,8 @@ SPATIALJOIN = spatialjoin
 SPATIALJOIN_ARGS = --num-threads 2 --num-caches 2 --no-oriented-envelope # BCSDoi with 2 threads
 POSTGRES_TIMEOUT = 10h
 
+DATA_DIR = .
+
 QUERY_1_POSTGRES = SELECT COUNT(*) FROM classes AS a, classes AS b WHERE a.class = 'highway' AND b.id = 'rel:2171347' AND ST_Contains(b.geom, a.geom)
 QUERY_2_POSTGRES = SELECT COUNT(*) FROM classes AS a, classes AS b WHERE a.class = 'highway' AND b.id = 'rel:51477' AND ST_Contains(b.geom, a.geom)
 QUERY_3_POSTGRES = SELECT COUNT(*) FROM classes AS a, classes AS b WHERE a.class = 'building' AND b.class = 'power' AND b.type = 'line' AND ST_Intersects(a.geom, b.geom)
@@ -32,9 +34,11 @@ help:
 	@echo "  make eval-combinations-<DATASET>-spatialjoin\n    run self-evaluation for spatialjoin on <DATASET>"
 
 check:
-	@echo -n "PostgreSQL user             "
+	@echo -n "Data dir for exports:       "
+	@realpath $(DATA_DIR)
+	@echo -n "PostgreSQL user:            "
 	@echo $(POSTGRES_USER)
-	@echo -n "PostgreSQL database         "
+	@echo -n "PostgreSQL database:        "
 	@echo $(POSTGRES_DB)
 	@echo -n "PostgreSQL query timeout:   "
 	@echo $(POSTGRES_TIMEOUT)
@@ -57,43 +61,43 @@ check:
 	@echo -n "spatialjoin eval script:    "
 	@[ -f $(SPATIALJOIN_EVAL_SCRIPT) ] && realpath $(SPATIALJOIN_EVAL_SCRIPT) || echo " NOT FOUND"
 
-region-osm-planet.tsv.gz:
+$(DATA_DIR)/region-osm-planet.tsv.gz:
 	curl -s https://qlever.cs.uni-freiburg.de/api/osm-planet -H "Accept: text/csv" -H "Content-type: application/sparql-query" --data "PREFIX geo: <http://www.opengis.net/ont/geosparql#> PREFIX ogc: <http://www.opengis.net/rdf#> PREFIX osmrel: <https://www.openstreetmap.org/relation/> SELECT ?osm_id ?geometry WHERE { ?osm_id geo:hasGeometry/geo:asWKT ?geometry }" | sed 's/,/\t/;s|https://www.openstreetmap.org/|osm|;s|/|:|;s/"//g' | gzip -1 > $@
 
-region-freiburg.tsv.gz:
+$(DATA_DIR)/region-freiburg.tsv.gz:
 	curl -s https://qlever.cs.uni-freiburg.de/api/osm-planet -H "Accept: text/csv" -H "Content-type: application/sparql-query" --data "PREFIX geo: <http://www.opengis.net/ont/geosparql#> PREFIX ogc: <http://www.opengis.net/rdf#> PREFIX osmrel: <https://www.openstreetmap.org/relation/> SELECT ?osm_id ?geometry WHERE { osmrel:62768 ogc:sfContains ?osm_id . ?osm_id geo:hasGeometry/geo:asWKT ?geometry }" | sed 's/,/\t/;s|https://www.openstreetmap.org/|osm|;s|/|:|;s/"//g' | gzip -1 > $@
 
-region-finland.tsv.gz:
+$(DATA_DIR)/region-finland.tsv.gz:
 	curl -s https://qlever.cs.uni-freiburg.de/api/osm-planet -H "Accept: text/csv" -H "Content-type: application/sparql-query" --data "PREFIX geo: <http://www.opengis.net/ont/geosparql#> PREFIX ogc: <http://www.opengis.net/rdf#> PREFIX osmrel: <https://www.openstreetmap.org/relation/> SELECT ?osm_id ?geometry WHERE { osmrel:54224 ogc:sfContains ?osm_id . ?osm_id geo:hasGeometry/geo:asWKT ?geometry }" | sed 's/,/\t/;s|https://www.openstreetmap.org/|osm|;s|/|:|;s/"//g' | gzip -1 > $@
 
-region-germany.tsv.gz:
+$(DATA_DIR)/region-germany.tsv.gz:
 	curl -s https://qlever.cs.uni-freiburg.de/api/osm-planet -H "Accept: text/csv" -H "Content-type: application/sparql-query" --data "PREFIX geo: <http://www.opengis.net/ont/geosparql#> PREFIX ogc: <http://www.opengis.net/rdf#> PREFIX osmrel: <https://www.openstreetmap.org/relation/> SELECT ?osm_id ?geometry WHERE { osmrel:51477 ogc:sfContains ?osm_id . ?osm_id geo:hasGeometry/geo:asWKT ?geometry }" | sed 's/,/\t/;s|https://www.openstreetmap.org/|osm|;s|/|:|;s/"//g' | gzip -1 > $@
 
-region-ohm-planet.tsv.gz:
+$(DATA_DIR)/region-ohm-planet.tsv.gz:
 	curl -s https://qlever.cs.uni-freiburg.de/api/ohm-planet -H "Accept: text/csv" -H "Content-type: application/sparql-query" --data "PREFIX geo: <http://www.opengis.net/ont/geosparql#> PREFIX ogc: <http://www.opengis.net/rdf#> PREFIX osmrel: <https://www.openstreetmap.org/relation/> SELECT ?osm_id ?geometry WHERE { ?osm_id geo:hasGeometry/geo:asWKT ?geometry }" | sed 's/,/\t/;s|https://www.openstreetmap.org/|osm|;s|/|:|;s/"//g' | gzip -1 > $@
 
-region-%-table: region-%.tsv.gz
+region-%-table: $(DATA_DIR)/region-%.tsv.gz
 	psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) -c "CREATE TABLE IF NOT EXISTS \"region-$*\" (id VARCHAR PRIMARY KEY, geom GEOMETRY);"
 	psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) -c "CREATE TABLE IF NOT EXISTS \"region-$*_loader\" (id VARCHAR, geom_text VARCHAR);"
 	psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) -c "DELETE FROM \"region-$*\";"
 	psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) -c "DELETE FROM \"region-$*_loader\";"
-	psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) -c "\copy \"region-$*_loader\" FROM PROGRAM 'gzip -dc $(shell pwd)/$^' WITH (FORMAT csv, DELIMITER E'\t', HEADER true);"
+	psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) -c "\copy \"region-$*_loader\" FROM PROGRAM 'gzip -dc $(shell realpath $^)' WITH (FORMAT csv, DELIMITER E'\t', HEADER true);"
 	@# filter invalid single-point LINESTRINGs here, they are still present in the old OHM QLever instance
 	psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) -c "INSERT INTO \"region-$*\" (id, geom) SELECT id, ST_GeomFromText(geom_text, 4326) FROM \"region-$*_loader\" WHERE NOT starts_with(geom_text, 'LINESTRING') OR POSITION(',' IN geom_text) > 0;"
 	psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) -c "DROP table \"region-$*_loader\";"
 	psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) -tA -c "SELECT COUNT(*) FROM \"region-$*\";"
 	psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) -c "CREATE INDEX IF NOT EXISTS \"region-$*_geom_idx\" ON \"region-$*\" USING GIST (geom);"
 
-class-%.tsv.gz:
+$(DATA_DIR)/class-%.tsv.gz:
 	curl -s https://qlever.cs.uni-freiburg.de/api/osm-planet -H "Accept: text/csv" -H "Content-type: application/sparql-query" --data "PREFIX osm: <https://www.openstreetmap.org/> PREFIX geo: <http://www.opengis.net/ont/geosparql#> PREFIX ogc: <http://www.opengis.net/rdf#> PREFIX osmrel: <https://www.openstreetmap.org/relation/> PREFIX osmkey: <https://www.openstreetmap.org/wiki/Key:> SELECT (REPLACE(REPLACE(STR(?osm_id_), STR(osm:), \"osm\"), \"/\", \":\") AS ?osm_id) (REPLACE(STR(osmkey:$*), STR(osmkey:), \"\") AS ?predicate) ?type ?geometry WHERE { { SELECT ?osm_id_ (SAMPLE(?type_) AS ?type) WHERE { ?osm_id_ osmkey:$* ?type_ } GROUP BY ?osm_id_ } ?osm_id_ geo:hasGeometry/geo:asWKT ?geometry }" | sed 's/,/\t/g;s|https://www.openstreetmap.org/|osm|;s|/|:|;s/"//g' | sed 's/"//g;s/\^\^<http[^\t]*>$$//' | gzip -1 > $@
 
-classes-table: class-building.tsv.gz class-highway.tsv.gz class-amenity.tsv.gz class-power.tsv.gz
+classes-table: $(DATA_DIR)/class-building.tsv.gz $(DATA_DIR)/class-highway.tsv.gz $(DATA_DIR)/class-amenity.tsv.gz $(DATA_DIR)/class-power.tsv.gz
 	psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) -c "CREATE TABLE classes (id VARCHAR PRIMARY KEY, class VARCHAR, type VARCHAR, geom GEOMETRY);"
 	psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) -c "CREATE TABLE classes_loader (id VARCHAR, class VARCHAR, type VARCHAR, geom_text VARCHAR);"
-	psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) -c "COPY classes_loader FROM PROGRAM 'gzip -dc $(shell pwd)/class-building.tsv.gz' WITH (FORMAT csv, DELIMITER E'\t', HEADER true);"
-	psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) -c "COPY classes_loader FROM PROGRAM 'gzip -dc $(shell pwd)/class-highway.tsv.gz' WITH (FORMAT csv, DELIMITER E'\t', HEADER true);"
-	psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) -c "COPY classes_loader FROM PROGRAM 'gzip -dc $(shell pwd)/class-amenity.tsv.gz' WITH (FORMAT csv, DELIMITER E'\t', HEADER true);"
-	psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) -c "COPY classes_loader FROM PROGRAM 'gzip -dc $(shell pwd)/class-power.tsv.gz' WITH (FORMAT csv, DELIMITER E'\t', HEADER true);"
+	psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) -c "COPY classes_loader FROM PROGRAM 'gzip -dc $(shell realpath $(DATA_DIR)/class-building.tsv.gz)' WITH (FORMAT csv, DELIMITER E'\t', HEADER true);"
+	psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) -c "COPY classes_loader FROM PROGRAM 'gzip -dc $(shell realpath $(DATA_DIR)/class-highway.tsv.gz)' WITH (FORMAT csv, DELIMITER E'\t', HEADER true);"
+	psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) -c "COPY classes_loader FROM PROGRAM 'gzip -dc $(shell realpath $(DATA_DIR)/class-amenity.tsv.gz)' WITH (FORMAT csv, DELIMITER E'\t', HEADER true);"
+	psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) -c "COPY classes_loader FROM PROGRAM 'gzip -dc $(shell realpath $(DATA_DIR)/class-power.tsv.gz)' WITH (FORMAT csv, DELIMITER E'\t', HEADER true);"
 	psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) -c "INSERT INTO classes (id, class, type, geom) SELECT DISTINCT ON (id) id, class, type, ST_GeomFromText(geom_text, 4326) FROM classes_loader;"
 	psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) -c "DROP table classes_loader;"
 	psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) -c "SELECT COUNT(*) FROM classes;"
@@ -112,7 +116,7 @@ eval-self-join-%-postgres:
 	@echo Postgres full self-join on ST_Intersects for \'$*\':
 	@psql -q -U $(POSTGRES_USER) -d $(POSTGRES_DB) -tA -c "\timing" -c "SET statement_timeout = '$(POSTGRES_TIMEOUT)'; SELECT COUNT(*)::text || ' rows retrieved' FROM \"$*\" AS a, \"$*\" AS b WHERE ST_Intersects(a.geom, b.geom);" || true
 
-eval-self-join-%-spatialjoin: %.spatialjoin-input.tsv
+eval-self-join-%-spatialjoin: $(DATA_DIR)/%.spatialjoin-input.tsv
 	@echo
 	@echo ++ Starting spatialjoin full self-join evaluation for \'$*\':
 	@echo spatialjoin full self-join candidates for \'$*\':
@@ -123,7 +127,7 @@ eval-self-join-%-spatialjoin: %.spatialjoin-input.tsv
 	@grep "Done sweeping" .spatialjoin-$*.log | sed "s/.* Done sweeping (\([0-9s\.]*\))\./\1/g"
 	@rm .spatialjoin-$*.log
 
-%.spatialjoin-input.tsv: %.tsv.gz
+%.spatialjoin-input.tsv: $(DATA_DIR)/%.tsv.gz
 	((gzip -dc $< | head -n1 | wc -w | grep -q 4 && gzip -dc $< | cut -d'	' -f 1,4 | tail -n +2 | head) || (gzip -dc $< | tail -n +2))  > $@
 
 eval-combinations-%-spatialjoin: %.spatialjoin-input.tsv
