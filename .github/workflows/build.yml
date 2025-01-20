@@ -86,7 +86,7 @@ jobs:
       - name: Checkout submodules
         run: git submodule update --init --recursive
       - name: install dependencies
-        run: brew install cmake libbz2-dev
+        run: brew install cmake lbzip2
       - name: cmake
         run: mkdir build && cd build && cmake ..
       - name: make
@@ -101,7 +101,7 @@ jobs:
       - name: Checkout submodules
         run: git submodule update --init --recursive
       - name: install dependencies
-        run: brew install cmake libbz2-dev
+        run: brew install cmake lbzip2
       - name: cmake
         run: mkdir build && cd build && cmake ..
       - name: make
