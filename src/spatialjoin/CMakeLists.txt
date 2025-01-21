@@ -10,6 +10,13 @@ include_directories(
 	${ZLIB_INCLUDE_DIRS}
 )
 
+
+configure_file (
+  "_config.h.in"
+  "_config.h"
+)
+
+
 add_executable(spatialjoin ${spatialjoin_main})
 add_library(spatialjoin-dev ${SPATIALJOIN_SRC})
 

@@ -12,10 +12,10 @@
 #include <set>
 #include <sstream>
 
-#include "BoxIds.h"
-#include "InnerOuter.h"
-#include "IntervalIdx.h"
-#include "Sweeper.h"
+#include "spatialjoin/BoxIds.h"
+#include "spatialjoin/InnerOuter.h"
+#include "spatialjoin/IntervalIdx.h"
+#include "spatialjoin/Sweeper.h"
 #include "util/Misc.h"
 #include "util/log/Log.h"
 
@@ -851,8 +851,6 @@ void Sweeper::flush() {
   _lineCache.flush();
   _simpleLineCache.flush();
 
-  log("Sorting events...");
-
   std::string newFName = util::getTmpFName(_cache, ".spatialjoin", "sorttmp");
   int newFile = open(newFName.c_str(), O_RDWR | O_CREAT, 0666);
   unlink(newFName.c_str());
@@ -883,8 +881,6 @@ void Sweeper::flush() {
 #ifdef __unix__
   posix_fadvise(_file, 0, 0, POSIX_FADV_SEQUENTIAL);
 #endif
-
-  log("...done");
 }
 
 // _____________________________________________________________________________

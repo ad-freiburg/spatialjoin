@@ -21,9 +21,9 @@
 #include <unordered_map>
 #include <unordered_set>
 
-#include "GeometryCache.h"
-#include "IntervalIdx.h"
-#include "Stats.h"
+#include "spatialjoin/GeometryCache.h"
+#include "spatialjoin/IntervalIdx.h"
+#include "spatialjoin/Stats.h"
 #include "util/JobQueue.h"
 #include "util/geo/Geo.h"
 
