@@ -309,6 +309,8 @@ int main(int argc, char** argv) {
   // wait for all workers to finish
   for (auto& thr : thrds) thr.join();
 
+  auto genTs = TIME();
+
   LOGTO(INFO, std::cerr) << "Sorting sweep events...";
 
   sweeper.flush();
@@ -327,6 +329,7 @@ int main(int argc, char** argv) {
   ts = TIME();
   sweeper.sweep();
   LOGTO(INFO, std::cerr) << "Done sweeping (" << TOOK(ts) / 1000000000.0 << "s).";
+  LOGTO(INFO, std::cerr) << "Total predicate generation time (without parsing): " << TOOK(genTs) / 1000000000.0 << "s";
 
   delete[] buf;
 }

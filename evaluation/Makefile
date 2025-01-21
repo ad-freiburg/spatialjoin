@@ -16,7 +16,9 @@ QUERY_4_POSTGRES = SELECT COUNT(*) FROM classes AS a, classes AS b WHERE a.class
 
 .PHONY: eval help tables check
 
-.PRECIOUS: %.tsv $.tsv.gz
+.PRECIOUS: %.tsv $.tsv.gz $(DATADIR)/%.tsv $(DATADIR)/$.tsv.gz
+
+.SECONDEXPANSION:
 
 help:
 	@echo "spatialjoin evaluation script\n"
@@ -103,9 +105,29 @@ classes-table: $(DATA_DIR)/class-building.tsv.gz $(DATA_DIR)/class-highway.tsv.g
 	psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) -c "SELECT COUNT(*) FROM classes;"
 	psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) -c "CREATE INDEX classes_geom_idx ON classes USING GIST (geom);"
 
-%-table:
-	@echo ERROR: Not a supported dataset: $*;false
+$(DATA_DIR)/static-residential-streets.tsv.gz:
+	curl https://ad-publications.cs.uni-freiburg.de/SIGSPATIAL_spatialjoin_BBKL_2024.materials/residential-streets.tsv.bz2 | bunzip2 -c | gzip -1 > $@
 
+$(DATA_DIR)/static-%.1.tsv.gz:
+	curl https://ad-publications.cs.uni-freiburg.de/SIGSPATIAL_spatialjoin_BBKL_2024.materials/residential-streets.tsv.bz2 | bunzip2 -c | sed 's/\t/\t1\t/' | gzip -1 > $@
+
+$(DATA_DIR)/static-%.tsv.gz:
+	curl https://ad-publications.cs.uni-freiburg.de/SIGSPATIAL_spatialjoin_BBKL_2024.materials/$*.tsv | gzip -1 > $@
+
+$(DATA_DIR)/static-%.1.tsv.gz:
+	curl https://ad-publications.cs.uni-freiburg.de/SIGSPATIAL_spatialjoin_BBKL_2024.materials/$*.tsv | sed 's/\t/\t1\t/' | gzip -1 > $@
+
+static-%-table: $(DATA_DIR)/static-%.tsv.gz
+	psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) -c "CREATE TABLE IF NOT EXISTS \"static-$*\" (id VARCHAR PRIMARY KEY, geom GEOMETRY);"
+	psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) -c "CREATE TABLE IF NOT EXISTS \"static-$*_loader\" (id VARCHAR, geom_text VARCHAR);"
+	psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) -c "DELETE FROM \"static-$*\";"
+	psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) -c "DELETE FROM \"static-$*_loader\";"
+	psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) -c "\copy \"static-$*_loader\" FROM PROGRAM 'gzip -dc $(shell realpath $^)' WITH (FORMAT csv, DELIMITER E'\t', HEADER true);"
+	@# filter invalid single-point LINESTRINGs here, they are still present in the old OHM QLever instance
+	psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) -c "INSERT INTO \"static-$*\" (id, geom) SELECT id, ST_GeomFromText(geom_text, 4326) FROM \"static-$*_loader\" WHERE NOT starts_with(geom_text, 'LINESTRING') OR POSITION(',' IN geom_text) > 0;"
+	psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) -c "DROP table \"static-$*_loader\";"
+	psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) -tA -c "SELECT COUNT(*) FROM \"static-$*\";"
+	psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) -c "CREATE INDEX IF NOT EXISTS \"static-$*_geom_idx\" ON \"static-$*\" USING GIST (geom);"
 
 eval-self-join-%-postgres:
 	@echo
@@ -120,11 +142,11 @@ eval-self-join-%-spatialjoin: $(DATA_DIR)/%.spatialjoin-input.tsv
 	@echo
 	@echo ++ Starting spatialjoin full self-join evaluation for \'$*\':
 	@echo spatialjoin full self-join candidates for \'$*\':
-	@./$(SPATIALJOIN) --no-geometry-checks < $< > /dev/null 2> .spatialjoin-$*.log
-	@grep "Done sweeping" .spatialjoin-$*.log | sed "s/.* Done sweeping (\([0-9s\.]*\))\./\1/g"
+	@./$(SPATIALJOIN) $(SPATIALJOIN_ARGS) --no-geometry-checks < $< > /dev/null 2> .spatialjoin-$*.log
+	@grep "Total predicate generation time" .spatialjoin-$*.log | sed "s/.* Total predicate generation time (without parsing): \([0-9s\.]*\)/\1/g"
 	@echo spatialjoin full self-join for \'$*\':
-	@./$(SPATIALJOIN) < $< > /dev/null 2> .spatialjoin-$*.log
-	@grep "Done sweeping" .spatialjoin-$*.log | sed "s/.* Done sweeping (\([0-9s\.]*\))\./\1/g"
+	@./$(SPATIALJOIN) $(SPATIALJOIN_ARGS) < $< > /dev/null 2> .spatialjoin-$*.log
+	@grep "Total predicate generation time" .spatialjoin-$*.log | sed "s/.* Total predicate generation time (without parsing): \([0-9s\.]*\)/\1/g"
 	@rm .spatialjoin-$*.log
 
 %.spatialjoin-input.tsv: $(DATA_DIR)/%.tsv.gz
@@ -149,6 +171,36 @@ eval-query-%:
 	@echo Postgres result size and time:
 	@psql -q -U $(POSTGRES_USER) -d $(POSTGRES_DB) -tA -c "\timing" -c "SET statement_timeout = '$(POSTGRES_TIMEOUT)'; $(QUERY_$*_POSTGRES);" || true
 
-tables: region-freiburg-table region-germany-table region-finland-table region-ohm-planet-table region-osm-planet-table classes-table
+eval-non-self-join-%-postgres:
+	@echo
+	@echo ++ Starting postgres evaluation for non-self join $(word 1,$(subst _, ,$*)) vs $(word 2,$(subst _, ,$*))
+	@psql -q -U $(POSTGRES_USER) -d $(POSTGRES_DB) -tA -c "SELECT FROM \"static-$(word 1,$(subst _, ,$*))\" LIMIT 1" > /dev/null 2>&1 || (echo "ERROR: Table static-$(word 1,$(subst _, ,$*)) does not yet exist, run 'make $(word 1,$(subst _, ,$*))-table' first\\n";false)
+	@psql -q -U $(POSTGRES_USER) -d $(POSTGRES_DB) -tA -c "SELECT FROM \"static-$(word 2,$(subst _, ,$*))\" LIMIT 1" > /dev/null 2>&1 || (echo "ERROR: Table static-$(word 2,$(subst _, ,$*)) does not yet exist, run 'make $(word 2,$(subst _, ,$*))-table' first\\n";false)
+	@echo Postgres candidates for non-self join  $(word 1,$(subst _, ,$*)) vs $(word 2,$(subst _, ,$*)):
+	@psql -q -U $(POSTGRES_USER) -d $(POSTGRES_DB) -tA -c "\timing" -c "SET statement_timeout = '$(POSTGRES_TIMEOUT)'; SELECT COUNT(*)::text || ' rows retrieved' FROM \"static-$(word 1,$(subst _, ,$*))\" AS a, \"static-$(word 2,$(subst _, ,$*))\" AS b WHERE a.geom && b.geom;" || true
+	@echo Postgres full ST_Intersects for non-self join  $(word 1,$(subst _, ,$*)) vs $(word 2,$(subst _, ,$*)):
+	@psql -q -U $(POSTGRES_USER) -d $(POSTGRES_DB) -tA -c "\timing" -c "SET statement_timeout = '$(POSTGRES_TIMEOUT)'; SELECT COUNT(*)::text || ' rows retrieved' FROM \"static-$(word 1,$(subst _, ,$*))\" AS a, \"static-$(word 2,$(subst _, ,$*))\" AS b WHERE ST_Intersects(a.geom, b.geom);" || true
 
-eval: eval-combinations-region-osm-planet eval-self-join-region-ohm-planet eval-selfjoin-region-finland eval-selfjoin-region-germany eval-selfjoin-region-osm-planet
+eval-non-self-join-%-spatialjoin: $(DATA_DIR)/static-$$(word 1,$$(subst _, , %)).tsv.gz $(DATA_DIR)/static-$$(word 2,$$(subst _, , %)).1.tsv.gz
+	@echo
+	@echo ++ Starting spatialjoin evaluation for non-self join $(word 1,$(subst _, ,$*)) vs $(word 2,$(subst _, ,$*))
+	@echo spatialjoin candidates for non-self join  $(word 1,$(subst _, ,$*)) vs $(word 2,$(subst _, ,$*)):
+	@zcat $^ | ./$(SPATIALJOIN) $(SPATIALJOIN_ARGS) --no-geometry-checks > /dev/null 2> .spatialjoin-$*.log
+	@grep "Total predicate generation time" .spatialjoin-$*.log | sed "s/.* Total predicate generation time (without parsing): \([0-9s\.]*\)/\1/g"
+	@echo spatialjoin full non-self join  $(word 1,$(subst _, ,$*)) vs $(word 2,$(subst _, ,$*)):
+	@zcat $^ | ./$(SPATIALJOIN) $(SPATIALJOIN_ARGS) > /dev/null 2> .spatialjoin-$*.log
+	@grep "Total predicate generation time" .spatialjoin-$*.log | sed "s/.* Total predicate generation time (without parsing): \([0-9s\.]*\)/\1/g"
+	@rm .spatialjoin-$*.log
+
+eval-non-self-join-%: eval-non-self-join-%-spatialjoin eval-non-self-join-%-postgres
+	@#
+
+tables: region-freiburg-table region-germany-table region-finland-table region-ohm-planet-table region-osm-planet-table classes-table static-restaurants-table static-residential-streets-table static-powerlines-tables static-administrative-regions-table
+
+eval-queries: eval-query-1 eval-query-2 eval-query-3 eval-query-4
+
+eval-self-joins: eval-self-join-region-ohm-planet eval-selfjoin-region-finland eval-selfjoin-region-germany eval-selfjoin-region-osm-planet
+
+eval-non-self-joins: eval-non-self-join-restaurants_transit-stops eval-non-self-join-residential-streets_administrative-regions eval-non-self-join-residential-streets_residential-streets eval-non-self-join-powerlines_residential-streets
+
+eval: eval-combinations-region-osm-planet eval-self-joins eval-non-self-joins eval-queries
