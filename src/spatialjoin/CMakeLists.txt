@@ -13,6 +13,6 @@ include_directories(
 add_executable(spatialjoin ${spatialjoin_main})
 add_library(spatialjoin-dev ${SPATIALJOIN_SRC})
 
-target_link_libraries(spatialjoin spatialjoin-dev util ${BZIP2_LIBRARIES} ${ZLIB_LIBRARIES} -lpthread)
+target_link_libraries(spatialjoin spatialjoin-dev pb_util ${BZIP2_LIBRARIES} ${ZLIB_LIBRARIES} -lpthread)
 
 add_subdirectory(tests)
