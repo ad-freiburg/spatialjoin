@@ -20,6 +20,6 @@ target_include_directories(spatialjoin-dev PUBLIC
 	${BZIP2_INCLUDE_DIR}
 )
 
-target_link_libraries(spatialjoin spatialjoin-dev pb-util ${BZIP2_LIBRARIES} ${ZLIB_LIBRARIES} -lpthread)
+target_link_libraries(spatialjoin spatialjoin-dev pb_util ${BZIP2_LIBRARIES} ${ZLIB_LIBRARIES} -lpthread)
 
 add_subdirectory(tests)
