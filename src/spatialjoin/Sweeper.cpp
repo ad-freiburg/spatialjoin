@@ -43,6 +43,11 @@ using util::geo::intersectsContainsCovers;
 using util::geo::intersectsCovers;
 using util::geo::LineSegment;
 using util::geo::webMercToLatLng;
+using util::LogLevel::INFO;
+using util::LogLevel::WARN;
+using util::LogLevel::ERROR;
+using util::LogLevel::DEBUG;
+using util::LogLevel::VDEBUG;
 
 const static size_t CUTOUTS_MIN_SIZE = 100;
 const static size_t OBB_MIN_SIZE = 100;

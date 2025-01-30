@@ -19,6 +19,11 @@ using util::geo::I32MultiLine;
 using util::geo::I32MultiPolygon;
 using util::geo::I32Point;
 using util::geo::I32Polygon;
+using util::LogLevel::INFO;
+using util::LogLevel::WARN;
+using util::LogLevel::ERROR;
+using util::LogLevel::DEBUG;
+using util::LogLevel::VDEBUG;
 
 static const char* YEAR = &__DATE__[7];
 static const char* COPY =
