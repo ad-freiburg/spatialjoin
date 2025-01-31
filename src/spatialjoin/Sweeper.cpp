@@ -158,8 +158,13 @@ void Sweeper::add(const I32Polygon& poly, const std::string& gid, bool side,
 }
 
 // _____________________________________________________________________________
-void Sweeper::add(const I32Polygon& poly, const std::string& gid, size_t subid,
+void Sweeper::add(const I32Polygon& poly, const std::string& gidR, size_t subid,
                   bool side, WriteBatch& batch) const {
+  std::string gid;
+
+  if (_numSides != 1) gid = (side ? ("B" + gidR) : ("A" + gidR));
+  else gid = gidR;
+
   WriteCand cur;
   const auto& box = getBoundingBox(poly);
   I32XSortedPolygon spoly(poly);
@@ -186,7 +191,6 @@ void Sweeper::add(const I32Polygon& poly, const std::string& gid, size_t subid,
   }
 
   cur.subid = subid;
-  cur.gid = gid;
 
   if (poly.getInners().size() == 0 && poly.getOuter().size() < 10 &&
       subid == 0 && (!_cfg.useBoxIds || boxIds.front().first == 1)) {
@@ -292,9 +296,14 @@ void Sweeper::add(const I32Line& line, const std::string& gid, bool side,
 }
 
 // _____________________________________________________________________________
-void Sweeper::add(const I32Line& line, const std::string& gid, size_t subid,
+void Sweeper::add(const I32Line& line, const std::string& gidR, size_t subid,
                   bool side, WriteBatch& batch) const {
   if (line.size() < 2) return;
+
+  std::string gid;
+
+  if (_numSides != 1) gid = (side ? ("B" + gidR) : ("A" + gidR));
+  else gid = gidR;
 
   WriteCand cur;
 
@@ -400,8 +409,13 @@ void Sweeper::add(const I32Point& point, const std::string& gid, bool side,
 }
 
 // _____________________________________________________________________________
-void Sweeper::add(const I32Point& point, const std::string& gid, size_t subid,
+void Sweeper::add(const I32Point& point, const std::string& gidR, size_t subid,
                   bool side, WriteBatch& batch) const {
+  std::string gid;
+
+  if (_numSides != 1) gid = (side ? ("B" + gidR) : ("A" + gidR));
+  else gid = gidR;
+
   WriteCand cur;
 
   std::stringstream str;
@@ -1158,7 +1172,9 @@ RelStats Sweeper::sweep() {
 
         counts++;
 
-        fillBatch(&curBatch, &actives[((int)(cur->side) + 1) % _numSides], cur);
+        int sideB = ((int)(cur->side) + 1) % _numSides;
+
+        fillBatch(&curBatch, &actives[sideB], cur);
 
         if (curBatch.size() > batchSize) {
           checkPairs += curBatch.size();
@@ -1774,15 +1790,16 @@ std::tuple<bool, bool> Sweeper::check(const I32Point& a, const Line* b,
 // ____________________________________________________________________________
 void Sweeper::writeRelToBuf(size_t t, const std::string& a,
                             const std::string& b, const std::string& pred) {
+  size_t off = _numSides == 1 ? 0 : 1;
   memcpy(_outBuffers[t] + _outBufPos[t], _cfg.pairStart.c_str(),
          _cfg.pairStart.size());
   _outBufPos[t] += _cfg.pairStart.size();
-  memcpy(_outBuffers[t] + _outBufPos[t], a.c_str(), a.size());
-  _outBufPos[t] += a.size();
+  memcpy(_outBuffers[t] + _outBufPos[t], a.c_str() + off, a.size() - off);
+  _outBufPos[t] += a.size() - off;
   memcpy(_outBuffers[t] + _outBufPos[t], pred.c_str(), pred.size());
   _outBufPos[t] += pred.size();
-  memcpy(_outBuffers[t] + _outBufPos[t], b.c_str(), b.size());
-  _outBufPos[t] += b.size();
+  memcpy(_outBuffers[t] + _outBufPos[t], b.c_str() + off, b.size() - off);
+  _outBufPos[t] += b.size() - off;
   memcpy(_outBuffers[t] + _outBufPos[t], _cfg.pairEnd.c_str(),
          _cfg.pairEnd.size());
   _outBufPos[t] += _cfg.pairEnd.size();
@@ -1795,11 +1812,18 @@ void Sweeper::writeRel(size_t t, const std::string& a, const std::string& b,
 
   if (!_cfg.writeRelCb && _outMode == NONE) return;
 
+  size_t off = 0;
+
+  if (_numSides == 2) {
+    off = 1;
+    if (a[0] != 'A' || a[0] == b[0]) return;
+  }
+
   if (_cfg.writeRelCb) {
     _cfg.writeRelCb(t, a, b, pred);
   } else {
     size_t totSize = _cfg.pairStart.size() + a.size() + pred.size() + b.size() +
-                     _cfg.pairEnd.size();
+                     _cfg.pairEnd.size() - off - off;
 
     if (_outMode == BZ2) {
       if (_outBufPos[t] + totSize >= BUFFER_S_PAIRS) {
