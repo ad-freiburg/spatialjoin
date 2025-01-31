@@ -12,7 +12,7 @@ jobs:
       - name: update apt
         run: sudo apt update
       - name: install dependencies
-        run: sudo apt install -y cmake gcc g++
+        run: sudo apt install -y cmake gcc g++ libbz2-dev
       - name: cmake
         run: mkdir build && cd build && cmake ..
       - name: make
@@ -29,7 +29,7 @@ jobs:
       - name: update apt
         run: sudo apt update
       - name: install dependencies
-        run: sudo apt install -y cmake gcc g++
+        run: sudo apt install -y cmake gcc g++ libbz2-dev
       - name: cmake
         run: mkdir build && cd build && cmake ..
       - name: make
@@ -46,7 +46,7 @@ jobs:
       - name: update apt
         run: sudo apt update
       - name: install dependencies
-        run: sudo apt install -y cmake clang
+        run: sudo apt install -y cmake clang libbz2-dev
       - name: cmake
         run: mkdir build && cd build && cmake ..
         shell: bash
@@ -67,7 +67,7 @@ jobs:
       - name: update apt
         run: sudo apt update
       - name: install dependencies
-        run: sudo apt install -y cmake clang
+        run: sudo apt install -y cmake clang libbz2-dev
       - name: cmake
         run: mkdir build && cd build && cmake ..
         shell: bash
