@@ -162,8 +162,7 @@ void Sweeper::add(const I32Polygon& poly, const std::string& gidR, size_t subid,
                   bool side, WriteBatch& batch) const {
   std::string gid;
 
-  if (_numSides != 1) gid = (side ? ("B" + gidR) : ("A" + gidR));
-  else gid = gidR;
+  gid = (side ? ("B" + gidR) : ("A" + gidR));
 
   WriteCand cur;
   const auto& box = getBoundingBox(poly);
@@ -300,10 +299,7 @@ void Sweeper::add(const I32Line& line, const std::string& gidR, size_t subid,
                   bool side, WriteBatch& batch) const {
   if (line.size() < 2) return;
 
-  std::string gid;
-
-  if (_numSides != 1) gid = (side ? ("B" + gidR) : ("A" + gidR));
-  else gid = gidR;
+  std::string gid = (side ? ("B" + gidR) : ("A" + gidR));
 
   WriteCand cur;
 
@@ -411,10 +407,7 @@ void Sweeper::add(const I32Point& point, const std::string& gid, bool side,
 // _____________________________________________________________________________
 void Sweeper::add(const I32Point& point, const std::string& gidR, size_t subid,
                   bool side, WriteBatch& batch) const {
-  std::string gid;
-
-  if (_numSides != 1) gid = (side ? ("B" + gidR) : ("A" + gidR));
-  else gid = gidR;
+  std::string gid = (side ? ("B" + gidR) : ("A" + gidR));
 
   WriteCand cur;
 
@@ -1790,7 +1783,7 @@ std::tuple<bool, bool> Sweeper::check(const I32Point& a, const Line* b,
 // ____________________________________________________________________________
 void Sweeper::writeRelToBuf(size_t t, const std::string& a,
                             const std::string& b, const std::string& pred) {
-  size_t off = _numSides == 1 ? 0 : 1;
+  size_t off = 1;
   memcpy(_outBuffers[t] + _outBufPos[t], _cfg.pairStart.c_str(),
          _cfg.pairStart.size());
   _outBufPos[t] += _cfg.pairStart.size();
@@ -1812,15 +1805,14 @@ void Sweeper::writeRel(size_t t, const std::string& a, const std::string& b,
 
   if (!_cfg.writeRelCb && _outMode == NONE) return;
 
-  size_t off = 0;
+  size_t off = 1;
 
   if (_numSides == 2) {
-    off = 1;
     if (a[0] != 'A' || a[0] == b[0]) return;
   }
 
   if (_cfg.writeRelCb) {
-    _cfg.writeRelCb(t, a, b, pred);
+    _cfg.writeRelCb(t, a.c_str() + 1, b.c_str() + 1, pred.c_str());
   } else {
     size_t totSize = _cfg.pairStart.size() + a.size() + pred.size() + b.size() +
                      _cfg.pairEnd.size() - off - off;

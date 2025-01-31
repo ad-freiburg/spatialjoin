@@ -132,8 +132,8 @@ struct SweeperCfg {
   bool useFastSweepSkip;
   bool useInnerOuter;
   bool noGeometryChecks;
-  std::function<void(size_t t, const std::string& a, const std::string& b,
-                     const std::string& pred)>
+  std::function<void(size_t t, const char* a, const char* b,
+                     const char* pred)>
       writeRelCb;
   std::function<void(const std::string&)> logCb;
   std::function<void(const std::string&)> statsCb;
