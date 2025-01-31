@@ -374,12 +374,15 @@ int main(int, char**) {
            std::string::npos);
       TEST(res.find("$Brandenburg equals Brandenburg2$") == std::string::npos);
       TEST(res.find("$Brandenburg2 equals Brandenburg$") == std::string::npos);
-      TEST(res.find("$Brandenburg intersects Grenzpart$") != std::string::npos);
-      TEST(res.find("$Brandenburg covers Grenzpart$") != std::string::npos);
+      TEST(res.find("$Brandenburg intersects Grenzpart$") == std::string::npos);
+      TEST(res.find("$Grenzpart intersects Brandenburg$") != std::string::npos);
+      TEST(res.find("$Brandenburg covers Grenzpart$") == std::string::npos);
       TEST(res.find("$Brandenburg contains Grenzpart$") == std::string::npos);
 
-      TEST(res.find("$Brandenburg intersects Berlin$") != std::string::npos);
-      TEST(res.find("$Brandenburg touches Berlin$") != std::string::npos);
+      TEST(res.find("$Brandenburg intersects Berlin$") == std::string::npos);
+      TEST(res.find("$Berlin intersects Brandenburg$") != std::string::npos);
+      TEST(res.find("$Brandenburg touches Berlin$") == std::string::npos);
+      TEST(res.find("$Berlin touches Brandenburg$") != std::string::npos);
       TEST(res.find("$Brandenburg overlaps Berlin$") == std::string::npos);
       TEST(res.find("$Berlin touches Brandenburg$") != std::string::npos);
       TEST(res.find("$Berlin overlaps Brandenburg$") == std::string::npos);

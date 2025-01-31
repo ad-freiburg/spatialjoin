@@ -138,9 +138,12 @@ void Sweeper::add(const std::string& parent, const util::geo::I32Box& box,
 }
 
 // _____________________________________________________________________________
-void Sweeper::add(const std::string& parent, const util::geo::I32Box& box,
-                  const std::string& gid, size_t subid, bool side,
+void Sweeper::add(const std::string& parentR, const util::geo::I32Box& box,
+                  const std::string& gidR, size_t subid, bool side,
                   WriteBatch& batch) const {
+  std::string gid = (side ? ("B" + gidR) : ("A" + gidR));
+  std::string parent = (side ? ("B" + parentR) : ("A" + parentR));
+
   BoxVal boxl, boxr;
   boxl.side = side;
   boxr.side = side;
@@ -160,9 +163,7 @@ void Sweeper::add(const I32Polygon& poly, const std::string& gid, bool side,
 // _____________________________________________________________________________
 void Sweeper::add(const I32Polygon& poly, const std::string& gidR, size_t subid,
                   bool side, WriteBatch& batch) const {
-  std::string gid;
-
-  gid = (side ? ("B" + gidR) : ("A" + gidR));
+  std::string gid = (side ? ("B" + gidR) : ("A" + gidR));
 
   WriteCand cur;
   const auto& box = getBoundingBox(poly);
@@ -190,6 +191,7 @@ void Sweeper::add(const I32Polygon& poly, const std::string& gidR, size_t subid,
   }
 
   cur.subid = subid;
+  cur.gid = gid;
 
   if (poly.getInners().size() == 0 && poly.getOuter().size() < 10 &&
       subid == 0 && (!_cfg.useBoxIds || boxIds.front().first == 1)) {
