@@ -174,6 +174,91 @@ inline util::geo::I32MultiPolygon parseMultiPolygon(const char* c,
 }
 
 // _____________________________________________________________________________
+inline std::pair<util::geo::I32Collection, size_t> parseGeometryCollection(
+    const char* c) {
+  util::geo::I32Collection col;
+
+  c = strchr(c, '(');
+  if (!c) return {col, 0};
+  size_t numGeoms = 0;
+
+  do {
+    c++;
+    while (*c == ' ') c++;  // skip possible whitespace
+
+    if (memcmp(c, "POINT", 5) == 0) {
+      c += 5;
+      const char* end = strchr(c, ')');
+      const auto& point = parsePoint(c);
+
+      if (!end) break;
+
+      col.push_back(point);
+      numGeoms++;
+      c = const_cast<char*>(strchr(end, ','));
+    } else if (memcmp(c, "POLYGON", 7) == 0) {
+      c += 7;
+      const char* end = 0;
+      const auto& poly = parsePolygon(c, &end);
+
+      if (!end) break;
+      if (poly.getOuter().size() > 1) {
+        col.push_back(poly);
+        numGeoms++;
+      }
+      c = const_cast<char*>(strchr(end, ','));
+    } else if (memcmp(c, "LINESTRING", 10) == 0) {
+      c += 10;
+      const char* end = 0;
+      const auto& line = parseLineString(c, &end);
+
+      if (!end) break;
+      if (line.size() > 1) {
+        col.push_back(line);
+        numGeoms++;
+      }
+      c = const_cast<char*>(strchr(end, ','));
+    } else if (memcmp(c, "MULTIPOINT", 10) == 0) {
+      c += 10;
+      const char* end = 0;
+      const auto& line = parseLineString(c, &end);
+
+      if (!end) break;
+      if (line.size() > 0) {
+        col.push_back(util::geo::I32MultiPoint(std::move(line)));
+        numGeoms += line.size();
+      }
+      c = const_cast<char*>(strchr(end, ','));
+    } else if (memcmp(c, "MULTIPOLYGON", 12) == 0) {
+      c += 12;
+      const char* end = 0;
+      const auto& mp = parseMultiPolygon(c, &end);
+
+      if (!end) break;
+      if (mp.size()) {
+        col.push_back(mp);
+        numGeoms += mp.size();
+      }
+      c = const_cast<char*>(strchr(end, ','));
+    } else if (memcmp(c, "MULTILINESTRING", 15) == 0) {
+      c += 15;
+
+      const char* end = 0;
+      const auto& ml = parseMultiLineString(c, &end);
+
+      if (!end) break;
+      if (ml.size()) {
+        col.push_back(ml);
+        numGeoms += ml.size();
+      }
+      c = const_cast<char*>(strchr(end, ','));
+    }
+  } while (c && *c);
+
+  return {col, numGeoms};
+}
+
+// _____________________________________________________________________________
 inline void parseLine(char* c, size_t len, size_t gid, sj::Sweeper* sweeper,
                       sj::WriteBatch& batch, bool side) {
   char* idp = reinterpret_cast<char*>(strchr(c, '\t'));
@@ -251,86 +336,10 @@ inline void parseLine(char* c, size_t len, size_t gid, sj::Sweeper* sweeper,
   } else if (len > 18 && memcmp(c, "GEOMETRYCOLLECTION", 18) == 0) {
     c += 18;
 
-    c = strchr(c, '(');
-    if (!c) return;  // parse error
+    const auto& p = parseGeometryCollection(c);
+    const auto& col = p.first;
 
-    util::geo::I32Collection col;
-    size_t numGeoms = 0;
-
-    do {
-      c++;
-      while (*c == ' ') c++;  // skip possible whitespace
-
-      if (memcmp(c, "POINT", 5) == 0) {
-        c += 5;
-        const char* end = strchr(c, ')');
-        const auto& point = parsePoint(c);
-
-        if (!end) break;
-
-        col.push_back(point);
-        numGeoms++;
-        c = const_cast<char*>(strchr(end, ','));
-      } else if (memcmp(c, "POLYGON", 7) == 0) {
-        c += 7;
-        const char* end = 0;
-        const auto& poly = parsePolygon(c, &end);
-
-        if (!end) break;
-        if (poly.getOuter().size() > 1) {
-          col.push_back(poly);
-          numGeoms++;
-        }
-        c = const_cast<char*>(strchr(end, ','));
-      } else if (memcmp(c, "LINESTRING", 10) == 0) {
-        c += 10;
-        const char* end = 0;
-        const auto& line = parseLineString(c, &end);
-
-        if (!end) break;
-        if (line.size() > 1) {
-          col.push_back(line);
-          numGeoms++;
-        }
-        c = const_cast<char*>(strchr(end, ','));
-      } else if (memcmp(c, "MULTIPOINT", 10) == 0) {
-        c += 10;
-        const char* end = 0;
-        const auto& line = parseLineString(c, &end);
-
-        if (!end) break;
-        if (line.size() > 1) {
-          col.push_back(util::geo::I32MultiPoint(std::move(line)));
-          numGeoms += line.size();
-        }
-        c = const_cast<char*>(strchr(end, ','));
-      } else if (memcmp(c, "MULTIPOLYGON", 12) == 0) {
-        c += 12;
-        const char* end = 0;
-        const auto& mp = parseMultiPolygon(c, &end);
-
-        if (!end) break;
-        if (mp.size()) {
-          col.push_back(mp);
-          numGeoms += mp.size();
-        }
-        c = const_cast<char*>(strchr(end, ','));
-      } else if (memcmp(c, "MULTILINESTRING", 15) == 0) {
-        c += 15;
-
-        const char* end = 0;
-        const auto& ml = parseMultiLineString(c, &end);
-
-        if (!end) break;
-        if (ml.size()) {
-          col.push_back(ml);
-          numGeoms += ml.size();
-        }
-        c = const_cast<char*>(strchr(end, ','));
-      }
-    } while (c && *c);
-
-    size_t subId = numGeoms > 1 ? 1 : 0;
+    size_t subId = p.second > 1 ? 1 : 0;
 
     for (const auto& a : col) {
       if (a.getType() == 0) sweeper->add(a.getPoint(), id, subId, side, batch);
