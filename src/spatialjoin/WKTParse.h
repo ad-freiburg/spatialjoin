@@ -5,6 +5,8 @@
 #include "util/geo/Geo.h"
 #include "util/log/Log.h"
 
+namespace sj {
+
 struct ParseJob {
   std::string str;
   size_t line;
@@ -417,5 +419,6 @@ inline void parse(char* c, size_t size, std::string& dang, size_t* gid,
 
   if (curBatch.size()) jobs.add(std::move(curBatch));
 }
+}  // namespace sj
 
 #endif

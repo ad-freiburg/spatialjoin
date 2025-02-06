@@ -12,6 +12,8 @@
 #include "util/log/Log.h"
 
 using sj::Sweeper;
+using sj::ParseBatch;
+using sj::processQueue;
 using util::geo::DLine;
 using util::geo::DPoint;
 using util::geo::I32Line;

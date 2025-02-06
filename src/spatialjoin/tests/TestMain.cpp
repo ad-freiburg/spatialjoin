@@ -12,6 +12,8 @@
 #include "util/log/Log.h"
 
 using sj::Sweeper;
+using sj::ParseBatch;
+using sj::processQueue;
 
 size_t NUM_THREADS = 1;
 
