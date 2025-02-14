@@ -879,7 +879,8 @@ void Sweeper::flush() {
 #ifdef __unix__
   posix_fadvise(newFile, 0, 0, POSIX_FADV_SEQUENTIAL);
 #endif
-  r = util::externalSort(_file, newFile, sizeof(BoxVal), _curSweepId, _cfg.numThreads, boxCmp);
+  r = util::externalSort(_file, newFile, sizeof(BoxVal), _curSweepId,
+                         _cfg.numThreads, boxCmp);
 
   if (r < 0) {
     std::stringstream ss;
@@ -933,13 +934,13 @@ void Sweeper::sortCache() {
   // new caches
   GeometryCache<Point> _pointCacheNew(POINT_CACHE_SIZE, _cfg.numCacheThreads,
                                       _cache);
-  GeometryCache<SimpleLine> _simpleLineCacheNew(SIMPLE_LINE_CACHE_SIZE,
+  GeometryCache<SimpleLine> _simpleLineCacheNew(_cfg.geomCacheMaxSize,
                                                 _cfg.numCacheThreads, _cache);
-  GeometryCache<Line> _lineCacheNew(LINE_CACHE_SIZE, _cfg.numCacheThreads,
+  GeometryCache<Line> _lineCacheNew(_cfg.geomCacheMaxSize, _cfg.numCacheThreads,
                                     _cache);
-  GeometryCache<Area> _areaCacheNew(AREA_CACHE_SIZE, _cfg.numCacheThreads,
+  GeometryCache<Area> _areaCacheNew(_cfg.geomCacheMaxSize, _cfg.numCacheThreads,
                                     _cache);
-  GeometryCache<SimpleArea> _simpleAreaCacheNew(SIMPLE_AREA_CACHE_SIZE,
+  GeometryCache<SimpleArea> _simpleAreaCacheNew(_cfg.geomCacheMaxSize,
                                                 _cfg.numCacheThreads, _cache);
 
   int oldFile = _file;
@@ -2819,15 +2820,15 @@ void Sweeper::prepareOutputFiles() {
 // _____________________________________________________________________________
 void Sweeper::processQueue(size_t t) {
   try {
-  JobBatch batch;
-  while ((batch = _jobs.get()).size()) {
-    for (const auto& job : batch) {
-      if (job.multiOut.empty())
-        doCheck(job.boxVal, job.sweepVal, t);
-      else
-        multiOut(t, job.multiOut);
+    JobBatch batch;
+    while ((batch = _jobs.get()).size()) {
+      for (const auto& job : batch) {
+        if (job.multiOut.empty())
+          doCheck(job.boxVal, job.sweepVal, t);
+        else
+          multiOut(t, job.multiOut);
+      }
     }
-  }
   } catch (const std::runtime_error& e) {
     std::stringstream ss;
     ss << "libspatialjoin: " << e.what();

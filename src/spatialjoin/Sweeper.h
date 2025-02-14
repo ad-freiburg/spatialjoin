@@ -115,6 +115,7 @@ typedef std::vector<Job> JobBatch;
 struct SweeperCfg {
   size_t numThreads;
   size_t numCacheThreads;
+  size_t geomCacheMaxSize;
   std::string pairStart;
   std::string sepIsect;
   std::string sepContains;
@@ -148,10 +149,11 @@ static const size_t BUFFER_S_PAIRS = 1024 * 1024 * 10;
 static const size_t MAX_OUT_LINE_LENGTH = 1000;
 
 static const size_t POINT_CACHE_SIZE = 1000;
-static const size_t AREA_CACHE_SIZE = 10000;
-static const size_t SIMPLE_AREA_CACHE_SIZE = 10000;
-static const size_t LINE_CACHE_SIZE = 10000;
-static const size_t SIMPLE_LINE_CACHE_SIZE = 10000;
+
+// static const size_t AREA_CACHE_SIZE = 10000;
+// static const size_t SIMPLE_AREA_CACHE_SIZE = 10000;
+// static const size_t LINE_CACHE_SIZE = 10000;
+// static const size_t SIMPLE_LINE_CACHE_SIZE = 10000;
 
 class Sweeper {
  public:
@@ -160,10 +162,10 @@ class Sweeper {
       : _cfg(cfg),
         _obufpos(0),
         _pointCache(POINT_CACHE_SIZE, cfg.numCacheThreads, cache),
-        _areaCache(AREA_CACHE_SIZE, cfg.numCacheThreads, cache),
-        _simpleAreaCache(SIMPLE_AREA_CACHE_SIZE, cfg.numCacheThreads, cache),
-        _lineCache(LINE_CACHE_SIZE, cfg.numCacheThreads, cache),
-        _simpleLineCache(SIMPLE_LINE_CACHE_SIZE, cfg.numCacheThreads, cache),
+        _areaCache(cfg.geomCacheMaxSize, cfg.numCacheThreads, cache),
+        _simpleAreaCache(cfg.geomCacheMaxSize, cfg.numCacheThreads, cache),
+        _lineCache(cfg.geomCacheMaxSize, cfg.numCacheThreads, cache),
+        _simpleLineCache(cfg.geomCacheMaxSize, cfg.numCacheThreads, cache),
         _cache(cache),
         _out(out),
         _jobs(100) {

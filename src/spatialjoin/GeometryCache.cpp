@@ -29,6 +29,7 @@ std::shared_ptr<W> sj::GeometryCache<W>::get(size_t off, size_t desTid) const {
   // if in cache, move to front of list and return
   // splice only changes pointers in the linked list, no copying here
   _vals[tid].splice(_vals[tid].begin(), _vals[tid], it->second);
+
   return it->second->second;
 }
 

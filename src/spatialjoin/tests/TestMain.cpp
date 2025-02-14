@@ -49,7 +49,6 @@ std::string fullRun(const std::string& file, const sj::SweeperCfg& cfg) {
 
     delete[] buf;
 
-
     sweeper.flush();
 
     sweeper.sweep();
@@ -64,7 +63,7 @@ std::string fullRun(const std::string& file, const sj::SweeperCfg& cfg) {
   ss << ifs.rdbuf();
 
   ifs.close();
-	unlink(".resTmp");
+  unlink(".resTmp");
 
   return ss.str();
 }
@@ -72,67 +71,67 @@ std::string fullRun(const std::string& file, const sj::SweeperCfg& cfg) {
 // _____________________________________________________________________________
 int main(int, char**) {
   sj::SweeperCfg baseline{
-      NUM_THREADS, NUM_THREADS, "$",        " intersects ", " contains ",
-      " covers ",  " touches ", " equals ", " overlaps ",   " crosses ",
-      "$\n",       false,       false,      false,          false,
-      false,       false,       false,      false,          {},
-      {},          {},          {}};
+      NUM_THREADS,  NUM_THREADS, 1000,        "$",        " intersects ",
+      " contains ", " covers ",  " touches ", " equals ", " overlaps ",
+      " crosses ",  "$\n",       false,       false,      false,
+      false,        false,       false,       false,      false,
+      {},           {},          {},          {}};
 
-  sj::SweeperCfg all{NUM_THREADS,  NUM_THREADS, "$",         " intersects ",
-                     " contains ", " covers ",  " touches ", " equals ",
-                     " overlaps ", " crosses ", "$\n",       true,
-                     true,         true,        true,        true,
-                     true,         true,        false,       {},
-                     {},           {},          {}};
+  sj::SweeperCfg all{
+      NUM_THREADS,  NUM_THREADS, 1000,        "$",        " intersects ",
+      " contains ", " covers ",  " touches ", " equals ", " overlaps ",
+      " crosses ",  "$\n",       true,        true,       true,
+      true,         true,        true,        true,       false,
+      {},           {},          {},          {}};
 
   sj::SweeperCfg noSurfaceArea{
-      NUM_THREADS, NUM_THREADS, "$",        " intersects ", " contains ",
-      " covers ",  " touches ", " equals ", " overlaps ",   " crosses ",
-      "$\n",       true,        false,      true,           true,
-      true,        true,        true,       false,          {},
-      {},          {},          {}};
+      NUM_THREADS,  NUM_THREADS, 1000,        "$",        " intersects ",
+      " contains ", " covers ",  " touches ", " equals ", " overlaps ",
+      " crosses ",  "$\n",       true,        false,      true,
+      true,         true,        true,        true,       false,
+      {},           {},          {},          {}};
 
   sj::SweeperCfg noBoxIds{
-      NUM_THREADS, NUM_THREADS, "$",        " intersects ", " contains ",
-      " covers ",  " touches ", " equals ", " overlaps ",   " crosses ",
-      "$\n",       false,       true,       true,           true,
-      true,        true,        true,       false,          {},
-      {},          {},          {}};
+      NUM_THREADS,  NUM_THREADS, 1000,        "$",        " intersects ",
+      " contains ", " covers ",  " touches ", " equals ", " overlaps ",
+      " crosses ",  "$\n",       false,       true,       true,
+      true,         true,        true,        true,       false,
+      {},           {},          {},          {}};
 
-  sj::SweeperCfg noObb{NUM_THREADS,  NUM_THREADS, "$",         " intersects ",
-                       " contains ", " covers ",  " touches ", " equals ",
-                       " overlaps ", " crosses ", "$\n",       true,
-                       true,         false,       true,        true,
-                       true,         true,        false,       {},
-                       {},           {},          {}};
+  sj::SweeperCfg noObb{
+      NUM_THREADS,  NUM_THREADS, 1000,        "$",        " intersects ",
+      " contains ", " covers ",  " touches ", " equals ", " overlaps ",
+      " crosses ",  "$\n",       true,        true,       false,
+      true,         true,        true,        true,       false,
+      {},           {},          {},          {}};
 
   sj::SweeperCfg noCutouts{
-      NUM_THREADS, NUM_THREADS, "$",        " intersects ", " contains ",
-      " covers ",  " touches ", " equals ", " overlaps ",   " crosses ",
-      "$\n",       true,        true,       true,           false,
-      true,        true,        true,       false,          {},
-      {},          {},          {}};
+      NUM_THREADS,  NUM_THREADS, 1000,        "$",        " intersects ",
+      " contains ", " covers ",  " touches ", " equals ", " overlaps ",
+      " crosses ",  "$\n",       true,        true,       true,
+      false,        true,        true,        true,       false,
+      {},           {},          {},          {}};
 
   sj::SweeperCfg noDiagBox{
-      NUM_THREADS, NUM_THREADS, "$",        " intersects ", " contains ",
-      " covers ",  " touches ", " equals ", " overlaps ",   " crosses ",
-      "$\n",       true,        true,       true,           true,
-      false,       true,        true,       false,          {},
-      {},          {},          {}};
+      NUM_THREADS,  NUM_THREADS, 1000,        "$",        " intersects ",
+      " contains ", " covers ",  " touches ", " equals ", " overlaps ",
+      " crosses ",  "$\n",       true,        true,       true,
+      true,         false,       true,        true,       false,
+      {},           {},          {},          {}};
 
   sj::SweeperCfg noFastSweep{
-      NUM_THREADS, NUM_THREADS, "$",        " intersects ", " contains ",
-      " covers ",  " touches ", " equals ", " overlaps ",   " crosses ",
-      "$\n",       true,        true,       true,           true,
-      true,        false,       true,       false,          {},
-      {},          {},          {}};
+      NUM_THREADS,  NUM_THREADS, 1000,        "$",        " intersects ",
+      " contains ", " covers ",  " touches ", " equals ", " overlaps ",
+      " crosses ",  "$\n",       true,        true,       true,
+      true,         true,        false,       true,       false,
+      {},           {},          {},          {}};
 
   sj::SweeperCfg noInnerOuter{
-      NUM_THREADS, NUM_THREADS, "$",        " intersects ", " contains ",
-      " covers ",  " touches ", " equals ", " overlaps ",   " crosses ",
-      "$\n",       true,        true,       true,           true,
-      true,        true,        false,      false,          {},
-      {},          {},          {}};
+      NUM_THREADS,  NUM_THREADS, 1000,        "$",        " intersects ",
+      " contains ", " covers ",  " touches ", " equals ", " overlaps ",
+      " crosses ",  "$\n",       true,        true,       true,
+      true,         true,        true,        false,      false,
+      {},           {},          {},          {}};
 
   std::vector<sj::SweeperCfg> cfgs{baseline,  all,         noSurfaceArea,
                                    noBoxIds,  noObb,       noCutouts,
@@ -408,7 +407,8 @@ int main(int, char**) {
     }
 
     {
-      auto res = fullRun("../src/spatialjoin/tests/datasets/collectiontests", cfg);
+      auto res =
+          fullRun("../src/spatialjoin/tests/datasets/collectiontests", cfg);
 
       TEST(res.find("$28 covers 27$") != std::string::npos);
 

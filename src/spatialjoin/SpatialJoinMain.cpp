@@ -137,6 +137,7 @@ int main(int argc, char** argv) {
 
   size_t numThreads = NUM_THREADS;
   size_t numCaches = NUM_THREADS;
+  size_t geomCacheMaxSize = 10000;
 
   for (int i = 1; i < argc; i++) {
     std::string cur = argv[i];
@@ -172,6 +173,8 @@ int main(int argc, char** argv) {
           state = 12;
         } else if (cur == "--num-threads") {
           state = 13;
+        } else if (cur == "--cache-max-size") {
+          state = 14;
         } else if (cur == "--no-box-ids") {
           useBoxIds = false;
         } else if (cur == "--no-surface-area") {
@@ -247,6 +250,10 @@ int main(int argc, char** argv) {
         numThreads = atoi(cur.c_str());
         state = 0;
         break;
+      case 14:
+        geomCacheMaxSize = atoi(cur.c_str());
+        state = 0;
+        break;
     }
   }
 
@@ -258,6 +265,7 @@ int main(int argc, char** argv) {
 
   Sweeper sweeper({numThreads,
                    numCaches,
+                   geomCacheMaxSize,
                    prefix,
                    intersects,
                    contains,
