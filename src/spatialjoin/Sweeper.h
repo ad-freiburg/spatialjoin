@@ -52,6 +52,7 @@ struct BoxVal {
   double areaOrLen;
   util::geo::I32Box b45;
   bool side;
+  bool large;
 };
 
 struct WriteCand {
@@ -81,14 +82,17 @@ inline bool operator==(const BoxVal& a, const BoxVal& b) {
 }
 
 struct SweepVal {
-  SweepVal(size_t id, GeomType type) : id(id), type(type) {}
-  SweepVal(size_t id, GeomType type, util::geo::I32Box b45, bool side)
-      : id(id), type(type), b45(b45), side(side) {}
+  SweepVal(size_t id, GeomType type)
+      : id(id), type(type), side(false), large(false) {}
+  SweepVal(size_t id, GeomType type, util::geo::I32Box b45, bool side,
+           bool large)
+      : id(id), type(type), b45(b45), side(side), large(large) {}
   SweepVal() : id(0), type(POLYGON) {}
   size_t id : 60;
   GeomType type : 3;
   util::geo::I32Box b45;
   bool side;
+  bool large;
 };
 
 inline bool operator==(const SweepVal& a, const SweepVal& b) {
@@ -133,8 +137,7 @@ struct SweeperCfg {
   bool useFastSweepSkip;
   bool useInnerOuter;
   bool noGeometryChecks;
-  std::function<void(size_t t, const char* a, const char* b,
-                     const char* pred)>
+  std::function<void(size_t t, const char* a, const char* b, const char* pred)>
       writeRelCb;
   std::function<void(const std::string&)> logCb;
   std::function<void(const std::string&)> statsCb;
@@ -149,6 +152,10 @@ static const size_t BUFFER_S_PAIRS = 1024 * 1024 * 10;
 static const size_t MAX_OUT_LINE_LENGTH = 1000;
 
 static const size_t POINT_CACHE_SIZE = 1000;
+
+// only use large geom cache for extreme geometries
+static const size_t GEOM_LARGENESS_THRESHOLD = 1024 * 1024 * 1024;
+;
 
 // static const size_t AREA_CACHE_SIZE = 10000;
 // static const size_t SIMPLE_AREA_CACHE_SIZE = 10000;
@@ -242,9 +249,9 @@ class Sweeper {
   void add(const util::geo::I32Point& a, const std::string& gid, size_t subid,
            bool side, WriteBatch& batch) const;
   void add(const util::geo::I32MultiPoint& a, const std::string& gid, size_t,
-             bool side, WriteBatch& batch) const;
-  void add(const util::geo::I32MultiPoint& a, const std::string& gid,
-             bool side, WriteBatch& batch) const;
+           bool side, WriteBatch& batch) const;
+  void add(const util::geo::I32MultiPoint& a, const std::string& gid, bool side,
+           WriteBatch& batch) const;
 
   void add(const std::string& a, const util::geo::I32Box& box,
            const std::string& gid, bool side, WriteBatch& batch) const;
@@ -257,7 +264,6 @@ class Sweeper {
   void flush();
 
   RelStats sweep();
-  void sortCache();
   void refDuplicates();
 
   size_t numElements() const { return _curSweepId / 2; }

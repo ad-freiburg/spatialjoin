@@ -86,8 +86,6 @@ void printHelp(int argc, char** argv) {
       << std::setw(41) << "  --use-inner-outer"
       << "(experimental) use inner/outer geometries\n\n"
       << std::setfill(' ') << std::left << "Misc:\n"
-      << std::setw(41) << "  --pre-sort-cache"
-      << "sort cache by leftmost X coordinates for higher locality\n"
       << std::setw(41)
       << "  --num-threads (default: " + std::to_string(NUM_THREADS) + ")"
       << "number of threads for geometric computation\n"
@@ -132,8 +130,6 @@ int main(int argc, char** argv) {
   bool useFastSweepSkip = true;
   bool useInnerOuter = false;
   bool noGeometryChecks = false;
-
-  bool preSortCache = false;
 
   size_t numThreads = NUM_THREADS;
   size_t numCaches = NUM_THREADS;
@@ -191,8 +187,6 @@ int main(int argc, char** argv) {
           useFastSweepSkip = false;
         } else if (cur == "--use-inner-outer") {
           useInnerOuter = true;
-        } else if (cur == "--pre-sort-cache") {
-          preSortCache = true;
         } else {
           std::cerr << "Unknown option '" << cur << "', see -h" << std::endl;
           exit(1);
@@ -309,14 +303,6 @@ int main(int argc, char** argv) {
   sweeper.flush();
 
   LOGTO(INFO, std::cerr) << "done (" << TOOK(ts) / 1000000000.0 << "s).";
-
-  if (preSortCache) {
-    ts = TIME();
-    LOGTO(INFO, std::cerr) << "Pre-sorting cache...";
-    sweeper.sortCache();
-    sweeper.flush();
-    LOGTO(INFO, std::cerr) << "done (" << TOOK(ts) / 1000000000.0 << "s).";
-  }
 
   LOGTO(INFO, std::cerr) << "Sweeping...";
   ts = TIME();

@@ -9,21 +9,32 @@
 #include "GeometryCache.h"
 #include "util/geo/Geo.h"
 
+const static size_t MAX_MEM_CACHE_SIZE = 1 * 1024 * 1024 * 1024l;
+
 // ____________________________________________________________________________
 template <typename W>
-std::shared_ptr<W> sj::GeometryCache<W>::get(size_t off, size_t desTid) const {
-  size_t tid = desTid % _numThreads;
+std::shared_ptr<W> sj::GeometryCache<W>::get(size_t off, ssize_t desTid) const {
+  size_t tid;
+
+  if (_inMemory) {
+    // completely circumvent cache system
+    return std::make_shared<W>(_memStore.at(off));
+  } else if (desTid == -1) {
+    // special cache for large geometries
+    tid = _numThreads;
+  } else {
+    tid = desTid % _numThreads;
+  }
 
   std::unique_lock<std::mutex> lock(_mutexes[tid]);
 
-  _accessCount[tid]++;
-
   // check if value is in cache
   auto it = _idMap[tid].find(off);
+
   if (it == _idMap[tid].end()) {
     // if not, load, cache and return
-    const auto& ret = getFromDisk(off, tid);
-    return cache(off, ret, tid);
+    const auto& val = getFrom(off, _geomsFReads[tid]);
+    return cache(off, val, tid);
   }
 
   // if in cache, move to front of list and return
@@ -36,8 +47,7 @@ std::shared_ptr<W> sj::GeometryCache<W>::get(size_t off, size_t desTid) const {
 // ____________________________________________________________________________
 template <typename W>
 std::shared_ptr<W> sj::GeometryCache<W>::cache(size_t off, const W& val,
-                                               size_t desTid) const {
-  size_t tid = desTid % _numThreads;
+                                               size_t tid) const {
   // push value to front
   _vals[tid].push_front({off, std::make_shared<W>(val)});
 
@@ -56,215 +66,187 @@ std::shared_ptr<W> sj::GeometryCache<W>::cache(size_t off, const W& val,
 
 // ____________________________________________________________________________
 template <>
-sj::SimpleLine sj::GeometryCache<sj::SimpleLine>::getFromDisk(
-    size_t off, size_t desTid) const {
-  size_t tid = desTid % _numThreads;
-  _diskAccessCount[tid]++;
+sj::SimpleLine sj::GeometryCache<sj::SimpleLine>::getFrom(
+    size_t off, std::istream& str) const {
   sj::SimpleLine ret;
 
-  _geomsFReads[tid].seekg(off);
+  str.seekg(off);
 
   // geom
-  _geomsFReads[tid].read(reinterpret_cast<char*>(&ret.a),
-                         sizeof(util::geo::I32Point));
-  _geomsFReads[tid].read(reinterpret_cast<char*>(&ret.b),
-                         sizeof(util::geo::I32Point));
+  str.read(reinterpret_cast<char*>(&ret.a), sizeof(util::geo::I32Point));
+  str.read(reinterpret_cast<char*>(&ret.b), sizeof(util::geo::I32Point));
 
   // id
   uint16_t len;
-  _geomsFReads[tid].read(reinterpret_cast<char*>(&len), sizeof(uint16_t));
+  str.read(reinterpret_cast<char*>(&len), sizeof(uint16_t));
   ret.id.resize(len);
-  _geomsFReads[tid].read(reinterpret_cast<char*>(&ret.id[0]),
-                         len * sizeof(char));
+  str.read(reinterpret_cast<char*>(&ret.id[0]), len * sizeof(char));
 
   return ret;
 }
 
 // ____________________________________________________________________________
 template <>
-sj::Point sj::GeometryCache<sj::Point>::getFromDisk(size_t off,
-                                                    size_t desTid) const {
-  size_t tid = desTid % _numThreads;
-  _diskAccessCount[tid]++;
+sj::Point sj::GeometryCache<sj::Point>::getFrom(size_t off,
+                                                std::istream& str) const {
   sj::Point ret;
 
-  _geomsFReads[tid].seekg(off);
+  str.seekg(off);
 
   // id
   uint16_t len;
-  _geomsFReads[tid].read(reinterpret_cast<char*>(&len), sizeof(uint16_t));
+  str.read(reinterpret_cast<char*>(&len), sizeof(uint16_t));
   ret.id.resize(len);
-  _geomsFReads[tid].read(reinterpret_cast<char*>(&ret.id[0]),
-                         len * sizeof(char));
+  str.read(reinterpret_cast<char*>(&ret.id[0]), len * sizeof(char));
 
   // sub id
-  _geomsFReads[tid].read(reinterpret_cast<char*>(&ret.subId), sizeof(uint16_t));
+  str.read(reinterpret_cast<char*>(&ret.subId), sizeof(uint16_t));
 
   return ret;
 }
 
 // ____________________________________________________________________________
 template <>
-sj::SimpleArea sj::GeometryCache<sj::SimpleArea>::getFromDisk(
-    size_t off, size_t desTid) const {
-  size_t tid = desTid % _numThreads;
-  _diskAccessCount[tid]++;
+sj::SimpleArea sj::GeometryCache<sj::SimpleArea>::getFrom(
+    size_t off, std::istream& str) const {
   sj::SimpleArea ret;
 
-  _geomsFReads[tid].seekg(off);
+  str.seekg(off);
 
   // geom
   uint32_t size;
-  _geomsFReads[tid].read(reinterpret_cast<char*>(&size), sizeof(uint32_t));
+  str.read(reinterpret_cast<char*>(&size), sizeof(uint32_t));
   ret.geom.resize(size);
-  _geomsFReads[tid].read(reinterpret_cast<char*>(&ret.geom[0]),
-                         size * sizeof(util::geo::I32Point));
+  str.read(reinterpret_cast<char*>(&ret.geom[0]),
+           size * sizeof(util::geo::I32Point));
 
   // id
   uint16_t len;
-  _geomsFReads[tid].read(reinterpret_cast<char*>(&len), sizeof(uint16_t));
+  str.read(reinterpret_cast<char*>(&len), sizeof(uint16_t));
   ret.id.resize(len);
-  _geomsFReads[tid].read(reinterpret_cast<char*>(&ret.id[0]),
-                         len * sizeof(char));
+  str.read(reinterpret_cast<char*>(&ret.id[0]), len * sizeof(char));
 
   return ret;
 }
 
 // ____________________________________________________________________________
 template <>
-sj::Line sj::GeometryCache<sj::Line>::getFromDisk(size_t off,
-                                                  size_t desTid) const {
-  size_t tid = desTid % _numThreads;
-  _diskAccessCount[tid]++;
+sj::Line sj::GeometryCache<sj::Line>::getFrom(size_t off,
+                                              std::istream& str) const {
   sj::Line ret;
 
-  _geomsFReads[tid].seekg(off);
+  str.seekg(off);
 
   // geom
-  readLine(_geomsFReads[tid], ret.geom);
+  readLine(str, ret.geom);
 
   // envelope
-  _geomsFReads[tid].read(reinterpret_cast<char*>(&ret.box),
-                         sizeof(util::geo::I32Box));
+  str.read(reinterpret_cast<char*>(&ret.box), sizeof(util::geo::I32Box));
 
   // id
   uint16_t len;
-  _geomsFReads[tid].read(reinterpret_cast<char*>(&len), sizeof(uint16_t));
+  str.read(reinterpret_cast<char*>(&len), sizeof(uint16_t));
   ret.id.resize(len);
-  _geomsFReads[tid].read(reinterpret_cast<char*>(&ret.id[0]),
-                         len * sizeof(char));
+  str.read(reinterpret_cast<char*>(&ret.id[0]), len * sizeof(char));
 
   // sub id
-  _geomsFReads[tid].read(reinterpret_cast<char*>(&ret.subId), sizeof(uint16_t));
+  str.read(reinterpret_cast<char*>(&ret.subId), sizeof(uint16_t));
 
   // length
-  _geomsFReads[tid].read(reinterpret_cast<char*>(&ret.length), sizeof(double));
+  str.read(reinterpret_cast<char*>(&ret.length), sizeof(double));
 
   // boxIds
   uint32_t numBoxIds;
-  _geomsFReads[tid].read(reinterpret_cast<char*>(&numBoxIds), sizeof(uint32_t));
+  str.read(reinterpret_cast<char*>(&numBoxIds), sizeof(uint32_t));
   ret.boxIds.resize(numBoxIds);
   if (numBoxIds > 0) {
-    _geomsFReads[tid].read(reinterpret_cast<char*>(&ret.boxIds[0]),
-                           sizeof(sj::boxids::BoxId) * numBoxIds);
+    str.read(reinterpret_cast<char*>(&ret.boxIds[0]),
+             sizeof(sj::boxids::BoxId) * numBoxIds);
   }
 
   // cutouts
   uint32_t numCutouts;
-  _geomsFReads[tid].read(reinterpret_cast<char*>(&numCutouts),
-                         sizeof(uint32_t));
+  str.read(reinterpret_cast<char*>(&numCutouts), sizeof(uint32_t));
 
   for (size_t i = 0; i < numCutouts; i++) {
     int32_t boxid, cutout;
-    _geomsFReads[tid].read(reinterpret_cast<char*>(&boxid), sizeof(int32_t));
-    _geomsFReads[tid].read(reinterpret_cast<char*>(&cutout), sizeof(int32_t));
+    str.read(reinterpret_cast<char*>(&boxid), sizeof(int32_t));
+    str.read(reinterpret_cast<char*>(&cutout), sizeof(int32_t));
     ret.cutouts[boxid] = cutout;
   }
 
   // OBB
-  readPoly(_geomsFReads[tid], ret.obb);
+  readPoly(str, ret.obb);
 
   return ret;
 }
 
 // ____________________________________________________________________________
 template <>
-sj::Area sj::GeometryCache<sj::Area>::getFromDisk(size_t off,
-                                                  size_t desTid) const {
-  size_t tid = desTid % _numThreads;
-  _diskAccessCount[tid]++;
+sj::Area sj::GeometryCache<sj::Area>::getFrom(size_t off,
+                                              std::istream& str) const {
   sj::Area ret;
 
-  _geomsFReads[tid].seekg(off);
+  str.seekg(off);
 
   // geom
-  readPoly(_geomsFReads[tid], ret.geom);
+  readPoly(str, ret.geom);
 
   // envelope
-  _geomsFReads[tid].read(reinterpret_cast<char*>(&ret.box),
-                         sizeof(util::geo::I32Box));
+  str.read(reinterpret_cast<char*>(&ret.box), sizeof(util::geo::I32Box));
 
   // id
   uint16_t len;
-  _geomsFReads[tid].read(reinterpret_cast<char*>(&len), sizeof(uint16_t));
+  str.read(reinterpret_cast<char*>(&len), sizeof(uint16_t));
   ret.id.resize(len);
-  _geomsFReads[tid].read(reinterpret_cast<char*>(&ret.id[0]),
-                         len * sizeof(char));
+  str.read(reinterpret_cast<char*>(&ret.id[0]), len * sizeof(char));
 
   // sub id
-  _geomsFReads[tid].read(reinterpret_cast<char*>(&ret.subId), sizeof(uint16_t));
+  str.read(reinterpret_cast<char*>(&ret.subId), sizeof(uint16_t));
 
   // area
-  _geomsFReads[tid].read(reinterpret_cast<char*>(&ret.area), sizeof(double));
+  str.read(reinterpret_cast<char*>(&ret.area), sizeof(double));
 
   // outer area
-  _geomsFReads[tid].read(reinterpret_cast<char*>(&ret.outerArea),
-                         sizeof(double));
+  str.read(reinterpret_cast<char*>(&ret.outerArea), sizeof(double));
 
   // boxIds
   uint32_t numBoxIds;
-  _geomsFReads[tid].read(reinterpret_cast<char*>(&numBoxIds), sizeof(uint32_t));
+  str.read(reinterpret_cast<char*>(&numBoxIds), sizeof(uint32_t));
   ret.boxIds.resize(numBoxIds);
   if (numBoxIds > 0) {
-    _geomsFReads[tid].read(reinterpret_cast<char*>(&ret.boxIds[0]),
-                           sizeof(sj::boxids::BoxId) * numBoxIds);
+    str.read(reinterpret_cast<char*>(&ret.boxIds[0]),
+             sizeof(sj::boxids::BoxId) * numBoxIds);
   }
 
   // cutouts
   uint32_t numCutouts;
-  _geomsFReads[tid].read(reinterpret_cast<char*>(&numCutouts),
-                         sizeof(uint32_t));
+  str.read(reinterpret_cast<char*>(&numCutouts), sizeof(uint32_t));
 
   for (size_t i = 0; i < numCutouts; i++) {
     int32_t boxid, cutout;
-    _geomsFReads[tid].read(reinterpret_cast<char*>(&boxid), sizeof(int32_t));
-    _geomsFReads[tid].read(reinterpret_cast<char*>(&cutout), sizeof(int32_t));
+    str.read(reinterpret_cast<char*>(&boxid), sizeof(int32_t));
+    str.read(reinterpret_cast<char*>(&cutout), sizeof(int32_t));
     ret.cutouts[boxid] = cutout;
   }
 
   // OBB
-  readPoly(_geomsFReads[tid], ret.obb);
+  readPoly(str, ret.obb);
 
   // simplified inner
-  readPoly(_geomsFReads[tid], ret.inner);
+  readPoly(str, ret.inner);
 
   if (!ret.inner.empty()) {
-    _geomsFReads[tid].read(reinterpret_cast<char*>(&ret.innerBox),
-                           sizeof(util::geo::I32Box));
-
-    _geomsFReads[tid].read(reinterpret_cast<char*>(&ret.innerOuterArea),
-                           sizeof(double));
+    str.read(reinterpret_cast<char*>(&ret.innerBox), sizeof(util::geo::I32Box));
+    str.read(reinterpret_cast<char*>(&ret.innerOuterArea), sizeof(double));
   }
 
   // simplified outer
-  readPoly(_geomsFReads[tid], ret.outer);
+  readPoly(str, ret.outer);
 
   if (!ret.outer.empty()) {
-    _geomsFReads[tid].read(reinterpret_cast<char*>(&ret.outerBox),
-                           sizeof(util::geo::I32Box));
-
-    _geomsFReads[tid].read(reinterpret_cast<char*>(&ret.outerOuterArea),
-                           sizeof(double));
+    str.read(reinterpret_cast<char*>(&ret.outerBox), sizeof(util::geo::I32Box));
+    str.read(reinterpret_cast<char*>(&ret.outerOuterArea), sizeof(double));
   }
 
   return ret;
@@ -305,9 +287,29 @@ size_t sj::GeometryCache<W>::add(const W& val) {
 template <typename W>
 size_t sj::GeometryCache<W>::add(const std::string& raw) {
   size_t ret = _geomsOffset;
+  _geomsOffset += raw.size();
+
+  if (_inMemory) {
+    // cache for later use
+    std::istringstream ss(raw);
+    const auto& val = getFrom(0, ss);
+    _memStore[ret] = val;
+
+    if (_geomsOffset > MAX_MEM_CACHE_SIZE) {
+      _inMemory = false;
+
+      for (const auto& val : _memStore) {
+        writeTo(val.second, _geomsF);
+      }
+
+      // clear mem store
+      _memStore = {};
+    }
+
+    return ret;
+  }
 
   _geomsF.write(raw.c_str(), raw.size());
-  _geomsOffset += raw.size();
 
   return ret;
 }
@@ -519,7 +521,7 @@ void sj::GeometryCache<W>::flush() {
 
 // ____________________________________________________________________________
 template <typename W>
-void sj::GeometryCache<W>::readPoly(std::fstream& str,
+void sj::GeometryCache<W>::readPoly(std::istream& str,
                                     util::geo::I32XSortedPolygon& ret) const {
   double maxSegLen;
   str.read(reinterpret_cast<char*>(&maxSegLen), sizeof(double));
@@ -632,7 +634,7 @@ size_t sj::GeometryCache<W>::writePoly(const util::geo::I32XSortedPolygon& geom,
 
 // ____________________________________________________________________________
 template <typename W>
-void sj::GeometryCache<W>::readLine(std::fstream& str,
+void sj::GeometryCache<W>::readLine(std::istream& str,
                                     util::geo::I32XSortedLine& ret) const {
   double maxSegLen;
   str.read(reinterpret_cast<char*>(&maxSegLen), sizeof(double));

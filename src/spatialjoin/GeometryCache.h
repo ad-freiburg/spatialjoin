@@ -124,14 +124,11 @@ class GeometryCache {
       : _maxSize(maxSize),
         _numThreads(numthreads),
         _dir(dir),
-        _mutexes(numthreads) {
-    _geomsFReads.resize(numthreads);
-    _geomsFReadsBuffs.resize(numthreads);
-    _accessCount.resize(numthreads);
-    _diskAccessCount.resize(numthreads);
+        _mutexes(numthreads + 1) {
+    _geomsFReads.resize(numthreads + 1);
 
-    _vals.resize(numthreads);
-    _idMap.resize(numthreads);
+    _vals.resize(numthreads + 1);
+    _idMap.resize(numthreads + 1);
 
     _fName = getFName();
 
@@ -140,9 +137,6 @@ class GeometryCache {
 
     for (size_t i = 0; i < _geomsFReads.size(); i++) {
       _geomsFReads[i].open(_fName, std::ios::in | std::ios::binary);
-      // _geomsFReadsBuffs[i].resize(READ_BUFF_SIZE);
-      // _geomsFReads[i].rdbuf()->pubsetbuf(&_geomsFReadsBuffs[i][0],
-      // READ_BUFF_SIZE);
     }
     unlink(_fName.c_str());
   }
@@ -158,8 +152,8 @@ class GeometryCache {
   size_t add(const std::string& raw);
   static size_t writeTo(const W& val, std::ostream& str);
 
-  std::shared_ptr<W> get(size_t off, size_t tid) const;
-  W getFromDisk(size_t off, size_t tid) const;
+  std::shared_ptr<W> get(size_t off, ssize_t tid) const;
+  W getFrom(size_t off, std::istream& str) const;
   std::shared_ptr<W> cache(size_t off, const W& val, size_t tid) const;
 
   std::shared_ptr<W> get(size_t off) const { return get(off, 0); }
@@ -168,8 +162,6 @@ class GeometryCache {
 
   GeometryCache& operator=(GeometryCache&& other) {
     other._geomsF.flush();
-    _accessCount = std::move(other._accessCount);
-    _diskAccessCount = std::move(other._diskAccessCount);
     _geomsF = std::move(other._geomsF);
     _geomsFReads = std::move(other._geomsFReads);
     _geomsOffset = other._geomsOffset;
@@ -186,22 +178,20 @@ class GeometryCache {
 
  private:
   std::string getFName() const;
-  void readLine(std::fstream& str, util::geo::I32XSortedLine& ret) const;
-  static size_t writeLine(const util::geo::I32XSortedLine& ret, std::ostream& str);
+  void readLine(std::istream& str, util::geo::I32XSortedLine& ret) const;
+  static size_t writeLine(const util::geo::I32XSortedLine& ret,
+                          std::ostream& str);
 
-  void readPoly(std::fstream& str, util::geo::I32XSortedPolygon& ret) const;
-  static size_t writePoly(const util::geo::I32XSortedPolygon& ret, std::ostream& str);
+  void readPoly(std::istream& str, util::geo::I32XSortedPolygon& ret) const;
+  static size_t writePoly(const util::geo::I32XSortedPolygon& ret,
+                          std::ostream& str);
 
-  void readMultiPoly(std::fstream& str,
+  void readMultiPoly(std::istream& str,
                      util::geo::I32XSortedMultiPolygon& ret) const;
   void writeMultiPoly(const util::geo::I32XSortedMultiPolygon& ret);
 
-  mutable std::vector<size_t> _accessCount;
-  mutable std::vector<size_t> _diskAccessCount;
-
   mutable std::fstream _geomsF;
   mutable std::vector<std::fstream> _geomsFReads;
-  mutable std::vector<std::vector<char>> _geomsFReadsBuffs;
   size_t _geomsOffset = 0;
 
   mutable std::vector<std::list<std::pair<size_t, std::shared_ptr<W>>>> _vals;
@@ -213,6 +203,9 @@ class GeometryCache {
   size_t _maxSize, _numThreads;
   std::string _dir;
   std::string _fName;
+
+  std::map<size_t, W> _memStore;
+  bool _inMemory = true;
 
   mutable std::vector<std::mutex> _mutexes;
 };
