@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <cassert>
+#include <cmath>
 #include <climits>
 #include <cstdio>
 #include <cstdlib>
@@ -3113,4 +3114,34 @@ bool Sweeper::refRelated(const std::string& a, const std::string& b) const {
   if (j != _refs.end() && j->second.find(a) != j->second.end()) return true;
 
   return false;
+}
+
+// _____________________________________________________________________________
+std::string Sweeper::intToBase126(uint64_t id) {
+  if (id == 0) return std::string("\1");
+
+  std::string ret;
+  ret.reserve(::log(id) / ::log(126) + 1);
+
+  div_t d = {id, 0};
+  uint64_t pos = 126;
+
+  do {
+    d = div(d.quot, pos);
+    ret.push_back(d.rem + 1);  // avoid 0 bytes, although std::string allows it
+    pos *= 126;
+  } while (d.quot);
+
+  return ret;
+}
+
+// _____________________________________________________________________________
+uint64_t Sweeper::base126ToInt(const std::string& id) {
+  uint64_t ret = 0;
+  uint64_t pos = 1;
+  for (size_t i = 0; i < id.size(); i++) {
+    ret += (id[i] - 1) * pos;
+    pos *= 126;
+  }
+  return ret;
 }

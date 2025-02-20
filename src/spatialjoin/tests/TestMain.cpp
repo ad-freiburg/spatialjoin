@@ -70,6 +70,10 @@ std::string fullRun(const std::string& file, const sj::SweeperCfg& cfg) {
 
 // _____________________________________________________________________________
 int main(int, char**) {
+  for (uint64_t i = 0; i < 9999; i++) {
+    TEST(i == Sweeper::base126ToInt(Sweeper::intToBase126(i)));
+  }
+
   sj::SweeperCfg baseline{
       NUM_THREADS,  NUM_THREADS, 1000,        "$",        " intersects ",
       " contains ", " covers ",  " touches ", " equals ", " overlaps ",

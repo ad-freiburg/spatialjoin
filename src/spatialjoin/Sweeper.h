@@ -268,6 +268,9 @@ class Sweeper {
 
   size_t numElements() const { return _curSweepId / 2; }
 
+  static std::string intToBase126(uint64_t id);
+  static uint64_t base126ToInt(const std::string& id);
+
  private:
   const SweeperCfg _cfg;
   size_t _curSweepId = 0;
