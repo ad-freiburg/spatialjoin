@@ -5,8 +5,8 @@
 
 #include <algorithm>
 #include <cassert>
-#include <cmath>
 #include <climits>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -31,6 +31,7 @@ using sj::innerouter::Mode;
 using util::writeAll;
 using util::geo::area;
 using util::geo::getBoundingBox;
+using util::geo::FPoint;
 using util::geo::I32Box;
 using util::geo::I32Line;
 using util::geo::I32MultiLine;
@@ -167,7 +168,7 @@ void Sweeper::add(const I32Polygon& poly, const std::string& gidR, size_t subid,
   std::string gid = (side ? ("B" + gidR) : ("A" + gidR));
 
   WriteCand cur;
-  const auto& box = getBoundingBox(poly);
+  const auto& box = getPaddedBoundingBox(poly);
   I32XSortedPolygon spoly(poly);
 
   if (spoly.empty()) return;
@@ -188,7 +189,7 @@ void Sweeper::add(const I32Polygon& poly, const std::string& gidR, size_t subid,
   I32Box box45;
   if (_cfg.useDiagBox) {
     auto polyR = util::geo::rotateSinCos(poly, sin45, cos45, I32Point(0, 0));
-    box45 = getBoundingBox(polyR);
+    box45 = getPaddedBoundingBox(polyR);
   }
 
   cur.subid = subid;
@@ -320,7 +321,7 @@ void Sweeper::add(const I32Line& line, const std::string& gidR, size_t subid,
 
   WriteCand cur;
 
-  const auto& box = getBoundingBox(line);
+  const auto& box = getPaddedBoundingBox(line);
   BoxIdList boxIds;
   std::map<int32_t, size_t> cutouts;
 
@@ -337,7 +338,7 @@ void Sweeper::add(const I32Line& line, const std::string& gidR, size_t subid,
   I32Box box45;
   if (_cfg.useDiagBox) {
     auto polyR = util::geo::rotateSinCos(line, sin45, cos45, I32Point(0, 0));
-    box45 = getBoundingBox(polyR);
+    box45 = getPaddedBoundingBox(polyR);
   }
 
   cur.subid = subid;
@@ -443,25 +444,27 @@ void Sweeper::add(const I32Point& point, const std::string& gidR, size_t subid,
   cur.subid = subid;
   cur.gid = gid;
 
+  const auto& box = getPaddedBoundingBox(point);
+
   auto pointR = util::geo::rotateSinCos(point, sin45, cos45, I32Point(0, 0));
   cur.boxvalIn = {0,  // placeholder, will be overwritten later on
-                  point.getY(),
-                  point.getY(),
-                  point.getX(),
+                  box.getLowerLeft().getY(),
+                  box.getUpperRight().getY(),
+                  box.getLowerLeft().getX(),
                   false,
                   POINT,
                   0,
-                  util::geo::getBoundingBox(pointR),
+                  getPaddedBoundingBox(pointR),
                   side,
                   false};
   cur.boxvalOut = {0,  // placeholder, will be overwritten later on
-                   point.getY(),
-                   point.getY(),
-                   point.getX(),
+                   box.getLowerLeft().getY(),
+                   box.getUpperRight().getY(),
+                   box.getUpperRight().getX(),
                    true,
                    POINT,
                    0,
-                   util::geo::getBoundingBox(pointR),
+                   getPaddedBoundingBox(pointR),
                    side,
                    false};
 
@@ -867,7 +870,16 @@ void Sweeper::flush() {
 
   for (size_t side = 0; side < 2; side++) {
     for (size_t i = 0; i < _multiIds[side].size(); i++) {
-      diskAdd({i, 1, 0, _multiLeftX[side][i] - 1, false, POINT, 0.0, {}, side});
+      diskAdd({i,
+               1,
+               0,
+               _multiLeftX[side][i] - 1,
+               false,
+               POINT,
+               0.0,
+               {},
+               side,
+               false});
     }
   }
 
@@ -1774,6 +1786,13 @@ void Sweeper::writeRel(size_t t, const std::string& a, const std::string& b,
 }
 
 // ____________________________________________________________________________
+void Sweeper::writeDist(size_t t, const std::string& a, size_t aSub,
+                             const std::string& b, size_t bSub, double dist) {
+  writeRel(t, a, b, "\t" + std::to_string(dist) + "\t");
+  writeRel(t, b, a, "\t" + std::to_string(dist) + "\t");
+}
+
+// ____________________________________________________________________________
 void Sweeper::writeIntersect(size_t t, const std::string& a,
                              const std::string& b) {
   if (a != b) {
@@ -1849,6 +1868,26 @@ void Sweeper::doCheck(const BoxVal cur, const SweepVal sv, size_t t) {
 
   // every 10000 checks, update our position
   if (_checks[t] % 10000 == 0) _atomicCurX[t] = _curX[t];
+
+  if (_cfg.withinDist >= 0) {
+    if (cur.type == POINT && sv.type == POINT) {
+      auto p1 = util::geo::centroid(cur.b45);
+      auto p2 = util::geo::centroid(sv.b45);
+      p1 = util::geo::rotateSinCos(p1, -sin45, -cos45, I32Point(0, 0));
+      p2 = util::geo::rotateSinCos(p2, -sin45, -cos45, I32Point(0, 0));
+
+      auto dist = util::geo::webMercMeterDist(FPoint{(p1.getX() * 1.0) / (PREC * 1.0), (p1.getY() * 1.0) / (PREC * 1.0)}, FPoint{(p2.getX() * 1.0) / (PREC * 1.0), (p2.getY() * 1.0) / (PREC * 1.0)});
+
+      if (dist <= _cfg.withinDist) {
+        auto a = _pointCache.get(cur.id, cur.large ? -1 : t);
+        auto b = _pointCache.get(sv.id, sv.large ? -1 : t);
+
+        writeDist(t, a->id, a->subId, b->id, b->subId, dist);
+      }
+    }
+
+    return;
+  }
 
   if ((cur.type == SIMPLE_POLYGON || cur.type == POLYGON) &&
       (sv.type == SIMPLE_POLYGON || sv.type == POLYGON)) {
@@ -3133,6 +3172,25 @@ std::string Sweeper::intToBase126(uint64_t id) {
   } while (d.quot);
 
   return ret;
+}
+
+// _____________________________________________________________________________
+template <typename G>
+I32Box Sweeper::getPaddedBoundingBox(const G& geom) const {
+  auto bbox = getBoundingBox(geom);
+
+  if (_cfg.withinDist >= 0) {
+    double xScaleFactor =
+        std::min(util::geo::webMercDistFactor(I32Point{bbox.getLowerLeft().getX() / PREC, bbox.getLowerLeft().getY() / PREC}),
+                 util::geo::webMercDistFactor(I32Point{bbox.getUpperRight().getX() / PREC, bbox.getUpperRight().getY() / PREC}));
+
+    uint32_t padX = (_cfg.withinDist / xScaleFactor) * PREC;
+    uint32_t padY = _cfg.withinDist * PREC;
+
+    return {{bbox.getLowerLeft().getX() - padX, bbox.getLowerLeft().getY() - padY}, {bbox.getUpperRight().getX() + padX, bbox.getUpperRight().getY() + padY}};
+  }
+
+  return bbox;
 }
 
 // _____________________________________________________________________________

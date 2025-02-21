@@ -70,6 +70,8 @@ void printHelp(int argc, char** argv) {
       << "separator between crossing geometry IDs\n"
       << std::setw(41) << "  --suffix (default: '\\n')"
       << "suffix added at the beginning of every relation\n\n"
+      << std::setw(41) << "  --within-distance (default: '')"
+      << "if set to non-negative value, only compute for each object the objects within the given distance\n\n"
       << std::setfill(' ') << std::left << "Geometric computation:\n"
       << std::setw(41) << "  --no-box-ids"
       << "disable box id criteria for contains/covers/intersect computation\n"
@@ -121,6 +123,7 @@ int main(int argc, char** argv) {
   std::string overlaps = " overlaps ";
   std::string crosses = " crosses ";
   std::string suffix = "\n";
+  double withinDist = -1;
 
   bool useBoxIds = true;
   bool useArea = true;
@@ -171,6 +174,8 @@ int main(int argc, char** argv) {
           state = 13;
         } else if (cur == "--cache-max-size") {
           state = 14;
+        } else if (cur == "--within-distance") {
+          state = 15;
         } else if (cur == "--no-box-ids") {
           useBoxIds = false;
         } else if (cur == "--no-surface-area") {
@@ -248,6 +253,10 @@ int main(int argc, char** argv) {
         geomCacheMaxSize = atoi(cur.c_str());
         state = 0;
         break;
+      case 15:
+        withinDist = atof(cur.c_str());
+        state = 0;
+        break;
     }
   }
 
@@ -277,6 +286,7 @@ int main(int argc, char** argv) {
                    useFastSweepSkip,
                    useInnerOuter,
                    noGeometryChecks,
+                   withinDist,
                    {},
                    [](const std::string& s) { LOGTO(INFO, std::cerr) << s; },
                    [](const std::string& s) { std::cerr << s; },

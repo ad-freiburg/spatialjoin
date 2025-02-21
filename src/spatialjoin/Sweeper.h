@@ -137,6 +137,7 @@ struct SweeperCfg {
   bool useFastSweepSkip;
   bool useInnerOuter;
   bool noGeometryChecks;
+  double withinDist;
   std::function<void(size_t t, const char* a, const char* b, const char* pred)>
       writeRelCb;
   std::function<void(const std::string&)> logCb;
@@ -363,6 +364,9 @@ class Sweeper {
 
   bool refRelated(const std::string& a, const std::string& b) const;
 
+  template <typename G>
+  util::geo::I32Box getPaddedBoundingBox(const G& geom) const;
+
   void diskAdd(const BoxVal& bv);
 
   void multiOut(size_t t, const std::string& gid);
@@ -381,6 +385,8 @@ class Sweeper {
                    size_t bSub);
   void writeEquals(size_t t, const std::string& a, size_t aSub,
                    const std::string& b, size_t bSub);
+  void writeDist(size_t t, const std::string& a, size_t aSub,
+                   const std::string& b, size_t bSub, double dist);
   void writeTouches(size_t t, const std::string& a, size_t aSub,
                     const std::string& b, size_t bSub);
   void writeNotTouches(size_t t, const std::string& a, size_t aSub,
