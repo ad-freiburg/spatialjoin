@@ -362,10 +362,17 @@ class Sweeper {
   std::tuple<bool, bool> check(const util::geo::I32Point& a, const Line* b,
                                size_t t) const;
 
+  double distCheck(const util::geo::I32Point& a, const Area* b, size_t t) const;
+  double distCheck(const util::geo::I32Point& a, const Line* b, size_t t) const;
+  double distCheck(const util::geo::I32Point& a, const SimpleLine* b, size_t t) const;
+
   bool refRelated(const std::string& a, const std::string& b) const;
 
   template <typename G>
   util::geo::I32Box getPaddedBoundingBox(const G& geom) const;
+
+  double getMaxScaleFactor(const util::geo::I32Box& geom) const;
+  double getMaxScaleFactor(const util::geo::I32Point& geom) const;
 
   void diskAdd(const BoxVal& bv);
 
@@ -403,6 +410,7 @@ class Sweeper {
                        const std::string& b, size_t bSub);
 
   void doCheck(BoxVal cur, SweepVal sv, size_t t);
+  void doDistCheck(BoxVal cur, SweepVal sv, size_t t);
   void selfCheck(BoxVal cur, size_t t);
 
   void processQueue(size_t t);
@@ -415,6 +423,8 @@ class Sweeper {
   bool notOverlaps(const std::string& a, const std::string& b);
   bool notTouches(const std::string& a, const std::string& b);
   bool notCrosses(const std::string& a, const std::string& b);
+
+  static double meterDist(const util::geo::I32Point& p1, const util::geo::I32Point& p2);
 
   void fillBatch(JobBatch* batch,
                  const sj::IntervalIdx<int32_t, SweepVal>* actives,
