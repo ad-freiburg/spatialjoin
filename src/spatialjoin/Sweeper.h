@@ -22,7 +22,7 @@
 #include <unordered_set>
 
 #include "GeometryCache.h"
-#include "IntervalIdx.h"
+#include "util/geo/IntervalIdx.h"
 #include "Stats.h"
 #include "util/JobQueue.h"
 #include "util/geo/Geo.h"
@@ -365,6 +365,8 @@ class Sweeper {
   double distCheck(const util::geo::I32Point& a, const Area* b, size_t t) const;
   double distCheck(const util::geo::I32Point& a, const Line* b, size_t t) const;
   double distCheck(const util::geo::I32Point& a, const SimpleLine* b, size_t t) const;
+  double distCheck(const SimpleLine* a, const SimpleLine* b, size_t t) const;
+  double distCheck(const Line* a, const Line* b, size_t t) const;
 
   bool refRelated(const std::string& a, const std::string& b) const;
 
@@ -427,7 +429,7 @@ class Sweeper {
   static double meterDist(const util::geo::I32Point& p1, const util::geo::I32Point& p2);
 
   void fillBatch(JobBatch* batch,
-                 const sj::IntervalIdx<int32_t, SweepVal>* actives,
+                 const util::geo::IntervalIdx<int32_t, SweepVal>* actives,
                  const BoxVal* cur) const;
 
   static int boxCmp(const void* a, const void* b) {

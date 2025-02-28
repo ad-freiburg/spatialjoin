@@ -15,9 +15,9 @@
 
 #include "BoxIds.h"
 #include "InnerOuter.h"
-#include "IntervalIdx.h"
 #include "Sweeper.h"
 #include "util/Misc.h"
+#include "util/geo/IntervalIdx.h"
 #include "util/log/Log.h"
 
 using sj::GeomType;
@@ -967,7 +967,7 @@ RelStats Sweeper::sweep() {
   const size_t RBUF_SIZE = 100000;
   unsigned char* buf = new unsigned char[sizeof(BoxVal) * RBUF_SIZE];
 
-  sj::IntervalIdx<int32_t, SweepVal> actives[2];
+  util::geo::IntervalIdx<int32_t, SweepVal> actives[2];
 
   _rawFiles = {}, _files = {}, _outBufPos = {}, _outBuffers = {};
 
@@ -1869,7 +1869,7 @@ void Sweeper::doDistCheck(const BoxVal cur, const SweepVal sv, size_t t) {
   // every 10000 checks, update our position
   if (_checks[t] % 10000 == 0) _atomicCurX[t] = _curX[t];
 
-  if (false && cur.type == POINT && sv.type == POINT) {
+  if (cur.type == POINT && sv.type == POINT) {
     auto p1 = util::geo::centroid(cur.b45);
     auto p2 = util::geo::centroid(sv.b45);
     p1 = util::geo::rotateSinCos(p1, -sin45, cos45, I32Point(0, 0));
@@ -1931,7 +1931,8 @@ void Sweeper::doDistCheck(const BoxVal cur, const SweepVal sv, size_t t) {
       auto b = _pointCache.get(sv.id, sv.large ? -1 : t);
       writeDist(t, a->id, a->subId, b->id, b->subId, dist);
     }
-  } else if ((cur.type == SIMPLE_LINE || cur.type == LINE) && sv.type == POINT) {
+  } else if ((cur.type == SIMPLE_LINE || cur.type == LINE) &&
+             sv.type == POINT) {
     auto p = util::geo::centroid(sv.b45);
     p = util::geo::rotateSinCos(p, -sin45, cos45, I32Point(0, 0));
 
@@ -1941,18 +1942,18 @@ void Sweeper::doDistCheck(const BoxVal cur, const SweepVal sv, size_t t) {
       auto b = _simpleLineCache.get(cur.id, cur.large ? -1 : t);
       dist = distCheck(p, b.get(), t);
 
-    if (dist <= _cfg.withinDist) {
-      auto a = _pointCache.get(sv.id, sv.large ? -1 : t);
-      writeDist(t, a->id, a->subId, b->id, 0, dist);
-    }
+      if (dist <= _cfg.withinDist) {
+        auto a = _pointCache.get(sv.id, sv.large ? -1 : t);
+        writeDist(t, a->id, a->subId, b->id, 0, dist);
+      }
     } else {
       auto b = _lineCache.get(cur.id, cur.large ? -1 : t);
       dist = distCheck(p, b.get(), t);
 
-    if (dist <= _cfg.withinDist) {
-      auto a = _pointCache.get(sv.id, sv.large ? -1 : t);
-      writeDist(t, a->id, a->subId, b->id, b->subId, dist);
-    }
+      if (dist <= _cfg.withinDist) {
+        auto a = _pointCache.get(sv.id, sv.large ? -1 : t);
+        writeDist(t, a->id, a->subId, b->id, b->subId, dist);
+      }
     }
   } else if ((sv.type == SIMPLE_LINE || sv.type == LINE) && cur.type == POINT) {
     auto p = util::geo::centroid(cur.b45);
@@ -1964,21 +1965,28 @@ void Sweeper::doDistCheck(const BoxVal cur, const SweepVal sv, size_t t) {
       auto b = _simpleLineCache.get(sv.id, sv.large ? -1 : t);
       dist = distCheck(p, b.get(), t);
 
-    if (dist <= _cfg.withinDist) {
-      auto a = _pointCache.get(cur.id, cur.large ? -1 : t);
-      writeDist(t, a->id, a->subId, b->id, 0, dist);
-    }
+      if (dist <= _cfg.withinDist) {
+        auto a = _pointCache.get(cur.id, cur.large ? -1 : t);
+        writeDist(t, a->id, a->subId, b->id, 0, dist);
+      }
     } else {
       auto b = _lineCache.get(sv.id, sv.large ? -1 : t);
       dist = distCheck(p, b.get(), t);
 
+      if (dist <= _cfg.withinDist) {
+        auto a = _pointCache.get(cur.id, cur.large ? -1 : t);
+        writeDist(t, a->id, a->subId, b->id, b->subId, dist);
+      }
+    }
+  } else if (sv.type == LINE && cur.type == LINE) {
+    auto a = _lineCache.get(sv.id, sv.large ? -1 : t);
+    auto b = _lineCache.get(cur.id, cur.large ? -1 : t);
+    auto dist = distCheck(a.get(), b.get(), t);
+
     if (dist <= _cfg.withinDist) {
-      auto a = _pointCache.get(cur.id, cur.large ? -1 : t);
       writeDist(t, a->id, a->subId, b->id, b->subId, dist);
     }
-    }
   }
-
 }
 
 // ____________________________________________________________________________
@@ -2880,9 +2888,9 @@ void Sweeper::processQueue(size_t t) {
 }
 
 // _____________________________________________________________________________
-void Sweeper::fillBatch(JobBatch* batch,
-                        const IntervalIdx<int32_t, SweepVal>* actives,
-                        const BoxVal* cur) const {
+void Sweeper::fillBatch(
+    JobBatch* batch, const util::geo::IntervalIdx<int32_t, SweepVal>* actives,
+    const BoxVal* cur) const {
   const auto& overlaps = actives->overlap_find_all({cur->loY, cur->upY});
 
   for (const auto& p : overlaps) {
@@ -3351,44 +3359,75 @@ double Sweeper::distCheck(const I32Point& a, const Area* b, size_t t) const {
   }
 
   auto ts = TIME();
-    double scaleFactor =
-        std::max(getMaxScaleFactor(a), getMaxScaleFactor(b->box)) * PREC;
+  double scaleFactor =
+      std::max(getMaxScaleFactor(a), getMaxScaleFactor(b->box)) * PREC;
 
-    auto dist = util::geo::withinDist<int32_t>(
-        a, b->geom, _cfg.withinDist * scaleFactor, _cfg.withinDist,
-        &Sweeper::meterDist);
+  auto dist =
+      util::geo::withinDist<int32_t>(a, b->geom, _cfg.withinDist * scaleFactor,
+                                     _cfg.withinDist, &Sweeper::meterDist);
   _stats[t].timeFullGeoCheckAreaPoint += TOOK(ts);
   _stats[t].fullGeoChecksAreaPoint++;
 
-    return dist;
+  return dist;
 }
 
 // _____________________________________________________________________________
 double Sweeper::distCheck(const I32Point& a, const Line* b, size_t t) const {
   auto ts = TIME();
-    double scaleFactor =
-        std::max(getMaxScaleFactor(a), getMaxScaleFactor(b->box)) * PREC;
+  double scaleFactor =
+      std::max(getMaxScaleFactor(a), getMaxScaleFactor(b->box)) * PREC;
 
-    auto dist = util::geo::withinDist<int32_t>(
-        a, b->geom, _cfg.withinDist * scaleFactor, _cfg.withinDist,
-        &Sweeper::meterDist);
+  auto dist =
+      util::geo::withinDist<int32_t>(a, b->geom, _cfg.withinDist * scaleFactor,
+                                     _cfg.withinDist, &Sweeper::meterDist);
   _stats[t].timeFullGeoCheckLinePoint += TOOK(ts);
   _stats[t].fullGeoChecksLinePoint++;
 
-    return dist;
+  return dist;
 }
 
 // _____________________________________________________________________________
-double Sweeper::distCheck(const I32Point& a, const SimpleLine* b, size_t t) const {
+double Sweeper::distCheck(const I32Point& a, const SimpleLine* b,
+                          size_t t) const {
   auto ts = TIME();
 
-      auto p2 = projectOn(b->a, a,
-                          b->b);
+  auto p2 = projectOn(b->a, a, b->b);
 
-      auto dist =  Sweeper::meterDist(a, p2);
+  auto dist = Sweeper::meterDist(a, p2);
 
   _stats[t].timeFullGeoCheckLinePoint += TOOK(ts);
   _stats[t].fullGeoChecksLinePoint++;
 
-    return dist;
+  return dist;
+}
+
+// _____________________________________________________________________________
+double Sweeper::distCheck(const SimpleLine* a, const SimpleLine* b,
+                          size_t t) const {
+  auto ts = TIME();
+
+  auto dist = util::geo::dist<int32_t>(LineSegment<int32_t>(a->a, a->b),
+                                       LineSegment<int32_t>(b->a, b->b),
+                                       &Sweeper::meterDist);
+
+  _stats[t].timeFullGeoCheckLineLine += TOOK(ts);
+  _stats[t].fullGeoChecksLineLine++;
+
+  return dist;
+}
+
+// _____________________________________________________________________________
+double Sweeper::distCheck(const Line* a, const Line* b, size_t t) const {
+  auto ts = TIME();
+  double scaleFactor =
+      std::max(getMaxScaleFactor(a->box), getMaxScaleFactor(b->box));
+
+  auto dist = util::geo::withinDist<int32_t>(
+      a->geom, b->geom, a->box, b->box, _cfg.withinDist * scaleFactor * PREC,
+      _cfg.withinDist * PREC, _cfg.withinDist, &Sweeper::meterDist);
+
+  _stats[t].timeFullGeoCheckLineLine += TOOK(ts);
+  _stats[t].fullGeoChecksLineLine++;
+
+  return dist;
 }
