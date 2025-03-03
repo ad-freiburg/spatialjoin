@@ -366,7 +366,11 @@ class Sweeper {
   double distCheck(const util::geo::I32Point& a, const Line* b, size_t t) const;
   double distCheck(const util::geo::I32Point& a, const SimpleLine* b, size_t t) const;
   double distCheck(const SimpleLine* a, const SimpleLine* b, size_t t) const;
+  double distCheck(const SimpleLine* a, const Line* b, size_t t) const;
+  double distCheck(const SimpleLine* a, const Area* b, size_t t) const;
   double distCheck(const Line* a, const Line* b, size_t t) const;
+  double distCheck(const Area* a, const Area* b, size_t t) const;
+  double distCheck(const Line* a, const Area* b, size_t t) const;
 
   bool refRelated(const std::string& a, const std::string& b) const;
 
