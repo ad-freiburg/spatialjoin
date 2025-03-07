@@ -278,16 +278,14 @@ class Sweeper {
     auto bbox = util::geo::getBoundingBox(geom);
 
     if (_cfg.withinDist >= 0) {
-      auto bbox = util::geo::getBoundingBox(geom);
-      double xScaleFactor = getMaxScaleFactor(bbox);
+      double scaleFactor = getMaxScaleFactor(bbox);
 
-      uint32_t padX = ((_cfg.withinDist / 2) * xScaleFactor) * PREC;
-      uint32_t padY = (_cfg.withinDist / 2) * PREC;
+      uint32_t pad = (_cfg.withinDist / 2.0) * scaleFactor * PREC;
 
-      return {{bbox.getLowerLeft().getX() - padX,
-               bbox.getLowerLeft().getY() - padY},
-              {bbox.getUpperRight().getX() + padX,
-               bbox.getUpperRight().getY() + padY}};
+      return {{bbox.getLowerLeft().getX() - pad,
+               bbox.getLowerLeft().getY() - pad},
+              {bbox.getUpperRight().getX() + pad,
+               bbox.getUpperRight().getY() + pad}};
     }
 
     return bbox;
