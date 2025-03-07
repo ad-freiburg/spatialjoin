@@ -291,6 +291,25 @@ class Sweeper {
     return bbox;
   }
 
+// _____________________________________________________________________________
+  template <typename G1, typename G2>
+  util::geo::I32Box getPaddedBoundingBox(const G1& geom, const G2& refGeom) const {
+    auto bbox = util::geo::getBoundingBox(geom);
+
+    if (_cfg.withinDist >= 0) {
+      double scaleFactor = getMaxScaleFactor(util::geo::getBoundingBox(refGeom));
+
+      uint32_t pad = (_cfg.withinDist / 2.0) * scaleFactor * PREC;
+
+      return {{bbox.getLowerLeft().getX() - pad,
+               bbox.getLowerLeft().getY() - pad},
+              {bbox.getUpperRight().getX() + pad,
+               bbox.getUpperRight().getY() + pad}};
+    }
+
+    return bbox;
+  }
+
  private:
   const SweeperCfg _cfg;
   size_t _curSweepId = 0;

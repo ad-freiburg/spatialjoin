@@ -168,7 +168,8 @@ void Sweeper::add(const I32Polygon& poly, const std::string& gidR, size_t subid,
   std::string gid = (side ? ("B" + gidR) : ("A" + gidR));
 
   WriteCand cur;
-  const auto& box = getPaddedBoundingBox(poly);
+  const auto& rawBox = getBoundingBox(poly);
+  const auto& box = getPaddedBoundingBox(rawBox);
   I32XSortedPolygon spoly(poly);
 
   if (spoly.empty()) return;
@@ -189,7 +190,7 @@ void Sweeper::add(const I32Polygon& poly, const std::string& gidR, size_t subid,
   I32Box box45;
   if (_cfg.useDiagBox) {
     auto polyR = util::geo::rotateSinCos(poly, sin45, cos45, I32Point(0, 0));
-    box45 = getPaddedBoundingBox(polyR);
+    box45 = getPaddedBoundingBox(polyR, rawBox);
   }
 
   cur.subid = subid;
@@ -321,7 +322,8 @@ void Sweeper::add(const I32Line& line, const std::string& gidR, size_t subid,
 
   WriteCand cur;
 
-  const auto& box = getPaddedBoundingBox(line);
+  const auto& rawBox = getBoundingBox(line);
+  const auto& box = getPaddedBoundingBox(rawBox);
   BoxIdList boxIds;
   std::map<int32_t, size_t> cutouts;
 
@@ -338,7 +340,7 @@ void Sweeper::add(const I32Line& line, const std::string& gidR, size_t subid,
   I32Box box45;
   if (_cfg.useDiagBox) {
     auto lineR = util::geo::rotateSinCos(line, sin45, cos45, I32Point(0, 0));
-    box45 = getPaddedBoundingBox(lineR);
+    box45 = getPaddedBoundingBox(lineR, rawBox);
   }
 
   cur.subid = subid;
@@ -444,7 +446,8 @@ void Sweeper::add(const I32Point& point, const std::string& gidR, size_t subid,
   cur.subid = subid;
   cur.gid = gid;
 
-  const auto& box = getPaddedBoundingBox(point);
+  const auto& rawBox = getBoundingBox(point);
+  const auto& box = getPaddedBoundingBox(rawBox);
 
   auto pointR = util::geo::rotateSinCos(point, sin45, cos45, I32Point(0, 0));
   cur.boxvalIn = {0,  // placeholder, will be overwritten later on
@@ -454,7 +457,7 @@ void Sweeper::add(const I32Point& point, const std::string& gidR, size_t subid,
                   false,
                   POINT,
                   0,
-                  getPaddedBoundingBox(pointR),
+                  getPaddedBoundingBox(pointR, rawBox),
                   side,
                   false};
   cur.boxvalOut = {0,  // placeholder, will be overwritten later on
@@ -464,7 +467,7 @@ void Sweeper::add(const I32Point& point, const std::string& gidR, size_t subid,
                    true,
                    POINT,
                    0,
-                   getPaddedBoundingBox(pointR),
+                   getPaddedBoundingBox(pointR, rawBox),
                    side,
                    false};
 
@@ -3544,7 +3547,7 @@ double Sweeper::distCheck(const SimpleLine* a, const Line* b, size_t t) const {
   auto dist = util::geo::withinDist<int32_t>(
       I32XSortedLine(LineSegment<int32_t>(a->a, a->b)), b->geom,
       getBoundingBox(LineSegment<int32_t>(a->a, a->b)), b->box,
-      _cfg.withinDist * PREC, _cfg.withinDist * scaleFactor * PREC,
+      _cfg.withinDist * scaleFactor * PREC, _cfg.withinDist * scaleFactor * PREC,
       _cfg.withinDist, &Sweeper::meterDist);
 
   _stats[t].timeFullGeoCheckAreaLine += TOOK(ts);
@@ -3560,7 +3563,7 @@ double Sweeper::distCheck(const Line* a, const Line* b, size_t t) const {
       std::max(getMaxScaleFactor(a->box), getMaxScaleFactor(b->box));
 
   auto dist = util::geo::withinDist<int32_t>(
-      a->geom, b->geom, a->box, b->box, _cfg.withinDist * PREC,
+      a->geom, b->geom, a->box, b->box, _cfg.withinDist * scaleFactor * PREC,
       _cfg.withinDist * scaleFactor * PREC, _cfg.withinDist,
       &Sweeper::meterDist);
 
@@ -3580,7 +3583,7 @@ double Sweeper::distCheck(const SimpleLine* a, const Area* b, size_t t) const {
   auto dist = util::geo::withinDist<int32_t>(
       I32XSortedLine(LineSegment<int32_t>(a->a, a->b)), b->geom,
       getBoundingBox(LineSegment<int32_t>(a->a, a->b)), b->box,
-      _cfg.withinDist * PREC, _cfg.withinDist * scaleFactor * PREC,
+      _cfg.withinDist * scaleFactor* PREC, _cfg.withinDist * scaleFactor * PREC,
       _cfg.withinDist, &Sweeper::meterDist);
 
   _stats[t].timeFullGeoCheckAreaLine += TOOK(ts);
@@ -3596,7 +3599,7 @@ double Sweeper::distCheck(const Line* b, const Area* a, size_t t) const {
       std::max(getMaxScaleFactor(a->box), getMaxScaleFactor(b->box));
 
   auto dist = util::geo::withinDist<int32_t>(
-      b->geom, a->geom, b->box, a->box, _cfg.withinDist * PREC,
+      b->geom, a->geom, b->box, a->box, _cfg.withinDist * scaleFactor * PREC,
       _cfg.withinDist * scaleFactor * PREC, _cfg.withinDist,
       &Sweeper::meterDist);
 
@@ -3613,7 +3616,7 @@ double Sweeper::distCheck(const Area* a, const Area* b, size_t t) const {
       std::max(getMaxScaleFactor(a->box), getMaxScaleFactor(b->box));
 
   auto dist = util::geo::withinDist<int32_t>(
-      a->geom, b->geom, a->box, b->box, _cfg.withinDist * PREC,
+      a->geom, b->geom, a->box, b->box, _cfg.withinDist * scaleFactor * PREC,
       _cfg.withinDist * scaleFactor * PREC, _cfg.withinDist,
       &Sweeper::meterDist);
 
