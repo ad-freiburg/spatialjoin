@@ -272,6 +272,9 @@ class Sweeper {
   static std::string intToBase126(uint64_t id);
   static uint64_t base126ToInt(const std::string& id);
 
+  template <typename G>
+  util::geo::I32Box getPaddedBoundingBox(const G& geom) const;
+
  private:
   const SweeperCfg _cfg;
   size_t _curSweepId = 0;
@@ -373,9 +376,6 @@ class Sweeper {
   double distCheck(const Line* a, const Area* b, size_t t) const;
 
   bool refRelated(const std::string& a, const std::string& b) const;
-
-  template <typename G>
-  util::geo::I32Box getPaddedBoundingBox(const G& geom) const;
 
   double getMaxScaleFactor(const util::geo::I32Box& geom) const;
   double getMaxScaleFactor(const util::geo::I32Point& geom) const;
