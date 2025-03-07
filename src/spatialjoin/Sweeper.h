@@ -22,10 +22,10 @@
 #include <unordered_set>
 
 #include "GeometryCache.h"
-#include "util/geo/IntervalIdx.h"
 #include "Stats.h"
 #include "util/JobQueue.h"
 #include "util/geo/Geo.h"
+#include "util/geo/IntervalIdx.h"
 
 #ifndef POSIX_FADV_SEQUENTIAL
 #define POSIX_FADV_SEQUENTIAL 2
@@ -272,8 +272,26 @@ class Sweeper {
   static std::string intToBase126(uint64_t id);
   static uint64_t base126ToInt(const std::string& id);
 
+// _____________________________________________________________________________
   template <typename G>
-  util::geo::I32Box getPaddedBoundingBox(const G& geom) const;
+  util::geo::I32Box getPaddedBoundingBox(const G& geom) const {
+    auto bbox = util::geo::getBoundingBox(geom);
+
+    if (_cfg.withinDist >= 0) {
+      auto bbox = util::geo::getBoundingBox(geom);
+      double xScaleFactor = getMaxScaleFactor(bbox);
+
+      uint32_t padX = ((_cfg.withinDist / 2) * xScaleFactor) * PREC;
+      uint32_t padY = (_cfg.withinDist / 2) * PREC;
+
+      return {{bbox.getLowerLeft().getX() - padX,
+               bbox.getLowerLeft().getY() - padY},
+              {bbox.getUpperRight().getX() + padX,
+               bbox.getUpperRight().getY() + padY}};
+    }
+
+    return bbox;
+  }
 
  private:
   const SweeperCfg _cfg;
@@ -367,7 +385,8 @@ class Sweeper {
 
   double distCheck(const util::geo::I32Point& a, const Area* b, size_t t) const;
   double distCheck(const util::geo::I32Point& a, const Line* b, size_t t) const;
-  double distCheck(const util::geo::I32Point& a, const SimpleLine* b, size_t t) const;
+  double distCheck(const util::geo::I32Point& a, const SimpleLine* b,
+                   size_t t) const;
   double distCheck(const SimpleLine* a, const SimpleLine* b, size_t t) const;
   double distCheck(const SimpleLine* a, const Line* b, size_t t) const;
   double distCheck(const SimpleLine* a, const Area* b, size_t t) const;
@@ -399,7 +418,7 @@ class Sweeper {
   void writeEquals(size_t t, const std::string& a, size_t aSub,
                    const std::string& b, size_t bSub);
   void writeDist(size_t t, const std::string& a, size_t aSub,
-                   const std::string& b, size_t bSub, double dist);
+                 const std::string& b, size_t bSub, double dist);
   void writeTouches(size_t t, const std::string& a, size_t aSub,
                     const std::string& b, size_t bSub);
   void writeNotTouches(size_t t, const std::string& a, size_t aSub,
@@ -430,7 +449,8 @@ class Sweeper {
   bool notTouches(const std::string& a, const std::string& b);
   bool notCrosses(const std::string& a, const std::string& b);
 
-  static double meterDist(const util::geo::I32Point& p1, const util::geo::I32Point& p2);
+  static double meterDist(const util::geo::I32Point& p1,
+                          const util::geo::I32Point& p2);
 
   void fillBatch(JobBatch* batch,
                  const util::geo::IntervalIdx<int32_t, SweepVal>* actives,

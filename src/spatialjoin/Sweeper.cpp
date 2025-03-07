@@ -3443,27 +3443,6 @@ double Sweeper::getMaxScaleFactor(const I32Point& p) const {
 }
 
 // _____________________________________________________________________________
-template <typename G>
-I32Box Sweeper::getPaddedBoundingBox(const G& geom) const {
-  auto bbox = getBoundingBox(geom);
-
-  if (_cfg.withinDist >= 0) {
-    auto bbox = getBoundingBox(geom);
-    double xScaleFactor = getMaxScaleFactor(bbox);
-
-    uint32_t padX = ((_cfg.withinDist / 2) * xScaleFactor) * PREC;
-    uint32_t padY = (_cfg.withinDist / 2) * PREC;
-
-    return {
-        {bbox.getLowerLeft().getX() - padX, bbox.getLowerLeft().getY() - padY},
-        {bbox.getUpperRight().getX() + padX,
-         bbox.getUpperRight().getY() + padY}};
-  }
-
-  return bbox;
-}
-
-// _____________________________________________________________________________
 uint64_t Sweeper::base126ToInt(const std::string& id) {
   uint64_t ret = 0;
   uint64_t pos = 1;
