@@ -181,9 +181,9 @@ void Sweeper::add(const I32Polygon& poly, const std::string& gidR, size_t subid,
 
   if (_cfg.useBoxIds) {
     if (_cfg.useCutouts && poly.getOuter().size() > CUTOUTS_MIN_SIZE) {
-      boxIds = packBoxIds(getBoxIds(spoly, box, outerAreaSize, &cutouts));
+      boxIds = packBoxIds(getBoxIds(spoly, rawBox, outerAreaSize, &cutouts));
     } else {
-      boxIds = packBoxIds(getBoxIds(spoly, box, outerAreaSize, 0));
+      boxIds = packBoxIds(getBoxIds(spoly, rawBox, outerAreaSize, 0));
     }
   }
 
@@ -329,9 +329,9 @@ void Sweeper::add(const I32Line& line, const std::string& gidR, size_t subid,
 
   if (_cfg.useBoxIds) {
     if (_cfg.useCutouts && line.size() > CUTOUTS_MIN_SIZE) {
-      boxIds = packBoxIds(getBoxIds(line, box, &cutouts));
+      boxIds = packBoxIds(getBoxIds(line, rawBox, &cutouts));
     } else {
-      boxIds = packBoxIds(getBoxIds(line, box, 0));
+      boxIds = packBoxIds(getBoxIds(line, rawBox, 0));
     }
   }
 
@@ -661,6 +661,22 @@ void Sweeper::clearMultis(bool force) {
 
 // _____________________________________________________________________________
 void Sweeper::multiOut(size_t tOut, const std::string& gidA) {
+  // collect dist
+  if (_cfg.withinDist >= 0) {
+    for (size_t t = 0; t < _cfg.numThreads + 1; t++) {
+      std::unique_lock<std::mutex> lock(_mutsDistance[t]);
+      auto i = _subDistance[t].find(gidA);
+      if (i != _subDistance[t].end()) {
+        for (const auto& a : i->second) {
+          writeRel(t, gidA, a.first, "\t" + std::to_string(a.second) + "\t");
+          writeRel(t, a.first, gidA, "\t" + std::to_string(a.second) + "\t");
+        }
+        _subDistance[t].erase(i);
+      }
+    }
+    return;
+  }
+
   std::unordered_map<std::string, size_t> subContains, subCovered;
 
   std::unordered_map<std::string, std::unordered_map<std::string, size_t>>
@@ -986,6 +1002,7 @@ RelStats Sweeper::sweep() {
   _subEquals.resize(_cfg.numThreads + 1);
   _subCovered.resize(_cfg.numThreads + 1);
   _subContains.resize(_cfg.numThreads + 1);
+  _subDistance.resize(_cfg.numThreads + 1);
   _subNotOverlaps.resize(_cfg.numThreads + 1);
   _subOverlaps.resize(_cfg.numThreads + 1);
   _subNotTouches.resize(_cfg.numThreads + 1);
@@ -1001,6 +1018,7 @@ RelStats Sweeper::sweep() {
   _mutsTouches = std::vector<std::mutex>(_cfg.numThreads + 1);
   _mutsNotCrosses = std::vector<std::mutex>(_cfg.numThreads + 1);
   _mutsCrosses = std::vector<std::mutex>(_cfg.numThreads + 1);
+  _mutsDistance = std::vector<std::mutex>(_cfg.numThreads + 1);
   _atomicCurX = std::vector<std::atomic<int32_t>>(_cfg.numThreads + 1);
 
   size_t counts = 0, totalCheckCount = 0, jj = 0, checkPairs = 0;
@@ -1089,12 +1107,24 @@ RelStats Sweeper::sweep() {
 
   if (!_cfg.noGeometryChecks && curBatch.size()) _jobs.add(std::move(curBatch));
 
-  clearMultis(true);
-
   // the DONE element on the job queue to signal all threads to shut down
   _jobs.add({});
 
   // wait for all workers to finish
+  for (auto& thr : thrds) thr.join();
+
+  // empty job queue
+  _jobs.reset();
+  // fire up new workers to clear multis
+  for (size_t i = 0; i < thrds.size(); i++)
+    thrds[i] = std::thread(&Sweeper::processQueue, this, i);
+
+  // now also clear the multis
+  clearMultis(true);
+  // the DONE element on the job queue to signal all threads to shut down
+  _jobs.add({});
+
+  // again wait for all workers to finish
   for (auto& thr : thrds) thr.join();
 
   flushOutputFiles();
@@ -1791,8 +1821,22 @@ void Sweeper::writeRel(size_t t, const std::string& a, const std::string& b,
 // ____________________________________________________________________________
 void Sweeper::writeDist(size_t t, const std::string& a, size_t aSub,
                         const std::string& b, size_t bSub, double dist) {
-  writeRel(t, a, b, "\t" + std::to_string(dist) + "\t");
-  writeRel(t, b, a, "\t" + std::to_string(dist) + "\t");
+  if (a != b) {
+    if (bSub > 0 || aSub > 0) {
+      std::unique_lock<std::mutex> lock(_mutsDistance[t]);
+      if (bSub > 0 && (_subDistance[t][b].find(a) == _subDistance[t][b].end() ||
+                       _subDistance[t][b][a] > dist))
+        _subDistance[t][b][a] = dist;
+      if (aSub > 0 && (_subDistance[t][a].find(b) == _subDistance[t][a].end() ||
+                       _subDistance[t][a][b] > dist))
+        _subDistance[t][a][b] = dist;
+    } else {
+      writeRel(t, a, b, "\t" + std::to_string(dist) + "\t");
+      writeRel(t, b, a, "\t" + std::to_string(dist) + "\t");
+    }
+  }
+
+  // TODO: handle references
 }
 
 // ____________________________________________________________________________
@@ -3547,8 +3591,9 @@ double Sweeper::distCheck(const SimpleLine* a, const Line* b, size_t t) const {
   auto dist = util::geo::withinDist<int32_t>(
       I32XSortedLine(LineSegment<int32_t>(a->a, a->b)), b->geom,
       getBoundingBox(LineSegment<int32_t>(a->a, a->b)), b->box,
-      _cfg.withinDist * scaleFactor * PREC, _cfg.withinDist * scaleFactor * PREC,
-      _cfg.withinDist, &Sweeper::meterDist);
+      _cfg.withinDist * scaleFactor * PREC,
+      _cfg.withinDist * scaleFactor * PREC, _cfg.withinDist,
+      &Sweeper::meterDist);
 
   _stats[t].timeFullGeoCheckAreaLine += TOOK(ts);
   _stats[t].fullGeoChecksAreaLine++;
@@ -3576,6 +3621,15 @@ double Sweeper::distCheck(const Line* a, const Line* b, size_t t) const {
 // _____________________________________________________________________________
 double Sweeper::distCheck(const SimpleLine* a, const Area* b, size_t t) const {
   auto ts = TIME();
+
+  if (_cfg.useBoxIds) {
+    auto ts = TIME();
+    auto r = boxIdIsect({{1, 0}, {getBoxId(a->a), 0}}, b->boxIds);
+    _stats[t].timeBoxIdIsectAreaLine += TOOK(ts);
+
+    if (r.first) return 0;
+  }
+
   double scaleFactor =
       std::max(getMaxScaleFactor(b->box),
                std::max(getMaxScaleFactor(a->b), getMaxScaleFactor(a->a)));
@@ -3583,8 +3637,9 @@ double Sweeper::distCheck(const SimpleLine* a, const Area* b, size_t t) const {
   auto dist = util::geo::withinDist<int32_t>(
       I32XSortedLine(LineSegment<int32_t>(a->a, a->b)), b->geom,
       getBoundingBox(LineSegment<int32_t>(a->a, a->b)), b->box,
-      _cfg.withinDist * scaleFactor* PREC, _cfg.withinDist * scaleFactor * PREC,
-      _cfg.withinDist, &Sweeper::meterDist);
+      _cfg.withinDist * scaleFactor * PREC,
+      _cfg.withinDist * scaleFactor * PREC, _cfg.withinDist,
+      &Sweeper::meterDist);
 
   _stats[t].timeFullGeoCheckAreaLine += TOOK(ts);
   _stats[t].fullGeoChecksAreaLine++;
@@ -3593,13 +3648,24 @@ double Sweeper::distCheck(const SimpleLine* a, const Area* b, size_t t) const {
 }
 
 // _____________________________________________________________________________
-double Sweeper::distCheck(const Line* b, const Area* a, size_t t) const {
+double Sweeper::distCheck(const Line* a, const Area* b, size_t t) const {
   auto ts = TIME();
+
+  if (_cfg.useBoxIds) {
+    auto ts = TIME();
+    auto r = boxIdIsect(a->boxIds, b->boxIds);
+    _stats[t].timeBoxIdIsectAreaLine += TOOK(ts);
+
+    // all boxes of a are fully contained in b, we intersect and we are
+    // contained
+    if (r.first) return 0;
+  }
+
   double scaleFactor =
       std::max(getMaxScaleFactor(a->box), getMaxScaleFactor(b->box));
 
   auto dist = util::geo::withinDist<int32_t>(
-      b->geom, a->geom, b->box, a->box, _cfg.withinDist * scaleFactor * PREC,
+      a->geom, b->geom, a->box, b->box, _cfg.withinDist * scaleFactor * PREC,
       _cfg.withinDist * scaleFactor * PREC, _cfg.withinDist,
       &Sweeper::meterDist);
 
@@ -3612,6 +3678,23 @@ double Sweeper::distCheck(const Line* b, const Area* a, size_t t) const {
 // _____________________________________________________________________________
 double Sweeper::distCheck(const Area* a, const Area* b, size_t t) const {
   auto ts = TIME();
+
+  // cheap equivalence check
+  if (a->box == b->box && a->area == b->area && a->geom == b->geom) {
+    // equivalent!
+    return 0;
+  }
+
+  if (_cfg.useBoxIds) {
+    auto ts = TIME();
+    auto r = boxIdIsect(a->boxIds, b->boxIds);
+    _stats[t].timeBoxIdIsectAreaArea += TOOK(ts);
+
+    // all boxes of a are fully contained in b, we intersect and we are
+    // contained and we do not touch or overlap
+    if (r.first) return 0;
+  }
+
   double scaleFactor =
       std::max(getMaxScaleFactor(a->box), getMaxScaleFactor(b->box));
 

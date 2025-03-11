@@ -340,6 +340,8 @@ class Sweeper {
   GeometryCache<Line> _lineCache;
   GeometryCache<SimpleLine> _simpleLineCache;
 
+  std::vector<std::map<std::string, std::map<std::string, double>>>
+      _subDistance;
   std::vector<std::map<std::string, std::map<std::string, std::set<size_t>>>>
       _subContains;
   std::vector<std::map<std::string, std::map<std::string, std::set<size_t>>>>
@@ -376,6 +378,7 @@ class Sweeper {
   std::vector<std::mutex> _mutsNotCrosses;
   std::vector<std::mutex> _mutsOverlaps;
   std::vector<std::mutex> _mutsNotOverlaps;
+  std::vector<std::mutex> _mutsDistance;
 
   Area areaFromSimpleArea(const SimpleArea* sa) const;
 
