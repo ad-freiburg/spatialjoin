@@ -13,7 +13,6 @@
 
 using sj::Sweeper;
 using sj::ParseBatch;
-using sj::processQueue;
 using util::geo::DLine;
 using util::geo::DPoint;
 using util::geo::I32Line;
@@ -263,8 +262,6 @@ int main(int argc, char** argv) {
   const static size_t CACHE_SIZE = 1024 * 1024 * 100;
   unsigned char* buf = new unsigned char[CACHE_SIZE];
   size_t len;
-  std::string dangling;
-  size_t gid = 1;
 
   Sweeper sweeper({numThreads,
                    numCaches,
@@ -296,19 +293,13 @@ int main(int argc, char** argv) {
   LOGTO(INFO, std::cerr) << "Parsing input geometries...";
   auto ts = TIME();
 
-  util::JobQueue<ParseBatch> jobs(1000);
-  std::vector<std::thread> thrds(NUM_THREADS);
-  for (size_t i = 0; i < thrds.size(); i++)
-    thrds[i] = std::thread(&processQueue, &jobs, i, &sweeper);
+  sj::WKTParser parser(&sweeper, NUM_THREADS);
 
   while ((len = util::readAll(0, buf, CACHE_SIZE)) > 0) {
-    parse(reinterpret_cast<char*>(buf), len, dangling, &gid, jobs, 0);
+    parser.parse(reinterpret_cast<char*>(buf), len, 0);
   }
 
-  // end event
-  jobs.add({});
-  // wait for all workers to finish
-  for (auto& thr : thrds) thr.join();
+  parser.done();
 
   sweeper.flush();
 

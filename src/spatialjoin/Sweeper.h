@@ -227,32 +227,38 @@ class Sweeper {
     }
   }
 
-  void add(const util::geo::I32MultiPolygon& a, const std::string& gid,
-           bool side, WriteBatch& batch) const;
-  void add(const util::geo::I32MultiPolygon& a, const std::string& gid, size_t,
-           bool side, WriteBatch& batch) const;
-  void add(const util::geo::I32Polygon& a, const std::string& gid, bool side,
-           WriteBatch& batch) const;
-  void add(const util::geo::I32Polygon& a, const std::string& gid, size_t subId,
-           bool side, WriteBatch& batch) const;
+  util::geo::I32Box add(const util::geo::I32MultiPolygon& a,
+                        const std::string& gid, bool side,
+                        WriteBatch& batch) const;
+  util::geo::I32Box add(const util::geo::I32MultiPolygon& a,
+                        const std::string& gid, size_t, bool side,
+                        WriteBatch& batch) const;
+  util::geo::I32Box add(const util::geo::I32Polygon& a, const std::string& gid,
+                        bool side, WriteBatch& batch) const;
+  util::geo::I32Box add(const util::geo::I32Polygon& a, const std::string& gid,
+                        size_t subId, bool side, WriteBatch& batch) const;
 
-  void add(const util::geo::I32MultiLine& a, const std::string& gid, size_t,
-           bool side, WriteBatch& batch) const;
-  void add(const util::geo::I32MultiLine& a, const std::string& gid, bool side,
-           WriteBatch& batch) const;
-  void add(const util::geo::I32Line& a, const std::string& gid, bool side,
-           WriteBatch& batch) const;
-  void add(const util::geo::I32Line& a, const std::string& gid, size_t subid,
-           bool side, WriteBatch& batch) const;
+  util::geo::I32Box add(const util::geo::I32MultiLine& a,
+                        const std::string& gid, size_t, bool side,
+                        WriteBatch& batch) const;
+  util::geo::I32Box add(const util::geo::I32MultiLine& a,
+                        const std::string& gid, bool side,
+                        WriteBatch& batch) const;
+  util::geo::I32Box add(const util::geo::I32Line& a, const std::string& gid,
+                        bool side, WriteBatch& batch) const;
+  util::geo::I32Box add(const util::geo::I32Line& a, const std::string& gid,
+                        size_t subid, bool side, WriteBatch& batch) const;
 
-  void add(const util::geo::I32Point& a, const std::string& gid, bool side,
-           WriteBatch& batch) const;
-  void add(const util::geo::I32Point& a, const std::string& gid, size_t subid,
-           bool side, WriteBatch& batch) const;
-  void add(const util::geo::I32MultiPoint& a, const std::string& gid, size_t,
-           bool side, WriteBatch& batch) const;
-  void add(const util::geo::I32MultiPoint& a, const std::string& gid, bool side,
-           WriteBatch& batch) const;
+  util::geo::I32Box add(const util::geo::I32Point& a, const std::string& gid,
+                        bool side, WriteBatch& batch) const;
+  util::geo::I32Box add(const util::geo::I32Point& a, const std::string& gid,
+                        size_t subid, bool side, WriteBatch& batch) const;
+  util::geo::I32Box add(const util::geo::I32MultiPoint& a,
+                        const std::string& gid, size_t, bool side,
+                        WriteBatch& batch) const;
+  util::geo::I32Box add(const util::geo::I32MultiPoint& a,
+                        const std::string& gid, bool side,
+                        WriteBatch& batch) const;
 
   void add(const std::string& a, const util::geo::I32Box& box,
            const std::string& gid, bool side, WriteBatch& batch) const;
@@ -272,7 +278,9 @@ class Sweeper {
   static std::string intToBase126(uint64_t id);
   static uint64_t base126ToInt(const std::string& id);
 
-// _____________________________________________________________________________
+  void setFilterBox(const util::geo::I32Box& filterBox) { _filterBox = filterBox; }
+
+  // _____________________________________________________________________________
   template <typename G>
   util::geo::I32Box getPaddedBoundingBox(const G& geom) const {
     auto bbox = util::geo::getBoundingBox(geom);
@@ -282,29 +290,31 @@ class Sweeper {
 
       uint32_t pad = (_cfg.withinDist / 2.0) * scaleFactor * PREC;
 
-      return {{bbox.getLowerLeft().getX() - pad,
-               bbox.getLowerLeft().getY() - pad},
-              {bbox.getUpperRight().getX() + pad,
-               bbox.getUpperRight().getY() + pad}};
+      return {
+          {bbox.getLowerLeft().getX() - pad, bbox.getLowerLeft().getY() - pad},
+          {bbox.getUpperRight().getX() + pad,
+           bbox.getUpperRight().getY() + pad}};
     }
 
     return bbox;
   }
 
-// _____________________________________________________________________________
+  // _____________________________________________________________________________
   template <typename G1, typename G2>
-  util::geo::I32Box getPaddedBoundingBox(const G1& geom, const G2& refGeom) const {
+  util::geo::I32Box getPaddedBoundingBox(const G1& geom,
+                                         const G2& refGeom) const {
     auto bbox = util::geo::getBoundingBox(geom);
 
     if (_cfg.withinDist >= 0) {
-      double scaleFactor = getMaxScaleFactor(util::geo::getBoundingBox(refGeom));
+      double scaleFactor =
+          getMaxScaleFactor(util::geo::getBoundingBox(refGeom));
 
       uint32_t pad = (_cfg.withinDist / 2.0) * scaleFactor * PREC;
 
-      return {{bbox.getLowerLeft().getX() - pad,
-               bbox.getLowerLeft().getY() - pad},
-              {bbox.getUpperRight().getX() + pad,
-               bbox.getUpperRight().getY() + pad}};
+      return {
+          {bbox.getLowerLeft().getX() - pad, bbox.getLowerLeft().getY() - pad},
+          {bbox.getUpperRight().getX() + pad,
+           bbox.getUpperRight().getY() + pad}};
     }
 
     return bbox;
@@ -534,6 +544,8 @@ class Sweeper {
 
   std::unordered_map<std::string, std::unordered_map<std::string, size_t>>
       _refs;
+
+  util::geo::I32Box _filterBox = {{std::numeric_limits<int32_t>::lowest(), std::numeric_limits<int32_t>::lowest()}, {std::numeric_limits<int32_t>::max(), std::numeric_limits<int32_t>::max()}};
 };
 }  // namespace sj
 

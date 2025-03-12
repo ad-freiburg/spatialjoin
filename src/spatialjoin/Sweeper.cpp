@@ -58,60 +58,75 @@ const static double sin45 = 1.0 / sqrt(2);
 const static double cos45 = 1.0 / sqrt(2);
 
 // _____________________________________________________________________________
-void Sweeper::add(const I32MultiPolygon& a, const std::string& gid, bool side,
+I32Box Sweeper::add(const I32MultiPolygon& a, const std::string& gid, bool side,
                   WriteBatch& batch) const {
   uint16_t subid = 0;  // a subid of 0 means "single polygon"
   if (a.size() > 1) subid = 1;
 
-  add(a, gid, subid, side, batch);
+  return add(a, gid, subid, side, batch);
 }
 
 // _____________________________________________________________________________
-void Sweeper::add(const I32MultiLine& a, const std::string& gid, bool side,
+I32Box Sweeper::add(const I32MultiLine& a, const std::string& gid, bool side,
                   WriteBatch& batch) const {
   uint16_t subid = 0;  // a subid of 0 means "single line"
   if (a.size() > 1) subid = 1;
 
-  add(a, gid, subid, side, batch);
+  return add(a, gid, subid, side, batch);
 }
 
 // _____________________________________________________________________________
-void Sweeper::add(const I32MultiPoint& a, const std::string& gid, bool side,
+I32Box Sweeper::add(const I32MultiPoint& a, const std::string& gid, bool side,
                   WriteBatch& batch) const {
   uint16_t subid = 0;  // a subid of 0 means "single point"
   if (a.size() > 1) subid = 1;
 
-  add(a, gid, subid, side, batch);
+  return add(a, gid, subid, side, batch);
 }
 
 // _____________________________________________________________________________
-void Sweeper::add(const I32MultiPolygon& a, const std::string& gid,
+I32Box Sweeper::add(const I32MultiPolygon& a, const std::string& gid,
                   size_t subId, bool side, WriteBatch& batch) const {
+  I32Box ret;
   for (const auto& poly : a) {
     if (poly.getOuter().size() < 2) continue;
-    add(poly, gid, subId, side, batch);
+    auto box = add(poly, gid, subId, side, batch);
+    if (box.isNull()) continue;
+    ret = util::geo::extendBox(box, ret);
     subId++;
   }
+
+  return ret;
 }
 
 // _____________________________________________________________________________
-void Sweeper::add(const I32MultiLine& a, const std::string& gid, size_t subId,
+I32Box Sweeper::add(const I32MultiLine& a, const std::string& gid, size_t subId,
                   bool side, WriteBatch& batch) const {
+  I32Box ret;
   for (const auto& line : a) {
     if (line.size() < 2) continue;
-    add(line, gid, subId, side, batch);
+    auto box = add(line, gid, subId, side, batch);
+    if (box.isNull()) continue;
+    ret = util::geo::extendBox(box, ret);
     subId++;
   }
+
+  return ret;
 }
 
 // _____________________________________________________________________________
-void Sweeper::add(const I32MultiPoint& a, const std::string& gid, size_t subid,
+I32Box Sweeper::add(const I32MultiPoint& a, const std::string& gid, size_t subid,
                   bool side, WriteBatch& batch) const {
+  I32Box ret;
   size_t newId = subid;
   for (const auto& point : a) {
-    add(point, gid, newId, side, batch);
+    auto box = add(point, gid, newId, side, batch);
+    if (box.isNull()) continue;
+    ret = util::geo::extendBox(box, ret);
     newId++;
   }
+
+  return ret;
 }
 
 // _____________________________________________________________________________
@@ -157,22 +172,23 @@ void Sweeper::add(const std::string& parentR, const util::geo::I32Box& box,
 }
 
 // _____________________________________________________________________________
-void Sweeper::add(const I32Polygon& poly, const std::string& gid, bool side,
+I32Box Sweeper::add(const I32Polygon& poly, const std::string& gid, bool side,
                   WriteBatch& batch) const {
-  add(poly, gid, 0, side, batch);
+  return add(poly, gid, 0, side, batch);
 }
 
 // _____________________________________________________________________________
-void Sweeper::add(const I32Polygon& poly, const std::string& gidR, size_t subid,
+I32Box Sweeper::add(const I32Polygon& poly, const std::string& gidR, size_t subid,
                   bool side, WriteBatch& batch) const {
   std::string gid = (side ? ("B" + gidR) : ("A" + gidR));
 
   WriteCand cur;
   const auto& rawBox = getBoundingBox(poly);
   const auto& box = getPaddedBoundingBox(rawBox);
+  if (!util::geo::intersects(box, _filterBox)) return {};
   I32XSortedPolygon spoly(poly);
 
-  if (spoly.empty()) return;
+  if (spoly.empty()) return box;
 
   double areaSize = area(poly);
   double outerAreaSize = outerArea(poly);
@@ -305,18 +321,20 @@ void Sweeper::add(const I32Polygon& poly, const std::string& gidR, size_t subid,
                      estimatedSize > GEOM_LARGENESS_THRESHOLD};
     batch.areas.emplace_back(cur);
   }
+
+  return box;
 }
 
 // _____________________________________________________________________________
-void Sweeper::add(const I32Line& line, const std::string& gid, bool side,
+I32Box Sweeper::add(const I32Line& line, const std::string& gid, bool side,
                   WriteBatch& batch) const {
-  add(line, gid, 0, side, batch);
+  return add(line, gid, 0, side, batch);
 }
 
 // _____________________________________________________________________________
-void Sweeper::add(const I32Line& line, const std::string& gidR, size_t subid,
+I32Box Sweeper::add(const I32Line& line, const std::string& gidR, size_t subid,
                   bool side, WriteBatch& batch) const {
-  if (line.size() < 2) return;
+  if (line.size() < 2) return {};
 
   std::string gid = (side ? ("B" + gidR) : ("A" + gidR));
 
@@ -324,6 +342,7 @@ void Sweeper::add(const I32Line& line, const std::string& gidR, size_t subid,
 
   const auto& rawBox = getBoundingBox(line);
   const auto& box = getPaddedBoundingBox(rawBox);
+  if (!util::geo::intersects(box, _filterBox)) return {};
   BoxIdList boxIds;
   std::map<int32_t, size_t> cutouts;
 
@@ -379,7 +398,7 @@ void Sweeper::add(const I32Line& line, const std::string& gidR, size_t subid,
   } else {
     // normal line
     I32XSortedLine sline(line);
-    if (line.empty()) return;
+    if (line.empty()) return {};
     util::geo::I32Polygon obb;
     if (_cfg.useOBB && line.size() >= OBB_MIN_SIZE) {
       obb = util::geo::convexHull(
@@ -423,16 +442,18 @@ void Sweeper::add(const I32Line& line, const std::string& gidR, size_t subid,
                      estimatedSize > GEOM_LARGENESS_THRESHOLD};
     batch.lines.emplace_back(cur);
   }
+
+  return box;
 }
 
 // _____________________________________________________________________________
-void Sweeper::add(const I32Point& point, const std::string& gid, bool side,
+I32Box Sweeper::add(const I32Point& point, const std::string& gid, bool side,
                   WriteBatch& batch) const {
-  add(point, gid, 0, side, batch);
+  return add(point, gid, 0, side, batch);
 }
 
 // _____________________________________________________________________________
-void Sweeper::add(const I32Point& point, const std::string& gidR, size_t subid,
+I32Box Sweeper::add(const I32Point& point, const std::string& gidR, size_t subid,
                   bool side, WriteBatch& batch) const {
   std::string gid = (side ? ("B" + gidR) : ("A" + gidR));
 
@@ -448,6 +469,8 @@ void Sweeper::add(const I32Point& point, const std::string& gidR, size_t subid,
 
   const auto& rawBox = getBoundingBox(point);
   const auto& box = getPaddedBoundingBox(rawBox);
+
+  if (!util::geo::intersects(box, _filterBox)) return {};
 
   auto pointR = util::geo::rotateSinCos(point, sin45, cos45, I32Point(0, 0));
   cur.boxvalIn = {0,  // placeholder, will be overwritten later on
@@ -472,6 +495,8 @@ void Sweeper::add(const I32Point& point, const std::string& gidR, size_t subid,
                    false};
 
   batch.points.emplace_back(cur);
+
+  return box;
 }
 
 // _____________________________________________________________________________
