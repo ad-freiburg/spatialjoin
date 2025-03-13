@@ -5,8 +5,8 @@
 
 #include <algorithm>
 #include <cassert>
-#include <cmath>
 #include <climits>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -867,7 +867,16 @@ void Sweeper::flush() {
 
   for (size_t side = 0; side < 2; side++) {
     for (size_t i = 0; i < _multiIds[side].size(); i++) {
-      diskAdd({i, 1, 0, _multiLeftX[side][i] - 1, false, POINT, 0.0, {}, side});
+      diskAdd({i,
+               1,
+               0,
+               _multiLeftX[side][i] - 1,
+               false,
+               POINT,
+               0.0,
+               {},
+               side,
+               false});
     }
   }
 
