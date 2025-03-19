@@ -31,23 +31,13 @@ class WKTParser {
   void parseWKT(const char* c, size_t id, bool side);
   void parsePoint(util::geo::DPoint point, size_t id, bool side);
 
-  util::geo::I32Box getBoundingBox() const { return _bbox;}
+  util::geo::I32Box getBoundingBox() const { return _bbox; }
 
   void done();
 
  private:
-  util::geo::I32Line parseLineString(const char* c, const char** endr);
-  util::geo::I32Point parsePoint(const char* c);
-  util::geo::I32Polygon parsePolygon(const char* c, const char** endr);
-  util::geo::I32MultiLine parseMultiLineString(const char* c,
-                                                      const char** endr);
-  util::geo::I32MultiPolygon parseMultiPolygon(const char* c,
-                                                      const char** endr);
-  std::pair<util::geo::I32Collection, size_t> parseGeometryCollection(
-      const char* c);
   void parseLine(char* c, size_t len, size_t gid, size_t t,
-                                 sj::WriteBatch& batch,
-                                 bool side);
+                 sj::WriteBatch& batch, bool side);
   void processQueue(size_t t);
   size_t _gid = 1;
   std::string _dangling;
@@ -63,6 +53,11 @@ class WKTParser {
 
   std::vector<util::geo::I32Box> _bboxes;
 
+  static util::geo::I32Point projFunc(const util::geo::DPoint& p) {
+    auto projPoint = latLngToWebMerc(p);
+    return {static_cast<int>(projPoint.getX() * PREC),
+            static_cast<int>(projPoint.getY() * PREC)};
+  }
 };
 
 }  // namespace sj
