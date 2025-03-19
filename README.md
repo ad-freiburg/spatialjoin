@@ -1,6 +1,6 @@
 # spatialjoin
 
-Compute a spatial self-join (on intersects, contains, covers, touches, crosses, overlaps and equals) on line-separated WKT geometries read from stdin.
+Compute a spatial self-join (on intersects, contains, covers, touches, crosses, overlaps and equals) on line-separated WKT geometries read from stdin. Also supports within-distance joins for arbitrary meter distances if the input geometries are given as WGS84 coordinates.
 
 Relations are written to stdout (or to a BZ2/GZ/plain file specified with `-o`).
 
