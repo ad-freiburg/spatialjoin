@@ -13,7 +13,6 @@
 
 using sj::Sweeper;
 using sj::ParseBatch;
-using sj::processQueue;
 
 size_t NUM_THREADS = 1;
 
@@ -22,30 +21,22 @@ std::string fullRun(const std::string& file, const sj::SweeperCfg& cfg) {
   {
     Sweeper sweeper(cfg, ".", ".resTmp");
 
-    size_t gid = 1;
-
     // extreme buffer size 1 here for test purposes
     const static size_t BUFF_SIZE = 1000000;
     char* buf = new char[BUFF_SIZE];
 
     size_t len = 0;
-    std::string dangling;
 
     int f = open(file.c_str(), O_RDONLY);
     TEST(f >= 0);
 
-    util::JobQueue<ParseBatch> jobs(1000);
-    std::vector<std::thread> thrds(16);
-    for (size_t i = 0; i < thrds.size(); i++)
-      thrds[i] = std::thread(&processQueue, &jobs, i, &sweeper);
+    sj::WKTParser parser(&sweeper, 1);
 
     while ((len = read(f, buf, BUFF_SIZE)) > 0) {
-      parse(buf, len, dangling, &gid, jobs, 0);
+      parser.parse(buf, len, 0);
     }
 
-    jobs.add({});
-    // wait for all workers to finish
-    for (auto& thr : thrds) thr.join();
+    parser.done();
 
     delete[] buf;
 
@@ -78,63 +69,63 @@ int main(int, char**) {
       NUM_THREADS,  NUM_THREADS, 1000,        "$",        " intersects ",
       " contains ", " covers ",  " touches ", " equals ", " overlaps ",
       " crosses ",  "$\n",       false,       false,      false,
-      false,        false,       false,       false,      false,
+      false,        false,       false,       false,      false, -1,
       {},           {},          {},          {}};
 
   sj::SweeperCfg all{
       NUM_THREADS,  NUM_THREADS, 1000,        "$",        " intersects ",
       " contains ", " covers ",  " touches ", " equals ", " overlaps ",
       " crosses ",  "$\n",       true,        true,       true,
-      true,         true,        true,        true,       false,
+      true,         true,        true,        true,       false, -1,
       {},           {},          {},          {}};
 
   sj::SweeperCfg noSurfaceArea{
       NUM_THREADS,  NUM_THREADS, 1000,        "$",        " intersects ",
       " contains ", " covers ",  " touches ", " equals ", " overlaps ",
       " crosses ",  "$\n",       true,        false,      true,
-      true,         true,        true,        true,       false,
+      true,         true,        true,        true,       false, -1,
       {},           {},          {},          {}};
 
   sj::SweeperCfg noBoxIds{
       NUM_THREADS,  NUM_THREADS, 1000,        "$",        " intersects ",
       " contains ", " covers ",  " touches ", " equals ", " overlaps ",
       " crosses ",  "$\n",       false,       true,       true,
-      true,         true,        true,        true,       false,
+      true,         true,        true,        true,       false, -1,
       {},           {},          {},          {}};
 
   sj::SweeperCfg noObb{
       NUM_THREADS,  NUM_THREADS, 1000,        "$",        " intersects ",
       " contains ", " covers ",  " touches ", " equals ", " overlaps ",
       " crosses ",  "$\n",       true,        true,       false,
-      true,         true,        true,        true,       false,
+      true,         true,        true,        true,       false, -1,
       {},           {},          {},          {}};
 
   sj::SweeperCfg noCutouts{
       NUM_THREADS,  NUM_THREADS, 1000,        "$",        " intersects ",
       " contains ", " covers ",  " touches ", " equals ", " overlaps ",
       " crosses ",  "$\n",       true,        true,       true,
-      false,        true,        true,        true,       false,
+      false,        true,        true,        true,       false, -1,
       {},           {},          {},          {}};
 
   sj::SweeperCfg noDiagBox{
       NUM_THREADS,  NUM_THREADS, 1000,        "$",        " intersects ",
       " contains ", " covers ",  " touches ", " equals ", " overlaps ",
       " crosses ",  "$\n",       true,        true,       true,
-      true,         false,       true,        true,       false,
+      true,         false,       true,        true,       false, -1,
       {},           {},          {},          {}};
 
   sj::SweeperCfg noFastSweep{
       NUM_THREADS,  NUM_THREADS, 1000,        "$",        " intersects ",
       " contains ", " covers ",  " touches ", " equals ", " overlaps ",
       " crosses ",  "$\n",       true,        true,       true,
-      true,         true,        false,       true,       false,
+      true,         true,        false,       true,       false, -1,
       {},           {},          {},          {}};
 
   sj::SweeperCfg noInnerOuter{
       NUM_THREADS,  NUM_THREADS, 1000,        "$",        " intersects ",
       " contains ", " covers ",  " touches ", " equals ", " overlaps ",
       " crosses ",  "$\n",       true,        true,       true,
-      true,         true,        true,        false,      false,
+      true,         true,        true,        false,      false, -1,
       {},           {},          {},          {}};
 
   std::vector<sj::SweeperCfg> cfgs{baseline,  all,         noSurfaceArea,

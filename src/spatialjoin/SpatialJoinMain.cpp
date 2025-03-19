@@ -13,7 +13,6 @@
 
 using sj::Sweeper;
 using sj::ParseBatch;
-using sj::processQueue;
 using util::geo::DLine;
 using util::geo::DPoint;
 using util::geo::I32Line;
@@ -70,6 +69,8 @@ void printHelp(int argc, char** argv) {
       << "separator between crossing geometry IDs\n"
       << std::setw(41) << "  --suffix (default: '\\n')"
       << "suffix added at the beginning of every relation\n\n"
+      << std::setw(41) << "  --within-distance (default: '')"
+      << "if set to non-negative value, only compute for each object the objects within the given distance\n\n"
       << std::setfill(' ') << std::left << "Geometric computation:\n"
       << std::setw(41) << "  --no-box-ids"
       << "disable box id criteria for contains/covers/intersect computation\n"
@@ -121,6 +122,7 @@ int main(int argc, char** argv) {
   std::string overlaps = " overlaps ";
   std::string crosses = " crosses ";
   std::string suffix = "\n";
+  double withinDist = -1;
 
   bool useBoxIds = true;
   bool useArea = true;
@@ -171,6 +173,8 @@ int main(int argc, char** argv) {
           state = 13;
         } else if (cur == "--cache-max-size") {
           state = 14;
+        } else if (cur == "--within-distance") {
+          state = 15;
         } else if (cur == "--no-box-ids") {
           useBoxIds = false;
         } else if (cur == "--no-surface-area") {
@@ -248,14 +252,16 @@ int main(int argc, char** argv) {
         geomCacheMaxSize = atoi(cur.c_str());
         state = 0;
         break;
+      case 15:
+        withinDist = atof(cur.c_str());
+        state = 0;
+        break;
     }
   }
 
   const static size_t CACHE_SIZE = 1024 * 1024 * 100;
   unsigned char* buf = new unsigned char[CACHE_SIZE];
   size_t len;
-  std::string dangling;
-  size_t gid = 1;
 
   Sweeper sweeper({numThreads,
                    numCaches,
@@ -277,6 +283,7 @@ int main(int argc, char** argv) {
                    useFastSweepSkip,
                    useInnerOuter,
                    noGeometryChecks,
+                   withinDist,
                    {},
                    [](const std::string& s) { LOGTO(INFO, std::cerr) << s; },
                    [](const std::string& s) { std::cerr << s; },
@@ -286,19 +293,13 @@ int main(int argc, char** argv) {
   LOGTO(INFO, std::cerr) << "Parsing input geometries...";
   auto ts = TIME();
 
-  util::JobQueue<ParseBatch> jobs(1000);
-  std::vector<std::thread> thrds(NUM_THREADS);
-  for (size_t i = 0; i < thrds.size(); i++)
-    thrds[i] = std::thread(&processQueue, &jobs, i, &sweeper);
+  sj::WKTParser parser(&sweeper, NUM_THREADS);
 
   while ((len = util::readAll(0, buf, CACHE_SIZE)) > 0) {
-    parse(reinterpret_cast<char*>(buf), len, dangling, &gid, jobs, 0);
+    parser.parse(reinterpret_cast<char*>(buf), len, 0);
   }
 
-  // end event
-  jobs.add({});
-  // wait for all workers to finish
-  for (auto& thr : thrds) thr.join();
+  parser.done();
 
   sweeper.flush();
 

@@ -22,10 +22,10 @@
 #include <unordered_set>
 
 #include "GeometryCache.h"
-#include "IntervalIdx.h"
 #include "Stats.h"
 #include "util/JobQueue.h"
 #include "util/geo/Geo.h"
+#include "util/geo/IntervalIdx.h"
 
 #ifndef POSIX_FADV_SEQUENTIAL
 #define POSIX_FADV_SEQUENTIAL 2
@@ -137,6 +137,7 @@ struct SweeperCfg {
   bool useFastSweepSkip;
   bool useInnerOuter;
   bool noGeometryChecks;
+  double withinDist;
   std::function<void(size_t t, const char* a, const char* b, const char* pred)>
       writeRelCb;
   std::function<void(const std::string&)> logCb;
@@ -226,32 +227,38 @@ class Sweeper {
     }
   }
 
-  void add(const util::geo::I32MultiPolygon& a, const std::string& gid,
-           bool side, WriteBatch& batch) const;
-  void add(const util::geo::I32MultiPolygon& a, const std::string& gid, size_t,
-           bool side, WriteBatch& batch) const;
-  void add(const util::geo::I32Polygon& a, const std::string& gid, bool side,
-           WriteBatch& batch) const;
-  void add(const util::geo::I32Polygon& a, const std::string& gid, size_t subId,
-           bool side, WriteBatch& batch) const;
+  util::geo::I32Box add(const util::geo::I32MultiPolygon& a,
+                        const std::string& gid, bool side,
+                        WriteBatch& batch) const;
+  util::geo::I32Box add(const util::geo::I32MultiPolygon& a,
+                        const std::string& gid, size_t, bool side,
+                        WriteBatch& batch) const;
+  util::geo::I32Box add(const util::geo::I32Polygon& a, const std::string& gid,
+                        bool side, WriteBatch& batch) const;
+  util::geo::I32Box add(const util::geo::I32Polygon& a, const std::string& gid,
+                        size_t subId, bool side, WriteBatch& batch) const;
 
-  void add(const util::geo::I32MultiLine& a, const std::string& gid, size_t,
-           bool side, WriteBatch& batch) const;
-  void add(const util::geo::I32MultiLine& a, const std::string& gid, bool side,
-           WriteBatch& batch) const;
-  void add(const util::geo::I32Line& a, const std::string& gid, bool side,
-           WriteBatch& batch) const;
-  void add(const util::geo::I32Line& a, const std::string& gid, size_t subid,
-           bool side, WriteBatch& batch) const;
+  util::geo::I32Box add(const util::geo::I32MultiLine& a,
+                        const std::string& gid, size_t, bool side,
+                        WriteBatch& batch) const;
+  util::geo::I32Box add(const util::geo::I32MultiLine& a,
+                        const std::string& gid, bool side,
+                        WriteBatch& batch) const;
+  util::geo::I32Box add(const util::geo::I32Line& a, const std::string& gid,
+                        bool side, WriteBatch& batch) const;
+  util::geo::I32Box add(const util::geo::I32Line& a, const std::string& gid,
+                        size_t subid, bool side, WriteBatch& batch) const;
 
-  void add(const util::geo::I32Point& a, const std::string& gid, bool side,
-           WriteBatch& batch) const;
-  void add(const util::geo::I32Point& a, const std::string& gid, size_t subid,
-           bool side, WriteBatch& batch) const;
-  void add(const util::geo::I32MultiPoint& a, const std::string& gid, size_t,
-           bool side, WriteBatch& batch) const;
-  void add(const util::geo::I32MultiPoint& a, const std::string& gid, bool side,
-           WriteBatch& batch) const;
+  util::geo::I32Box add(const util::geo::I32Point& a, const std::string& gid,
+                        bool side, WriteBatch& batch) const;
+  util::geo::I32Box add(const util::geo::I32Point& a, const std::string& gid,
+                        size_t subid, bool side, WriteBatch& batch) const;
+  util::geo::I32Box add(const util::geo::I32MultiPoint& a,
+                        const std::string& gid, size_t, bool side,
+                        WriteBatch& batch) const;
+  util::geo::I32Box add(const util::geo::I32MultiPoint& a,
+                        const std::string& gid, bool side,
+                        WriteBatch& batch) const;
 
   void add(const std::string& a, const util::geo::I32Box& box,
            const std::string& gid, bool side, WriteBatch& batch) const;
@@ -270,6 +277,48 @@ class Sweeper {
 
   static std::string intToBase126(uint64_t id);
   static uint64_t base126ToInt(const std::string& id);
+
+  void setFilterBox(const util::geo::I32Box& filterBox) { _filterBox = filterBox; }
+
+  // _____________________________________________________________________________
+  template <typename G>
+  util::geo::I32Box getPaddedBoundingBox(const G& geom) const {
+    auto bbox = util::geo::getBoundingBox(geom);
+
+    if (_cfg.withinDist >= 0) {
+      double scaleFactor = getMaxScaleFactor(bbox);
+
+      uint32_t pad = (_cfg.withinDist / 2.0) * scaleFactor * PREC;
+
+      return {
+          {bbox.getLowerLeft().getX() - pad, bbox.getLowerLeft().getY() - pad},
+          {bbox.getUpperRight().getX() + pad,
+           bbox.getUpperRight().getY() + pad}};
+    }
+
+    return bbox;
+  }
+
+  // _____________________________________________________________________________
+  template <typename G1, typename G2>
+  util::geo::I32Box getPaddedBoundingBox(const G1& geom,
+                                         const G2& refGeom) const {
+    auto bbox = util::geo::getBoundingBox(geom);
+
+    if (_cfg.withinDist >= 0) {
+      double scaleFactor =
+          getMaxScaleFactor(util::geo::getBoundingBox(refGeom));
+
+      uint32_t pad = (_cfg.withinDist / 2.0) * scaleFactor * PREC;
+
+      return {
+          {bbox.getLowerLeft().getX() - pad, bbox.getLowerLeft().getY() - pad},
+          {bbox.getUpperRight().getX() + pad,
+           bbox.getUpperRight().getY() + pad}};
+    }
+
+    return bbox;
+  }
 
  private:
   const SweeperCfg _cfg;
@@ -301,6 +350,8 @@ class Sweeper {
   GeometryCache<Line> _lineCache;
   GeometryCache<SimpleLine> _simpleLineCache;
 
+  std::vector<std::map<std::string, std::map<std::string, double>>>
+      _subDistance;
   std::vector<std::map<std::string, std::map<std::string, std::set<size_t>>>>
       _subContains;
   std::vector<std::map<std::string, std::map<std::string, std::set<size_t>>>>
@@ -337,6 +388,7 @@ class Sweeper {
   std::vector<std::mutex> _mutsNotCrosses;
   std::vector<std::mutex> _mutsOverlaps;
   std::vector<std::mutex> _mutsNotOverlaps;
+  std::vector<std::mutex> _mutsDistance;
 
   Area areaFromSimpleArea(const SimpleArea* sa) const;
 
@@ -361,7 +413,21 @@ class Sweeper {
   std::tuple<bool, bool> check(const util::geo::I32Point& a, const Line* b,
                                size_t t) const;
 
+  double distCheck(const util::geo::I32Point& a, const Area* b, size_t t) const;
+  double distCheck(const util::geo::I32Point& a, const Line* b, size_t t) const;
+  double distCheck(const util::geo::I32Point& a, const SimpleLine* b,
+                   size_t t) const;
+  double distCheck(const SimpleLine* a, const SimpleLine* b, size_t t) const;
+  double distCheck(const SimpleLine* a, const Line* b, size_t t) const;
+  double distCheck(const SimpleLine* a, const Area* b, size_t t) const;
+  double distCheck(const Line* a, const Line* b, size_t t) const;
+  double distCheck(const Area* a, const Area* b, size_t t) const;
+  double distCheck(const Line* a, const Area* b, size_t t) const;
+
   bool refRelated(const std::string& a, const std::string& b) const;
+
+  double getMaxScaleFactor(const util::geo::I32Box& geom) const;
+  double getMaxScaleFactor(const util::geo::I32Point& geom) const;
 
   void diskAdd(const BoxVal& bv);
 
@@ -381,6 +447,8 @@ class Sweeper {
                    size_t bSub);
   void writeEquals(size_t t, const std::string& a, size_t aSub,
                    const std::string& b, size_t bSub);
+  void writeDist(size_t t, const std::string& a, size_t aSub,
+                 const std::string& b, size_t bSub, double dist);
   void writeTouches(size_t t, const std::string& a, size_t aSub,
                     const std::string& b, size_t bSub);
   void writeNotTouches(size_t t, const std::string& a, size_t aSub,
@@ -397,6 +465,7 @@ class Sweeper {
                        const std::string& b, size_t bSub);
 
   void doCheck(BoxVal cur, SweepVal sv, size_t t);
+  void doDistCheck(BoxVal cur, SweepVal sv, size_t t);
   void selfCheck(BoxVal cur, size_t t);
 
   void processQueue(size_t t);
@@ -410,8 +479,11 @@ class Sweeper {
   bool notTouches(const std::string& a, const std::string& b);
   bool notCrosses(const std::string& a, const std::string& b);
 
+  static double meterDist(const util::geo::I32Point& p1,
+                          const util::geo::I32Point& p2);
+
   void fillBatch(JobBatch* batch,
-                 const sj::IntervalIdx<int32_t, SweepVal>* actives,
+                 const util::geo::IntervalIdx<int32_t, SweepVal>* actives,
                  const BoxVal* cur) const;
 
   static int boxCmp(const void* a, const void* b) {
@@ -472,6 +544,8 @@ class Sweeper {
 
   std::unordered_map<std::string, std::unordered_map<std::string, size_t>>
       _refs;
+
+  util::geo::I32Box _filterBox = {{std::numeric_limits<int32_t>::lowest(), std::numeric_limits<int32_t>::lowest()}, {std::numeric_limits<int32_t>::max(), std::numeric_limits<int32_t>::max()}};
 };
 }  // namespace sj
 
