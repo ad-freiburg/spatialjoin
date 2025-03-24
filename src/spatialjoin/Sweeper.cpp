@@ -699,8 +699,8 @@ void Sweeper::multiOut(size_t tOut, const std::string& gidA) {
       auto i = _subDistance[t].find(gidA);
       if (i != _subDistance[t].end()) {
         for (const auto& a : i->second) {
-          writeRel(t, gidA, a.first, "\t" + std::to_string(a.second) + "\t");
-          writeRel(t, a.first, gidA, "\t" + std::to_string(a.second) + "\t");
+          writeRel(tOut, gidA, a.first, "\t" + std::to_string(a.second) + "\t");
+          writeRel(tOut, a.first, gidA, "\t" + std::to_string(a.second) + "\t");
         }
         _subDistance[t].erase(i);
       }
@@ -1957,8 +1957,6 @@ void Sweeper::selfCheck(const BoxVal cur, size_t t) {
 void Sweeper::doDistCheck(const BoxVal cur, const SweepVal sv, size_t t) {
   _checks[t]++;
   _curX[t] = cur.val;
-
-  if (cur.type == sv.type && cur.id == sv.id) return selfCheck(cur, t);
 
   // every 10000 checks, update our position
   if (_checks[t] % 10000 == 0) _atomicCurX[t] = _curX[t];
