@@ -25,12 +25,12 @@ set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS} -g -DLOGLEVEL=3")
 find_package(BZip2)
 find_package(ZLIB)
 
-if (BZIP2_FOUND)
-	add_definitions( -DBZIP2_FOUND=${BZIP2_FOUND} )
+if (!BZIP2_FOUND)
+	add_definitions( -DSPATIALJOIN_NO_BZIP2=True )
 endif()
 
-if (ZLIB_FOUND)
-	add_definitions( -DZLIB_FOUND=${ZLIB_FOUND} )
+if (!ZLIB_FOUND)
+	add_definitions( -DSPATIALJOIN_NO_ZLIB=True )
 endif()
 
 # export compile commands to tools like clang

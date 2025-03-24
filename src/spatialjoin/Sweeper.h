@@ -4,7 +4,7 @@
 #ifndef SPATIALJOINS_SWEEPER_H_
 #define SPATIALJOINS_SWEEPER_H_
 
-#ifdef BZIP2_FOUND
+#ifndef SPATIALJOIN_NO_BZIP2
 #include <bzlib.h>
 #endif
 #include <fcntl.h>
@@ -13,7 +13,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-#ifdef ZLIB_FOUND
+#ifndef SPATIALJOIN_NO_ZLIB
 #include <zlib.h>
 #endif
 
@@ -184,14 +184,14 @@ class Sweeper {
         _jobs(100) {
     if (!_cfg.writeRelCb) {
       if (util::endsWith(_out, ".bz2")) {
-#ifdef BZIP2_FOUND
+#ifndef SPATIALJOIN_NO_BZIP2
         _outMode = BZ2;
 #else
       throw std::runtime_error("spatialjoin was compiled without BZ2 support");
 #endif
       }
       else if (util::endsWith(_out, ".gz")) {
-#ifdef ZLIB_FOUND
+#ifndef SPATIALJOIN_NO_ZLIB
         _outMode = GZ;
 #else
       throw std::runtime_error("spatialjoin was compiled without GZ support");
@@ -349,10 +349,10 @@ class Sweeper {
 
   std::vector<FILE*> _rawFiles;
 
-#ifdef BZIP2_FOUND
+#ifndef SPATIALJOIN_NO_BZIP2
   std::vector<BZFILE*> _bzFiles;
 #endif
-#ifdef ZLIB_FOUND
+#ifndef SPATIALJOIN_NO_ZLIB
   std::vector<gzFile> _gzFiles;
 #endif
   std::vector<size_t> _outBufPos;

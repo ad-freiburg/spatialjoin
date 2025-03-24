@@ -1,11 +1,11 @@
 #include <errno.h>
 #include <stdio.h>
 #include <unistd.h>
-#ifdef ZLIB_FOUND
+#ifndef SPATIALJOIN_NO_ZLIB
 #include <zlib.h>
 #endif
 
-#ifdef BZIP2_FOUND
+#ifndef SPATIALJOIN_NO_BZIP2
 #include <bzlib.h>
 #endif
 
@@ -1021,12 +1021,12 @@ RelStats Sweeper::sweep() {
 
   _rawFiles = {};
 
-#ifdef BZIP2_FOUND
+#ifndef SPATIALJOIN_NO_BZIP2
   _bzFiles = {};
   _bzFiles.resize(_cfg.numThreads + 1);
 #endif
 
-#ifdef ZLIB_FOUND
+#ifndef SPATIALJOIN_NO_ZLIB
   _gzFiles = {};
   _gzFiles.resize(_cfg.numThreads + 1);
 #endif
@@ -1797,7 +1797,7 @@ void Sweeper::writeRel(size_t t, const std::string& a, const std::string& b,
                      _cfg.pairEnd.size() - off - off;
 
     if (_outMode == BZ2) {
-#ifdef BZIP2_FOUND
+#ifndef SPATIALJOIN_NO_BZIP2
       if (_outBufPos[t] + totSize >= BUFFER_S_PAIRS) {
         int err = 0;
         BZ2_bzWrite(&err, _bzFiles[t], _outBuffers[t], _outBufPos[t]);
@@ -1817,7 +1817,7 @@ void Sweeper::writeRel(size_t t, const std::string& a, const std::string& b,
       writeRelToBuf(t, a, b, pred);
 #endif
     } else if (_outMode == GZ) {
-#ifdef ZLIB_FOUND
+#ifndef SPATIALJOIN_NO_ZLIB
       if (_outBufPos[t] + totSize >= BUFFER_S_PAIRS) {
         int r = gzwrite(_gzFiles[t], _outBuffers[t], _outBufPos[t]);
         if (r != (int)_outBufPos[t]) {
@@ -2961,7 +2961,7 @@ void Sweeper::flushOutputFiles() {
   }
   if (_outMode == BZ2 || _outMode == GZ || _outMode == PLAIN) {
     if (_outMode == BZ2) {
-#ifdef BZIP2_FOUND
+#ifndef SPATIALJOIN_NO_BZIP2
       for (size_t i = 0; i < _cfg.numThreads + 1; i++) {
         int err = 0;
         BZ2_bzWrite(&err, _bzFiles[i], _outBuffers[i], _outBufPos[i]);
@@ -2980,7 +2980,7 @@ void Sweeper::flushOutputFiles() {
       }
 #endif
     } else if (_outMode == GZ) {
-#ifdef ZLIB_FOUND
+#ifndef SPATIALJOIN_NO_ZLIB
       for (size_t i = 0; i < _cfg.numThreads + 1; i++) {
         int r = gzwrite(_gzFiles[i], _outBuffers[i], _outBufPos[i]);
         if (r != (int)_outBufPos[i]) {
@@ -3037,7 +3037,7 @@ void Sweeper::prepareOutputFiles() {
   if (_cfg.writeRelCb) return;
 
   if (_outMode == BZ2) {
-#ifdef BZIP2_FOUND
+#ifndef SPATIALJOIN_NO_BZIP2
     for (size_t i = 0; i < _cfg.numThreads + 1; i++) {
       std::string fname = _cache + "/.rels" + std::to_string(getpid()) + "-" +
                           std::to_string(i);
@@ -3064,7 +3064,7 @@ void Sweeper::prepareOutputFiles() {
     }
 #endif
   } else if (_outMode == GZ) {
-#ifdef ZLIB_FOUND
+#ifndef SPATIALJOIN_NO_ZLIB
     for (size_t i = 0; i < _cfg.numThreads + 1; i++) {
       std::string fname = _cache + "/.rels" + std::to_string(getpid()) + "-" +
                           std::to_string(i);
