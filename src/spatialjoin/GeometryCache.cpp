@@ -80,7 +80,10 @@ sj::SimpleLine sj::GeometryCache<sj::SimpleLine>::getFrom(
   uint16_t len;
   str.read(reinterpret_cast<char*>(&len), sizeof(uint16_t));
   ret.id.resize(len);
-  str.read(reinterpret_cast<char*>(&ret.id[0]), len * sizeof(char));
+
+  if (len) {
+    str.read(reinterpret_cast<char*>(&ret.id[0]), len * sizeof(char));
+  }
 
   return ret;
 }
@@ -97,7 +100,10 @@ sj::Point sj::GeometryCache<sj::Point>::getFrom(size_t off,
   uint16_t len;
   str.read(reinterpret_cast<char*>(&len), sizeof(uint16_t));
   ret.id.resize(len);
-  str.read(reinterpret_cast<char*>(&ret.id[0]), len * sizeof(char));
+
+  if (len) {
+    str.read(reinterpret_cast<char*>(&ret.id[0]), len * sizeof(char));
+  }
 
   // sub id
   str.read(reinterpret_cast<char*>(&ret.subId), sizeof(uint16_t));
@@ -117,14 +123,20 @@ sj::SimpleArea sj::GeometryCache<sj::SimpleArea>::getFrom(
   uint32_t size;
   str.read(reinterpret_cast<char*>(&size), sizeof(uint32_t));
   ret.geom.resize(size);
-  str.read(reinterpret_cast<char*>(&ret.geom[0]),
-           size * sizeof(util::geo::I32Point));
+
+  if (size) {
+    str.read(reinterpret_cast<char*>(&ret.geom[0]),
+             size * sizeof(util::geo::I32Point));
+  }
 
   // id
   uint16_t len;
   str.read(reinterpret_cast<char*>(&len), sizeof(uint16_t));
   ret.id.resize(len);
-  str.read(reinterpret_cast<char*>(&ret.id[0]), len * sizeof(char));
+
+  if (len) {
+    str.read(reinterpret_cast<char*>(&ret.id[0]), len * sizeof(char));
+  }
 
   return ret;
 }
@@ -147,7 +159,10 @@ sj::Line sj::GeometryCache<sj::Line>::getFrom(size_t off,
   uint16_t len;
   str.read(reinterpret_cast<char*>(&len), sizeof(uint16_t));
   ret.id.resize(len);
-  str.read(reinterpret_cast<char*>(&ret.id[0]), len * sizeof(char));
+
+  if (len) {
+    str.read(reinterpret_cast<char*>(&ret.id[0]), len * sizeof(char));
+  }
 
   // sub id
   str.read(reinterpret_cast<char*>(&ret.subId), sizeof(uint16_t));
@@ -199,7 +214,10 @@ sj::Area sj::GeometryCache<sj::Area>::getFrom(size_t off,
   uint16_t len;
   str.read(reinterpret_cast<char*>(&len), sizeof(uint16_t));
   ret.id.resize(len);
-  str.read(reinterpret_cast<char*>(&ret.id[0]), len * sizeof(char));
+
+  if (len) {
+    str.read(reinterpret_cast<char*>(&ret.id[0]), len * sizeof(char));
+  }
 
   // sub id
   str.read(reinterpret_cast<char*>(&ret.subId), sizeof(uint16_t));
@@ -275,16 +293,6 @@ size_t sj::GeometryCache<sj::Point>::writeTo(const sj::Point& val,
 
 // ____________________________________________________________________________
 template <typename W>
-size_t sj::GeometryCache<W>::add(const W& val) {
-  size_t ret = _geomsOffset;
-
-  writeTo(val, _geomsF);
-
-  return ret;
-}
-
-// ____________________________________________________________________________
-template <typename W>
 size_t sj::GeometryCache<W>::add(const std::string& raw) {
   size_t ret = _geomsOffset;
   _geomsOffset += raw.size();
@@ -293,7 +301,7 @@ size_t sj::GeometryCache<W>::add(const std::string& raw) {
     // cache for later use
     std::istringstream ss(raw);
     const auto& val = getFrom(0, ss);
-    _memStore[ret] = val;
+    _memStore[ret] = std::move(val);
 
     if (_geomsOffset > MAX_MEM_CACHE_SIZE) {
       _inMemory = false;
@@ -324,9 +332,12 @@ size_t sj::GeometryCache<sj::SimpleArea>::writeTo(const sj::SimpleArea& val,
   uint32_t len = val.geom.size();
   str.write(reinterpret_cast<const char*>(&len), sizeof(uint32_t));
   ret += sizeof(uint32_t);
-  str.write(reinterpret_cast<const char*>(&val.geom[0]),
-            len * sizeof(util::geo::I32Point));
-  ret += sizeof(util::geo::I32Point) * len;
+
+  if (len) {
+    str.write(reinterpret_cast<const char*>(&val.geom[0]),
+              len * sizeof(util::geo::I32Point));
+    ret += sizeof(util::geo::I32Point) * len;
+  }
 
   // id
   uint16_t s = val.id.size();
@@ -531,10 +542,12 @@ void sj::GeometryCache<W>::readPoly(std::istream& str,
   str.read(reinterpret_cast<char*>(&sizeOuter), sizeof(uint32_t));
 
   // TODO: careful, resize initializes entire vector!
-  ret.getOuter().rawRing().resize(sizeOuter);
+  if (sizeOuter) {
+    ret.getOuter().rawRing().resize(sizeOuter);
 
-  str.read(reinterpret_cast<char*>(&ret.getOuter().rawRing()[0]),
-           sizeof(util::geo::XSortedTuple<int32_t>) * sizeOuter);
+    str.read(reinterpret_cast<char*>(&ret.getOuter().rawRing()[0]),
+             sizeof(util::geo::XSortedTuple<int32_t>) * sizeOuter);
+  }
 
   uint32_t numInners;
   str.read(reinterpret_cast<char*>(&numInners), sizeof(uint32_t));
@@ -550,12 +563,14 @@ void sj::GeometryCache<W>::readPoly(std::istream& str,
   ret.getInnerBoxIdx().resize(numInners);
   ret.getInnerAreas().resize(numInners);
 
-  str.read(reinterpret_cast<char*>(&ret.getInnerBoxes()[0]),
-           sizeof(util::geo::Box<int32_t>) * numInners);
-  str.read(reinterpret_cast<char*>(&ret.getInnerBoxIdx()[0]),
-           sizeof(std::pair<int32_t, size_t>) * numInners);
-  str.read(reinterpret_cast<char*>(&ret.getInnerAreas()[0]),
-           sizeof(double) * numInners);
+  if (numInners) {
+    str.read(reinterpret_cast<char*>(&ret.getInnerBoxes()[0]),
+             sizeof(util::geo::Box<int32_t>) * numInners);
+    str.read(reinterpret_cast<char*>(&ret.getInnerBoxIdx()[0]),
+             sizeof(std::pair<int32_t, size_t>) * numInners);
+    str.read(reinterpret_cast<char*>(&ret.getInnerAreas()[0]),
+             sizeof(double) * numInners);
+  }
 
   for (uint32_t j = 0; j < numInners; j++) {
     double maxSegLen;
@@ -568,8 +583,10 @@ void sj::GeometryCache<W>::readPoly(std::istream& str,
     // TODO: careful, resize initializes entire vector!
     ret.getInners()[j].rawRing().resize(sizeInner);
 
-    str.read(reinterpret_cast<char*>(&ret.getInners()[j].rawRing()[0]),
-             sizeof(util::geo::XSortedTuple<int32_t>) * sizeInner);
+    if (sizeInner) {
+      str.read(reinterpret_cast<char*>(&ret.getInners()[j].rawRing()[0]),
+               sizeof(util::geo::XSortedTuple<int32_t>) * sizeInner);
+    }
   }
 }
 
@@ -578,6 +595,7 @@ template <typename W>
 size_t sj::GeometryCache<W>::writePoly(const util::geo::I32XSortedPolygon& geom,
                                        std::ostream& str) {
   size_t ret = 0;
+
   // geom, outer
   double maxSegLen = geom.getOuter().getMaxSegLen();
   str.write(reinterpret_cast<const char*>(&maxSegLen), sizeof(double));
@@ -585,10 +603,11 @@ size_t sj::GeometryCache<W>::writePoly(const util::geo::I32XSortedPolygon& geom,
 
   uint32_t locSize = geom.getOuter().rawRing().size();
   str.write(reinterpret_cast<const char*>(&locSize), sizeof(uint32_t));
-  if (locSize)
+  if (locSize) {
     str.write(reinterpret_cast<const char*>(&geom.getOuter().rawRing()[0]),
               sizeof(util::geo::XSortedTuple<int32_t>) * locSize);
-  ret += sizeof(uint32_t) + sizeof(util::geo::XSortedTuple<int32_t>) * locSize;
+  }
+    ret += sizeof(uint32_t) + sizeof(util::geo::XSortedTuple<int32_t>) * locSize;
 
   // geom, inners
   locSize = geom.getInners().size();
@@ -601,19 +620,21 @@ size_t sj::GeometryCache<W>::writePoly(const util::geo::I32XSortedPolygon& geom,
   ret += sizeof(double);
 
   // inner boxes
-  str.write(reinterpret_cast<const char*>(&geom.getInnerBoxes()[0]),
-            sizeof(util::geo::Box<int32_t>) * locSize);
-  ret += sizeof(util::geo::Box<int32_t>) * locSize;
+  if (locSize) {
+    str.write(reinterpret_cast<const char*>(&geom.getInnerBoxes()[0]),
+              sizeof(util::geo::Box<int32_t>) * locSize);
+    ret += sizeof(util::geo::Box<int32_t>) * locSize;
 
-  // inner box idx
-  str.write(reinterpret_cast<const char*>(&geom.getInnerBoxIdx()[0]),
-            sizeof(std::pair<int32_t, size_t>) * locSize);
-  ret += sizeof(std::pair<int32_t, size_t>) * locSize;
+    // inner box idx
+    str.write(reinterpret_cast<const char*>(&geom.getInnerBoxIdx()[0]),
+              sizeof(std::pair<int32_t, size_t>) * locSize);
+    ret += sizeof(std::pair<int32_t, size_t>) * locSize;
 
-  // inner areas
-  str.write(reinterpret_cast<const char*>(&geom.getInnerAreas()[0]),
-            sizeof(double) * locSize);
-  ret += sizeof(double) * locSize;
+    // inner areas
+    str.write(reinterpret_cast<const char*>(&geom.getInnerAreas()[0]),
+              sizeof(double) * locSize);
+    ret += sizeof(double) * locSize;
+  }
 
   for (const auto& inner : geom.getInners()) {
     locSize = inner.rawRing().size();
@@ -622,9 +643,11 @@ size_t sj::GeometryCache<W>::writePoly(const util::geo::I32XSortedPolygon& geom,
     ret += sizeof(double);
 
     str.write(reinterpret_cast<const char*>(&locSize), sizeof(uint32_t));
-    if (locSize)
+    if (locSize) {
       str.write(reinterpret_cast<const char*>(&inner.rawRing()[0]),
                 sizeof(util::geo::XSortedTuple<int32_t>) * locSize);
+    }
+
     ret +=
         sizeof(uint32_t) + sizeof(util::geo::XSortedTuple<int32_t>) * locSize;
   }
@@ -646,8 +669,10 @@ void sj::GeometryCache<W>::readLine(std::istream& str,
   // TODO: careful, resize initializes entire vector!
   ret.rawLine().resize(sizeOuter);
 
-  str.read(reinterpret_cast<char*>(&ret.rawLine()[0]),
-           sizeof(util::geo::XSortedTuple<int32_t>) * sizeOuter);
+  if (sizeOuter) {
+    str.read(reinterpret_cast<char*>(&ret.rawLine()[0]),
+             sizeof(util::geo::XSortedTuple<int32_t>) * sizeOuter);
+  }
 }
 
 // ____________________________________________________________________________

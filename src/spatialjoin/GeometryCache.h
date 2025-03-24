@@ -148,7 +148,6 @@ class GeometryCache {
     }
   }
 
-  size_t add(const W& val);
   size_t add(const std::string& raw);
   static size_t writeTo(const W& val, std::ostream& str);
 
