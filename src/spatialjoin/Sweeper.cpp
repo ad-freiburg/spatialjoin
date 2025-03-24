@@ -1,7 +1,13 @@
 #include <errno.h>
 #include <stdio.h>
 #include <unistd.h>
+#ifdef ZLIB_FOUND
 #include <zlib.h>
+#endif
+
+#ifdef BZIP2_FOUND
+#include <bzlib.h>
+#endif
 
 #include <algorithm>
 #include <cassert>
@@ -1013,10 +1019,21 @@ RelStats Sweeper::sweep() {
 
   util::geo::IntervalIdx<int32_t, SweepVal> actives[2];
 
-  _rawFiles = {}, _files = {}, _outBufPos = {}, _outBuffers = {};
+  _rawFiles = {};
 
-  _files.resize(_cfg.numThreads + 1);
+#ifdef BZIP2_FOUND
+  _bzFiles = {};
+  _bzFiles.resize(_cfg.numThreads + 1);
+#endif
+
+#ifdef ZLIB_FOUND
+  _gzFiles = {};
   _gzFiles.resize(_cfg.numThreads + 1);
+#endif
+
+  _outBufPos = {};
+  _outBuffers = {};
+
   _rawFiles.resize(_cfg.numThreads + 1);
   _outBufPos.resize(_cfg.numThreads + 1);
   _outBuffers.resize(_cfg.numThreads + 1);
@@ -1034,6 +1051,7 @@ RelStats Sweeper::sweep() {
   _subNotCrosses.resize(_cfg.numThreads + 1);
   _subCrosses.resize(_cfg.numThreads + 1);
   _subTouches.resize(_cfg.numThreads + 1);
+
   _mutsEquals = std::vector<std::mutex>(_cfg.numThreads + 1);
   _mutsCovers = std::vector<std::mutex>(_cfg.numThreads + 1);
   _mutsContains = std::vector<std::mutex>(_cfg.numThreads + 1);
@@ -1779,11 +1797,12 @@ void Sweeper::writeRel(size_t t, const std::string& a, const std::string& b,
                      _cfg.pairEnd.size() - off - off;
 
     if (_outMode == BZ2) {
+#ifdef BZIP2_FOUND
       if (_outBufPos[t] + totSize >= BUFFER_S_PAIRS) {
         int err = 0;
-        BZ2_bzWrite(&err, _files[t], _outBuffers[t], _outBufPos[t]);
+        BZ2_bzWrite(&err, _bzFiles[t], _outBuffers[t], _outBufPos[t]);
         if (err == BZ_IO_ERROR) {
-          BZ2_bzWriteClose(&err, _files[t], 0, 0, 0);
+          BZ2_bzWriteClose(&err, _bzFiles[t], 0, 0, 0);
           std::string fname = _cache + "/.rels" + std::to_string(getpid()) +
                               "-" + std::to_string(t);
           std::stringstream ss;
@@ -1796,7 +1815,9 @@ void Sweeper::writeRel(size_t t, const std::string& a, const std::string& b,
       }
 
       writeRelToBuf(t, a, b, pred);
+#endif
     } else if (_outMode == GZ) {
+#ifdef ZLIB_FOUND
       if (_outBufPos[t] + totSize >= BUFFER_S_PAIRS) {
         int r = gzwrite(_gzFiles[t], _outBuffers[t], _outBufPos[t]);
         if (r != (int)_outBufPos[t]) {
@@ -1813,6 +1834,7 @@ void Sweeper::writeRel(size_t t, const std::string& a, const std::string& b,
       }
 
       writeRelToBuf(t, a, b, pred);
+#endif
     } else if (_outMode == PLAIN) {
       if (_outBufPos[t] + totSize >= BUFFER_S_PAIRS) {
         size_t r =
@@ -2939,11 +2961,12 @@ void Sweeper::flushOutputFiles() {
   }
   if (_outMode == BZ2 || _outMode == GZ || _outMode == PLAIN) {
     if (_outMode == BZ2) {
+#ifdef BZIP2_FOUND
       for (size_t i = 0; i < _cfg.numThreads + 1; i++) {
         int err = 0;
-        BZ2_bzWrite(&err, _files[i], _outBuffers[i], _outBufPos[i]);
+        BZ2_bzWrite(&err, _bzFiles[i], _outBuffers[i], _outBufPos[i]);
         if (err == BZ_IO_ERROR) {
-          BZ2_bzWriteClose(&err, _files[i], 0, 0, 0);
+          BZ2_bzWriteClose(&err, _bzFiles[i], 0, 0, 0);
           std::string fname = _cache + "/.rels" + std::to_string(getpid()) +
                               "-" + std::to_string(i);
           std::stringstream ss;
@@ -2952,10 +2975,12 @@ void Sweeper::flushOutputFiles() {
           ss << strerror(errno) << std::endl;
           throw std::runtime_error(ss.str());
         }
-        BZ2_bzWriteClose(&err, _files[i], 0, 0, 0);
+        BZ2_bzWriteClose(&err, _bzFiles[i], 0, 0, 0);
         fclose(_rawFiles[i]);
       }
+#endif
     } else if (_outMode == GZ) {
+#ifdef ZLIB_FOUND
       for (size_t i = 0; i < _cfg.numThreads + 1; i++) {
         int r = gzwrite(_gzFiles[i], _outBuffers[i], _outBufPos[i]);
         if (r != (int)_outBufPos[i]) {
@@ -2970,6 +2995,7 @@ void Sweeper::flushOutputFiles() {
         }
         gzclose(_gzFiles[i]);
       }
+#endif
     } else {
       for (size_t i = 0; i < _cfg.numThreads + 1; i++) {
         size_t r =
@@ -3011,6 +3037,7 @@ void Sweeper::prepareOutputFiles() {
   if (_cfg.writeRelCb) return;
 
   if (_outMode == BZ2) {
+#ifdef BZIP2_FOUND
     for (size_t i = 0; i < _cfg.numThreads + 1; i++) {
       std::string fname = _cache + "/.rels" + std::to_string(getpid()) + "-" +
                           std::to_string(i);
@@ -3025,7 +3052,7 @@ void Sweeper::prepareOutputFiles() {
       }
 
       int err = 0;
-      _files[i] = BZ2_bzWriteOpen(&err, _rawFiles[i], 6, 0, 30);
+      _bzFiles[i] = BZ2_bzWriteOpen(&err, _rawFiles[i], 6, 0, 30);
       if (err != BZ_OK) {
         std::stringstream ss;
         ss << "Could not open temporary bzip2 file '" << fname
@@ -3035,7 +3062,9 @@ void Sweeper::prepareOutputFiles() {
       }
       _outBuffers[i] = new unsigned char[BUFFER_S_PAIRS];
     }
+#endif
   } else if (_outMode == GZ) {
+#ifdef ZLIB_FOUND
     for (size_t i = 0; i < _cfg.numThreads + 1; i++) {
       std::string fname = _cache + "/.rels" + std::to_string(getpid()) + "-" +
                           std::to_string(i);
@@ -3049,6 +3078,7 @@ void Sweeper::prepareOutputFiles() {
       }
       _outBuffers[i] = new unsigned char[BUFFER_S_PAIRS];
     }
+#endif
   } else if (_outMode == PLAIN) {
     for (size_t i = 0; i < _cfg.numThreads + 1; i++) {
       std::string fname = _cache + "/.rels" + std::to_string(getpid()) + "-" +
