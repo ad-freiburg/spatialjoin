@@ -278,17 +278,19 @@ class Sweeper {
   static std::string intToBase126(uint64_t id);
   static uint64_t base126ToInt(const std::string& id);
 
-  void setFilterBox(const util::geo::I32Box& filterBox) { _filterBox = filterBox; }
+  void setFilterBox(const util::geo::I32Box& filterBox) {
+    _filterBox = filterBox;
+  }
 
   // _____________________________________________________________________________
-  template <typename G>
-  util::geo::I32Box getPaddedBoundingBox(const G& geom) const {
+  template <template <typename> class G, typename T>
+  util::geo::I32Box getPaddedBoundingBox(const G<T>& geom) const {
     auto bbox = util::geo::getBoundingBox(geom);
 
     if (_cfg.withinDist >= 0) {
       double scaleFactor = getMaxScaleFactor(bbox);
 
-      uint32_t pad = (_cfg.withinDist / 2.0) * scaleFactor * PREC;
+      T pad = (_cfg.withinDist / 2.0) * scaleFactor * PREC;
 
       return {
           {bbox.getLowerLeft().getX() - pad, bbox.getLowerLeft().getY() - pad},
@@ -300,16 +302,17 @@ class Sweeper {
   }
 
   // _____________________________________________________________________________
-  template <typename G1, typename G2>
-  util::geo::I32Box getPaddedBoundingBox(const G1& geom,
-                                         const G2& refGeom) const {
+  template <template <typename> class G1, template <typename> class G2,
+            typename T>
+  util::geo::I32Box getPaddedBoundingBox(const G1<T>& geom,
+                                         const G2<T>& refGeom) const {
     auto bbox = util::geo::getBoundingBox(geom);
 
     if (_cfg.withinDist >= 0) {
       double scaleFactor =
           getMaxScaleFactor(util::geo::getBoundingBox(refGeom));
 
-      uint32_t pad = (_cfg.withinDist / 2.0) * scaleFactor * PREC;
+      T pad = (_cfg.withinDist / 2.0) * scaleFactor * PREC;
 
       return {
           {bbox.getLowerLeft().getX() - pad, bbox.getLowerLeft().getY() - pad},
@@ -545,7 +548,10 @@ class Sweeper {
   std::unordered_map<std::string, std::unordered_map<std::string, size_t>>
       _refs;
 
-  util::geo::I32Box _filterBox = {{std::numeric_limits<int32_t>::lowest(), std::numeric_limits<int32_t>::lowest()}, {std::numeric_limits<int32_t>::max(), std::numeric_limits<int32_t>::max()}};
+  util::geo::I32Box _filterBox = {{std::numeric_limits<int32_t>::lowest(),
+                                   std::numeric_limits<int32_t>::lowest()},
+                                  {std::numeric_limits<int32_t>::max(),
+                                   std::numeric_limits<int32_t>::max()}};
 };
 }  // namespace sj
 
