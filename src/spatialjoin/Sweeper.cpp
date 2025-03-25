@@ -650,8 +650,6 @@ void Sweeper::clearMultis(bool force) {
     if (_atomicCurX[i] < curMinThreadX) curMinThreadX = _atomicCurX[i];
   }
 
-  size_t c = 0;
-
   for (size_t i = 0; i < 2; i++) {
     for (auto a = _activeMultis[i].begin(); a != _activeMultis[i].end();) {
       size_t mid = *a;
@@ -674,7 +672,6 @@ void Sweeper::clearMultis(bool force) {
           }
         }
         a = _activeMultis[i].erase(a);
-        c++;
       } else {
         a++;
       }
