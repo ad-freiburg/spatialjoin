@@ -7,7 +7,7 @@ if (CMAKE_BUILD_TYPE)
 endif()
 
 if(PROJECT_IS_TOP_LEVEL)
-    enable_testing()
+	enable_testing()
 endif()
 
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake/")
@@ -25,11 +25,11 @@ set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS} -g -DLOGLEVEL=3")
 find_package(BZip2)
 find_package(ZLIB)
 
-if (!BZIP2_FOUND)
+if (NOT BZIP2_FOUND)
 	add_definitions( -DSPATIALJOIN_NO_BZIP2=True )
 endif()
 
-if (!ZLIB_FOUND)
+if (NOT ZLIB_FOUND)
 	add_definitions( -DSPATIALJOIN_NO_ZLIB=True )
 endif()
 
@@ -68,7 +68,7 @@ endif()
 add_subdirectory(src)
 
 # tests
-if(PROJECT_IS_TOP_LEVEL)
+if(CMAKE_TESTING_ENABLED)
   add_test("utilTest" utilTest)
   add_test("spatialjoinTest" spatialjoinTest)
 endif()

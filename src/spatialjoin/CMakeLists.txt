@@ -1,6 +1,10 @@
 file(GLOB_RECURSE SPATIALJOIN_SRC *.cpp)
 list(REMOVE_ITEM SPATIALJOIN_SRC TestMain.cpp)
 
+if(NOT CMAKE_TESTING_ENABLED)
+	list(FILTER util_SRC EXCLUDE REGEX ".*/tests/.*")
+endif()
+
 set(spatialjoin_main SpatialJoinMain.cpp)
 
 list(REMOVE_ITEM SPATIALJOIN_SRC ${spatialjoin_main})
@@ -22,4 +26,6 @@ target_include_directories(spatialjoin-dev PUBLIC
 
 target_link_libraries(spatialjoin spatialjoin-dev pb_util ${BZIP2_LIBRARIES} ${ZLIB_LIBRARIES} -lpthread)
 
-add_subdirectory(tests)
+if(CMAKE_TESTING_ENABLED)
+    add_subdirectory(tests)
+endif()
