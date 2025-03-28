@@ -1,12 +1,13 @@
 // Copyright 2023, University of Freiburg
 // Authors: Patrick Brosi <brosi@cs.uni-freiburg.de>
 
+#include "GeometryCache.h"
+
 #include <fstream>
 #include <iostream>
 #include <mutex>
 #include <vector>
 
-#include "GeometryCache.h"
 #include "util/geo/Geo.h"
 
 const static size_t MAX_MEM_CACHE_SIZE = 1 * 1024 * 1024 * 1024l;
@@ -607,7 +608,7 @@ size_t sj::GeometryCache<W>::writePoly(const util::geo::I32XSortedPolygon& geom,
     str.write(reinterpret_cast<const char*>(&geom.getOuter().rawRing()[0]),
               sizeof(util::geo::XSortedTuple<int32_t>) * locSize);
   }
-    ret += sizeof(uint32_t) + sizeof(util::geo::XSortedTuple<int32_t>) * locSize;
+  ret += sizeof(uint32_t) + sizeof(util::geo::XSortedTuple<int32_t>) * locSize;
 
   // geom, inners
   locSize = geom.getInners().size();
@@ -698,25 +699,25 @@ size_t sj::GeometryCache<W>::writeLine(const util::geo::I32XSortedLine& geom,
 // ____________________________________________________________________________
 template <>
 std::string sj::GeometryCache<sj::Area>::getFName() const {
-  return util::getTmpFName(_dir, ".spatialjoin", "areas");
+  return util::getTmpFName(_dir, _tmpPrefix, "areas");
 }
 
 // ____________________________________________________________________________
 template <>
 std::string sj::GeometryCache<sj::Line>::getFName() const {
-  return util::getTmpFName(_dir, ".spatialjoin", "lines");
+  return util::getTmpFName(_dir, _tmpPrefix, "lines");
 }
 
 // ____________________________________________________________________________
 template <>
 std::string sj::GeometryCache<sj::Point>::getFName() const {
-  return util::getTmpFName(_dir, ".spatialjoin", "points");
+  return util::getTmpFName(_dir, _tmpPrefix, "points");
 }
 
 // ____________________________________________________________________________
 template <>
 std::string sj::GeometryCache<sj::SimpleLine>::getFName() const {
-  return util::getTmpFName(_dir, ".spatialjoin", "simplelines");
+  return util::getTmpFName(_dir, _tmpPrefix, "simplelines");
 }
 
 // ____________________________________________________________________________

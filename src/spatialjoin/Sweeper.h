@@ -170,15 +170,20 @@ static const size_t GEOM_LARGENESS_THRESHOLD = 1024 * 1024 * 1024;
 
 class Sweeper {
  public:
-  explicit Sweeper(SweeperCfg cfg, const std::string cache,
-                   const std::string out)
+  explicit Sweeper(SweeperCfg cfg, const std::string& cache,
+                   const std::string& out)
+      : Sweeper(cfg, cache, out, ".spatialjoin") {}
+  Sweeper(SweeperCfg cfg, const std::string& cache, const std::string& out,
+          const std::string& tmpPrefix)
       : _cfg(cfg),
         _obufpos(0),
-        _pointCache(POINT_CACHE_SIZE, cfg.numCacheThreads, cache),
-        _areaCache(cfg.geomCacheMaxSize, cfg.numCacheThreads, cache),
-        _simpleAreaCache(cfg.geomCacheMaxSize, cfg.numCacheThreads, cache),
-        _lineCache(cfg.geomCacheMaxSize, cfg.numCacheThreads, cache),
-        _simpleLineCache(cfg.geomCacheMaxSize, cfg.numCacheThreads, cache),
+        _pointCache(POINT_CACHE_SIZE, cfg.numCacheThreads, cache, tmpPrefix),
+        _areaCache(cfg.geomCacheMaxSize, cfg.numCacheThreads, cache, tmpPrefix),
+        _simpleAreaCache(cfg.geomCacheMaxSize, cfg.numCacheThreads, cache,
+                         tmpPrefix),
+        _lineCache(cfg.geomCacheMaxSize, cfg.numCacheThreads, cache, tmpPrefix),
+        _simpleLineCache(cfg.geomCacheMaxSize, cfg.numCacheThreads, cache,
+                         tmpPrefix),
         _cache(cache),
         _out(out),
         _jobs(100) {
@@ -187,14 +192,14 @@ class Sweeper {
 #ifndef SPATIALJOIN_NO_BZIP2
         _outMode = BZ2;
 #else
-      throw std::runtime_error("spatialjoin was compiled without BZ2 support");
+        throw std::runtime_error(
+            "spatialjoin was compiled without BZ2 support");
 #endif
-      }
-      else if (util::endsWith(_out, ".gz")) {
+      } else if (util::endsWith(_out, ".gz")) {
 #ifndef SPATIALJOIN_NO_ZLIB
         _outMode = GZ;
 #else
-      throw std::runtime_error("spatialjoin was compiled without GZ support");
+        throw std::runtime_error("spatialjoin was compiled without GZ support");
 #endif
       } else if (out.size())
         _outMode = PLAIN;
@@ -214,7 +219,7 @@ class Sweeper {
     }
 
     // OUTFACTOR 1
-    _fname = util::getTmpFName(_cache, ".spatialjoin", "events");
+    _fname = util::getTmpFName(_cache, tmpPrefix, "events");
     _file = open(_fname.c_str(), O_RDWR | O_CREAT | O_TRUNC, 0666);
 
     if (_file < 0) {

@@ -121,9 +121,13 @@ template <typename W>
 class GeometryCache {
  public:
   GeometryCache(size_t maxSize, size_t numthreads, const std::string& dir)
+      : GeometryCache(maxSize, numthreads, dir, ".spatialjoin"){};
+  GeometryCache(size_t maxSize, size_t numthreads, const std::string& dir,
+                const std::string& tmpPrefix)
       : _maxSize(maxSize),
         _numThreads(numthreads),
         _dir(dir),
+        _tmpPrefix(tmpPrefix),
         _mutexes(numthreads + 1) {
     _geomsFReads.resize(numthreads + 1);
 
@@ -200,7 +204,7 @@ class GeometryCache {
       _idMap;
 
   size_t _maxSize, _numThreads;
-  std::string _dir;
+  std::string _dir, _tmpPrefix;
   std::string _fName;
 
   std::map<size_t, W> _memStore;
