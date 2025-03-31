@@ -1972,8 +1972,6 @@ void Sweeper::doDistCheck(const BoxVal cur, const SweepVal sv, size_t t) {
   if (cur.type == POINT && sv.type == POINT) {
     auto p1 = cur.point;
     auto p2 = sv.point;
-    p1 = util::geo::rotateSinCos(p1, -sin45, cos45, I32Point(0, 0));
-    p2 = util::geo::rotateSinCos(p2, -sin45, cos45, I32Point(0, 0));
 
     auto dist = meterDist(p1, p2);
 
@@ -1986,7 +1984,6 @@ void Sweeper::doDistCheck(const BoxVal cur, const SweepVal sv, size_t t) {
   } else if (cur.type == POINT &&
              (sv.type == POLYGON || sv.type == SIMPLE_POLYGON)) {
     auto p = cur.point;
-    p = util::geo::rotateSinCos(p, -sin45, cos45, I32Point(0, 0));
 
     const Area* a;
     std::shared_ptr<Area> asp;
@@ -2010,7 +2007,6 @@ void Sweeper::doDistCheck(const BoxVal cur, const SweepVal sv, size_t t) {
   } else if ((cur.type == POLYGON || cur.type == SIMPLE_POLYGON) &&
              sv.type == POINT) {
     auto p = sv.point;
-    p = util::geo::rotateSinCos(p, -sin45, cos45, I32Point(0, 0));
 
     const Area* a;
     std::shared_ptr<Area> asp;
@@ -2034,7 +2030,6 @@ void Sweeper::doDistCheck(const BoxVal cur, const SweepVal sv, size_t t) {
   } else if ((cur.type == SIMPLE_LINE || cur.type == LINE) &&
              sv.type == POINT) {
     auto p = sv.point;
-    p = util::geo::rotateSinCos(p, -sin45, cos45, I32Point(0, 0));
 
     double dist = std::numeric_limits<double>::max();
 
@@ -2057,7 +2052,6 @@ void Sweeper::doDistCheck(const BoxVal cur, const SweepVal sv, size_t t) {
     }
   } else if ((sv.type == SIMPLE_LINE || sv.type == LINE) && cur.type == POINT) {
     auto p = cur.point;
-    p = util::geo::rotateSinCos(p, -sin45, cos45, I32Point(0, 0));
 
     double dist = std::numeric_limits<double>::max();
 
@@ -3591,6 +3585,7 @@ double Sweeper::distCheck(const I32Point& a, const Area* b, size_t t) const {
   auto dist =
       util::geo::withinDist<int32_t>(a, b->geom, _cfg.withinDist * scaleFactor,
                                      _cfg.withinDist, &Sweeper::meterDist);
+
   _stats[t].timeFullGeoCheckAreaPoint += TOOK(ts);
   _stats[t].fullGeoChecksAreaPoint++;
 
