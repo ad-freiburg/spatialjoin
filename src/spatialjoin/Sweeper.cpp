@@ -234,6 +234,7 @@ I32Box Sweeper::add(const I32Polygon& poly, const std::string& gidR, size_t subi
                     false,
                     SIMPLE_POLYGON,
                     areaSize,
+                    {},
                     box45,
                     side,
                     estimatedSize > GEOM_LARGENESS_THRESHOLD};
@@ -244,6 +245,7 @@ I32Box Sweeper::add(const I32Polygon& poly, const std::string& gidR, size_t subi
                      true,
                      SIMPLE_POLYGON,
                      areaSize,
+                    {},
                      box45,
                      side,
                      estimatedSize > GEOM_LARGENESS_THRESHOLD};
@@ -312,6 +314,7 @@ I32Box Sweeper::add(const I32Polygon& poly, const std::string& gidR, size_t subi
                     false,
                     POLYGON,
                     areaSize,
+                    {},
                     box45,
                     side,
                     estimatedSize > GEOM_LARGENESS_THRESHOLD};
@@ -322,6 +325,7 @@ I32Box Sweeper::add(const I32Polygon& poly, const std::string& gidR, size_t subi
                      true,
                      POLYGON,
                      areaSize,
+                    {},
                      box45,
                      side,
                      estimatedSize > GEOM_LARGENESS_THRESHOLD};
@@ -387,6 +391,7 @@ I32Box Sweeper::add(const I32Line& line, const std::string& gidR, size_t subid,
                     false,
                     SIMPLE_LINE,
                     len,
+                    {},
                     box45,
                     side,
                     false};
@@ -397,6 +402,7 @@ I32Box Sweeper::add(const I32Line& line, const std::string& gidR, size_t subid,
                      true,
                      SIMPLE_LINE,
                      len,
+                    {},
                      box45,
                      side,
                      false};
@@ -433,6 +439,7 @@ I32Box Sweeper::add(const I32Line& line, const std::string& gidR, size_t subid,
                     false,
                     LINE,
                     len,
+                    {},
                     box45,
                     side,
                     estimatedSize > GEOM_LARGENESS_THRESHOLD};
@@ -443,6 +450,7 @@ I32Box Sweeper::add(const I32Line& line, const std::string& gidR, size_t subid,
                      true,
                      LINE,
                      len,
+                    {},
                      box45,
                      side,
                      estimatedSize > GEOM_LARGENESS_THRESHOLD};
@@ -486,6 +494,7 @@ I32Box Sweeper::add(const I32Point& point, const std::string& gidR, size_t subid
                   false,
                   POINT,
                   0,
+                  point,
                   getPaddedBoundingBox(pointR, rawBox),
                   side,
                   false};
@@ -496,6 +505,7 @@ I32Box Sweeper::add(const I32Point& point, const std::string& gidR, size_t subid
                    true,
                    POINT,
                    0,
+                   point,
                    getPaddedBoundingBox(pointR, rawBox),
                    side,
                    false};
@@ -925,6 +935,7 @@ void Sweeper::flush() {
                POINT,
                0.0,
                {},
+               {},
                side,
                false});
     }
@@ -1092,7 +1103,7 @@ RelStats Sweeper::sweep() {
         // IN event
         actives[cur->side].insert(
             {cur->loY, cur->upY},
-            {cur->id, cur->type, cur->b45, cur->side, cur->large});
+            {cur->id, cur->type, cur->b45,cur->point,  cur->side, cur->large});
 
         if (jj % 500000 == 0) {
           auto lon = webMercToLatLng<double>((1.0 * cur->val) / PREC, 0).getX();
@@ -1959,8 +1970,8 @@ void Sweeper::doDistCheck(const BoxVal cur, const SweepVal sv, size_t t) {
   if (_checks[t] % 10000 == 0) _atomicCurX[t] = _curX[t];
 
   if (cur.type == POINT && sv.type == POINT) {
-    auto p1 = util::geo::centroid(cur.b45);
-    auto p2 = util::geo::centroid(sv.b45);
+    auto p1 = cur.point;
+    auto p2 = sv.point;
     p1 = util::geo::rotateSinCos(p1, -sin45, cos45, I32Point(0, 0));
     p2 = util::geo::rotateSinCos(p2, -sin45, cos45, I32Point(0, 0));
 
@@ -1974,7 +1985,7 @@ void Sweeper::doDistCheck(const BoxVal cur, const SweepVal sv, size_t t) {
     }
   } else if (cur.type == POINT &&
              (sv.type == POLYGON || sv.type == SIMPLE_POLYGON)) {
-    auto p = util::geo::centroid(cur.b45);
+    auto p = cur.point;
     p = util::geo::rotateSinCos(p, -sin45, cos45, I32Point(0, 0));
 
     const Area* a;
@@ -1998,7 +2009,7 @@ void Sweeper::doDistCheck(const BoxVal cur, const SweepVal sv, size_t t) {
     }
   } else if ((cur.type == POLYGON || cur.type == SIMPLE_POLYGON) &&
              sv.type == POINT) {
-    auto p = util::geo::centroid(sv.b45);
+    auto p = sv.point;
     p = util::geo::rotateSinCos(p, -sin45, cos45, I32Point(0, 0));
 
     const Area* a;
@@ -2022,7 +2033,7 @@ void Sweeper::doDistCheck(const BoxVal cur, const SweepVal sv, size_t t) {
     }
   } else if ((cur.type == SIMPLE_LINE || cur.type == LINE) &&
              sv.type == POINT) {
-    auto p = util::geo::centroid(sv.b45);
+    auto p = sv.point;
     p = util::geo::rotateSinCos(p, -sin45, cos45, I32Point(0, 0));
 
     double dist = std::numeric_limits<double>::max();
@@ -2045,7 +2056,7 @@ void Sweeper::doDistCheck(const BoxVal cur, const SweepVal sv, size_t t) {
       }
     }
   } else if ((sv.type == SIMPLE_LINE || sv.type == LINE) && cur.type == POINT) {
-    auto p = util::geo::centroid(cur.b45);
+    auto p = cur.point;
     p = util::geo::rotateSinCos(p, -sin45, cos45, I32Point(0, 0));
 
     double dist = std::numeric_limits<double>::max();

@@ -55,6 +55,7 @@ struct BoxVal {
   bool out : 1;
   GeomType type : 3;
   double areaOrLen;
+  util::geo::I32Point point;
   util::geo::I32Box b45;
   bool side;
   bool large;
@@ -89,13 +90,14 @@ inline bool operator==(const BoxVal& a, const BoxVal& b) {
 struct SweepVal {
   SweepVal(size_t id, GeomType type)
       : id(id), type(type), side(false), large(false) {}
-  SweepVal(size_t id, GeomType type, util::geo::I32Box b45, bool side,
+  SweepVal(size_t id, GeomType type, util::geo::I32Box b45, util::geo::I32Point point, bool side,
            bool large)
-      : id(id), type(type), b45(b45), side(side), large(large) {}
+      : id(id), type(type), b45(b45), point(point), side(side), large(large) {}
   SweepVal() : id(0), type(POLYGON) {}
   size_t id : 60;
   GeomType type : 3;
   util::geo::I32Box b45;
+  util::geo::I32Point point;
   bool side;
   bool large;
 };
@@ -304,20 +306,7 @@ class Sweeper {
   // _____________________________________________________________________________
   template <template <typename> class G, typename T>
   util::geo::I32Box getPaddedBoundingBox(const G<T>& geom) const {
-    auto bbox = util::geo::getBoundingBox(geom);
-
-    if (_cfg.withinDist >= 0) {
-      double scaleFactor = getMaxScaleFactor(bbox);
-
-      T pad = (_cfg.withinDist / 2.0) * scaleFactor * PREC;
-
-      return {
-          {bbox.getLowerLeft().getX() - pad, bbox.getLowerLeft().getY() - pad},
-          {bbox.getUpperRight().getX() + pad,
-           bbox.getUpperRight().getY() + pad}};
-    }
-
-    return bbox;
+    return getPaddedBoundingBox(geom, geom);
   }
 
   // _____________________________________________________________________________
@@ -329,14 +318,42 @@ class Sweeper {
 
     if (_cfg.withinDist >= 0) {
       double scaleFactor =
-          getMaxScaleFactor(util::geo::getBoundingBox(refGeom));
+          getMaxScaleFactor(reinterpret_cast<const void*>(&geom) ==
+                                    reinterpret_cast<const void*>(&refGeom)
+                                ? bbox
+                                : util::geo::getBoundingBox(refGeom));
 
-      T pad = (_cfg.withinDist / 2.0) * scaleFactor * PREC;
+      double pad = (_cfg.withinDist / 2.0) * scaleFactor * PREC;
 
-      return {
-          {bbox.getLowerLeft().getX() - pad, bbox.getLowerLeft().getY() - pad},
-          {bbox.getUpperRight().getX() + pad,
-           bbox.getUpperRight().getY() + pad}};
+      double llx = bbox.getLowerLeft().getX();
+      double lly = bbox.getLowerLeft().getY();
+      double urx = bbox.getUpperRight().getX();
+      double ury = bbox.getUpperRight().getY();
+
+      double m = sj::boxids::WORLD_W / 2.0;
+
+      T llxt = -m;
+      T llyt = -m;
+      T urxt = m;
+      T uryt = m;
+
+      if (llx - pad > -m) {
+        llxt = llx - pad;
+      }
+
+      if (lly - pad > -m) {
+        llyt = lly - pad;
+      }
+
+      if (urx + pad < m) {
+        urxt = urx + pad;
+      }
+
+      if (ury + pad < m) {
+        uryt = ury + pad;
+      }
+
+      return {{llxt, llyt}, {urxt, uryt}};
     }
 
     return bbox;
