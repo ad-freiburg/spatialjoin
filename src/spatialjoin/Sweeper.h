@@ -384,6 +384,7 @@ class Sweeper {
   std::vector<size_t> _checks;
   std::vector<int32_t> _curX;
   std::vector<std::atomic<int32_t>> _atomicCurX;
+  std::atomic<bool> _cancelled;
 
   std::vector<RelStats> _relStats;
 

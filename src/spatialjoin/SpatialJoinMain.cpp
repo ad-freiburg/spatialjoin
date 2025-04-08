@@ -11,8 +11,8 @@
 #include "util/geo/Geo.h"
 #include "util/log/Log.h"
 
-using sj::Sweeper;
 using sj::ParseBatch;
+using sj::Sweeper;
 using util::geo::DLine;
 using util::geo::DPoint;
 using util::geo::I32Line;
@@ -20,11 +20,11 @@ using util::geo::I32MultiLine;
 using util::geo::I32MultiPolygon;
 using util::geo::I32Point;
 using util::geo::I32Polygon;
-using util::LogLevel::INFO;
-using util::LogLevel::WARN;
-using util::LogLevel::ERROR;
 using util::LogLevel::DEBUG;
+using util::LogLevel::ERROR;
+using util::LogLevel::INFO;
 using util::LogLevel::VDEBUG;
+using util::LogLevel::WARN;
 
 static const char* YEAR = &__DATE__[7];
 static const char* COPY =
@@ -70,7 +70,8 @@ void printHelp(int argc, char** argv) {
       << std::setw(41) << "  --suffix (default: '\\n')"
       << "suffix added at the beginning of every relation\n\n"
       << std::setw(41) << "  --within-distance (default: '')"
-      << "if set to non-negative value, only compute for each object the objects within the given distance\n\n"
+      << "if set to non-negative value, only compute for each object the "
+         "objects within the given distance\n\n"
       << std::setfill(' ') << std::left << "Geometric computation:\n"
       << std::setw(41) << "  --no-box-ids"
       << "disable box id criteria for contains/covers/intersect computation\n"

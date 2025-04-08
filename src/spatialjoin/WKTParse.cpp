@@ -20,10 +20,26 @@ using util::geo::polygonFromWKT;
 
 // _____________________________________________________________________________
 WKTParser::WKTParser(sj::Sweeper* sweeper, size_t numThreads)
-    : _sweeper(sweeper), _jobs(1000), _thrds(numThreads), _bboxes(numThreads) {
+    : _sweeper(sweeper),
+      _jobs(1000),
+      _thrds(numThreads),
+      _bboxes(numThreads),
+      _cancelled(false) {
   for (size_t i = 0; i < _thrds.size(); i++) {
     _thrds[i] = std::thread(&WKTParser::processQueue, this, i);
   }
+}
+
+// _____________________________________________________________________________
+WKTParser::~WKTParser() {
+  // graceful shutdown of all threads, should they be still running
+  _cancelled = true;
+
+  // end event
+  _jobs.add({});
+
+  // wait for all workers to finish
+  for (auto& thr : _thrds) thr.join();
 }
 
 // _____________________________________________________________________________
@@ -175,6 +191,8 @@ void WKTParser::processQueue(size_t t) {
   while ((batch = _jobs.get()).size()) {
     sj::WriteBatch w;
     for (const auto& job : batch) {
+      if (_cancelled) break;
+
       if (job.str.size()) {
         parseLine(const_cast<char*>(job.str.c_str()), job.str.size(), job.line,
                   t, w, job.side);

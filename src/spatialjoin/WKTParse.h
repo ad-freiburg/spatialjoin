@@ -5,6 +5,7 @@
 #ifndef SPATIALJOINS_WKTPARSE_H_
 #define SPATIALJOINS_WKTPARSE_H_
 
+#include <atomic>
 #include "Sweeper.h"
 #include "util/geo/Geo.h"
 #include "util/log/Log.h"
@@ -31,6 +32,7 @@ typedef std::vector<ParseJob> ParseBatch;
 class WKTParser {
  public:
   WKTParser(sj::Sweeper* sweeper, size_t numThreads);
+  ~WKTParser();
   void parse(char* c, size_t size, bool side);
   void parseWKT(const char* c, size_t id, bool side);
   void parseWKT(const std::string& str, size_t id, bool side);
@@ -60,6 +62,8 @@ class WKTParser {
   std::vector<std::thread> _thrds;
 
   std::vector<util::geo::I32Box> _bboxes;
+
+  std::atomic<bool> _cancelled;
 
   static util::geo::I32Point projFunc(const util::geo::DPoint& p) {
     auto projPoint = latLngToWebMerc(p);

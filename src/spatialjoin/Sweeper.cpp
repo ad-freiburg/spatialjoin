@@ -1019,6 +1019,8 @@ RelStats Sweeper::sweep() {
   // start at beginning of _file
   lseek(_file, 0, SEEK_SET);
 
+  _cancelled = false;
+
   const size_t batchSize = 100000;
   JobBatch curBatch;
 
@@ -1164,6 +1166,9 @@ RelStats Sweeper::sweep() {
     // graceful handling of an exception during sweep
 
     delete[] buf;
+
+    // set the cancelled variable to true
+    _cancelled = true;
 
     // the DONE element on the job queue to signal all threads to shut down
     _jobs.add({});
@@ -3128,6 +3133,8 @@ void Sweeper::processQueue(size_t t) {
     JobBatch batch;
     while ((batch = _jobs.get()).size()) {
       for (const auto& job : batch) {
+        if (_cancelled) break;
+
         if (job.multiOut.empty()) {
           if (_cfg.withinDist >= 0) {
             doDistCheck(job.boxVal, job.sweepVal, t);
