@@ -228,7 +228,7 @@ void WKTParser::parseWKT(const std::string_view str, size_t id, bool side) {
   if (str.empty()) return;
 
   _curBatch.reserve(10000);
-  _curBatch.push_back({str, id, side, {0, 0}});
+  _curBatch.push_back({std::string{str}, id, side, {0, 0}});
 
   if (_curBatch.size() > 10000) {
     _jobs.add(std::move(_curBatch));
