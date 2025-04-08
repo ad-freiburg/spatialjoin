@@ -65,7 +65,7 @@ const static double cos45 = 1.0 / sqrt(2);
 
 // _____________________________________________________________________________
 I32Box Sweeper::add(const I32MultiPolygon& a, const std::string& gid, bool side,
-                  WriteBatch& batch) const {
+                    WriteBatch& batch) const {
   uint16_t subid = 0;  // a subid of 0 means "single polygon"
   if (a.size() > 1) subid = 1;
 
@@ -74,7 +74,7 @@ I32Box Sweeper::add(const I32MultiPolygon& a, const std::string& gid, bool side,
 
 // _____________________________________________________________________________
 I32Box Sweeper::add(const I32MultiLine& a, const std::string& gid, bool side,
-                  WriteBatch& batch) const {
+                    WriteBatch& batch) const {
   uint16_t subid = 0;  // a subid of 0 means "single line"
   if (a.size() > 1) subid = 1;
 
@@ -83,7 +83,7 @@ I32Box Sweeper::add(const I32MultiLine& a, const std::string& gid, bool side,
 
 // _____________________________________________________________________________
 I32Box Sweeper::add(const I32MultiPoint& a, const std::string& gid, bool side,
-                  WriteBatch& batch) const {
+                    WriteBatch& batch) const {
   uint16_t subid = 0;  // a subid of 0 means "single point"
   if (a.size() > 1) subid = 1;
 
@@ -92,7 +92,7 @@ I32Box Sweeper::add(const I32MultiPoint& a, const std::string& gid, bool side,
 
 // _____________________________________________________________________________
 I32Box Sweeper::add(const I32MultiPolygon& a, const std::string& gid,
-                  size_t subId, bool side, WriteBatch& batch) const {
+                    size_t subId, bool side, WriteBatch& batch) const {
   I32Box ret;
   for (const auto& poly : a) {
     if (poly.getOuter().size() < 2) continue;
@@ -107,7 +107,7 @@ I32Box Sweeper::add(const I32MultiPolygon& a, const std::string& gid,
 
 // _____________________________________________________________________________
 I32Box Sweeper::add(const I32MultiLine& a, const std::string& gid, size_t subId,
-                  bool side, WriteBatch& batch) const {
+                    bool side, WriteBatch& batch) const {
   I32Box ret;
   for (const auto& line : a) {
     if (line.size() < 2) continue;
@@ -121,8 +121,8 @@ I32Box Sweeper::add(const I32MultiLine& a, const std::string& gid, size_t subId,
 }
 
 // _____________________________________________________________________________
-I32Box Sweeper::add(const I32MultiPoint& a, const std::string& gid, size_t subid,
-                  bool side, WriteBatch& batch) const {
+I32Box Sweeper::add(const I32MultiPoint& a, const std::string& gid,
+                    size_t subid, bool side, WriteBatch& batch) const {
   I32Box ret;
   size_t newId = subid;
   for (const auto& point : a) {
@@ -179,13 +179,13 @@ void Sweeper::add(const std::string& parentR, const util::geo::I32Box& box,
 
 // _____________________________________________________________________________
 I32Box Sweeper::add(const I32Polygon& poly, const std::string& gid, bool side,
-                  WriteBatch& batch) const {
+                    WriteBatch& batch) const {
   return add(poly, gid, 0, side, batch);
 }
 
 // _____________________________________________________________________________
-I32Box Sweeper::add(const I32Polygon& poly, const std::string& gidR, size_t subid,
-                  bool side, WriteBatch& batch) const {
+I32Box Sweeper::add(const I32Polygon& poly, const std::string& gidR,
+                    size_t subid, bool side, WriteBatch& batch) const {
   std::string gid = (side ? ("B" + gidR) : ("A" + gidR));
 
   WriteCand cur;
@@ -245,7 +245,7 @@ I32Box Sweeper::add(const I32Polygon& poly, const std::string& gidR, size_t subi
                      true,
                      SIMPLE_POLYGON,
                      areaSize,
-                    {},
+                     {},
                      box45,
                      side,
                      estimatedSize > GEOM_LARGENESS_THRESHOLD};
@@ -325,7 +325,7 @@ I32Box Sweeper::add(const I32Polygon& poly, const std::string& gidR, size_t subi
                      true,
                      POLYGON,
                      areaSize,
-                    {},
+                     {},
                      box45,
                      side,
                      estimatedSize > GEOM_LARGENESS_THRESHOLD};
@@ -337,13 +337,13 @@ I32Box Sweeper::add(const I32Polygon& poly, const std::string& gidR, size_t subi
 
 // _____________________________________________________________________________
 I32Box Sweeper::add(const I32Line& line, const std::string& gid, bool side,
-                  WriteBatch& batch) const {
+                    WriteBatch& batch) const {
   return add(line, gid, 0, side, batch);
 }
 
 // _____________________________________________________________________________
 I32Box Sweeper::add(const I32Line& line, const std::string& gidR, size_t subid,
-                  bool side, WriteBatch& batch) const {
+                    bool side, WriteBatch& batch) const {
   if (line.size() < 2) return {};
 
   std::string gid = (side ? ("B" + gidR) : ("A" + gidR));
@@ -402,7 +402,7 @@ I32Box Sweeper::add(const I32Line& line, const std::string& gidR, size_t subid,
                      true,
                      SIMPLE_LINE,
                      len,
-                    {},
+                     {},
                      box45,
                      side,
                      false};
@@ -450,7 +450,7 @@ I32Box Sweeper::add(const I32Line& line, const std::string& gidR, size_t subid,
                      true,
                      LINE,
                      len,
-                    {},
+                     {},
                      box45,
                      side,
                      estimatedSize > GEOM_LARGENESS_THRESHOLD};
@@ -462,13 +462,13 @@ I32Box Sweeper::add(const I32Line& line, const std::string& gidR, size_t subid,
 
 // _____________________________________________________________________________
 I32Box Sweeper::add(const I32Point& point, const std::string& gid, bool side,
-                  WriteBatch& batch) const {
+                    WriteBatch& batch) const {
   return add(point, gid, 0, side, batch);
 }
 
 // _____________________________________________________________________________
-I32Box Sweeper::add(const I32Point& point, const std::string& gidR, size_t subid,
-                  bool side, WriteBatch& batch) const {
+I32Box Sweeper::add(const I32Point& point, const std::string& gidR,
+                    size_t subid, bool side, WriteBatch& batch) const {
   std::string gid = (side ? ("B" + gidR) : ("A" + gidR));
 
   WriteCand cur;
@@ -1084,74 +1084,95 @@ RelStats Sweeper::sweep() {
 
   ssize_t len;
 
-  while ((len = util::readAll(_file, buf, sizeof(BoxVal) * RBUF_SIZE)) != 0) {
-    if (len < 0) {
-      std::stringstream ss;
-      ss << "Could not read from events file '" << _fname << "'\n";
-      ss << strerror(errno) << std::endl;
-      throw std::runtime_error(ss.str());
-    }
+  try {
+    while ((len = util::readAll(_file, buf, sizeof(BoxVal) * RBUF_SIZE)) != 0) {
+      if (len < 0) {
+        std::stringstream ss;
+        ss << "Could not read from events file '" << _fname << "'\n";
+        ss << strerror(errno) << std::endl;
+        throw std::runtime_error(ss.str());
+      }
 
-    for (ssize_t i = 0; i < len; i += sizeof(BoxVal)) {
-      auto cur = reinterpret_cast<const BoxVal*>(buf + i);
-      jj++;
+      for (ssize_t i = 0; i < len; i += sizeof(BoxVal)) {
+        auto cur = reinterpret_cast<const BoxVal*>(buf + i);
+        jj++;
 
-      if (!cur->out && cur->loY == 1 && cur->upY == 0 && cur->type == POINT) {
-        // special multi-IN
-        _activeMultis[cur->side].insert(cur->id);
-      } else if (!cur->out) {
-        // IN event
-        actives[cur->side].insert(
-            {cur->loY, cur->upY},
-            {cur->id, cur->type, cur->b45,cur->point,  cur->side, cur->large});
+        if (!cur->out && cur->loY == 1 && cur->upY == 0 && cur->type == POINT) {
+          // special multi-IN
+          _activeMultis[cur->side].insert(cur->id);
+        } else if (!cur->out) {
+          // IN event
+          actives[cur->side].insert({cur->loY, cur->upY},
+                                    {cur->id, cur->type, cur->b45, cur->point,
+                                     cur->side, cur->large});
 
-        if (jj % 500000 == 0) {
-          auto lon = webMercToLatLng<double>((1.0 * cur->val) / PREC, 0).getX();
-          totalCheckCount += checkPairs;
-          log(std::to_string(jj / 2) + " / " + std::to_string(_curSweepId / 2) +
-              " (" +
-              std::to_string((((1.0 * jj) / (1.0 * _curSweepId)) * 100)) +
-              "%, " +
-              std::to_string((500000.0 / double(TOOK(t))) * 1000000000.0) +
-              " geoms/s, " +
-              std::to_string((checkPairs / double(TOOK(t))) * 1000000000.0) +
-              " pairs/s), avg. " +
-              std::to_string(((1.0 * totalCheckCount) / (1.0 * counts))) +
-              " checks/geom, sweepLon=" + std::to_string(lon) + "°, |A|=" +
-              std::to_string(actives[0].size() + actives[1].size()) +
-              ", |JQ|=" + std::to_string(_jobs.size()) + " (x" +
-              std::to_string(batchSize) + "), |A_mult|=" +
-              std::to_string(_activeMultis[0].size() +
-                             _activeMultis[1].size()));
-          t = TIME();
-          checkPairs = 0;
-        }
+          if (_cfg.sweepCancellationCb && jj % 10000 == 0) {
+            _cfg.sweepCancellationCb();
+          }
 
-        if ((jj % 100 == 0) && _cfg.sweepProgressCb)
-          _cfg.sweepProgressCb(jj / 2);
+          if (jj % 500000 == 0) {
+            auto lon =
+                webMercToLatLng<double>((1.0 * cur->val) / PREC, 0).getX();
+            totalCheckCount += checkPairs;
+            log(std::to_string(jj / 2) + " / " +
+                std::to_string(_curSweepId / 2) + " (" +
+                std::to_string((((1.0 * jj) / (1.0 * _curSweepId)) * 100)) +
+                "%, " +
+                std::to_string((500000.0 / double(TOOK(t))) * 1000000000.0) +
+                " geoms/s, " +
+                std::to_string((checkPairs / double(TOOK(t))) * 1000000000.0) +
+                " pairs/s), avg. " +
+                std::to_string(((1.0 * totalCheckCount) / (1.0 * counts))) +
+                " checks/geom, sweepLon=" + std::to_string(lon) + "°, |A|=" +
+                std::to_string(actives[0].size() + actives[1].size()) +
+                ", |JQ|=" + std::to_string(_jobs.size()) + " (x" +
+                std::to_string(batchSize) + "), |A_mult|=" +
+                std::to_string(_activeMultis[0].size() +
+                               _activeMultis[1].size()));
+            t = TIME();
+            checkPairs = 0;
+          }
 
-        if (jj % 200000 == 0) clearMultis(false);
-      } else {
-        // OUT event
-        actives[cur->side].erase({cur->loY, cur->upY}, {cur->id, cur->type});
+          if ((jj % 100 == 0) && _cfg.sweepProgressCb)
+            _cfg.sweepProgressCb(jj / 2);
 
-        // optional self checks, required if we have reference geoms
-        if (_refs.size()) curBatch.push_back({*cur, {cur->id, cur->type}, ""});
+          if (jj % 200000 == 0) clearMultis(false);
+        } else {
+          // OUT event
+          actives[cur->side].erase({cur->loY, cur->upY}, {cur->id, cur->type});
 
-        counts++;
+          // optional self checks, required if we have reference geoms
+          if (_refs.size())
+            curBatch.push_back({*cur, {cur->id, cur->type}, ""});
 
-        int sideB = ((int)(cur->side) + 1) % _numSides;
+          counts++;
 
-        fillBatch(&curBatch, &actives[sideB], cur);
+          int sideB = ((int)(cur->side) + 1) % _numSides;
 
-        if (curBatch.size() > batchSize) {
-          checkPairs += curBatch.size();
-          if (!_cfg.noGeometryChecks) _jobs.add(std::move(curBatch));
-          curBatch.clear();  // std doesnt guarantee that after move
-          curBatch.reserve(batchSize + 100);
+          fillBatch(&curBatch, &actives[sideB], cur);
+
+          if (curBatch.size() > batchSize) {
+            checkPairs += curBatch.size();
+            if (!_cfg.noGeometryChecks) _jobs.add(std::move(curBatch));
+            curBatch.clear();  // std doesnt guarantee that after move
+            curBatch.reserve(batchSize + 100);
+          }
         }
       }
     }
+  } catch (...) {
+    // graceful handling of an exception during sweep
+
+    delete[] buf;
+
+    // the DONE element on the job queue to signal all threads to shut down
+    _jobs.add({});
+
+    // again wait for all workers to finish
+    for (auto& thr : thrds) thr.join();
+
+    // rethrow exception
+    throw;
   }
 
   delete[] buf;
