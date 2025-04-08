@@ -9,6 +9,10 @@
 #include "util/geo/Geo.h"
 #include "util/log/Log.h"
 
+#ifdef __cpp_lib_string_view
+#include <string_view>
+#endif
+
 namespace sj {
 
 struct ParseJob {
