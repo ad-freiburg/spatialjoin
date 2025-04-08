@@ -29,6 +29,10 @@ class WKTParser {
   WKTParser(sj::Sweeper* sweeper, size_t numThreads);
   void parse(char* c, size_t size, bool side);
   void parseWKT(const char* c, size_t id, bool side);
+  void parseWKT(const std::string& str, size_t id, bool side);
+#ifdef __cpp_lib_string_view
+  void parseWKT(const std::string_view str, size_t id, bool side);
+#endif
   void parsePoint(util::geo::DPoint point, size_t id, bool side);
 
   util::geo::I32Box getBoundingBox() const { return _bbox; }

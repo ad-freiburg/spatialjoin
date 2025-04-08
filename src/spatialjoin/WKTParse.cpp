@@ -4,6 +4,10 @@
 
 #include "WKTParse.h"
 
+#ifdef __cpp_lib_string_view
+#include <string_view>
+#endif
+
 using sj::WKTParser;
 using util::geo::collectionFromWKT;
 using util::geo::getWKTType;
@@ -203,6 +207,36 @@ void WKTParser::parseWKT(const char* c, size_t id, bool side) {
     _curBatch.clear();
   }
 }
+
+// _____________________________________________________________________________
+void WKTParser::parseWKT(const std::string& str, size_t id, bool side) {
+  if (str.empty()) return;
+
+  _curBatch.reserve(10000);
+  _curBatch.push_back({str, id, side, {0, 0}});
+
+  if (_curBatch.size() > 10000) {
+    _jobs.add(std::move(_curBatch));
+    _curBatch.clear();
+  }
+}
+
+#ifdef __cpp_lib_string_view
+// _____________________________________________________________________________
+void WKTParser::parseWKT(const std::string_view str, size_t id, bool side) {
+  // dont parse empty strings
+  if (str.empty()) return;
+
+  _curBatch.reserve(10000);
+  _curBatch.push_back({str, id, side, {0, 0}});
+
+  if (_curBatch.size() > 10000) {
+    _jobs.add(std::move(_curBatch));
+    _curBatch.clear();
+  }
+}
+
+#endif
 
 // _____________________________________________________________________________
 void WKTParser::parsePoint(util::geo::DPoint point, size_t id, bool side) {
