@@ -1174,7 +1174,7 @@ RelStats Sweeper::sweep() {
     _jobs.add({});
 
     // again wait for all workers to finish
-    for (auto& thr : thrds) thr.join();
+    for (auto& thr : thrds) if (thr.joinable()) thr.join();
 
     // rethrow exception
     throw;
@@ -1188,7 +1188,7 @@ RelStats Sweeper::sweep() {
   _jobs.add({});
 
   // wait for all workers to finish
-  for (auto& thr : thrds) thr.join();
+  for (auto& thr : thrds) if (thr.joinable()) thr.join();
 
   // empty job queue
   _jobs.reset();
@@ -1202,7 +1202,7 @@ RelStats Sweeper::sweep() {
   _jobs.add({});
 
   // again wait for all workers to finish
-  for (auto& thr : thrds) thr.join();
+  for (auto& thr : thrds) if (thr.joinable()) thr.join();
 
   flushOutputFiles();
 
@@ -1912,8 +1912,9 @@ void Sweeper::writeDist(size_t t, const std::string& a, size_t aSub,
                        _subDistance[t][a][b] > dist))
         _subDistance[t][a][b] = dist;
     } else {
-      writeRel(t, a, b, "\t" + std::to_string(dist) + "\t");
-      writeRel(t, b, a, "\t" + std::to_string(dist) + "\t");
+      const auto& dStr = util::formatFloat(dist, 4);
+      writeRel(t, a, b, "\t" + dStr + "\t");
+      writeRel(t, b, a, "\t" + dStr + "\t");
     }
   }
 
