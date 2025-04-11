@@ -1097,6 +1097,11 @@ RelStats Sweeper::sweep() {
 
       for (ssize_t i = 0; i < len; i += sizeof(BoxVal)) {
         auto cur = reinterpret_cast<const BoxVal*>(buf + i);
+
+        if (_cfg.sweepCancellationCb && jj % 10000 == 0) {
+          _cfg.sweepCancellationCb();
+        }
+
         jj++;
 
         if (!cur->out && cur->loY == 1 && cur->upY == 0 && cur->type == POINT) {
@@ -1107,10 +1112,6 @@ RelStats Sweeper::sweep() {
           actives[cur->side].insert({cur->loY, cur->upY},
                                     {cur->id, cur->type, cur->b45, cur->point,
                                      cur->side, cur->large});
-
-          if (_cfg.sweepCancellationCb && jj % 10000 == 0) {
-            _cfg.sweepCancellationCb();
-          }
 
           if (jj % 500000 == 0) {
             auto lon =
