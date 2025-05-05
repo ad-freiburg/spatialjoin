@@ -1,22 +1,29 @@
 #include <errno.h>
 #include <stdio.h>
 #include <unistd.h>
+#ifndef SPATIALJOIN_NO_ZLIB
 #include <zlib.h>
+#endif
+
+#ifndef SPATIALJOIN_NO_BZIP2
+#include <bzlib.h>
+#endif
 
 #include <algorithm>
 #include <cassert>
 #include <climits>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <set>
 #include <sstream>
 
-#include "spatialjoin/BoxIds.h"
-#include "spatialjoin/InnerOuter.h"
-#include "spatialjoin/IntervalIdx.h"
-#include "spatialjoin/Sweeper.h"
+#include "BoxIds.h"
+#include "InnerOuter.h"
+#include "Sweeper.h"
 #include "util/Misc.h"
+#include "util/geo/IntervalIdx.h"
 #include "util/log/Log.h"
 
 using sj::GeomType;
@@ -29,6 +36,7 @@ using sj::boxids::packBoxIds;
 using sj::innerouter::Mode;
 using util::writeAll;
 using util::geo::area;
+using util::geo::FPoint;
 using util::geo::getBoundingBox;
 using util::geo::I32Box;
 using util::geo::I32Line;
@@ -43,6 +51,11 @@ using util::geo::intersectsContainsCovers;
 using util::geo::intersectsCovers;
 using util::geo::LineSegment;
 using util::geo::webMercToLatLng;
+using util::LogLevel::DEBUG;
+using util::LogLevel::ERROR;
+using util::LogLevel::INFO;
+using util::LogLevel::VDEBUG;
+using util::LogLevel::WARN;
 
 const static size_t CUTOUTS_MIN_SIZE = 100;
 const static size_t OBB_MIN_SIZE = 100;
@@ -51,60 +64,75 @@ const static double sin45 = 1.0 / sqrt(2);
 const static double cos45 = 1.0 / sqrt(2);
 
 // _____________________________________________________________________________
-void Sweeper::add(const I32MultiPolygon& a, const std::string& gid, bool side,
+I32Box Sweeper::add(const I32MultiPolygon& a, const std::string& gid, bool side,
                   WriteBatch& batch) const {
   uint16_t subid = 0;  // a subid of 0 means "single polygon"
   if (a.size() > 1) subid = 1;
 
-  add(a, gid, subid, side, batch);
+  return add(a, gid, subid, side, batch);
 }
 
 // _____________________________________________________________________________
-void Sweeper::add(const I32MultiLine& a, const std::string& gid, bool side,
+I32Box Sweeper::add(const I32MultiLine& a, const std::string& gid, bool side,
                   WriteBatch& batch) const {
   uint16_t subid = 0;  // a subid of 0 means "single line"
   if (a.size() > 1) subid = 1;
 
-  add(a, gid, subid, side, batch);
+  return add(a, gid, subid, side, batch);
 }
 
 // _____________________________________________________________________________
-void Sweeper::add(const I32MultiPoint& a, const std::string& gid, bool side,
+I32Box Sweeper::add(const I32MultiPoint& a, const std::string& gid, bool side,
                   WriteBatch& batch) const {
   uint16_t subid = 0;  // a subid of 0 means "single point"
   if (a.size() > 1) subid = 1;
 
-  add(a, gid, subid, side, batch);
+  return add(a, gid, subid, side, batch);
 }
 
 // _____________________________________________________________________________
-void Sweeper::add(const I32MultiPolygon& a, const std::string& gid,
+I32Box Sweeper::add(const I32MultiPolygon& a, const std::string& gid,
                   size_t subId, bool side, WriteBatch& batch) const {
+  I32Box ret;
   for (const auto& poly : a) {
     if (poly.getOuter().size() < 2) continue;
-    add(poly, gid, subId, side, batch);
+    auto box = add(poly, gid, subId, side, batch);
+    if (box.isNull()) continue;
+    ret = util::geo::extendBox(box, ret);
     subId++;
   }
+
+  return ret;
 }
 
 // _____________________________________________________________________________
-void Sweeper::add(const I32MultiLine& a, const std::string& gid, size_t subId,
+I32Box Sweeper::add(const I32MultiLine& a, const std::string& gid, size_t subId,
                   bool side, WriteBatch& batch) const {
+  I32Box ret;
   for (const auto& line : a) {
     if (line.size() < 2) continue;
-    add(line, gid, subId, side, batch);
+    auto box = add(line, gid, subId, side, batch);
+    if (box.isNull()) continue;
+    ret = util::geo::extendBox(box, ret);
     subId++;
   }
+
+  return ret;
 }
 
 // _____________________________________________________________________________
-void Sweeper::add(const I32MultiPoint& a, const std::string& gid, size_t subid,
+I32Box Sweeper::add(const I32MultiPoint& a, const std::string& gid, size_t subid,
                   bool side, WriteBatch& batch) const {
+  I32Box ret;
   size_t newId = subid;
   for (const auto& point : a) {
-    add(point, gid, newId, side, batch);
+    auto box = add(point, gid, newId, side, batch);
+    if (box.isNull()) continue;
+    ret = util::geo::extendBox(box, ret);
     newId++;
   }
+
+  return ret;
 }
 
 // _____________________________________________________________________________
@@ -133,9 +161,12 @@ void Sweeper::add(const std::string& parent, const util::geo::I32Box& box,
 }
 
 // _____________________________________________________________________________
-void Sweeper::add(const std::string& parent, const util::geo::I32Box& box,
-                  const std::string& gid, size_t subid, bool side,
+void Sweeper::add(const std::string& parentR, const util::geo::I32Box& box,
+                  const std::string& gidR, size_t subid, bool side,
                   WriteBatch& batch) const {
+  std::string gid = (side ? ("B" + gidR) : ("A" + gidR));
+  std::string parent = (side ? ("B" + parentR) : ("A" + parentR));
+
   BoxVal boxl, boxr;
   boxl.side = side;
   boxr.side = side;
@@ -147,19 +178,23 @@ void Sweeper::add(const std::string& parent, const util::geo::I32Box& box,
 }
 
 // _____________________________________________________________________________
-void Sweeper::add(const I32Polygon& poly, const std::string& gid, bool side,
+I32Box Sweeper::add(const I32Polygon& poly, const std::string& gid, bool side,
                   WriteBatch& batch) const {
-  add(poly, gid, 0, side, batch);
+  return add(poly, gid, 0, side, batch);
 }
 
 // _____________________________________________________________________________
-void Sweeper::add(const I32Polygon& poly, const std::string& gid, size_t subid,
+I32Box Sweeper::add(const I32Polygon& poly, const std::string& gidR, size_t subid,
                   bool side, WriteBatch& batch) const {
+  std::string gid = (side ? ("B" + gidR) : ("A" + gidR));
+
   WriteCand cur;
-  const auto& box = getBoundingBox(poly);
+  const auto& rawBox = getBoundingBox(poly);
+  const auto& box = getPaddedBoundingBox(rawBox);
+  if (!util::geo::intersects(box, _filterBox)) return {};
   I32XSortedPolygon spoly(poly);
 
-  if (spoly.empty()) return;
+  if (spoly.empty()) return box;
 
   double areaSize = area(poly);
   double outerAreaSize = outerArea(poly);
@@ -168,16 +203,16 @@ void Sweeper::add(const I32Polygon& poly, const std::string& gid, size_t subid,
 
   if (_cfg.useBoxIds) {
     if (_cfg.useCutouts && poly.getOuter().size() > CUTOUTS_MIN_SIZE) {
-      boxIds = packBoxIds(getBoxIds(spoly, box, outerAreaSize, &cutouts));
+      boxIds = packBoxIds(getBoxIds(spoly, rawBox, outerAreaSize, &cutouts));
     } else {
-      boxIds = packBoxIds(getBoxIds(spoly, box, outerAreaSize, 0));
+      boxIds = packBoxIds(getBoxIds(spoly, rawBox, outerAreaSize, 0));
     }
   }
 
   I32Box box45;
   if (_cfg.useDiagBox) {
     auto polyR = util::geo::rotateSinCos(poly, sin45, cos45, I32Point(0, 0));
-    box45 = getBoundingBox(polyR);
+    box45 = getPaddedBoundingBox(polyR, rawBox);
   }
 
   cur.subid = subid;
@@ -189,6 +224,9 @@ void Sweeper::add(const I32Polygon& poly, const std::string& gid, size_t subid,
     GeometryCache<SimpleArea>::writeTo({poly.getOuter(), gid}, str);
     cur.raw = str.str();
 
+    size_t estimatedSize =
+        poly.getOuter().size() * sizeof(util::geo::XSortedTuple<int32_t>);
+
     cur.boxvalIn = {0,  // placeholder, will be overwritten later on
                     box.getLowerLeft().getY(),
                     box.getUpperRight().getY(),
@@ -196,8 +234,10 @@ void Sweeper::add(const I32Polygon& poly, const std::string& gid, size_t subid,
                     false,
                     SIMPLE_POLYGON,
                     areaSize,
+                    {},
                     box45,
-                    side};
+                    side,
+                    estimatedSize > GEOM_LARGENESS_THRESHOLD};
     cur.boxvalOut = {0,  // placeholder, will be overwritten later on
                      box.getLowerLeft().getY(),
                      box.getUpperRight().getY(),
@@ -205,8 +245,10 @@ void Sweeper::add(const I32Polygon& poly, const std::string& gid, size_t subid,
                      true,
                      SIMPLE_POLYGON,
                      areaSize,
+                    {},
                      box45,
-                     side};
+                     side,
+                     estimatedSize > GEOM_LARGENESS_THRESHOLD};
     batch.simpleAreas.emplace_back(cur);
   } else {
     if (!_cfg.useFastSweepSkip) {
@@ -256,6 +298,13 @@ void Sweeper::add(const I32Polygon& poly, const std::string& gid, size_t subid,
         str);
     ;
 
+    size_t estimatedSize = spoly.getOuter().rawRing().size() *
+                           sizeof(util::geo::XSortedTuple<int32_t>);
+    for (const auto& p : spoly.getInners()) {
+      estimatedSize +=
+          p.rawRing().size() * sizeof(util::geo::XSortedTuple<int32_t>);
+    }
+
     cur.raw = str.str();
 
     cur.boxvalIn = {0,  // placeholder, will be overwritten later on
@@ -265,8 +314,10 @@ void Sweeper::add(const I32Polygon& poly, const std::string& gid, size_t subid,
                     false,
                     POLYGON,
                     areaSize,
+                    {},
                     box45,
-                    side};
+                    side,
+                    estimatedSize > GEOM_LARGENESS_THRESHOLD};
     cur.boxvalOut = {0,  // placeholder, will be overwritten later on
                      box.getLowerLeft().getY(),
                      box.getUpperRight().getY(),
@@ -274,34 +325,42 @@ void Sweeper::add(const I32Polygon& poly, const std::string& gid, size_t subid,
                      true,
                      POLYGON,
                      areaSize,
+                    {},
                      box45,
-                     side};
+                     side,
+                     estimatedSize > GEOM_LARGENESS_THRESHOLD};
     batch.areas.emplace_back(cur);
   }
+
+  return box;
 }
 
 // _____________________________________________________________________________
-void Sweeper::add(const I32Line& line, const std::string& gid, bool side,
+I32Box Sweeper::add(const I32Line& line, const std::string& gid, bool side,
                   WriteBatch& batch) const {
-  add(line, gid, 0, side, batch);
+  return add(line, gid, 0, side, batch);
 }
 
 // _____________________________________________________________________________
-void Sweeper::add(const I32Line& line, const std::string& gid, size_t subid,
+I32Box Sweeper::add(const I32Line& line, const std::string& gidR, size_t subid,
                   bool side, WriteBatch& batch) const {
-  if (line.size() < 2) return;
+  if (line.size() < 2) return {};
+
+  std::string gid = (side ? ("B" + gidR) : ("A" + gidR));
 
   WriteCand cur;
 
-  const auto& box = getBoundingBox(line);
+  const auto& rawBox = getBoundingBox(line);
+  const auto& box = getPaddedBoundingBox(rawBox);
+  if (!util::geo::intersects(box, _filterBox)) return {};
   BoxIdList boxIds;
   std::map<int32_t, size_t> cutouts;
 
   if (_cfg.useBoxIds) {
     if (_cfg.useCutouts && line.size() > CUTOUTS_MIN_SIZE) {
-      boxIds = packBoxIds(getBoxIds(line, box, &cutouts));
+      boxIds = packBoxIds(getBoxIds(line, rawBox, &cutouts));
     } else {
-      boxIds = packBoxIds(getBoxIds(line, box, 0));
+      boxIds = packBoxIds(getBoxIds(line, rawBox, 0));
     }
   }
 
@@ -309,8 +368,8 @@ void Sweeper::add(const I32Line& line, const std::string& gid, size_t subid,
 
   I32Box box45;
   if (_cfg.useDiagBox) {
-    auto polyR = util::geo::rotateSinCos(line, sin45, cos45, I32Point(0, 0));
-    box45 = getBoundingBox(polyR);
+    auto lineR = util::geo::rotateSinCos(line, sin45, cos45, I32Point(0, 0));
+    box45 = getPaddedBoundingBox(lineR, rawBox);
   }
 
   cur.subid = subid;
@@ -332,8 +391,10 @@ void Sweeper::add(const I32Line& line, const std::string& gid, size_t subid,
                     false,
                     SIMPLE_LINE,
                     len,
+                    {},
                     box45,
-                    side};
+                    side,
+                    false};
     cur.boxvalOut = {0,  // placeholder, will be overwritten later on,
                      box.getLowerLeft().getY(),
                      box.getUpperRight().getY(),
@@ -341,13 +402,15 @@ void Sweeper::add(const I32Line& line, const std::string& gid, size_t subid,
                      true,
                      SIMPLE_LINE,
                      len,
+                    {},
                      box45,
-                     side};
+                     side,
+                     false};
     batch.simpleLines.emplace_back(cur);
   } else {
     // normal line
     I32XSortedLine sline(line);
-    if (line.empty()) return;
+    if (line.empty()) return {};
     util::geo::I32Polygon obb;
     if (_cfg.useOBB && line.size() >= OBB_MIN_SIZE) {
       obb = util::geo::convexHull(
@@ -366,6 +429,9 @@ void Sweeper::add(const I32Line& line, const std::string& gid, size_t subid,
         {sline, box, gid, subid, len, boxIds, cutouts, obb}, str);
     cur.raw = str.str();
 
+    size_t estimatedSize =
+        line.size() * sizeof(util::geo::XSortedTuple<int32_t>);
+
     cur.boxvalIn = {0,  // placeholder, will be overwritten later on
                     box.getLowerLeft().getY(),
                     box.getUpperRight().getY(),
@@ -373,8 +439,10 @@ void Sweeper::add(const I32Line& line, const std::string& gid, size_t subid,
                     false,
                     LINE,
                     len,
+                    {},
                     box45,
-                    side};
+                    side,
+                    estimatedSize > GEOM_LARGENESS_THRESHOLD};
     cur.boxvalOut = {0,  // placeholder, will be overwritten later on
                      box.getLowerLeft().getY(),
                      box.getUpperRight().getY(),
@@ -382,21 +450,27 @@ void Sweeper::add(const I32Line& line, const std::string& gid, size_t subid,
                      true,
                      LINE,
                      len,
+                    {},
                      box45,
-                     side};
+                     side,
+                     estimatedSize > GEOM_LARGENESS_THRESHOLD};
     batch.lines.emplace_back(cur);
   }
+
+  return box;
 }
 
 // _____________________________________________________________________________
-void Sweeper::add(const I32Point& point, const std::string& gid, bool side,
+I32Box Sweeper::add(const I32Point& point, const std::string& gid, bool side,
                   WriteBatch& batch) const {
-  add(point, gid, 0, side, batch);
+  return add(point, gid, 0, side, batch);
 }
 
 // _____________________________________________________________________________
-void Sweeper::add(const I32Point& point, const std::string& gid, size_t subid,
+I32Box Sweeper::add(const I32Point& point, const std::string& gidR, size_t subid,
                   bool side, WriteBatch& batch) const {
+  std::string gid = (side ? ("B" + gidR) : ("A" + gidR));
+
   WriteCand cur;
 
   std::stringstream str;
@@ -407,27 +481,38 @@ void Sweeper::add(const I32Point& point, const std::string& gid, size_t subid,
   cur.subid = subid;
   cur.gid = gid;
 
+  const auto& rawBox = getBoundingBox(point);
+  const auto& box = getPaddedBoundingBox(rawBox);
+
+  if (!util::geo::intersects(box, _filterBox)) return {};
+
   auto pointR = util::geo::rotateSinCos(point, sin45, cos45, I32Point(0, 0));
   cur.boxvalIn = {0,  // placeholder, will be overwritten later on
-                  point.getY(),
-                  point.getY(),
-                  point.getX(),
+                  box.getLowerLeft().getY(),
+                  box.getUpperRight().getY(),
+                  box.getLowerLeft().getX(),
                   false,
                   POINT,
                   0,
-                  util::geo::getBoundingBox(pointR),
-                  side};
+                  point,
+                  getPaddedBoundingBox(pointR, rawBox),
+                  side,
+                  false};
   cur.boxvalOut = {0,  // placeholder, will be overwritten later on
-                   point.getY(),
-                   point.getY(),
-                   point.getX(),
+                   box.getLowerLeft().getY(),
+                   box.getUpperRight().getY(),
+                   box.getUpperRight().getX(),
                    true,
                    POINT,
                    0,
-                   util::geo::getBoundingBox(pointR),
-                   side};
+                   point,
+                   getPaddedBoundingBox(pointR, rawBox),
+                   side,
+                   false};
 
   batch.points.emplace_back(cur);
+
+  return box;
 }
 
 // _____________________________________________________________________________
@@ -575,8 +660,6 @@ void Sweeper::clearMultis(bool force) {
     if (_atomicCurX[i] < curMinThreadX) curMinThreadX = _atomicCurX[i];
   }
 
-  size_t c = 0;
-
   for (size_t i = 0; i < 2; i++) {
     for (auto a = _activeMultis[i].begin(); a != _activeMultis[i].end();) {
       size_t mid = *a;
@@ -599,7 +682,6 @@ void Sweeper::clearMultis(bool force) {
           }
         }
         a = _activeMultis[i].erase(a);
-        c++;
       } else {
         a++;
       }
@@ -617,6 +699,22 @@ void Sweeper::clearMultis(bool force) {
 
 // _____________________________________________________________________________
 void Sweeper::multiOut(size_t tOut, const std::string& gidA) {
+  // collect dist
+  if (_cfg.withinDist >= 0) {
+    for (size_t t = 0; t < _cfg.numThreads + 1; t++) {
+      std::unique_lock<std::mutex> lock(_mutsDistance[t]);
+      auto i = _subDistance[t].find(gidA);
+      if (i != _subDistance[t].end()) {
+        for (const auto& a : i->second) {
+          writeRel(tOut, gidA, a.first, "\t" + std::to_string(a.second) + "\t");
+          writeRel(tOut, a.first, gidA, "\t" + std::to_string(a.second) + "\t");
+        }
+        _subDistance[t].erase(i);
+      }
+    }
+    return;
+  }
+
   std::unordered_map<std::string, size_t> subContains, subCovered;
 
   std::unordered_map<std::string, std::unordered_map<std::string, size_t>>
@@ -829,7 +927,17 @@ void Sweeper::flush() {
 
   for (size_t side = 0; side < 2; side++) {
     for (size_t i = 0; i < _multiIds[side].size(); i++) {
-      diskAdd({i, 1, 0, _multiLeftX[side][i] - 1, false, POINT, 0.0, {}, side});
+      diskAdd({i,
+               1,
+               0,
+               _multiLeftX[side][i] - 1,
+               false,
+               POINT,
+               0.0,
+               {},
+               {},
+               side,
+               false});
     }
   }
 
@@ -863,7 +971,8 @@ void Sweeper::flush() {
 #ifdef __unix__
   posix_fadvise(newFile, 0, 0, POSIX_FADV_SEQUENTIAL);
 #endif
-  r = util::externalSort(_file, newFile, sizeof(BoxVal), _curSweepId, _cfg.numThreads, boxCmp);
+  r = util::externalSort(_file, newFile, sizeof(BoxVal), _curSweepId,
+                         _cfg.numThreads, boxCmp);
 
   if (r < 0) {
     std::stringstream ss;
@@ -902,143 +1011,6 @@ void Sweeper::diskAdd(const BoxVal& bv) {
 }
 
 // _____________________________________________________________________________
-void Sweeper::sortCache() {
-  // start at beginning of _file
-  lseek(_file, 0, SEEK_SET);
-
-  const size_t RBUF_SIZE = 100000;
-  unsigned char* buf = new unsigned char[sizeof(BoxVal) * RBUF_SIZE];
-
-  ssize_t len;
-  size_t jj = 0;
-
-  // new caches
-  GeometryCache<Point> _pointCacheNew(POINT_CACHE_SIZE, _cfg.numCacheThreads,
-                                      _cache);
-  GeometryCache<SimpleLine> _simpleLineCacheNew(SIMPLE_LINE_CACHE_SIZE,
-                                                _cfg.numCacheThreads, _cache);
-  GeometryCache<Line> _lineCacheNew(LINE_CACHE_SIZE, _cfg.numCacheThreads,
-                                    _cache);
-  GeometryCache<Area> _areaCacheNew(AREA_CACHE_SIZE, _cfg.numCacheThreads,
-                                    _cache);
-  GeometryCache<SimpleArea> _simpleAreaCacheNew(SIMPLE_AREA_CACHE_SIZE,
-                                                _cfg.numCacheThreads, _cache);
-
-  int oldFile = _file;
-
-  // OUTFACTOR 1
-  _fname = util::getTmpFName(_cache, ".spatialjoin", "events");
-  _file = open(_fname.c_str(), O_RDWR | O_CREAT | O_TRUNC, 0666);
-
-  if (_file < 0) {
-    throw std::runtime_error("Could not open temporary file " + _fname);
-  }
-
-  // immediately unlink
-  unlink(_fname.c_str());
-
-#ifdef __unix__
-  posix_fadvise(_file, 0, 0, POSIX_FADV_SEQUENTIAL);
-#endif
-  // OUTFACTOR 1
-
-  size_t numEvents = _curSweepId;
-  _curSweepId = 0;
-
-  while ((len = util::readAll(oldFile, buf, sizeof(BoxVal) * RBUF_SIZE)) != 0) {
-    if (len < 0) {
-      std::stringstream ss;
-      ss << "Could not read from events file '" << _fname << "'\n";
-      ss << strerror(errno) << std::endl;
-      throw std::runtime_error(ss.str());
-    }
-
-    for (ssize_t i = 0; i < len; i += sizeof(BoxVal)) {
-      auto cur = reinterpret_cast<const BoxVal*>(buf + i);
-      jj++;
-
-      if (jj % 500000 == 0) {
-        log(std::to_string(jj / 2) + " / " + std::to_string(numEvents / 2) +
-            " (" + std::to_string((((1.0 * jj) / (1.0 * numEvents)) * 100)) +
-            "%)");
-      }
-
-      if (!cur->out) {
-        size_t id = 0;
-
-        if (cur->type == POINT && !(cur->loY == 1 && cur->upY == 0)) {
-          const auto& curC = _pointCache.getFromDisk(cur->id, 0);
-          id = _pointCacheNew.add(curC);
-
-          // re-add events with new ID
-          diskAdd({id, cur->loY, cur->upY, cur->val, false, cur->type,
-                   cur->areaOrLen, cur->b45, cur->side});
-          diskAdd({id, cur->loY, cur->upY, cur->val, true, cur->type,
-                   cur->areaOrLen, cur->b45, cur->side});
-        }
-
-        if (cur->type == SIMPLE_LINE) {
-          const auto& curC = _simpleLineCache.getFromDisk(cur->id, 0);
-          id = _simpleLineCacheNew.add(curC);
-
-          // re-add events with new ID
-          diskAdd({id, cur->loY, cur->upY, cur->val, false, cur->type,
-                   cur->areaOrLen, cur->b45, cur->side});
-          diskAdd(
-              {id, cur->loY, cur->upY,
-               curC.a.getX() <= curC.b.getX() ? curC.b.getX() : curC.a.getX(),
-               true, cur->type, cur->areaOrLen, cur->b45, cur->side});
-        }
-
-        if (cur->type == LINE) {
-          const auto& curC = _lineCache.getFromDisk(cur->id, 0);
-          id = _lineCacheNew.add(curC);
-
-          // re-add events with new ID
-          diskAdd({id, cur->loY, cur->upY, cur->val, false, cur->type,
-                   cur->areaOrLen, cur->b45, cur->side});
-          diskAdd({id, cur->loY, cur->upY, curC.box.getUpperRight().getX(),
-                   true, cur->type, cur->areaOrLen, cur->b45, cur->side});
-        }
-
-        if (cur->type == POLYGON) {
-          const auto& curC = _areaCache.getFromDisk(cur->id, 0);
-          id = _areaCacheNew.add(curC);
-
-          // re-add events with new ID
-          diskAdd({id, cur->loY, cur->upY, cur->val, false, cur->type,
-                   cur->areaOrLen, cur->b45, cur->side});
-          diskAdd({id, cur->loY, cur->upY, curC.box.getUpperRight().getX(),
-                   true, cur->type, cur->areaOrLen, cur->b45, cur->side});
-        }
-
-        if (cur->type == SIMPLE_POLYGON) {
-          const auto& curC = _simpleAreaCache.getFromDisk(cur->id, 0);
-          id = _simpleAreaCacheNew.add(curC);
-
-          // re-add events with new ID
-          diskAdd({id, cur->loY, cur->upY, cur->val, false, cur->type,
-                   cur->areaOrLen, cur->b45, cur->side});
-          diskAdd({id, cur->loY, cur->upY,
-                   util::geo::getBoundingBox(curC.geom).getUpperRight().getX(),
-                   true, cur->type, cur->areaOrLen, cur->b45, cur->side});
-        }
-      }
-    }
-  }
-
-  close(oldFile);
-
-  delete[] buf;
-
-  _pointCache = std::move(_pointCacheNew);
-  _lineCache = std::move(_lineCacheNew);
-  _simpleLineCache = std::move(_simpleLineCacheNew);
-  _areaCache = std::move(_areaCacheNew);
-  _simpleAreaCache = std::move(_simpleAreaCacheNew);
-}
-
-// _____________________________________________________________________________
 RelStats Sweeper::sweep() {
   // start at beginning of _file
   lseek(_file, 0, SEEK_SET);
@@ -1049,12 +1021,23 @@ RelStats Sweeper::sweep() {
   const size_t RBUF_SIZE = 100000;
   unsigned char* buf = new unsigned char[sizeof(BoxVal) * RBUF_SIZE];
 
-  sj::IntervalIdx<int32_t, SweepVal> actives[2];
+  util::geo::IntervalIdx<int32_t, SweepVal> actives[2];
 
-  _rawFiles = {}, _files = {}, _outBufPos = {}, _outBuffers = {};
+  _rawFiles = {};
 
-  _files.resize(_cfg.numThreads + 1);
+#ifndef SPATIALJOIN_NO_BZIP2
+  _bzFiles = {};
+  _bzFiles.resize(_cfg.numThreads + 1);
+#endif
+
+#ifndef SPATIALJOIN_NO_ZLIB
+  _gzFiles = {};
   _gzFiles.resize(_cfg.numThreads + 1);
+#endif
+
+  _outBufPos = {};
+  _outBuffers = {};
+
   _rawFiles.resize(_cfg.numThreads + 1);
   _outBufPos.resize(_cfg.numThreads + 1);
   _outBuffers.resize(_cfg.numThreads + 1);
@@ -1065,12 +1048,14 @@ RelStats Sweeper::sweep() {
   _subEquals.resize(_cfg.numThreads + 1);
   _subCovered.resize(_cfg.numThreads + 1);
   _subContains.resize(_cfg.numThreads + 1);
+  _subDistance.resize(_cfg.numThreads + 1);
   _subNotOverlaps.resize(_cfg.numThreads + 1);
   _subOverlaps.resize(_cfg.numThreads + 1);
   _subNotTouches.resize(_cfg.numThreads + 1);
   _subNotCrosses.resize(_cfg.numThreads + 1);
   _subCrosses.resize(_cfg.numThreads + 1);
   _subTouches.resize(_cfg.numThreads + 1);
+
   _mutsEquals = std::vector<std::mutex>(_cfg.numThreads + 1);
   _mutsCovers = std::vector<std::mutex>(_cfg.numThreads + 1);
   _mutsContains = std::vector<std::mutex>(_cfg.numThreads + 1);
@@ -1080,6 +1065,7 @@ RelStats Sweeper::sweep() {
   _mutsTouches = std::vector<std::mutex>(_cfg.numThreads + 1);
   _mutsNotCrosses = std::vector<std::mutex>(_cfg.numThreads + 1);
   _mutsCrosses = std::vector<std::mutex>(_cfg.numThreads + 1);
+  _mutsDistance = std::vector<std::mutex>(_cfg.numThreads + 1);
   _atomicCurX = std::vector<std::atomic<int32_t>>(_cfg.numThreads + 1);
 
   size_t counts = 0, totalCheckCount = 0, jj = 0, checkPairs = 0;
@@ -1111,8 +1097,9 @@ RelStats Sweeper::sweep() {
         _activeMultis[cur->side].insert(cur->id);
       } else if (!cur->out) {
         // IN event
-        actives[cur->side].insert({cur->loY, cur->upY},
-                                  {cur->id, cur->type, cur->b45, cur->side});
+        actives[cur->side].insert(
+            {cur->loY, cur->upY},
+            {cur->id, cur->type, cur->b45,cur->point,  cur->side, cur->large});
 
         if (jj % 500000 == 0) {
           auto lon = webMercToLatLng<double>((1.0 * cur->val) / PREC, 0).getX();
@@ -1149,7 +1136,9 @@ RelStats Sweeper::sweep() {
 
         counts++;
 
-        fillBatch(&curBatch, &actives[((int)(cur->side) + 1) % _numSides], cur);
+        int sideB = ((int)(cur->side) + 1) % _numSides;
+
+        fillBatch(&curBatch, &actives[sideB], cur);
 
         if (curBatch.size() > batchSize) {
           checkPairs += curBatch.size();
@@ -1165,12 +1154,24 @@ RelStats Sweeper::sweep() {
 
   if (!_cfg.noGeometryChecks && curBatch.size()) _jobs.add(std::move(curBatch));
 
-  clearMultis(true);
-
   // the DONE element on the job queue to signal all threads to shut down
   _jobs.add({});
 
   // wait for all workers to finish
+  for (auto& thr : thrds) thr.join();
+
+  // empty job queue
+  _jobs.reset();
+  // fire up new workers to clear multis
+  for (size_t i = 0; i < thrds.size(); i++)
+    thrds[i] = std::thread(&Sweeper::processQueue, this, i);
+
+  // now also clear the multis
+  clearMultis(true);
+  // the DONE element on the job queue to signal all threads to shut down
+  _jobs.add({});
+
+  // again wait for all workers to finish
   for (auto& thr : thrds) thr.join();
 
   flushOutputFiles();
@@ -1765,15 +1766,16 @@ std::tuple<bool, bool> Sweeper::check(const I32Point& a, const Line* b,
 // ____________________________________________________________________________
 void Sweeper::writeRelToBuf(size_t t, const std::string& a,
                             const std::string& b, const std::string& pred) {
+  size_t off = 1;
   memcpy(_outBuffers[t] + _outBufPos[t], _cfg.pairStart.c_str(),
          _cfg.pairStart.size());
   _outBufPos[t] += _cfg.pairStart.size();
-  memcpy(_outBuffers[t] + _outBufPos[t], a.c_str(), a.size());
-  _outBufPos[t] += a.size();
+  memcpy(_outBuffers[t] + _outBufPos[t], a.c_str() + off, a.size() - off);
+  _outBufPos[t] += a.size() - off;
   memcpy(_outBuffers[t] + _outBufPos[t], pred.c_str(), pred.size());
   _outBufPos[t] += pred.size();
-  memcpy(_outBuffers[t] + _outBufPos[t], b.c_str(), b.size());
-  _outBufPos[t] += b.size();
+  memcpy(_outBuffers[t] + _outBufPos[t], b.c_str() + off, b.size() - off);
+  _outBufPos[t] += b.size() - off;
   memcpy(_outBuffers[t] + _outBufPos[t], _cfg.pairEnd.c_str(),
          _cfg.pairEnd.size());
   _outBufPos[t] += _cfg.pairEnd.size();
@@ -1786,18 +1788,25 @@ void Sweeper::writeRel(size_t t, const std::string& a, const std::string& b,
 
   if (!_cfg.writeRelCb && _outMode == NONE) return;
 
+  size_t off = 1;
+
+  if (_numSides == 2) {
+    if (a[0] != 'A' || a[0] == b[0]) return;
+  }
+
   if (_cfg.writeRelCb) {
-    _cfg.writeRelCb(t, a, b, pred);
+    _cfg.writeRelCb(t, a.c_str() + 1, b.c_str() + 1, pred.c_str());
   } else {
     size_t totSize = _cfg.pairStart.size() + a.size() + pred.size() + b.size() +
-                     _cfg.pairEnd.size();
+                     _cfg.pairEnd.size() - off - off;
 
     if (_outMode == BZ2) {
+#ifndef SPATIALJOIN_NO_BZIP2
       if (_outBufPos[t] + totSize >= BUFFER_S_PAIRS) {
         int err = 0;
-        BZ2_bzWrite(&err, _files[t], _outBuffers[t], _outBufPos[t]);
+        BZ2_bzWrite(&err, _bzFiles[t], _outBuffers[t], _outBufPos[t]);
         if (err == BZ_IO_ERROR) {
-          BZ2_bzWriteClose(&err, _files[t], 0, 0, 0);
+          BZ2_bzWriteClose(&err, _bzFiles[t], 0, 0, 0);
           std::string fname = _cache + "/.rels" + std::to_string(getpid()) +
                               "-" + std::to_string(t);
           std::stringstream ss;
@@ -1810,7 +1819,9 @@ void Sweeper::writeRel(size_t t, const std::string& a, const std::string& b,
       }
 
       writeRelToBuf(t, a, b, pred);
+#endif
     } else if (_outMode == GZ) {
+#ifndef SPATIALJOIN_NO_ZLIB
       if (_outBufPos[t] + totSize >= BUFFER_S_PAIRS) {
         int r = gzwrite(_gzFiles[t], _outBuffers[t], _outBufPos[t]);
         if (r != (int)_outBufPos[t]) {
@@ -1827,6 +1838,7 @@ void Sweeper::writeRel(size_t t, const std::string& a, const std::string& b,
       }
 
       writeRelToBuf(t, a, b, pred);
+#endif
     } else if (_outMode == PLAIN) {
       if (_outBufPos[t] + totSize >= BUFFER_S_PAIRS) {
         size_t r =
@@ -1855,6 +1867,27 @@ void Sweeper::writeRel(size_t t, const std::string& a, const std::string& b,
   }
 
   _stats[t].timeWrite += TOOK(ts);
+}
+
+// ____________________________________________________________________________
+void Sweeper::writeDist(size_t t, const std::string& a, size_t aSub,
+                        const std::string& b, size_t bSub, double dist) {
+  if (a != b) {
+    if (bSub > 0 || aSub > 0) {
+      std::unique_lock<std::mutex> lock(_mutsDistance[t]);
+      if (bSub > 0 && (_subDistance[t][b].find(a) == _subDistance[t][b].end() ||
+                       _subDistance[t][b][a] > dist))
+        _subDistance[t][b][a] = dist;
+      if (aSub > 0 && (_subDistance[t][a].find(b) == _subDistance[t][a].end() ||
+                       _subDistance[t][a][b] > dist))
+        _subDistance[t][a][b] = dist;
+    } else {
+      writeRel(t, a, b, "\t" + std::to_string(dist) + "\t");
+      writeRel(t, b, a, "\t" + std::to_string(dist) + "\t");
+    }
+  }
+
+  // TODO: handle references
 }
 
 // ____________________________________________________________________________
@@ -1891,36 +1924,297 @@ void Sweeper::writeIntersect(size_t t, const std::string& a,
 void Sweeper::selfCheck(const BoxVal cur, size_t t) {
   if (cur.type == POINT) {
     auto ts = TIME();
-    auto a = _pointCache.get(cur.id, t);
+    auto a = _pointCache.get(cur.id, cur.large ? -1 : t);
     _stats[t].timeGeoCacheRetrievalPoint += TOOK(ts);
 
     writeIntersect(t, a->id, a->id);
     writeEquals(t, a->id, a->subId, a->id, a->subId);
     writeCovers(t, a->id, a->id, a->subId);
   } else if (cur.type == LINE) {
-    auto a = _lineCache.get(cur.id, t);
+    auto a = _lineCache.get(cur.id, cur.large ? -1 : t);
 
     writeIntersect(t, a->id, a->id);
     writeEquals(t, a->id, a->subId, a->id, a->subId);
     writeCovers(t, a->id, a->id, a->subId);
   } else if (cur.type == SIMPLE_LINE) {
-    auto a = _simpleLineCache.get(cur.id, t);
+    auto a = _simpleLineCache.get(cur.id, cur.large ? -1 : t);
 
     writeIntersect(t, a->id, a->id);
     writeEquals(t, a->id, 0, a->id, 0);
     writeCovers(t, a->id, a->id, 0);
   } else if (cur.type == POLYGON) {
-    auto a = _areaCache.get(cur.id, t);
+    auto a = _areaCache.get(cur.id, cur.large ? -1 : t);
 
     writeIntersect(t, a->id, a->id);
     writeEquals(t, a->id, a->subId, a->id, a->subId);
     writeCovers(t, a->id, a->id, a->subId);
   } else if (cur.type == SIMPLE_POLYGON) {
-    auto a = _simpleAreaCache.get(cur.id, t);
+    auto a = _simpleAreaCache.get(cur.id, cur.large ? -1 : t);
 
     writeIntersect(t, a->id, a->id);
     writeEquals(t, a->id, 0, a->id, 0);
     writeCovers(t, a->id, a->id, 0);
+  }
+}
+
+// ____________________________________________________________________________
+void Sweeper::doDistCheck(const BoxVal cur, const SweepVal sv, size_t t) {
+  _checks[t]++;
+  _curX[t] = cur.val;
+
+  // every 10000 checks, update our position
+  if (_checks[t] % 10000 == 0) _atomicCurX[t] = _curX[t];
+
+  if (cur.type == POINT && sv.type == POINT) {
+    auto p1 = cur.point;
+    auto p2 = sv.point;
+
+    auto dist = meterDist(p1, p2);
+
+    if (dist <= _cfg.withinDist) {
+      auto a = _pointCache.get(cur.id, cur.large ? -1 : t);
+      auto b = _pointCache.get(sv.id, sv.large ? -1 : t);
+
+      writeDist(t, a->id, a->subId, b->id, b->subId, dist);
+    }
+  } else if (cur.type == POINT &&
+             (sv.type == POLYGON || sv.type == SIMPLE_POLYGON)) {
+    auto p = cur.point;
+
+    const Area* a;
+    std::shared_ptr<Area> asp;
+    Area al;
+
+    if (sv.type == SIMPLE_POLYGON) {
+      auto p = _simpleAreaCache.get(sv.id, sv.large ? -1 : t);
+      al = areaFromSimpleArea(p.get());
+      a = &al;
+    } else {
+      asp = _areaCache.get(sv.id, sv.large ? -1 : t);
+      a = asp.get();
+    }
+
+    double dist = distCheck(p, a, t);
+
+    if (dist <= _cfg.withinDist) {
+      auto b = _pointCache.get(cur.id, cur.large ? -1 : t);
+      writeDist(t, a->id, a->subId, b->id, b->subId, dist);
+    }
+  } else if ((cur.type == POLYGON || cur.type == SIMPLE_POLYGON) &&
+             sv.type == POINT) {
+    auto p = sv.point;
+
+    const Area* a;
+    std::shared_ptr<Area> asp;
+    Area al;
+
+    if (cur.type == SIMPLE_POLYGON) {
+      auto p = _simpleAreaCache.get(cur.id, cur.large ? -1 : t);
+      al = areaFromSimpleArea(p.get());
+      a = &al;
+    } else {
+      asp = _areaCache.get(cur.id, cur.large ? -1 : t);
+      a = asp.get();
+    }
+
+    double dist = distCheck(p, a, t);
+
+    if (dist <= _cfg.withinDist) {
+      auto b = _pointCache.get(sv.id, sv.large ? -1 : t);
+      writeDist(t, a->id, a->subId, b->id, b->subId, dist);
+    }
+  } else if ((cur.type == SIMPLE_LINE || cur.type == LINE) &&
+             sv.type == POINT) {
+    auto p = sv.point;
+
+    double dist = std::numeric_limits<double>::max();
+
+    if (cur.type == SIMPLE_LINE) {
+      auto b = _simpleLineCache.get(cur.id, cur.large ? -1 : t);
+      dist = distCheck(p, b.get(), t);
+
+      if (dist <= _cfg.withinDist) {
+        auto a = _pointCache.get(sv.id, sv.large ? -1 : t);
+        writeDist(t, a->id, a->subId, b->id, 0, dist);
+      }
+    } else {
+      auto b = _lineCache.get(cur.id, cur.large ? -1 : t);
+      dist = distCheck(p, b.get(), t);
+
+      if (dist <= _cfg.withinDist) {
+        auto a = _pointCache.get(sv.id, sv.large ? -1 : t);
+        writeDist(t, a->id, a->subId, b->id, b->subId, dist);
+      }
+    }
+  } else if ((sv.type == SIMPLE_LINE || sv.type == LINE) && cur.type == POINT) {
+    auto p = cur.point;
+
+    double dist = std::numeric_limits<double>::max();
+
+    if (sv.type == SIMPLE_LINE) {
+      auto b = _simpleLineCache.get(sv.id, sv.large ? -1 : t);
+      dist = distCheck(p, b.get(), t);
+
+      if (dist <= _cfg.withinDist) {
+        auto a = _pointCache.get(cur.id, cur.large ? -1 : t);
+        writeDist(t, a->id, a->subId, b->id, 0, dist);
+      }
+    } else {
+      auto b = _lineCache.get(sv.id, sv.large ? -1 : t);
+      dist = distCheck(p, b.get(), t);
+
+      if (dist <= _cfg.withinDist) {
+        auto a = _pointCache.get(cur.id, cur.large ? -1 : t);
+        writeDist(t, a->id, a->subId, b->id, b->subId, dist);
+      }
+    }
+  } else if (sv.type == LINE && cur.type == LINE) {
+    auto a = _lineCache.get(sv.id, sv.large ? -1 : t);
+    auto b = _lineCache.get(cur.id, cur.large ? -1 : t);
+    auto dist = distCheck(a.get(), b.get(), t);
+
+    if (dist <= _cfg.withinDist) {
+      writeDist(t, a->id, a->subId, b->id, b->subId, dist);
+    }
+  } else if (sv.type == SIMPLE_LINE && cur.type == SIMPLE_LINE) {
+    auto a = _simpleLineCache.get(sv.id, sv.large ? -1 : t);
+    auto b = _simpleLineCache.get(cur.id, cur.large ? -1 : t);
+    auto dist = distCheck(a.get(), b.get(), t);
+
+    if (dist <= _cfg.withinDist) {
+      writeDist(t, a->id, 0, b->id, 0, dist);
+    }
+  } else if (sv.type == SIMPLE_LINE && cur.type == LINE) {
+    auto a = _simpleLineCache.get(sv.id, sv.large ? -1 : t);
+    auto b = _lineCache.get(cur.id, cur.large ? -1 : t);
+    auto dist = distCheck(a.get(), b.get(), t);
+
+    if (dist <= _cfg.withinDist) {
+      writeDist(t, a->id, 0, b->id, b->subId, dist);
+    }
+  } else if (sv.type == LINE && cur.type == SIMPLE_LINE) {
+    auto a = _lineCache.get(sv.id, sv.large ? -1 : t);
+    auto b = _simpleLineCache.get(cur.id, cur.large ? -1 : t);
+    auto dist = distCheck(b.get(), a.get(), t);
+
+    if (dist <= _cfg.withinDist) {
+      writeDist(t, a->id, a->subId, b->id, 0, dist);
+    }
+  } else if ((sv.type == SIMPLE_POLYGON || sv.type == POLYGON) &&
+             (cur.type == SIMPLE_POLYGON || cur.type == POLYGON)) {
+    const Area* a;
+    std::shared_ptr<Area> asp;
+    Area al;
+
+    if (sv.type == SIMPLE_POLYGON) {
+      auto p = _simpleAreaCache.get(sv.id, sv.large ? -1 : t);
+      al = areaFromSimpleArea(p.get());
+      a = &al;
+    } else {
+      asp = _areaCache.get(sv.id, sv.large ? -1 : t);
+      a = asp.get();
+    }
+
+    const Area* b;
+    std::shared_ptr<Area> bsp;
+    Area bl;
+
+    if (cur.type == SIMPLE_POLYGON) {
+      auto p = _simpleAreaCache.get(cur.id, cur.large ? -1 : t);
+      bl = areaFromSimpleArea(p.get());
+      b = &bl;
+    } else {
+      bsp = _areaCache.get(cur.id, cur.large ? -1 : t);
+      b = bsp.get();
+    }
+
+    auto dist = distCheck(a, b, t);
+
+    if (dist <= _cfg.withinDist) {
+      writeDist(t, a->id, a->subId, b->id, b->subId, dist);
+    }
+  } else if (sv.type == LINE &&
+             (cur.type == SIMPLE_POLYGON || cur.type == POLYGON)) {
+    auto a = _lineCache.get(sv.id, sv.large ? -1 : t);
+
+    const Area* b;
+    std::shared_ptr<Area> bsp;
+    Area bl;
+
+    if (cur.type == SIMPLE_POLYGON) {
+      auto p = _simpleAreaCache.get(cur.id, cur.large ? -1 : t);
+      bl = areaFromSimpleArea(p.get());
+      b = &bl;
+    } else {
+      bsp = _areaCache.get(cur.id, cur.large ? -1 : t);
+      b = bsp.get();
+    }
+
+    auto dist = distCheck(a.get(), b, t);
+
+    if (dist <= _cfg.withinDist) {
+      writeDist(t, a->id, a->subId, b->id, b->subId, dist);
+    }
+  } else if ((sv.type == SIMPLE_POLYGON || sv.type == POLYGON) &&
+             cur.type == LINE) {
+    const Area* a;
+    std::shared_ptr<Area> asp;
+    Area al;
+
+    if (sv.type == SIMPLE_POLYGON) {
+      auto p = _simpleAreaCache.get(sv.id, sv.large ? -1 : t);
+      al = areaFromSimpleArea(p.get());
+      a = &al;
+    } else {
+      asp = _areaCache.get(sv.id, sv.large ? -1 : t);
+      a = asp.get();
+    }
+    auto b = _lineCache.get(cur.id, cur.large ? -1 : t);
+    auto dist = distCheck(b.get(), a, t);
+
+    if (dist <= _cfg.withinDist) {
+      writeDist(t, a->id, a->subId, b->id, b->subId, dist);
+    }
+  } else if (sv.type == SIMPLE_LINE &&
+             (cur.type == SIMPLE_POLYGON || cur.type == POLYGON)) {
+    auto a = _simpleLineCache.get(sv.id, sv.large ? -1 : t);
+    const Area* b;
+    std::shared_ptr<Area> bsp;
+    Area bl;
+
+    if (cur.type == SIMPLE_POLYGON) {
+      auto p = _simpleAreaCache.get(cur.id, cur.large ? -1 : t);
+      bl = areaFromSimpleArea(p.get());
+      b = &bl;
+    } else {
+      bsp = _areaCache.get(cur.id, cur.large ? -1 : t);
+      b = bsp.get();
+    }
+    auto dist = distCheck(a.get(), b, t);
+
+    if (dist <= _cfg.withinDist) {
+      writeDist(t, a->id, 0, b->id, b->subId, dist);
+    }
+  } else if ((sv.type == SIMPLE_POLYGON || sv.type == POLYGON) &&
+             cur.type == SIMPLE_LINE) {
+    const Area* a;
+    std::shared_ptr<Area> asp;
+    Area al;
+
+    if (sv.type == SIMPLE_POLYGON) {
+      auto p = _simpleAreaCache.get(sv.id, sv.large ? -1 : t);
+      al = areaFromSimpleArea(p.get());
+      a = &al;
+    } else {
+      asp = _areaCache.get(sv.id, sv.large ? -1 : t);
+      a = asp.get();
+    }
+    auto b = _simpleLineCache.get(cur.id, cur.large ? -1 : t);
+    auto dist = distCheck(b.get(), a, t);
+
+    if (dist <= _cfg.withinDist) {
+      writeDist(t, a->id, a->subId, b->id, 0, dist);
+    }
   }
 }
 
@@ -1947,19 +2241,20 @@ void Sweeper::doCheck(const BoxVal cur, const SweepVal sv, size_t t) {
     Area al, bl;
 
     if (cur.type == SIMPLE_POLYGON) {
-      auto p = _simpleAreaCache.get(cur.id, t);
+      auto p = _simpleAreaCache.get(cur.id, cur.large ? -1 : t);
       al = areaFromSimpleArea(p.get());
       a = &al;
     } else {
-      asp = _areaCache.get(cur.id, t);
+      asp = _areaCache.get(cur.id, cur.large ? -1 : t);
       a = asp.get();
     }
 
     if (sv.type == SIMPLE_POLYGON) {
-      bl = areaFromSimpleArea(_simpleAreaCache.get(sv.id, t).get());
+      bl = areaFromSimpleArea(
+          _simpleAreaCache.get(sv.id, sv.large ? -1 : t).get());
       b = &bl;
     } else {
-      bsp = _areaCache.get(sv.id, t);
+      bsp = _areaCache.get(sv.id, sv.large ? -1 : t);
       b = bsp.get();
     }
 
@@ -2028,14 +2323,15 @@ void Sweeper::doCheck(const BoxVal cur, const SweepVal sv, size_t t) {
     Area bl;
 
     auto ts = TIME();
-    auto a = _lineCache.get(cur.id, t);
+    auto a = _lineCache.get(cur.id, cur.large ? -1 : t);
     _stats[t].timeGeoCacheRetrievalLine += TOOK(ts);
     ts = TIME();
     if (sv.type == SIMPLE_POLYGON) {
-      bl = areaFromSimpleArea(_simpleAreaCache.get(sv.id, t).get());
+      bl = areaFromSimpleArea(
+          _simpleAreaCache.get(sv.id, sv.large ? -1 : t).get());
       b = &bl;
     } else {
-      bsp = _areaCache.get(sv.id, t);
+      bsp = _areaCache.get(sv.id, sv.large ? -1 : t);
       b = bsp.get();
     }
     _stats[t].timeGeoCacheRetrievalArea += TOOK(ts);
@@ -2097,14 +2393,15 @@ void Sweeper::doCheck(const BoxVal cur, const SweepVal sv, size_t t) {
     Area bl;
 
     auto ts = TIME();
-    auto a = _simpleLineCache.get(cur.id, t);
+    auto a = _simpleLineCache.get(cur.id, cur.large ? -1 : t);
     _stats[t].timeGeoCacheRetrievalLine += TOOK(ts);
     ts = TIME();
     if (sv.type == SIMPLE_POLYGON) {
-      bl = areaFromSimpleArea(_simpleAreaCache.get(sv.id, t).get());
+      bl = areaFromSimpleArea(
+          _simpleAreaCache.get(sv.id, sv.large ? -1 : t).get());
       b = &bl;
     } else {
-      bsp = _areaCache.get(sv.id, t);
+      bsp = _areaCache.get(sv.id, sv.large ? -1 : t);
       b = bsp.get();
     }
     _stats[t].timeGeoCacheRetrievalArea += TOOK(ts);
@@ -2164,15 +2461,16 @@ void Sweeper::doCheck(const BoxVal cur, const SweepVal sv, size_t t) {
 
     auto ts = TIME();
     if (cur.type == SIMPLE_POLYGON) {
-      al = areaFromSimpleArea(_simpleAreaCache.get(cur.id, t).get());
+      al = areaFromSimpleArea(
+          _simpleAreaCache.get(cur.id, cur.large ? -1 : t).get());
       a = &al;
     } else {
-      asp = _areaCache.get(cur.id, t);
+      asp = _areaCache.get(cur.id, cur.large ? -1 : t);
       a = asp.get();
     }
     _stats[t].timeGeoCacheRetrievalArea += TOOK(ts);
     ts = TIME();
-    auto b = _lineCache.get(sv.id, t);
+    auto b = _lineCache.get(sv.id, cur.large ? -1 : t);
     _stats[t].timeGeoCacheRetrievalLine += TOOK(ts);
 
     if (a->id == b->id)
@@ -2234,15 +2532,16 @@ void Sweeper::doCheck(const BoxVal cur, const SweepVal sv, size_t t) {
 
     auto ts = TIME();
     if (cur.type == SIMPLE_POLYGON) {
-      al = areaFromSimpleArea(_simpleAreaCache.get(cur.id, t).get());
+      al = areaFromSimpleArea(
+          _simpleAreaCache.get(cur.id, cur.large ? -1 : t).get());
       a = &al;
     } else {
-      asp = _areaCache.get(cur.id, t);
+      asp = _areaCache.get(cur.id, cur.large ? -1 : t);
       a = asp.get();
     }
     _stats[t].timeGeoCacheRetrievalArea += TOOK(ts);
     ts = TIME();
-    auto b = _simpleLineCache.get(sv.id, t);
+    auto b = _simpleLineCache.get(sv.id, sv.large ? -1 : t);
     _stats[t].timeGeoCacheRetrievalLine += TOOK(ts);
 
     _stats[t].areaCmps++;
@@ -2291,8 +2590,8 @@ void Sweeper::doCheck(const BoxVal cur, const SweepVal sv, size_t t) {
     }
   } else if (cur.type == LINE && sv.type == LINE) {
     auto ts = TIME();
-    auto a = _lineCache.get(cur.id, t);
-    auto b = _lineCache.get(sv.id, t);
+    auto a = _lineCache.get(cur.id, cur.large ? -1 : t);
+    auto b = _lineCache.get(sv.id, sv.large ? -1 : t);
     _stats[t].timeGeoCacheRetrievalLine += TOOK(ts);
 
     if (a->id == b->id) return;  // no self-checks in multigeometries
@@ -2353,8 +2652,8 @@ void Sweeper::doCheck(const BoxVal cur, const SweepVal sv, size_t t) {
     }
   } else if (cur.type == LINE && sv.type == SIMPLE_LINE) {
     auto ts = TIME();
-    auto a = _lineCache.get(cur.id, t);
-    auto b = _simpleLineCache.get(sv.id, t);
+    auto a = _lineCache.get(cur.id, cur.large ? -1 : t);
+    auto b = _simpleLineCache.get(sv.id, sv.large ? -1 : t);
     _stats[t].timeGeoCacheRetrievalLine += TOOK(ts);
 
     _stats[t].lineCmps++;
@@ -2409,8 +2708,8 @@ void Sweeper::doCheck(const BoxVal cur, const SweepVal sv, size_t t) {
     }
   } else if (cur.type == SIMPLE_LINE && sv.type == LINE) {
     auto ts = TIME();
-    auto a = _simpleLineCache.get(cur.id, t);
-    auto b = _lineCache.get(sv.id, t);
+    auto a = _simpleLineCache.get(cur.id, sv.large ? -1 : t);
+    auto b = _lineCache.get(sv.id, sv.large ? -1 : t);
     _stats[t].timeGeoCacheRetrievalLine += TOOK(ts);
 
     _stats[t].lineCmps++;
@@ -2465,8 +2764,8 @@ void Sweeper::doCheck(const BoxVal cur, const SweepVal sv, size_t t) {
     }
   } else if (cur.type == SIMPLE_LINE && sv.type == SIMPLE_LINE) {
     auto ts = TIME();
-    auto a = _simpleLineCache.get(cur.id, t);
-    auto b = _simpleLineCache.get(sv.id, t);
+    auto a = _simpleLineCache.get(cur.id, cur.large ? -1 : t);
+    auto b = _simpleLineCache.get(sv.id, sv.large ? -1 : t);
     _stats[t].timeGeoCacheRetrievalLine += TOOK(ts);
 
     _stats[t].lineCmps++;
@@ -2515,8 +2814,8 @@ void Sweeper::doCheck(const BoxVal cur, const SweepVal sv, size_t t) {
     // point/point: trivial intersect & cover & contains
 
     auto ts = TIME();
-    auto a = _pointCache.get(cur.id, t);
-    auto b = _pointCache.get(sv.id, t);
+    auto a = _pointCache.get(cur.id, cur.large ? -1 : t);
+    auto b = _pointCache.get(sv.id, sv.large ? -1 : t);
     _stats[t].timeGeoCacheRetrievalPoint += TOOK(ts);
 
     _stats[t].anchorSum += 1;
@@ -2534,7 +2833,7 @@ void Sweeper::doCheck(const BoxVal cur, const SweepVal sv, size_t t) {
   } else if (cur.type == POINT && sv.type == SIMPLE_LINE) {
     auto p = I32Point(cur.val, cur.loY);
     auto ts = TIME();
-    auto b = _simpleLineCache.get(sv.id, t);
+    auto b = _simpleLineCache.get(sv.id, sv.large ? -1 : t);
     _stats[t].timeGeoCacheRetrievalLine += TOOK(ts);
 
     _stats[t].lineCmps++;
@@ -2544,7 +2843,7 @@ void Sweeper::doCheck(const BoxVal cur, const SweepVal sv, size_t t) {
 
     if (util::geo::contains(p, LineSegment<int32_t>(b->a, b->b))) {
       auto ts = TIME();
-      auto a = _pointCache.get(cur.id, t);
+      auto a = _pointCache.get(cur.id, sv.large ? -1 : t);
       _stats[t].timeGeoCacheRetrievalPoint += TOOK(ts);
       writeIntersect(t, a->id, b->id);
 
@@ -2561,7 +2860,7 @@ void Sweeper::doCheck(const BoxVal cur, const SweepVal sv, size_t t) {
   } else if (cur.type == POINT && sv.type == LINE) {
     auto ts = TIME();
     auto a = I32Point(cur.val, cur.loY);
-    auto b = _lineCache.get(sv.id, t);
+    auto b = _lineCache.get(sv.id, sv.large ? -1 : t);
     _stats[t].timeGeoCacheRetrievalLine += TOOK(ts);
 
     _stats[t].lineCmps++;
@@ -2578,7 +2877,7 @@ void Sweeper::doCheck(const BoxVal cur, const SweepVal sv, size_t t) {
 
     if (std::get<0>(res)) {
       auto ts = TIME();
-      auto a = _pointCache.get(cur.id, t);
+      auto a = _pointCache.get(cur.id, cur.large ? -1 : t);
       _stats[t].timeGeoCacheRetrievalPoint += TOOK(ts);
 
       if (a->id == b->id) return;  // no self-checks in multigeometries
@@ -2609,10 +2908,11 @@ void Sweeper::doCheck(const BoxVal cur, const SweepVal sv, size_t t) {
     auto a = I32Point(cur.val, cur.loY);
     auto ts = TIME();
     if (sv.type == SIMPLE_POLYGON) {
-      bl = areaFromSimpleArea(_simpleAreaCache.get(sv.id, t).get());
+      bl = areaFromSimpleArea(
+          _simpleAreaCache.get(sv.id, sv.large ? -1 : t).get());
       b = &bl;
     } else {
-      bsp = _areaCache.get(sv.id, t);
+      bsp = _areaCache.get(sv.id, sv.large ? -1 : t);
       b = bsp.get();
     }
     _stats[t].timeGeoCacheRetrievalArea += TOOK(ts);
@@ -2626,7 +2926,7 @@ void Sweeper::doCheck(const BoxVal cur, const SweepVal sv, size_t t) {
 
     if (res.second) {
       auto ts = TIME();
-      auto a = _pointCache.get(cur.id, t);
+      auto a = _pointCache.get(cur.id, cur.large ? -1 : t);
       _stats[t].timeGeoCacheRetrievalPoint += TOOK(ts);
 
       writeCovers(t, b->id, a->id, a->subId);
@@ -2657,11 +2957,12 @@ void Sweeper::flushOutputFiles() {
   }
   if (_outMode == BZ2 || _outMode == GZ || _outMode == PLAIN) {
     if (_outMode == BZ2) {
+#ifndef SPATIALJOIN_NO_BZIP2
       for (size_t i = 0; i < _cfg.numThreads + 1; i++) {
         int err = 0;
-        BZ2_bzWrite(&err, _files[i], _outBuffers[i], _outBufPos[i]);
+        BZ2_bzWrite(&err, _bzFiles[i], _outBuffers[i], _outBufPos[i]);
         if (err == BZ_IO_ERROR) {
-          BZ2_bzWriteClose(&err, _files[i], 0, 0, 0);
+          BZ2_bzWriteClose(&err, _bzFiles[i], 0, 0, 0);
           std::string fname = _cache + "/.rels" + std::to_string(getpid()) +
                               "-" + std::to_string(i);
           std::stringstream ss;
@@ -2670,10 +2971,12 @@ void Sweeper::flushOutputFiles() {
           ss << strerror(errno) << std::endl;
           throw std::runtime_error(ss.str());
         }
-        BZ2_bzWriteClose(&err, _files[i], 0, 0, 0);
+        BZ2_bzWriteClose(&err, _bzFiles[i], 0, 0, 0);
         fclose(_rawFiles[i]);
       }
+#endif
     } else if (_outMode == GZ) {
+#ifndef SPATIALJOIN_NO_ZLIB
       for (size_t i = 0; i < _cfg.numThreads + 1; i++) {
         int r = gzwrite(_gzFiles[i], _outBuffers[i], _outBufPos[i]);
         if (r != (int)_outBufPos[i]) {
@@ -2688,6 +2991,7 @@ void Sweeper::flushOutputFiles() {
         }
         gzclose(_gzFiles[i]);
       }
+#endif
     } else {
       for (size_t i = 0; i < _cfg.numThreads + 1; i++) {
         size_t r =
@@ -2729,6 +3033,7 @@ void Sweeper::prepareOutputFiles() {
   if (_cfg.writeRelCb) return;
 
   if (_outMode == BZ2) {
+#ifndef SPATIALJOIN_NO_BZIP2
     for (size_t i = 0; i < _cfg.numThreads + 1; i++) {
       std::string fname = _cache + "/.rels" + std::to_string(getpid()) + "-" +
                           std::to_string(i);
@@ -2743,7 +3048,7 @@ void Sweeper::prepareOutputFiles() {
       }
 
       int err = 0;
-      _files[i] = BZ2_bzWriteOpen(&err, _rawFiles[i], 6, 0, 30);
+      _bzFiles[i] = BZ2_bzWriteOpen(&err, _rawFiles[i], 6, 0, 30);
       if (err != BZ_OK) {
         std::stringstream ss;
         ss << "Could not open temporary bzip2 file '" << fname
@@ -2753,7 +3058,9 @@ void Sweeper::prepareOutputFiles() {
       }
       _outBuffers[i] = new unsigned char[BUFFER_S_PAIRS];
     }
+#endif
   } else if (_outMode == GZ) {
+#ifndef SPATIALJOIN_NO_ZLIB
     for (size_t i = 0; i < _cfg.numThreads + 1; i++) {
       std::string fname = _cache + "/.rels" + std::to_string(getpid()) + "-" +
                           std::to_string(i);
@@ -2767,6 +3074,7 @@ void Sweeper::prepareOutputFiles() {
       }
       _outBuffers[i] = new unsigned char[BUFFER_S_PAIRS];
     }
+#endif
   } else if (_outMode == PLAIN) {
     for (size_t i = 0; i < _cfg.numThreads + 1; i++) {
       std::string fname = _cache + "/.rels" + std::to_string(getpid()) + "-" +
@@ -2792,15 +3100,20 @@ void Sweeper::prepareOutputFiles() {
 // _____________________________________________________________________________
 void Sweeper::processQueue(size_t t) {
   try {
-  JobBatch batch;
-  while ((batch = _jobs.get()).size()) {
-    for (const auto& job : batch) {
-      if (job.multiOut.empty())
-        doCheck(job.boxVal, job.sweepVal, t);
-      else
-        multiOut(t, job.multiOut);
+    JobBatch batch;
+    while ((batch = _jobs.get()).size()) {
+      for (const auto& job : batch) {
+        if (job.multiOut.empty()) {
+          if (_cfg.withinDist >= 0) {
+            doDistCheck(job.boxVal, job.sweepVal, t);
+          } else {
+            doCheck(job.boxVal, job.sweepVal, t);
+          }
+        } else {
+          multiOut(t, job.multiOut);
+        }
+      }
     }
-  }
   } catch (const std::runtime_error& e) {
     std::stringstream ss;
     ss << "libspatialjoin: " << e.what();
@@ -2812,9 +3125,9 @@ void Sweeper::processQueue(size_t t) {
 }
 
 // _____________________________________________________________________________
-void Sweeper::fillBatch(JobBatch* batch,
-                        const IntervalIdx<int32_t, SweepVal>* actives,
-                        const BoxVal* cur) const {
+void Sweeper::fillBatch(
+    JobBatch* batch, const util::geo::IntervalIdx<int32_t, SweepVal>* actives,
+    const BoxVal* cur) const {
   const auto& overlaps = actives->overlap_find_all({cur->loY, cur->upY});
 
   for (const auto& p : overlaps) {
@@ -3192,4 +3505,258 @@ bool Sweeper::refRelated(const std::string& a, const std::string& b) const {
   if (j != _refs.end() && j->second.find(a) != j->second.end()) return true;
 
   return false;
+}
+
+// _____________________________________________________________________________
+std::string Sweeper::intToBase126(uint64_t id) {
+  if (id == 0) return std::string("\1");
+
+  std::string ret;
+  ret.reserve(::log(id) / ::log(126) + 1);
+
+  div_t d = {id, 0};
+  uint64_t pos = 126;
+
+  do {
+    d = div(d.quot, pos);
+    ret.push_back(d.rem + 1);  // avoid 0 bytes, although std::string allows it
+    pos *= 126;
+  } while (d.quot);
+
+  return ret;
+}
+
+// _____________________________________________________________________________
+double Sweeper::getMaxScaleFactor(const I32Box& bbox) const {
+  double invScaleFactor = std::min(
+      util::geo::webMercDistFactor(I32Point{bbox.getLowerLeft().getX() / PREC,
+                                            bbox.getLowerLeft().getY() / PREC}),
+      util::geo::webMercDistFactor(
+          I32Point{bbox.getUpperRight().getX() / PREC,
+                   bbox.getUpperRight().getY() / PREC}));
+
+  return 1.0 / invScaleFactor;
+}
+
+// _____________________________________________________________________________
+double Sweeper::getMaxScaleFactor(const I32Point& p) const {
+  return 1.0 / util::geo::webMercDistFactor(
+                   I32Point{p.getX() / PREC, p.getY() / PREC});
+}
+
+// _____________________________________________________________________________
+uint64_t Sweeper::base126ToInt(const std::string& id) {
+  uint64_t ret = 0;
+  uint64_t pos = 1;
+  for (size_t i = 0; i < id.size(); i++) {
+    ret += (id[i] - 1) * pos;
+    pos *= 126;
+  }
+  return ret;
+}
+
+// _____________________________________________________________________________
+double Sweeper::meterDist(const I32Point& p1, const I32Point& p2) {
+  return util::geo::webMercMeterDist(FPoint{(p1.getX() * 1.0) / (PREC * 1.0),
+                                            (p1.getY() * 1.0) / (PREC * 1.0)},
+                                     FPoint{(p2.getX() * 1.0) / (PREC * 1.0),
+                                            (p2.getY() * 1.0) / (PREC * 1.0)});
+}
+
+// _____________________________________________________________________________
+double Sweeper::distCheck(const I32Point& a, const Area* b, size_t t) const {
+  if (_cfg.useBoxIds) {
+    auto ts = TIME();
+    auto r = boxIdIsect({{1, 0}, {getBoxId(a), 0}}, b->boxIds);
+    _stats[t].timeBoxIdIsectAreaPoint += TOOK(ts);
+
+    // all boxes of a are fully contained in b, we are contained
+    if (r.first) return 0;
+  }
+
+  auto ts = TIME();
+  double scaleFactor =
+      std::max(getMaxScaleFactor(a), getMaxScaleFactor(b->box)) * PREC;
+
+  auto dist =
+      util::geo::withinDist<int32_t>(a, b->geom, _cfg.withinDist * scaleFactor,
+                                     _cfg.withinDist, &Sweeper::meterDist);
+
+  _stats[t].timeFullGeoCheckAreaPoint += TOOK(ts);
+  _stats[t].fullGeoChecksAreaPoint++;
+
+  return dist;
+}
+
+// _____________________________________________________________________________
+double Sweeper::distCheck(const I32Point& a, const Line* b, size_t t) const {
+  auto ts = TIME();
+  double scaleFactor =
+      std::max(getMaxScaleFactor(a), getMaxScaleFactor(b->box)) * PREC;
+
+  auto dist =
+      util::geo::withinDist<int32_t>(a, b->geom, _cfg.withinDist * scaleFactor,
+                                     _cfg.withinDist, &Sweeper::meterDist);
+  _stats[t].timeFullGeoCheckLinePoint += TOOK(ts);
+  _stats[t].fullGeoChecksLinePoint++;
+
+  return dist;
+}
+
+// _____________________________________________________________________________
+double Sweeper::distCheck(const I32Point& a, const SimpleLine* b,
+                          size_t t) const {
+  auto ts = TIME();
+
+  auto p2 = projectOn(b->a, a, b->b);
+
+  auto dist = Sweeper::meterDist(a, p2);
+
+  _stats[t].timeFullGeoCheckLinePoint += TOOK(ts);
+  _stats[t].fullGeoChecksLinePoint++;
+
+  return dist;
+}
+
+// _____________________________________________________________________________
+double Sweeper::distCheck(const SimpleLine* a, const SimpleLine* b,
+                          size_t t) const {
+  auto ts = TIME();
+
+  auto dist = util::geo::dist<int32_t>(LineSegment<int32_t>(a->a, a->b),
+                                       LineSegment<int32_t>(b->a, b->b),
+                                       &Sweeper::meterDist);
+
+  _stats[t].timeFullGeoCheckLineLine += TOOK(ts);
+  _stats[t].fullGeoChecksLineLine++;
+
+  return dist;
+}
+
+// _____________________________________________________________________________
+double Sweeper::distCheck(const SimpleLine* a, const Line* b, size_t t) const {
+  auto ts = TIME();
+  double scaleFactor =
+      std::max(std::max(getMaxScaleFactor(a->b), getMaxScaleFactor(a->a)),
+               getMaxScaleFactor(b->box));
+
+  auto dist = util::geo::withinDist<int32_t>(
+      I32XSortedLine(LineSegment<int32_t>(a->a, a->b)), b->geom,
+      getBoundingBox(LineSegment<int32_t>(a->a, a->b)), b->box,
+      _cfg.withinDist * scaleFactor * PREC,
+      _cfg.withinDist * scaleFactor * PREC, _cfg.withinDist,
+      &Sweeper::meterDist);
+
+  _stats[t].timeFullGeoCheckAreaLine += TOOK(ts);
+  _stats[t].fullGeoChecksAreaLine++;
+
+  return dist;
+}
+
+// _____________________________________________________________________________
+double Sweeper::distCheck(const Line* a, const Line* b, size_t t) const {
+  auto ts = TIME();
+  double scaleFactor =
+      std::max(getMaxScaleFactor(a->box), getMaxScaleFactor(b->box));
+
+  auto dist = util::geo::withinDist<int32_t>(
+      a->geom, b->geom, a->box, b->box, _cfg.withinDist * scaleFactor * PREC,
+      _cfg.withinDist * scaleFactor * PREC, _cfg.withinDist,
+      &Sweeper::meterDist);
+
+  _stats[t].timeFullGeoCheckLineLine += TOOK(ts);
+  _stats[t].fullGeoChecksLineLine++;
+
+  return dist;
+}
+
+// _____________________________________________________________________________
+double Sweeper::distCheck(const SimpleLine* a, const Area* b, size_t t) const {
+  auto ts = TIME();
+
+  if (_cfg.useBoxIds) {
+    auto ts = TIME();
+    auto r = boxIdIsect({{1, 0}, {getBoxId(a->a), 0}}, b->boxIds);
+    _stats[t].timeBoxIdIsectAreaLine += TOOK(ts);
+
+    if (r.first) return 0;
+  }
+
+  double scaleFactor =
+      std::max(getMaxScaleFactor(b->box),
+               std::max(getMaxScaleFactor(a->b), getMaxScaleFactor(a->a)));
+
+  auto dist = util::geo::withinDist<int32_t>(
+      I32XSortedLine(LineSegment<int32_t>(a->a, a->b)), b->geom,
+      getBoundingBox(LineSegment<int32_t>(a->a, a->b)), b->box,
+      _cfg.withinDist * scaleFactor * PREC,
+      _cfg.withinDist * scaleFactor * PREC, _cfg.withinDist,
+      &Sweeper::meterDist);
+
+  _stats[t].timeFullGeoCheckAreaLine += TOOK(ts);
+  _stats[t].fullGeoChecksAreaLine++;
+
+  return dist;
+}
+
+// _____________________________________________________________________________
+double Sweeper::distCheck(const Line* a, const Area* b, size_t t) const {
+  auto ts = TIME();
+
+  if (_cfg.useBoxIds) {
+    auto ts = TIME();
+    auto r = boxIdIsect(a->boxIds, b->boxIds);
+    _stats[t].timeBoxIdIsectAreaLine += TOOK(ts);
+
+    // all boxes of a are fully contained in b, we intersect and we are
+    // contained
+    if (r.first) return 0;
+  }
+
+  double scaleFactor =
+      std::max(getMaxScaleFactor(a->box), getMaxScaleFactor(b->box));
+
+  auto dist = util::geo::withinDist<int32_t>(
+      a->geom, b->geom, a->box, b->box, _cfg.withinDist * scaleFactor * PREC,
+      _cfg.withinDist * scaleFactor * PREC, _cfg.withinDist,
+      &Sweeper::meterDist);
+
+  _stats[t].timeFullGeoCheckAreaLine += TOOK(ts);
+  _stats[t].fullGeoChecksAreaLine++;
+
+  return dist;
+}
+
+// _____________________________________________________________________________
+double Sweeper::distCheck(const Area* a, const Area* b, size_t t) const {
+  auto ts = TIME();
+
+  // cheap equivalence check
+  if (a->box == b->box && a->area == b->area && a->geom == b->geom) {
+    // equivalent!
+    return 0;
+  }
+
+  if (_cfg.useBoxIds) {
+    auto ts = TIME();
+    auto r = boxIdIsect(a->boxIds, b->boxIds);
+    _stats[t].timeBoxIdIsectAreaArea += TOOK(ts);
+
+    // all boxes of a are fully contained in b, we intersect and we are
+    // contained and we do not touch or overlap
+    if (r.first) return 0;
+  }
+
+  double scaleFactor =
+      std::max(getMaxScaleFactor(a->box), getMaxScaleFactor(b->box));
+
+  auto dist = util::geo::withinDist<int32_t>(
+      a->geom, b->geom, a->box, b->box, _cfg.withinDist * scaleFactor * PREC,
+      _cfg.withinDist * scaleFactor * PREC, _cfg.withinDist,
+      &Sweeper::meterDist);
+
+  _stats[t].timeFullGeoCheckAreaArea += TOOK(ts);
+  _stats[t].fullGeoChecksAreaArea++;
+
+  return dist;
 }

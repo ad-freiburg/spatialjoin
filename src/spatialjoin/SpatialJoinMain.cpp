@@ -4,14 +4,14 @@
 
 #include <iostream>
 
-#include "spatialjoin/BoxIds.h"
-#include "spatialjoin/Sweeper.h"
-#include "spatialjoin/WKTParse.h"
-#include "spatialjoin/_config.h"
+#include "BoxIds.h"
+#include "Sweeper.h"
+#include "WKTParse.h"
 #include "util/Misc.h"
 #include "util/geo/Geo.h"
 #include "util/log/Log.h"
 
+using sj::ParseBatch;
 using sj::Sweeper;
 using util::geo::DLine;
 using util::geo::DPoint;
@@ -20,6 +20,11 @@ using util::geo::I32MultiLine;
 using util::geo::I32MultiPolygon;
 using util::geo::I32Point;
 using util::geo::I32Polygon;
+using util::LogLevel::DEBUG;
+using util::LogLevel::ERROR;
+using util::LogLevel::INFO;
+using util::LogLevel::VDEBUG;
+using util::LogLevel::WARN;
 
 static const char* YEAR = &__DATE__[7];
 static const char* COPY =
@@ -33,8 +38,7 @@ void printHelp(int argc, char** argv) {
   UNUSED(argc);
   std::cout
       << "\n"
-      << VERSION_FULL << "\n(built " << __DATE__ << " " << __TIME__
-      << ")\n\n"
+      << "spatialjoin\n\n"
       << "(C) 2023-" << YEAR << " " << COPY << "\n"
       << "Authors: " << AUTHORS << "\n\n"
       << "Usage: " << argv[0] << " [--help] [-h] <input>\n\n"
@@ -66,6 +70,9 @@ void printHelp(int argc, char** argv) {
       << "separator between crossing geometry IDs\n"
       << std::setw(41) << "  --suffix (default: '\\n')"
       << "suffix added at the beginning of every relation\n\n"
+      << std::setw(41) << "  --within-distance (default: '')"
+      << "if set to non-negative value, only compute for each object the "
+         "objects within the given distance\n\n"
       << std::setfill(' ') << std::left << "Geometric computation:\n"
       << std::setw(41) << "  --no-box-ids"
       << "disable box id criteria for contains/covers/intersect computation\n"
@@ -82,8 +89,6 @@ void printHelp(int argc, char** argv) {
       << std::setw(41) << "  --use-inner-outer"
       << "(experimental) use inner/outer geometries\n\n"
       << std::setfill(' ') << std::left << "Misc:\n"
-      << std::setw(41) << "  --pre-sort-cache"
-      << "sort cache by leftmost X coordinates for higher locality\n"
       << std::setw(41)
       << "  --num-threads (default: " + std::to_string(NUM_THREADS) + ")"
       << "number of threads for geometric computation\n"
@@ -119,6 +124,7 @@ int main(int argc, char** argv) {
   std::string overlaps = " overlaps ";
   std::string crosses = " crosses ";
   std::string suffix = "\n";
+  double withinDist = -1;
 
   bool useBoxIds = true;
   bool useArea = true;
@@ -129,11 +135,11 @@ int main(int argc, char** argv) {
   bool useInnerOuter = false;
   bool noGeometryChecks = false;
 
-  bool preSortCache = false;
   bool printStats = false;
 
   size_t numThreads = NUM_THREADS;
   size_t numCaches = NUM_THREADS;
+  size_t geomCacheMaxSize = 10000;
 
   for (int i = 1; i < argc; i++) {
     std::string cur = argv[i];
@@ -169,6 +175,10 @@ int main(int argc, char** argv) {
           state = 12;
         } else if (cur == "--num-threads") {
           state = 13;
+        } else if (cur == "--cache-max-size") {
+          state = 14;
+        } else if (cur == "--within-distance") {
+          state = 15;
         } else if (cur == "--no-box-ids") {
           useBoxIds = false;
         } else if (cur == "--no-surface-area") {
@@ -185,15 +195,8 @@ int main(int argc, char** argv) {
           useFastSweepSkip = false;
         } else if (cur == "--use-inner-outer") {
           useInnerOuter = true;
-        } else if (cur == "--pre-sort-cache") {
-          preSortCache = true;
         } else if (cur == "--print-stats") {
           printStats = true;
-        } else if (cur == "--version") {
-          std::cout
-              << "spatialjoin " << VERSION_FULL << " (built " << __DATE__ << " " << __TIME__
-              << ")\n";
-          exit(0);
         } else {
           std::cerr << "Unknown option '" << cur << "', see -h" << std::endl;
           exit(1);
@@ -251,14 +254,20 @@ int main(int argc, char** argv) {
         numThreads = atoi(cur.c_str());
         state = 0;
         break;
+      case 14:
+        geomCacheMaxSize = atoi(cur.c_str());
+        state = 0;
+        break;
+      case 15:
+        withinDist = atof(cur.c_str());
+        state = 0;
+        break;
     }
   }
 
   const static size_t CACHE_SIZE = 1024 * 1024 * 100;
   unsigned char* buf = new unsigned char[CACHE_SIZE];
   size_t len;
-  std::string dangling;
-  size_t gid = 1;
 
   std::function<void(const std::string&)> statsCb;
 
@@ -266,6 +275,7 @@ int main(int argc, char** argv) {
 
   Sweeper sweeper({numThreads,
                    numCaches,
+                   geomCacheMaxSize,
                    prefix,
                    intersects,
                    contains,
@@ -283,6 +293,7 @@ int main(int argc, char** argv) {
                    useFastSweepSkip,
                    useInnerOuter,
                    noGeometryChecks,
+                   withinDist,
                    {},
                    [](const std::string& s) { LOGTO(INFO, std::cerr) << s; },
                    statsCb,
@@ -292,22 +303,13 @@ int main(int argc, char** argv) {
   LOGTO(INFO, std::cerr) << "Parsing input geometries...";
   auto ts = TIME();
 
-  util::JobQueue<ParseBatch> jobs(1000);
-  std::vector<std::thread> thrds(NUM_THREADS);
-  for (size_t i = 0; i < thrds.size(); i++)
-    thrds[i] = std::thread(&processQueue, &jobs, i, &sweeper);
+  sj::WKTParser parser(&sweeper, NUM_THREADS);
 
   while ((len = util::readAll(0, buf, CACHE_SIZE)) > 0) {
-    parse(reinterpret_cast<char*>(buf), len, dangling, &gid, jobs, 0);
+    parser.parse(reinterpret_cast<char*>(buf), len, 0);
   }
 
-  // end event
-  jobs.add({});
-
-  LOGTO(INFO, std::cerr) << "Done parsing (" << TOOK(ts) / 1000000000.0 << "s).";
-
-  // wait for all workers to finish
-  for (auto& thr : thrds) thr.join();
+  parser.done();
 
   auto genTs = TIME();
 
@@ -315,21 +317,17 @@ int main(int argc, char** argv) {
 
   sweeper.flush();
 
-  LOGTO(INFO, std::cerr) << "Done sorting sweep events (" << TOOK(ts) / 1000000000.0 << "s).";
-
-  if (preSortCache) {
-    ts = TIME();
-    LOGTO(INFO, std::cerr) << "Pre-sorting cache...";
-    sweeper.sortCache();
-    sweeper.flush();
-    LOGTO(INFO, std::cerr) << "Done pre-sorting cache (" << TOOK(ts) / 1000000000.0 << "s).";
-  }
+  LOGTO(INFO, std::cerr) << "Done sorting sweep events ("
+                         << TOOK(ts) / 1000000000.0 << "s).";
 
   LOGTO(INFO, std::cerr) << "Sweeping...";
   ts = TIME();
   sweeper.sweep();
-  LOGTO(INFO, std::cerr) << "Done sweeping (" << TOOK(ts) / 1000000000.0 << "s).";
-  LOGTO(INFO, std::cerr) << "Total predicate generation time (without parsing): " << TOOK(genTs) / 1000000000.0 << "s";
+  LOGTO(INFO, std::cerr) << "Done sweeping (" << TOOK(ts) / 1000000000.0
+                         << "s).";
+  LOGTO(INFO, std::cerr)
+      << "Total predicate generation time (without parsing): "
+      << TOOK(genTs) / 1000000000.0 << "s";
 
   delete[] buf;
 }

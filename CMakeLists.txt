@@ -7,7 +7,7 @@ if (CMAKE_BUILD_TYPE)
 endif()
 
 if(PROJECT_IS_TOP_LEVEL)
-    enable_testing()
+	enable_testing()
 endif()
 
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake/")
@@ -22,8 +22,16 @@ set(CMAKE_CXX_FLAGS_MINSIZEREL     "${CMAKE_CXX_FLAGS} -DLOGLEVEL=2")
 set(CMAKE_CXX_FLAGS_RELEASE        "${CMAKE_CXX_FLAGS} -DLOGLEVEL=2")
 set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS} -g -DLOGLEVEL=3")
 
-find_package(BZip2 REQUIRED)
-find_package(ZLIB REQUIRED)
+find_package(BZip2)
+find_package(ZLIB)
+
+if (NOT BZIP2_FOUND)
+	add_definitions( -DSPATIALJOIN_NO_BZIP2=True )
+endif()
+
+if (NOT ZLIB_FOUND)
+	add_definitions( -DSPATIALJOIN_NO_ZLIB=True )
+endif()
 
 # export compile commands to tools like clang
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
@@ -46,19 +54,21 @@ endif ()
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
 
 # http://brianmilco.blogspot.de/2012/11/cmake-automatically-use-git-tags-as.html
-include(GetGitRevisionDescription)
-git_get_tag(VERSION_GIT)
-get_git_is_dirty(VERSION_GIT_IS_DIRTY)
-if ("${VERSION_GIT_IS_DIRTY}" STREQUAL "")
-	set(VERSION_GIT_FULL "${VERSION_GIT}")
-else()
-	set(VERSION_GIT_FULL "${VERSION_GIT}-${VERSION_GIT_IS_DIRTY}")
+include(GetGitRevisionDescription OPTIONAL RESULT_VARIABLE _get_git_revision)
+if (_get_git_revision)
+	git_get_tag(VERSION_GIT)
+	get_git_is_dirty(VERSION_GIT_IS_DIRTY)
+	if ("${VERSION_GIT_IS_DIRTY}" STREQUAL "")
+		set(VERSION_GIT_FULL "${VERSION_GIT}")
+	else()
+		set(VERSION_GIT_FULL "${VERSION_GIT}-${VERSION_GIT_IS_DIRTY}")
+	endif()
 endif()
 
 add_subdirectory(src)
 
 # tests
-if(PROJECT_IS_TOP_LEVEL)
+if(CMAKE_TESTING_ENABLED)
   add_test("utilTest" utilTest)
   add_test("spatialjoinTest" spatialjoinTest)
 endif()
