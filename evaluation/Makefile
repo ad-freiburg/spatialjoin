@@ -203,4 +203,4 @@ eval-self-joins: eval-self-join-region-ohm-planet eval-selfjoin-region-finland e
 
 eval-non-self-joins: eval-non-self-join-restaurants_transit-stops eval-non-self-join-residential-streets_administrative-regions eval-non-self-join-residential-streets_residential-streets eval-non-self-join-powerlines_residential-streets
 
-eval: eval-combinations-region-osm-planet eval-self-joins eval-non-self-joins eval-queries
+eval: eval-combinations-region-osm-planet-spatialjoin eval-self-joins eval-non-self-joins eval-queries
