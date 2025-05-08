@@ -307,8 +307,6 @@ int main(int argc, char** argv) {
                          << TOOK(ts) / 1000000000.0 << "s).";
   ts = TIME();
 
-  auto genTs = TIME();
-
   LOGTO(INFO, std::cerr) << "Sorting sweep events...";
 
   sweeper.flush();
