@@ -297,7 +297,6 @@ int main(int argc, char** argv) {
                    {},
                    [](const std::string& s) { LOGTO(INFO, std::cerr) << s; },
                    statsCb,
-                   [](const std::string& s) { std::cerr << s; },
                    {},
                    {}},
                   cache, output);
