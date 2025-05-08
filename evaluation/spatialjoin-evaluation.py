@@ -80,7 +80,7 @@ def compute(args: argparse.Namespace):
 
         # The command line for this combination.
         cmd = (f"cat {args.basename}.spatialjoin-input.tsv |"
-               f" spatialjoin{sweep_mode} {combination}")
+               f" {args.spatialjoin}{sweep_mode} {combination}")
 
         # Optionally, generate RDF output.
         if args.rdf_output:
@@ -132,12 +132,13 @@ def compute(args: argparse.Namespace):
         parse_time = "[not found]"
         sweep_time = "[not found]"
         for line in result.stderr.decode().split("\n"):
-            match = re.match(".*INFO : done \\(([0-9.]+)s\\)\\.", line)
+            match = re.match(".*INFO : Done parsing \\(([0-9.]+)s\\)\\.", line)
             if match:
-                if parse_time == "[not found]":
-                    parse_time = f"{float(match.group(1)):.3f}"
-                elif sweep_time == "[not found]":
-                    sweep_time = f"{float(match.group(1)):.3f}"
+                parse_time = f"{float(match.group(1)):.3f}"
+
+            match = re.match(".*INFO : Done sweeping \\(([0-9.]+)s\\)\\.", line)
+            if match:
+                sweep_time = f"{float(match.group(1)):.3f}"
 
         print(f"{name}\t{total_time}\t{parse_time}\t{sweep_time}", flush=True)
 
@@ -340,6 +341,9 @@ if __name__ == "__main__":
     parser.add_argument("--minutes",
                         action="store_true", default=False,
                         help="Show times in minutes instead of seconds")
+    parser.add_argument("--spatialjoin",
+                        default="spatialjoin",
+                        help="spatialjoin executable")
     argcomplete.autocomplete(parser, always_complete_options="long")
     args = parser.parse_args()
 

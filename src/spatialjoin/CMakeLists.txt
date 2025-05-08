@@ -34,7 +34,6 @@ if (ZLIB_FOUND)
 	target_link_libraries(spatialjoin ${ZLIB_LIBRARIES} )
 endif(ZLIB_FOUND)
 
-
 if(CMAKE_TESTING_ENABLED)
     add_subdirectory(tests)
 endif()
