@@ -150,6 +150,7 @@ struct SweeperCfg {
   std::function<void(const std::string&)> logCb;
   std::function<void(const std::string&)> statsCb;
   std::function<void(size_t)> sweepProgressCb;
+  std::function<void()> sweepCancellationCb;
 };
 
 // buffer size _must_ be multiples of sizeof(BoxVal)
@@ -383,6 +384,7 @@ class Sweeper {
   std::vector<size_t> _checks;
   std::vector<int32_t> _curX;
   std::vector<std::atomic<int32_t>> _atomicCurX;
+  std::atomic<bool> _cancelled;
 
   std::vector<RelStats> _relStats;
 

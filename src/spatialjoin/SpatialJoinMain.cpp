@@ -297,6 +297,8 @@ int main(int argc, char** argv) {
                    {},
                    [](const std::string& s) { LOGTO(INFO, std::cerr) << s; },
                    statsCb,
+                   [](const std::string& s) { std::cerr << s; },
+                   {},
                    {}},
                   cache, output);
 
@@ -310,6 +312,10 @@ int main(int argc, char** argv) {
   }
 
   parser.done();
+
+  LOGTO(INFO, std::cerr) << "Done parsing ("
+                         << TOOK(ts) / 1000000000.0 << "s).";
+  ts = TIME();
 
   auto genTs = TIME();
 

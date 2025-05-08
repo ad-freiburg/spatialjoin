@@ -4,6 +4,10 @@
 
 #include "WKTParse.h"
 
+#ifdef __cpp_lib_string_view
+#include <string_view>
+#endif
+
 using sj::WKTParser;
 using util::geo::collectionFromWKT;
 using util::geo::getWKTType;
@@ -16,10 +20,26 @@ using util::geo::polygonFromWKT;
 
 // _____________________________________________________________________________
 WKTParser::WKTParser(sj::Sweeper* sweeper, size_t numThreads)
-    : _sweeper(sweeper), _jobs(1000), _thrds(numThreads), _bboxes(numThreads) {
+    : _sweeper(sweeper),
+      _jobs(1000),
+      _thrds(numThreads),
+      _bboxes(numThreads),
+      _cancelled(false) {
   for (size_t i = 0; i < _thrds.size(); i++) {
     _thrds[i] = std::thread(&WKTParser::processQueue, this, i);
   }
+}
+
+// _____________________________________________________________________________
+WKTParser::~WKTParser() {
+  // graceful shutdown of all threads, should they be still running
+  _cancelled = true;
+
+  // end event
+  _jobs.add({});
+
+  // wait for all workers to finish
+  for (auto& thr : _thrds) if (thr.joinable()) thr.join();
 }
 
 // _____________________________________________________________________________
@@ -171,6 +191,8 @@ void WKTParser::processQueue(size_t t) {
   while ((batch = _jobs.get()).size()) {
     sj::WriteBatch w;
     for (const auto& job : batch) {
+      if (_cancelled) break;
+
       if (job.str.size()) {
         parseLine(const_cast<char*>(job.str.c_str()), job.str.size(), job.line,
                   t, w, job.side);
@@ -203,6 +225,36 @@ void WKTParser::parseWKT(const char* c, size_t id, bool side) {
     _curBatch.clear();
   }
 }
+
+// _____________________________________________________________________________
+void WKTParser::parseWKT(const std::string& str, size_t id, bool side) {
+  if (str.empty()) return;
+
+  _curBatch.reserve(10000);
+  _curBatch.push_back({str, id, side, {0, 0}});
+
+  if (_curBatch.size() > 10000) {
+    _jobs.add(std::move(_curBatch));
+    _curBatch.clear();
+  }
+}
+
+#ifdef __cpp_lib_string_view
+// _____________________________________________________________________________
+void WKTParser::parseWKT(const std::string_view str, size_t id, bool side) {
+  // dont parse empty strings
+  if (str.empty()) return;
+
+  _curBatch.reserve(10000);
+  _curBatch.push_back({std::string{str}, id, side, {0, 0}});
+
+  if (_curBatch.size() > 10000) {
+    _jobs.add(std::move(_curBatch));
+    _curBatch.clear();
+  }
+}
+
+#endif
 
 // _____________________________________________________________________________
 void WKTParser::parsePoint(util::geo::DPoint point, size_t id, bool side) {

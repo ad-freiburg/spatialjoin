@@ -15,7 +15,7 @@ Additional materials required to do a full evaluation of our tool and a comparis
 
  * `cmake`
  * `gcc >= 5.0` (or `clang >= 3.9`)
- * `libbz2`
+ * `libbz2` (*optional*)
 
 ## Building and Installation
 
@@ -99,48 +99,6 @@ linestring8	0	LINESTRING(-10 1, 100 1)
 point9	1	POINT(0.5 0.5)
 ```
 
-## Use with QLever and osm2rdf
+### `within-distance` queries
 
-One use case of `spatialjoin` is to add triples for the relations `contains` and
-`intersects` to an RDF dataset with WKT literals. The following example shows
-the process for the OSM data for germany.
-
-### Step 1: Download PBF from Geofabrik and convert to RDF
-
-```
-NAME=osm-germany
-wget -O ${NAME}.pbf https://download.geofabrik.de/europe/germany-latest.osm.pbf
-osm2rdf ${NAME}.pbf -o ${NAME}.ttl --simplify-wkt 0 --write-ogc-geo-triples none
-```
-
-Note: `osm2rdf` by default computes and outputs the predicates `ogc:sfContains`
-and `ogc:sfIntersects`. The `--write-ogc-geo-triples none` option disables
-this. To have both the `osm2rdf` predicates *and* the `spatiajoin` predicates
-(for comparison or debugging), just omit the option.
-
-### Step 2: Extract geometries and feed into spatialjoin
-
-```
-time lbzcat -n 2 ${NAME}.ttl.bz2 | \grep "^osm2rdf" | sed -En 's/^osm2rdf(geom)?:(osm_)?(node|rel|way)[a-z]*_([0-9]+) geo:asWKT "([^\"]+)".*/osm\3:\4\t\5/p' | spatialjoin --contains ' ogc:sfContains ' --intersects ' ogc:sfIntersects ' --suffix $' .\n' -o ${NAME}.spatialjoin-triples.ttl.bz2
-```
-
-Note: This reconstructs the OSM IDs from osm2rdf's geo:asWKT triples, where the
-subject is of one of these forms (note the very confusing inconsistency for
-ways): `osm2rdfgeom:osm_node_(\d+)`, `osm2rdfgeom:osm_rel_(\d+)`,
-`osm2rdf:way_(\d+)`, `osm2rdfgeom:osm_wayarea_(\d+)`,
-`osm2rdfgeom:osm_relarea_(\d+)`.
-
-### Step 4: Create SPARQL endpoint with QLever
-
-```
-ulimit -Sn 1048576; bzcat ${NAME}.ttl.bz2 ${NAME}.spatialjoin-triples.ttl.bz2 | IndexBuilderMain -F ttl -f - -i ${NAME} -s ${NAME}.settings.json --stxxl-memory 10G | tee ${NAME}.index-log.txt
-ServerMain -i ${NAME} -j 8 -p ${PORT} -m 20G -c 10G -e 3G -k 200 -s 300s
-```
-
-With the right QLeverfile (modify the one obtained via `qlever setup-config
-osm-planet`), it's simply:
-
-```
-qlever index
-qlever start
-```
+To compute a spatial join on a `within-distance` predicate, use the `--within-distance <METER>` option. `spatialjoin` will output all pairs of geometries which are within `<METER>` meters of each other. Note that your input geometries **must be** WGS 84 coordinates (longitude/latitude pairs) for correct meter distance computation.
