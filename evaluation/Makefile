@@ -58,8 +58,6 @@ check:
 	@psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) -tA -c "SELECT PostGIS_Version();"
 	@echo -n "spatialjoin binary:         "
 	@echo $(SPATIALJOIN)
-	@echo -n "spatialjoin version:        "
-	@$(SPATIALJOIN) --version
 	@echo -n "spatialjoin eval script:    "
 	@[ -f $(SPATIALJOIN_EVAL_SCRIPT) ] && realpath $(SPATIALJOIN_EVAL_SCRIPT) || echo " NOT FOUND"
 
