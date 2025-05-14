@@ -115,7 +115,7 @@ struct Point {
   uint16_t subId;
 };
 
-// const static size_t READ_BUFF_SIZE = 1024 * 5 ;
+const static size_t WRITE_BUFF_SIZE = 1024 * 1024 * 4l;
 
 template <typename W>
 class GeometryCache {
@@ -136,7 +136,10 @@ class GeometryCache {
 
     _fName = getFName();
 
-    _geomsF.open(_fName, std::ios::out | std::ios::in | std::ios::binary |
+    _writeBuffer = new char[WRITE_BUFF_SIZE];
+
+    _geomsF.rdbuf()->pubsetbuf(_writeBuffer, WRITE_BUFF_SIZE);
+    _geomsF.open(_fName, std::ios::out | std::ios::binary |
                              std::ios::trunc);
 
     for (size_t i = 0; i < _geomsFReads.size(); i++) {
@@ -150,6 +153,7 @@ class GeometryCache {
     for (size_t i = 0; i < _geomsFReads.size(); i++) {
       if (_geomsFReads[i].is_open()) _geomsFReads[i].close();
     }
+    if (_writeBuffer) delete[]_writeBuffer;
   }
 
   size_t add(const std::string& raw);
@@ -209,6 +213,8 @@ class GeometryCache {
 
   std::map<size_t, W> _memStore;
   bool _inMemory = true;
+
+  char* _writeBuffer = 0;
 
   mutable std::vector<std::mutex> _mutexes;
 };
