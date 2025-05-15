@@ -153,6 +153,9 @@ sj::Line sj::GeometryCache<sj::Line>::getFrom(size_t off,
   // geom
   readLine(str, ret.geom);
 
+  // optional GEOS geom
+  readGEOSLine(str, ret.geosGeom);
+
   // envelope
   str.read(reinterpret_cast<char*>(&ret.box), sizeof(util::geo::I32Box));
 
@@ -207,6 +210,9 @@ sj::Area sj::GeometryCache<sj::Area>::getFrom(size_t off,
 
   // geom
   readPoly(str, ret.geom);
+
+  // optional GEOS geom
+  readGEOSPoly(str, ret.geosGeom);
 
   // envelope
   str.read(reinterpret_cast<char*>(&ret.box), sizeof(util::geo::I32Box));
@@ -301,8 +307,7 @@ size_t sj::GeometryCache<W>::add(const std::string& raw) {
   if (_inMemory) {
     // cache for later use
     std::istringstream ss(raw);
-    const auto& val = getFrom(0, ss);
-    _memStore[ret] = std::move(val);
+    _memStore[ret] = getFrom(0, ss);
 
     if (_geomsOffset > MAX_MEM_CACHE_SIZE) {
       _inMemory = false;
@@ -383,6 +388,9 @@ size_t sj::GeometryCache<sj::Line>::writeTo(const sj::Line& val,
   // geoms
   ret += writeLine(val.geom, str);
 
+  // libgeosline
+  ret += writeGEOSLine(val.geosGeom, str);
+
   // envelopes
   str.write(reinterpret_cast<const char*>(&val.box), sizeof(util::geo::I32Box));
   ret += sizeof(util::geo::I32Box);
@@ -440,6 +448,9 @@ size_t sj::GeometryCache<sj::Area>::writeTo(const sj::Area& val,
 
   // geoms
   ret += writePoly(val.geom, str);
+
+  // libgeospoly
+  ret += writeGEOSPoly(val.geosGeom, str);
 
   // envelope
   str.write(reinterpret_cast<const char*>(&val.box), sizeof(util::geo::I32Box));
@@ -593,6 +604,84 @@ void sj::GeometryCache<W>::readPoly(std::istream& str,
 
 // ____________________________________________________________________________
 template <typename W>
+void sj::GeometryCache<W>::readGEOSPoly(std::istream& str,
+                                    GEOSPolygon& ret) const {
+  uint32_t outerSize;
+  str.read(reinterpret_cast<char*>(&outerSize), sizeof(uint32_t));
+
+  if (outerSize) {
+    double* buffer = new double[outerSize * 2];
+
+    str.read(reinterpret_cast<char*>(buffer),
+             sizeof(double) * outerSize * 2);
+
+    auto seq = GEOSCoordSeq_copyFromBuffer(buffer, outerSize, 0, 0);
+    delete[] buffer;
+
+    GEOSGeometry** innerRings = new GEOSGeometry*[0];
+
+    ret = std::move(GEOSPolygon(GEOSGeom_createPolygon(GEOSGeom_createLinearRing(seq), innerRings, 0)));
+  }
+}
+
+// ____________________________________________________________________________
+template <typename W>
+size_t sj::GeometryCache<W>::writeGEOSLine(const GEOSLineString& geom,
+                                       std::ostream& str) {
+  size_t ret = 0;
+
+  // geom, outer
+  auto* coordSeq = GEOSGeom_getCoordSeq(geom.getGEOSGeom());
+  uint32_t locSize = GEOSGeomGetNumPoints(geom.getGEOSGeom());
+
+  double* buffer = new double[locSize * 2];
+  GEOSCoordSeq_copyToBuffer(coordSeq, buffer, 0, 0);
+
+  str.write(reinterpret_cast<const char*>(&locSize), sizeof(uint32_t));
+  if (locSize) {
+    str.write(reinterpret_cast<const char*>(buffer),
+              sizeof(double) * locSize * 2);
+  }
+
+  delete[] buffer;
+
+  ret += sizeof(uint32_t) + sizeof(double) * locSize * 2;
+
+  return ret;
+}
+
+// ____________________________________________________________________________
+template <typename W>
+size_t sj::GeometryCache<W>::writeGEOSPoly(const GEOSPolygon& geom,
+                                       std::ostream& str) {
+  size_t ret = 0;
+
+  // geom, outer
+  auto* outerRing = geom.getRing();
+  auto* coordSeq = GEOSGeom_getCoordSeq(outerRing);
+  uint32_t locSize = GEOSGeomGetNumPoints(outerRing);
+
+  double* buffer = new double[locSize * 2];
+  GEOSCoordSeq_copyToBuffer(coordSeq, buffer, 0, 0);
+
+  str.write(reinterpret_cast<const char*>(&locSize), sizeof(uint32_t));
+  if (locSize) {
+    str.write(reinterpret_cast<const char*>(buffer),
+              sizeof(double) * locSize * 2);
+  }
+
+  delete[] buffer;
+
+  ret += sizeof(uint32_t) + sizeof(double) * locSize * 2;
+
+  // TODO: inner rings!!!!!!!!
+
+
+  return ret;
+}
+
+// ____________________________________________________________________________
+template <typename W>
 size_t sj::GeometryCache<W>::writePoly(const util::geo::I32XSortedPolygon& geom,
                                        std::ostream& str) {
   size_t ret = 0;
@@ -673,6 +762,26 @@ void sj::GeometryCache<W>::readLine(std::istream& str,
   if (sizeOuter) {
     str.read(reinterpret_cast<char*>(&ret.rawLine()[0]),
              sizeof(util::geo::XSortedTuple<int32_t>) * sizeOuter);
+  }
+}
+
+// ____________________________________________________________________________
+template <typename W>
+void sj::GeometryCache<W>::readGEOSLine(std::istream& str,
+                                    GEOSLineString& ret) const {
+  uint32_t size;
+  str.read(reinterpret_cast<char*>(&size), sizeof(uint32_t));
+
+  if (size) {
+    double* buffer = new double[size * 2];
+
+    str.read(reinterpret_cast<char*>(buffer),
+             sizeof(double) * size * 2);
+
+    auto seq = GEOSCoordSeq_copyFromBuffer(buffer, size, 0, 0);
+    delete[] buffer;
+
+    ret = std::move(GEOSLineString(GEOSGeom_createLineString(seq)));
   }
 }
 

@@ -14,6 +14,7 @@
 
 #include "BoxIds.h"
 #include "util/geo/Geo.h"
+#include "Libgeos.h"
 
 namespace sj {
 
@@ -28,6 +29,9 @@ struct SimpleArea {
 struct Area {
   // polygons
   util::geo::I32XSortedPolygon geom;
+
+  // optional libgeospolygon
+  GEOSPolygon geosGeom;
 
   // envelope
   util::geo::I32Box box;
@@ -84,6 +88,9 @@ struct SimpleLine {
 struct Line {
   // line
   util::geo::I32XSortedLine geom;
+
+  // optional libgeosline
+  GEOSLineString geosGeom;
 
   // envelope
   util::geo::I32Box box;
@@ -186,12 +193,18 @@ class GeometryCache {
  private:
   std::string getFName() const;
   void readLine(std::istream& str, util::geo::I32XSortedLine& ret) const;
+  void readGEOSLine(std::istream& str, GEOSLineString& ret) const;
+
   static size_t writeLine(const util::geo::I32XSortedLine& ret,
                           std::ostream& str);
+  static size_t writeGEOSLine(const GEOSLineString& geom, std::ostream& str);
 
   void readPoly(std::istream& str, util::geo::I32XSortedPolygon& ret) const;
   static size_t writePoly(const util::geo::I32XSortedPolygon& ret,
                           std::ostream& str);
+  void readGEOSPoly(std::istream& str, GEOSPolygon& ret) const;
+
+  static size_t writeGEOSPoly(const GEOSPolygon& geom, std::ostream& str);
 
   void readMultiPoly(std::istream& str,
                      util::geo::I32XSortedMultiPolygon& ret) const;

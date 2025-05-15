@@ -195,7 +195,7 @@ I32Box Sweeper::add(const I32Polygon& poly, const std::string& gidR,
   const auto& box = getPaddedBoundingBox(rawBox);
   if (!util::geo::intersects(box, _filterBox)) return {};
   I32XSortedPolygon spoly(poly);
-  GEOSGeometry* geosPoly = makeGeosPolygon(poly);
+  GEOSPolygon geosPoly(poly);
 
   if (spoly.empty()) return box;
 
@@ -295,7 +295,7 @@ I32Box Sweeper::add(const I32Polygon& poly, const std::string& gidR,
 
     std::stringstream str;
     GeometryCache<Area>::writeTo(
-        {spoly, box, gid, subid, areaSize, _cfg.useArea ? outerAreaSize : 0,
+        {spoly, geosPoly, box, gid, subid, areaSize, _cfg.useArea ? outerAreaSize : 0,
          boxIds, cutouts, obb, inner, innerBox, innerOuterAreaSize, outer,
          outerBox, outerOuterAreaSize},
         str);
@@ -415,7 +415,7 @@ I32Box Sweeper::add(const I32Line& line, const std::string& gidR, size_t subid,
 
     // normal line
     I32XSortedLine sline(line);
-    GEOSGeometry* geosLine = makeGeosLinestring(line);
+    GEOSLineString geosLine(line);
 
     util::geo::I32Polygon obb;
     if (_cfg.useOBB && line.size() >= OBB_MIN_SIZE) {
@@ -432,7 +432,7 @@ I32Box Sweeper::add(const I32Line& line, const std::string& gidR, size_t subid,
 
     std::stringstream str;
     GeometryCache<Line>::writeTo(
-        {sline, box, gid, subid, len, boxIds, cutouts, obb}, str);
+        {sline, geosLine, box, gid, subid, len, boxIds, cutouts, obb}, str);
     cur.raw = str.str();
 
     size_t estimatedSize =
@@ -1244,12 +1244,14 @@ sj::Area Sweeper::areaFromSimpleArea(const SimpleArea* sa) const {
   double areaSize = util::geo::ringArea(sa->geom);
 
   auto spoly = I32XSortedPolygon(sa->geom);
+  auto geosPoly = GEOSPolygon(sa->geom);
 
   if (!_cfg.useFastSweepSkip) {
     spoly.getOuter().setMaxSegLen(std::numeric_limits<int32_t>::max());
   }
 
   return {spoly,
+          geosPoly,
           util::geo::getBoundingBox(sa->geom),
           sa->id,
           0,

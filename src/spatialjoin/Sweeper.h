@@ -30,6 +30,7 @@
 #include "Stats.h"
 #include "util/JobQueue.h"
 #include "util/geo/Geo.h"
+#include "util/log/Log.h"
 #include "util/geo/IntervalIdx.h"
 
 #ifndef POSIX_FADV_SEQUENTIAL
@@ -164,7 +165,10 @@ static const size_t POINT_CACHE_SIZE = 1000;
 
 // only use large geom cache for extreme geometries
 static const size_t GEOM_LARGENESS_THRESHOLD = 1024 * 1024 * 1024;
-;
+
+static void GEOSMsgHandler(const char* msg, ...) {
+  LOGTO(util::LogLevel::WARN, std::cerr) << msg;
+}
 
 // static const size_t AREA_CACHE_SIZE = 10000;
 // static const size_t SIMPLE_AREA_CACHE_SIZE = 10000;
@@ -190,6 +194,9 @@ class Sweeper {
         _cache(cache),
         _out(out),
         _jobs(100) {
+
+    initGEOS(GEOSMsgHandler, GEOSMsgHandler);
+
     if (!_cfg.writeRelCb) {
       if (util::endsWith(_out, ".bz2")) {
 #ifndef SPATIALJOIN_NO_BZIP2
@@ -243,6 +250,7 @@ class Sweeper {
 
   ~Sweeper() {
     close(_file);
+    finishGEOS();
 
     for (size_t i = 0; i < _outBuffers.size(); i++) {
       if (_outBuffers[i]) delete[] _outBuffers[i];
