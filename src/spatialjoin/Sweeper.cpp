@@ -21,8 +21,10 @@
 
 #include "BoxIds.h"
 #include "InnerOuter.h"
+#include "Libgeos.h"
 #include "Sweeper.h"
 #include "util/Misc.h"
+#include "util/geo/Geo.h"
 #include "util/geo/IntervalIdx.h"
 #include "util/log/Log.h"
 
@@ -193,6 +195,7 @@ I32Box Sweeper::add(const I32Polygon& poly, const std::string& gidR,
   const auto& box = getPaddedBoundingBox(rawBox);
   if (!util::geo::intersects(box, _filterBox)) return {};
   I32XSortedPolygon spoly(poly);
+  GEOSGeometry* geosPoly = makeGeosPolygon(poly);
 
   if (spoly.empty()) return box;
 
@@ -408,9 +411,12 @@ I32Box Sweeper::add(const I32Line& line, const std::string& gidR, size_t subid,
                      false};
     batch.simpleLines.emplace_back(cur);
   } else {
+    if (line.empty()) return {};
+
     // normal line
     I32XSortedLine sline(line);
-    if (line.empty()) return {};
+    GEOSGeometry* geosLine = makeGeosLinestring(line);
+
     util::geo::I32Polygon obb;
     if (_cfg.useOBB && line.size() >= OBB_MIN_SIZE) {
       obb = util::geo::convexHull(
@@ -1175,7 +1181,8 @@ RelStats Sweeper::sweep() {
     _jobs.add({});
 
     // again wait for all workers to finish
-    for (auto& thr : thrds) if (thr.joinable()) thr.join();
+    for (auto& thr : thrds)
+      if (thr.joinable()) thr.join();
 
     // rethrow exception
     throw;
@@ -1189,7 +1196,8 @@ RelStats Sweeper::sweep() {
   _jobs.add({});
 
   // wait for all workers to finish
-  for (auto& thr : thrds) if (thr.joinable()) thr.join();
+  for (auto& thr : thrds)
+    if (thr.joinable()) thr.join();
 
   // empty job queue
   _jobs.reset();
@@ -1203,7 +1211,8 @@ RelStats Sweeper::sweep() {
   _jobs.add({});
 
   // again wait for all workers to finish
-  for (auto& thr : thrds) if (thr.joinable()) thr.join();
+  for (auto& thr : thrds)
+    if (thr.joinable()) thr.join();
 
   flushOutputFiles();
 

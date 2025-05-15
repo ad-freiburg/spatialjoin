@@ -20,7 +20,7 @@ target_include_directories(spatialjoin-dev PUBLIC
 	$<BUILD_INTERFACE:${SPATIALJOIN_INCLUDE_DIR}>
 )
 
-target_link_libraries(spatialjoin spatialjoin-dev pb_util -lpthread)
+target_link_libraries(spatialjoin spatialjoin-dev pb_util -lpthread -lgeos_c)
 
 if (BZIP2_FOUND)
 	target_include_directories(spatialjoin PUBLIC ${BZIP2_INCLUDE_DIR} )
