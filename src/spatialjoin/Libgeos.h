@@ -7,39 +7,62 @@
 #include <geos_c.h>
 
 #include "util/geo/Geo.h"
+#include "util/log/Log.h"
 
 using util::geo::I32Line;
 using util::geo::I32Point;
 using util::geo::I32Polygon;
+using util::geo::LineSegment;
 using util::geo::Ring;
 
 namespace sj {
 
-// _____________________________________________________________________________
-inline GEOSGeometry* makeGeosPoint(const I32Point& p) {
-  double coordBuf[2] = {p.getX(), p.getY()};
-
-  auto seq = GEOSCoordSeq_copyFromBuffer(coordBuf, 1, 0, 0);
-
-  return GEOSGeom_createPoint(seq);
+static void GEOSMsgHandler(const char* msg, ...) {
+  LOGTO(util::LogLevel::WARN, std::cerr) << msg;
 }
 
 // _____________________________________________________________________________
-inline GEOSGeometry* makeGeosLinestring(const I32Line& line) {
+inline GEOSGeometry* makeGeosPoint(GEOSContextHandle_t geosHndl,
+                                   const I32Point& p) {
+  double coordBuf[2] = {p.getX(), p.getY()};
+
+  auto seq = GEOSCoordSeq_copyFromBuffer_r(geosHndl, coordBuf, 1, 0, 0);
+
+  return GEOSGeom_createPoint_r(geosHndl, seq);
+}
+
+// _____________________________________________________________________________
+inline GEOSGeometry* makeGeosLinestring(GEOSContextHandle_t geosHndl,
+                                        const I32Line& line) {
   double* coordBuf = new double[line.size() * 2];
   for (size_t i = 0; i < line.size(); i++) {
     coordBuf[i * 2] = line[i].getX();
     coordBuf[i * 2 + 1] = line[i].getY();
   }
 
-  auto seq = GEOSCoordSeq_copyFromBuffer(coordBuf, line.size(), 0, 0);
+  auto seq =
+      GEOSCoordSeq_copyFromBuffer_r(geosHndl, coordBuf, line.size(), 0, 0);
   delete[] coordBuf;
 
-  return GEOSGeom_createLineString(seq);
+  return GEOSGeom_createLineString_r(geosHndl, seq);
 }
 
 // _____________________________________________________________________________
-inline GEOSGeometry* makeGeosPolygon(const Ring<int32_t>& ring) {
+inline GEOSGeometry* makeGeosLinestring(GEOSContextHandle_t geosHndl,
+                                        const LineSegment<int32_t>& ls) {
+  double coordBuf[4];
+  coordBuf[0] = ls.first.getX();
+  coordBuf[1] = ls.first.getY();
+  coordBuf[2] = ls.second.getX();
+  coordBuf[3] = ls.second.getY();
+  auto seq = GEOSCoordSeq_copyFromBuffer_r(geosHndl, coordBuf, 2, 0, 0);
+
+  return GEOSGeom_createLineString_r(geosHndl, seq);
+}
+
+// _____________________________________________________________________________
+inline GEOSGeometry* makeGeosPolygon(GEOSContextHandle_t geosHndl,
+                                     const Ring<int32_t>& ring) {
   double* coordBufOuter = new double[ring.size() * 2];
   for (size_t i = 0; i < ring.size(); i++) {
     coordBufOuter[i * 2] = ring[i].getX();
@@ -47,22 +70,23 @@ inline GEOSGeometry* makeGeosPolygon(const Ring<int32_t>& ring) {
   }
 
   auto seqOuter =
-      GEOSCoordSeq_copyFromBuffer(coordBufOuter, ring.size(), 0, 0);
+      GEOSCoordSeq_copyFromBuffer_r(geosHndl, coordBufOuter, ring.size(), 0, 0);
   delete[] coordBufOuter;
-  auto outer = GEOSGeom_createLinearRing(seqOuter);
+  auto outer = GEOSGeom_createLinearRing_r(geosHndl, seqOuter);
 
   GEOSGeometry** innerRings = new GEOSGeometry*[0];
 
-  auto geosPoly =
-      GEOSGeom_createPolygon(outer, innerRings, 0);
+  auto geosPoly = GEOSGeom_createPolygon_r(geosHndl, outer, innerRings, 0);
 
   delete[] innerRings;
   return geosPoly;
 }
 
 // _____________________________________________________________________________
-inline GEOSGeometry* makeGeosPolygon(const I32Polygon& poly) {
-  if (poly.getOuter().size() == 0) return GEOSGeom_createEmptyPolygon();
+inline GEOSGeometry* makeGeosPolygon(GEOSContextHandle_t geosHndl,
+                                     const I32Polygon& poly) {
+  if (poly.getOuter().size() == 0)
+    return GEOSGeom_createEmptyPolygon_r(geosHndl);
 
   double* coordBufOuter = new double[(poly.getOuter().size() + 1) * 2];
   for (size_t i = 0; i < poly.getOuter().size(); i++) {
@@ -73,11 +97,11 @@ inline GEOSGeometry* makeGeosPolygon(const I32Polygon& poly) {
   coordBufOuter[poly.getOuter().size() * 2] = poly.getOuter()[0].getX();
   coordBufOuter[poly.getOuter().size() * 2 + 1] = poly.getOuter()[0].getY();
 
-  auto seqOuter =
-      GEOSCoordSeq_copyFromBuffer(coordBufOuter, poly.getOuter().size(), 0, 0);
+  auto seqOuter = GEOSCoordSeq_copyFromBuffer_r(geosHndl, coordBufOuter,
+                                                poly.getOuter().size(), 0, 0);
 
   delete[] coordBufOuter;
-  auto outer = GEOSGeom_createLinearRing(seqOuter);
+  auto outer = GEOSGeom_createLinearRing_r(geosHndl, seqOuter);
 
   GEOSGeometry** innerRings = new GEOSGeometry*[poly.getInners().size()];
 
@@ -87,38 +111,39 @@ inline GEOSGeometry* makeGeosPolygon(const I32Polygon& poly) {
       coordBuf[i * 2] = poly.getInners()[j][i].getX();
       coordBuf[i * 2 + 1] = poly.getInners()[j][i].getY();
     }
-    auto seqInner =
-        GEOSCoordSeq_copyFromBuffer(coordBuf, poly.getInners()[j].size(), 0, 0);
+    auto seqInner = GEOSCoordSeq_copyFromBuffer_r(
+        geosHndl, coordBuf, poly.getInners()[j].size(), 0, 0);
     delete[] coordBuf;
-    innerRings[j] = GEOSGeom_createLinearRing(seqInner);
+    innerRings[j] = GEOSGeom_createLinearRing_r(geosHndl, seqInner);
   }
 
-  auto geosPoly =
-      GEOSGeom_createPolygon(outer, innerRings, poly.getInners().size());
+  auto geosPoly = GEOSGeom_createPolygon_r(geosHndl, outer, innerRings,
+                                           poly.getInners().size());
   delete[] innerRings;
   return geosPoly;
 }
 
 class GEOSLineString {
  public:
-  GEOSLineString() : _geom(GEOSGeom_createEmptyLineString()) {};
-  GEOSLineString(GEOSGeometry* geom) : _geom(geom) {};
-  GEOSLineString(const GEOSLineString& other) {
-    _geom = GEOSGeom_clone(other._geom);
+  GEOSLineString() : _geom(0){};
+  GEOSLineString(GEOSGeometry* geom, GEOSContextHandle_t destroyHndl)
+      : _geom(geom), _geosHndlDestroy(destroyHndl){};
+  GEOSLineString(const GEOSLineString& other) = delete;
+  GEOSLineString(GEOSLineString&& other)
+      : _geom(other._geom), _geosHndlDestroy(other._geosHndlDestroy) {
+    other._geom = 0;
   }
-  explicit GEOSLineString(const I32Line& line) : _geom(makeGeosLinestring(line)) {}
-  ~GEOSLineString() {
-    GEOSGeom_destroy(_geom);
-  }
+  GEOSLineString(GEOSContextHandle_t geosHndl, const I32Line& line)
+      : _geom(makeGeosLinestring(geosHndl, line)) {}
+  GEOSLineString(GEOSContextHandle_t geosHndl, const LineSegment<int32_t>& ls)
+      : _geom(makeGeosLinestring(geosHndl, ls)) {}
+  ~GEOSLineString() { GEOSGeom_destroy_r(_geosHndlDestroy, _geom); }
 
-  GEOSLineString& operator=(const GEOSLineString& other) {
-    if (other._geom) _geom = GEOSGeom_clone(other._geom);
-    else _geom = 0;
-    return *this;
-  }
+  GEOSLineString& operator=(const GEOSLineString& other) = delete;
   GEOSLineString& operator=(GEOSLineString&& other) {
     _geom = other._geom;
     other._geom = 0;
+    _geosHndlDestroy = other._geosHndlDestroy;
     return *this;
   }
 
@@ -126,41 +151,39 @@ class GEOSLineString {
 
  private:
   GEOSGeometry* _geom;
+  GEOSContextHandle_t _geosHndlDestroy;
 };
 
 class GEOSPolygon {
  public:
-  GEOSPolygon() : _geom(GEOSGeom_createEmptyPolygon()) {};
-  GEOSPolygon(GEOSGeometry* geom) : _geom(geom) {};
-  GEOSPolygon(const GEOSPolygon& other) {
-    _geom = GEOSGeom_clone(other._geom);
-  }
-  GEOSPolygon(GEOSPolygon&& other) : _geom(other._geom) {
+  GEOSPolygon() : _geom(0), _geosHndlDestroy(0){};
+  GEOSPolygon(GEOSGeometry* geom, GEOSContextHandle_t destroyHndl)
+      : _geom(geom), _geosHndlDestroy(destroyHndl){};
+  GEOSPolygon(const GEOSPolygon& other) = delete;
+  GEOSPolygon(GEOSPolygon&& other)
+      : _geom(other._geom), _geosHndlDestroy(other._geosHndlDestroy) {
     other._geom = 0;
   };
-  explicit GEOSPolygon(const I32Polygon& poly) : _geom(makeGeosPolygon(poly)) {
-  }
-  explicit GEOSPolygon(const Ring<int32_t>& ring) : _geom(makeGeosPolygon(ring)) {}
-  ~GEOSPolygon() {
-    GEOSGeom_destroy(_geom);
-  }
+  GEOSPolygon(GEOSContextHandle_t geosHndl, const I32Polygon& poly)
+      : _geom(makeGeosPolygon(geosHndl, poly)) {}
+  GEOSPolygon(GEOSContextHandle_t geosHndl, const Ring<int32_t>& ring)
+      : _geom(makeGeosPolygon(geosHndl, ring)) {}
 
-  GEOSPolygon& operator=(const GEOSPolygon& other) {
-    if (other._geom) _geom = GEOSGeom_clone(other._geom);
-    else _geom = 0;
-    return *this;
-  }
+  ~GEOSPolygon() { GEOSGeom_destroy_r(_geosHndlDestroy, _geom); }
+
+  GEOSPolygon& operator=(const GEOSPolygon& other) = delete;
   GEOSPolygon& operator=(GEOSPolygon&& other) {
     _geom = other._geom;
+    _geosHndlDestroy = other._geosHndlDestroy;
     other._geom = 0;
     return *this;
   }
 
   GEOSGeometry* getGEOSGeom() const { return _geom; }
-  const GEOSGeometry* getRing() const { return GEOSGetExteriorRing(_geom); }
 
  private:
   GEOSGeometry* _geom;
+  GEOSContextHandle_t _geosHndlDestroy;
 };
 
 }  // namespace sj

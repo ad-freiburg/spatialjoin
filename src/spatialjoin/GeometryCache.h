@@ -13,8 +13,9 @@
 #include <unordered_map>
 
 #include "BoxIds.h"
-#include "util/geo/Geo.h"
 #include "Libgeos.h"
+#include "util/geo/Geo.h"
+#include "util/log/Log.h"
 
 namespace sj {
 
@@ -138,6 +139,12 @@ class GeometryCache {
         _mutexes(numthreads + 1) {
     _geomsFReads.resize(numthreads + 1);
 
+    _GEOScontextHandles.resize(numthreads + 1);
+
+    for (size_t i = 0; i < numthreads + 1; i++) {
+      _GEOScontextHandles[i] = initGEOS_r(GEOSMsgHandler, GEOSMsgHandler);
+    }
+
     _vals.resize(numthreads + 1);
     _idMap.resize(numthreads + 1);
 
@@ -146,8 +153,7 @@ class GeometryCache {
     _writeBuffer = new char[WRITE_BUFF_SIZE];
 
     _geomsF.rdbuf()->pubsetbuf(_writeBuffer, WRITE_BUFF_SIZE);
-    _geomsF.open(_fName, std::ios::out | std::ios::binary |
-                             std::ios::trunc);
+    _geomsF.open(_fName, std::ios::out | std::ios::binary | std::ios::trunc);
 
     for (size_t i = 0; i < _geomsFReads.size(); i++) {
       _geomsFReads[i].open(_fName, std::ios::in | std::ios::binary);
@@ -160,15 +166,15 @@ class GeometryCache {
     for (size_t i = 0; i < _geomsFReads.size(); i++) {
       if (_geomsFReads[i].is_open()) _geomsFReads[i].close();
     }
-    if (_writeBuffer) delete[]_writeBuffer;
+    if (_writeBuffer) delete[] _writeBuffer;
   }
 
   size_t add(const std::string& raw);
-  static size_t writeTo(const W& val, std::ostream& str);
+  static size_t writeTo(const W& val, std::ostream& str, GEOSContextHandle_t geosHndl);
 
   std::shared_ptr<W> get(size_t off, ssize_t tid) const;
-  W getFrom(size_t off, std::istream& str) const;
-  std::shared_ptr<W> cache(size_t off, const W& val, size_t tid) const;
+  W getFrom(size_t off, std::istream& str, GEOSContextHandle_t geosHndl) const;
+  std::shared_ptr<W> cache(size_t off, W& val, size_t tid) const;
 
   std::shared_ptr<W> get(size_t off) const { return get(off, 0); }
 
@@ -193,18 +199,20 @@ class GeometryCache {
  private:
   std::string getFName() const;
   void readLine(std::istream& str, util::geo::I32XSortedLine& ret) const;
-  void readGEOSLine(std::istream& str, GEOSLineString& ret) const;
+  void readGEOSLine(std::istream& str, GEOSLineString& ret,
+                    GEOSContextHandle_t geosHndl) const;
 
   static size_t writeLine(const util::geo::I32XSortedLine& ret,
                           std::ostream& str);
-  static size_t writeGEOSLine(const GEOSLineString& geom, std::ostream& str);
+  static size_t writeGEOSLine(const GEOSLineString& geom, std::ostream& str, GEOSContextHandle_t geosHndl);
 
   void readPoly(std::istream& str, util::geo::I32XSortedPolygon& ret) const;
   static size_t writePoly(const util::geo::I32XSortedPolygon& ret,
                           std::ostream& str);
-  void readGEOSPoly(std::istream& str, GEOSPolygon& ret) const;
+  void readGEOSPoly(std::istream& str, GEOSPolygon& ret,
+                    GEOSContextHandle_t geosHndl) const;
 
-  static size_t writeGEOSPoly(const GEOSPolygon& geom, std::ostream& str);
+  static size_t writeGEOSPoly(const GEOSPolygon& geom, std::ostream& str, GEOSContextHandle_t geosHndl);
 
   void readMultiPoly(std::istream& str,
                      util::geo::I32XSortedMultiPolygon& ret) const;
@@ -224,10 +232,12 @@ class GeometryCache {
   std::string _dir, _tmpPrefix;
   std::string _fName;
 
-  std::map<size_t, W> _memStore;
+  std::map<size_t, std::shared_ptr<W>> _memStore;
   bool _inMemory = true;
 
   char* _writeBuffer = 0;
+
+  std::vector<GEOSContextHandle_t> _GEOScontextHandles;
 
   mutable std::vector<std::mutex> _mutexes;
 };

@@ -30,8 +30,8 @@
 #include "Stats.h"
 #include "util/JobQueue.h"
 #include "util/geo/Geo.h"
-#include "util/log/Log.h"
 #include "util/geo/IntervalIdx.h"
+#include "util/log/Log.h"
 
 #ifndef POSIX_FADV_SEQUENTIAL
 #define POSIX_FADV_SEQUENTIAL 2
@@ -78,6 +78,8 @@ struct WriteBatch {
   std::vector<WriteCand> areas;
   std::vector<WriteCand> refs;
 
+  GEOSContextHandle_t geosHndl;
+
   size_t size() const {
     return points.size() + simpleLines.size() + lines.size() +
            simpleAreas.size() + areas.size() + refs.size();
@@ -91,8 +93,8 @@ inline bool operator==(const BoxVal& a, const BoxVal& b) {
 struct SweepVal {
   SweepVal(size_t id, GeomType type)
       : id(id), type(type), side(false), large(false) {}
-  SweepVal(size_t id, GeomType type, util::geo::I32Box b45, util::geo::I32Point point, bool side,
-           bool large)
+  SweepVal(size_t id, GeomType type, util::geo::I32Box b45,
+           util::geo::I32Point point, bool side, bool large)
       : id(id), type(type), b45(b45), point(point), side(side), large(large) {}
   SweepVal() : id(0), type(POLYGON) {}
   size_t id : 60;
@@ -123,6 +125,8 @@ inline bool operator==(const Job& a, const Job& b) {
 }
 
 typedef std::vector<Job> JobBatch;
+
+typedef std::tuple<bool, bool, bool, bool, bool> GeomCheckRes;
 
 struct SweeperCfg {
   size_t numThreads;
@@ -166,10 +170,6 @@ static const size_t POINT_CACHE_SIZE = 1000;
 // only use large geom cache for extreme geometries
 static const size_t GEOM_LARGENESS_THRESHOLD = 1024 * 1024 * 1024;
 
-static void GEOSMsgHandler(const char* msg, ...) {
-  LOGTO(util::LogLevel::WARN, std::cerr) << msg;
-}
-
 // static const size_t AREA_CACHE_SIZE = 10000;
 // static const size_t SIMPLE_AREA_CACHE_SIZE = 10000;
 // static const size_t LINE_CACHE_SIZE = 10000;
@@ -194,8 +194,13 @@ class Sweeper {
         _cache(cache),
         _out(out),
         _jobs(100) {
+    _GEOScontextHandles.resize(_cfg.numThreads);
 
     initGEOS(GEOSMsgHandler, GEOSMsgHandler);
+
+    for (size_t i = 0; i < _cfg.numThreads; i++) {
+      _GEOScontextHandles[i] = initGEOS_r(GEOSMsgHandler, GEOSMsgHandler);
+    }
 
     if (!_cfg.writeRelCb) {
       if (util::endsWith(_out, ".bz2")) {
@@ -250,6 +255,11 @@ class Sweeper {
 
   ~Sweeper() {
     close(_file);
+
+    for (size_t i = 0; i < _cfg.numThreads; i++) {
+      GEOS_finish_r(_GEOScontextHandles[i]);
+    }
+
     finishGEOS();
 
     for (size_t i = 0; i < _outBuffers.size(); i++) {
@@ -369,6 +379,8 @@ class Sweeper {
   }
 
  private:
+  bool _useGEOS = false;
+
   const SweeperCfg _cfg;
   size_t _curSweepId = 0;
   std::string _fname;
@@ -444,24 +456,16 @@ class Sweeper {
   std::vector<std::mutex> _mutsNotOverlaps;
   std::vector<std::mutex> _mutsDistance;
 
-  Area areaFromSimpleArea(const SimpleArea* sa) const;
+  Area areaFromSimpleArea(const SimpleArea* sa, size_t t) const;
+  Line lineFromSimpleLine(const SimpleLine* sa, size_t t) const;
 
-  std::tuple<bool, bool, bool, bool, bool> check(const Area* a, const Area* b,
-                                                 size_t t) const;
-  std::tuple<bool, bool, bool, bool, bool> check(const Line* a, const Area* b,
-                                                 size_t t) const;
-  std::tuple<bool, bool, bool, bool, bool> check(const SimpleLine* a,
-                                                 const Area* b, size_t t) const;
-  std::tuple<bool, bool, bool, bool, bool> check(const Line* a, const Line* b,
-                                                 size_t t) const;
-  std::tuple<bool, bool, bool, bool, bool> check(const Line* a,
-                                                 const SimpleLine* b,
-                                                 size_t t) const;
-  std::tuple<bool, bool, bool, bool, bool> check(const SimpleLine* a,
-                                                 const SimpleLine* b,
-                                                 size_t t) const;
-  std::tuple<bool, bool, bool, bool, bool> check(const SimpleLine* a,
-                                                 const Line* b, size_t t) const;
+  GeomCheckRes check(const Area* a, const Area* b, size_t t) const;
+  GeomCheckRes check(const Line* a, const Area* b, size_t t) const;
+  GeomCheckRes check(const SimpleLine* a, const Area* b, size_t t) const;
+  GeomCheckRes check(const Line* a, const Line* b, size_t t) const;
+  GeomCheckRes check(const Line* a, const SimpleLine* b, size_t t) const;
+  GeomCheckRes check(const SimpleLine* a, const SimpleLine* b, size_t t) const;
+  GeomCheckRes check(const SimpleLine* a, const Line* b, size_t t) const;
   std::pair<bool, bool> check(const util::geo::I32Point& a, const Area* b,
                               size_t t) const;
   std::tuple<bool, bool> check(const util::geo::I32Point& a, const Line* b,
@@ -595,6 +599,9 @@ class Sweeper {
   mutable std::mutex _simpleLineGeomCacheWriteMtx;
   mutable std::mutex _areaGeomCacheWriteMtx;
   mutable std::mutex _simpleAreaGeomCacheWriteMtx;
+
+  // libgeos contexthandles
+  std::vector<GEOSContextHandle_t> _GEOScontextHandles;
 
   std::unordered_map<std::string, std::unordered_map<std::string, size_t>>
       _refs;

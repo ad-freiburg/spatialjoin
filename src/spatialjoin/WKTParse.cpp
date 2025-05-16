@@ -3,6 +3,7 @@
 // Authors: Patrick Brosi <brosi@informatik.uni-freiburg.de>
 
 #include "WKTParse.h"
+#include "Libgeos.h"
 
 #ifdef __cpp_lib_string_view
 #include <string_view>
@@ -188,8 +189,12 @@ void WKTParser::parseLine(char* c, size_t len, size_t gid, size_t t,
 // _____________________________________________________________________________
 void WKTParser::processQueue(size_t t) {
   ParseBatch batch;
+
+  auto geosHndl = initGEOS_r(GEOSMsgHandler, GEOSMsgHandler);
+
   while ((batch = _jobs.get()).size()) {
     sj::WriteBatch w;
+    w.geosHndl = geosHndl;
     for (const auto& job : batch) {
       if (_cancelled) break;
 
@@ -210,6 +215,8 @@ void WKTParser::processQueue(size_t t) {
 
     _sweeper->addBatch(w);
   }
+
+  GEOS_finish_r(geosHndl);
 }
 
 // _____________________________________________________________________________
