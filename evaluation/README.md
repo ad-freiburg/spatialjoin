@@ -84,4 +84,4 @@ Run
 make help
 ```
 
-to get a list of available target.
+to get a list of available targets.
