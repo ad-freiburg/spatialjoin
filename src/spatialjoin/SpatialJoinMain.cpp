@@ -38,6 +38,7 @@ void printHelp(int argc, char** argv) {
   UNUSED(argc);
   std::cout
       << "\n"
+      << "spatialjoin\n\n"
       << "(C) 2023-" << YEAR << " " << COPY << "\n"
       << "Authors: " << AUTHORS << "\n\n"
       << "Usage: " << argv[0] << " [--help] [-h] <input>\n\n"
@@ -134,6 +135,8 @@ int main(int argc, char** argv) {
   bool useInnerOuter = false;
   bool noGeometryChecks = false;
 
+  bool printStats = false;
+
   size_t numThreads = NUM_THREADS;
   size_t numCaches = NUM_THREADS;
   size_t geomCacheMaxSize = 10000;
@@ -192,6 +195,8 @@ int main(int argc, char** argv) {
           useFastSweepSkip = false;
         } else if (cur == "--use-inner-outer") {
           useInnerOuter = true;
+        } else if (cur == "--print-stats") {
+          printStats = true;
         } else {
           std::cerr << "Unknown option '" << cur << "', see -h" << std::endl;
           exit(1);
@@ -264,6 +269,10 @@ int main(int argc, char** argv) {
   unsigned char* buf = new unsigned char[CACHE_SIZE];
   size_t len;
 
+  std::function<void(const std::string&)> statsCb;
+
+  if (printStats) statsCb = [](const std::string& s) { std::cerr << s; };
+
   Sweeper sweeper({numThreads,
                    numCaches,
                    geomCacheMaxSize,
@@ -287,7 +296,7 @@ int main(int argc, char** argv) {
                    withinDist,
                    {},
                    [](const std::string& s) { LOGTO(INFO, std::cerr) << s; },
-                   [](const std::string& s) { std::cerr << s; },
+                   statsCb,
                    {},
                    {}},
                   cache, output);
@@ -311,12 +320,17 @@ int main(int argc, char** argv) {
 
   sweeper.flush();
 
-  LOGTO(INFO, std::cerr) << "done (" << TOOK(ts) / 1000000000.0 << "s).";
+  LOGTO(INFO, std::cerr) << "Done sorting sweep events ("
+                         << TOOK(ts) / 1000000000.0 << "s).";
 
   LOGTO(INFO, std::cerr) << "Sweeping...";
   ts = TIME();
   sweeper.sweep();
-  LOGTO(INFO, std::cerr) << "done (" << TOOK(ts) / 1000000000.0 << "s).";
+  LOGTO(INFO, std::cerr) << "Done sweeping (" << TOOK(ts) / 1000000000.0
+                         << "s).";
+  LOGTO(INFO, std::cerr)
+      << "Total predicate generation time (without parsing): "
+      << TOOK(genTs) / 1000000000.0 << "s";
 
   delete[] buf;
 }
