@@ -4,6 +4,7 @@ SPATIALJOIN_EVAL_SCRIPT = spatialjoin-evaluation.py
 SPATIALJOIN = spatialjoin
 SPATIALJOIN_ARGS = --num-threads 2 --num-caches 2 --no-oriented-envelope # BCSDoi with 2 threads
 POSTGRES_TIMEOUT = 10h
+QLEVER_ENDPOINT = https://qlever.cs.uni-freiburg.de/api/osm-planet
 
 DATA_DIR = .
 
@@ -11,6 +12,13 @@ QUERY_1_POSTGRES = SELECT COUNT(*) FROM classes AS a, classes AS b WHERE a.class
 QUERY_2_POSTGRES = SELECT COUNT(*) FROM classes AS a, classes AS b WHERE a.class = 'highway' AND b.id = 'rel:51477' AND ST_Contains(b.geom, a.geom)
 QUERY_3_POSTGRES = SELECT COUNT(*) FROM classes AS a, classes AS b WHERE a.class = 'building' AND b.class = 'power' AND b.type = 'line' AND ST_Intersects(a.geom, b.geom)
 QUERY_4_POSTGRES = SELECT COUNT(*) FROM classes AS a, classes AS b WHERE a.class = 'highway' AND b.class = 'highway' AND a.type = 'residential' AND b.type = 'residential' AND ST_Intersects(a.geom, b.geom)
+# TODO: QUERY 5, Number of postboxes by country
+
+QUERY_1_QLEVER = PREFIX osmrel: <https://www.openstreetmap.org/relation/> PREFIX osmkey: <https://www.openstreetmap.org/wiki/Key:> PREFIX ogc: <http://www.opengis.net/rdf\#> PREFIX geo: <http://www.opengis.net/ont/geosparql\#> SELECT (COUNT(*) as ?count) WHERE { osmrel:2171347 ogc:sfContains ?osm_id . ?osm_id osmkey:highway ?highway . ?osm_id geo:hasGeometry/geo:asWKT ?shape . }
+QUERY_2_QLEVER = PREFIX osmrel: <https://www.openstreetmap.org/relation/> PREFIX osmkey: <https://www.openstreetmap.org/wiki/Key:> PREFIX ogc: <http://www.opengis.net/rdf\#> PREFIX geo: <http://www.opengis.net/ont/geosparql\#> SELECT (COUNT(*) as ?count) WHERE { osmrel:51477 ogc:sfContains ?osm_id . ?osm_id osmkey:highway ?highway  }
+QUERY_3_QLEVER = PREFIX osmrel: <https://www.openstreetmap.org/relation/> PREFIX osmkey: <https://www.openstreetmap.org/wiki/Key:> PREFIX ogc: <http://www.opengis.net/rdf\#> PREFIX geo: <http://www.opengis.net/ont/geosparql\#> SELECT (COUNT(*) as ?count) WHERE { ?powerline ogc:sfIntersects ?osm_id . ?osm_id osmkey:building ?building . ?powerline osmkey:power \"line\" }
+QUERY_4_QLEVER = PREFIX osmrel: <https://www.openstreetmap.org/relation/> PREFIX osmkey: <https://www.openstreetmap.org/wiki/Key:> PREFIX ogc: <http://www.opengis.net/rdf\#> PREFIX geo: <http://www.opengis.net/ont/geosparql\#> SELECT (COUNT(*) as ?count) WHERE { ?a ogc:sfIntersects ?b . ?a osmkey:highway \"residential\" . ?b osmkey:highway \"residential\" }
+QUERY_4_QLEVER = PREFIX osmrel: <https://www.openstreetmap.org/relation/> PREFIX osmkey: <https://www.openstreetmap.org/wiki/Key:> PREFIX ogc: <http://www.opengis.net/rdf\#> PREFIX geo: <http://www.opengis.net/ont/geosparql\#> SELECT (COUNT(*) as ?count) WHERE { ?a ogc:sfIntersects ?b . ?a osmkey:highway \"residential\" . ?b osmkey:highway \"residential\" }
 
 # TODO: QUERY 5, Number of postboxes by country
 
@@ -60,21 +68,27 @@ check:
 	@echo $(SPATIALJOIN)
 	@echo -n "spatialjoin eval script:    "
 	@[ -f $(SPATIALJOIN_EVAL_SCRIPT) ] && realpath $(SPATIALJOIN_EVAL_SCRIPT) || echo " NOT FOUND"
+	@echo -n "qlever endpoint:            "
+	@echo $(QLEVER_ENDPOINT)
+	@echo -n "qlever index hash:          "
+	@curl -s $(QLEVER_ENDPOINT)?cmd=stats | grep git-hash-index | sed "s/.*git-hash-index\": \"\([a-zA-Z0-9]*\)\".*/\1/g"
+	@echo -n "qlever server hash:         "
+	@curl -s $(QLEVER_ENDPOINT)?cmd=stats | grep git-hash-server | sed "s/.*git-hash-server\": \"\([a-zA-Z0-9]*\)\".*/\1/g"
 
 $(DATA_DIR)/region-osm-planet.tsv.gz:
-	curl -s https://qlever.cs.uni-freiburg.de/api/osm-planet -H "Accept: text/csv" -H "Content-type: application/sparql-query" --data "PREFIX geo: <http://www.opengis.net/ont/geosparql#> PREFIX ogc: <http://www.opengis.net/rdf#> PREFIX osmrel: <https://www.openstreetmap.org/relation/> SELECT ?osm_id ?geometry WHERE { ?osm_id geo:hasGeometry/geo:asWKT ?geometry }" | sed 's/,/\t/;s|https://www.openstreetmap.org/|osm|;s|/|:|;s/"//g' | gzip -1 > $@
+	curl -s $(QLEVER_ENDPOINT) -H "Accept: text/csv" -H "Content-type: application/sparql-query" --data "PREFIX geo: <http://www.opengis.net/ont/geosparql#> PREFIX ogc: <http://www.opengis.net/rdf#> PREFIX osmrel: <https://www.openstreetmap.org/relation/> SELECT ?osm_id ?geometry WHERE { ?osm_id geo:hasGeometry/geo:asWKT ?geometry }" | sed 's/,/\t/;s|https://www.openstreetmap.org/|osm|;s|/|:|;s/"//g' | gzip -1 > $@
 
 $(DATA_DIR)/region-freiburg.tsv.gz:
-	curl -s https://qlever.cs.uni-freiburg.de/api/osm-planet -H "Accept: text/csv" -H "Content-type: application/sparql-query" --data "PREFIX geo: <http://www.opengis.net/ont/geosparql#> PREFIX ogc: <http://www.opengis.net/rdf#> PREFIX osmrel: <https://www.openstreetmap.org/relation/> SELECT ?osm_id ?geometry WHERE { osmrel:62768 ogc:sfContains ?osm_id . ?osm_id geo:hasGeometry/geo:asWKT ?geometry }" | sed 's/,/\t/;s|https://www.openstreetmap.org/|osm|;s|/|:|;s/"//g' | gzip -1 > $@
+	curl -s $(QLEVER_ENDPOINT) -H "Accept: text/csv" -H "Content-type: application/sparql-query" --data "PREFIX geo: <http://www.opengis.net/ont/geosparql#> PREFIX ogc: <http://www.opengis.net/rdf#> PREFIX osmrel: <https://www.openstreetmap.org/relation/> SELECT ?osm_id ?geometry WHERE { osmrel:62768 ogc:sfContains ?osm_id . ?osm_id geo:hasGeometry/geo:asWKT ?geometry }" | sed 's/,/\t/;s|https://www.openstreetmap.org/|osm|;s|/|:|;s/"//g' | gzip -1 > $@
 
 $(DATA_DIR)/region-finland.tsv.gz:
-	curl -s https://qlever.cs.uni-freiburg.de/api/osm-planet -H "Accept: text/csv" -H "Content-type: application/sparql-query" --data "PREFIX geo: <http://www.opengis.net/ont/geosparql#> PREFIX ogc: <http://www.opengis.net/rdf#> PREFIX osmrel: <https://www.openstreetmap.org/relation/> SELECT ?osm_id ?geometry WHERE { osmrel:54224 ogc:sfContains ?osm_id . ?osm_id geo:hasGeometry/geo:asWKT ?geometry }" | sed 's/,/\t/;s|https://www.openstreetmap.org/|osm|;s|/|:|;s/"//g' | gzip -1 > $@
+	curl -s $(QLEVER_ENDPOINT) -H "Accept: text/csv" -H "Content-type: application/sparql-query" --data "PREFIX geo: <http://www.opengis.net/ont/geosparql#> PREFIX ogc: <http://www.opengis.net/rdf#> PREFIX osmrel: <https://www.openstreetmap.org/relation/> SELECT ?osm_id ?geometry WHERE { osmrel:54224 ogc:sfContains ?osm_id . ?osm_id geo:hasGeometry/geo:asWKT ?geometry }" | sed 's/,/\t/;s|https://www.openstreetmap.org/|osm|;s|/|:|;s/"//g' | gzip -1 > $@
 
 $(DATA_DIR)/region-germany.tsv.gz:
-	curl -s https://qlever.cs.uni-freiburg.de/api/osm-planet -H "Accept: text/csv" -H "Content-type: application/sparql-query" --data "PREFIX geo: <http://www.opengis.net/ont/geosparql#> PREFIX ogc: <http://www.opengis.net/rdf#> PREFIX osmrel: <https://www.openstreetmap.org/relation/> SELECT ?osm_id ?geometry WHERE { osmrel:51477 ogc:sfContains ?osm_id . ?osm_id geo:hasGeometry/geo:asWKT ?geometry }" | sed 's/,/\t/;s|https://www.openstreetmap.org/|osm|;s|/|:|;s/"//g' | gzip -1 > $@
+	curl -s $(QLEVER_ENDPOINT) -H "Accept: text/csv" -H "Content-type: application/sparql-query" --data "PREFIX geo: <http://www.opengis.net/ont/geosparql#> PREFIX ogc: <http://www.opengis.net/rdf#> PREFIX osmrel: <https://www.openstreetmap.org/relation/> SELECT ?osm_id ?geometry WHERE { osmrel:51477 ogc:sfContains ?osm_id . ?osm_id geo:hasGeometry/geo:asWKT ?geometry }" | sed 's/,/\t/;s|https://www.openstreetmap.org/|osm|;s|/|:|;s/"//g' | gzip -1 > $@
 
 $(DATA_DIR)/region-ohm-planet.tsv.gz:
-	curl -s https://qlever.cs.uni-freiburg.de/api/ohm-planet -H "Accept: text/csv" -H "Content-type: application/sparql-query" --data "PREFIX geo: <http://www.opengis.net/ont/geosparql#> PREFIX ogc: <http://www.opengis.net/rdf#> PREFIX osmrel: <https://www.openstreetmap.org/relation/> SELECT ?osm_id ?geometry WHERE { ?osm_id geo:hasGeometry/geo:asWKT ?geometry }" | sed 's/,/\t/;s|https://www.openstreetmap.org/|osm|;s|/|:|;s/"//g' | gzip -1 > $@
+	curl -s $(QLEVER_ENDPOINT) -H "Accept: text/csv" -H "Content-type: application/sparql-query" --data "PREFIX geo: <http://www.opengis.net/ont/geosparql#> PREFIX ogc: <http://www.opengis.net/rdf#> PREFIX osmrel: <https://www.openstreetmap.org/relation/> SELECT ?osm_id ?geometry WHERE { ?osm_id geo:hasGeometry/geo:asWKT ?geometry }" | sed 's/,/\t/;s|https://www.openstreetmap.org/|osm|;s|/|:|;s/"//g' | gzip -1 > $@
 
 region-%-table: $(DATA_DIR)/region-%.tsv.gz
 	psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) -c "CREATE TABLE IF NOT EXISTS \"region-$*\" (id VARCHAR PRIMARY KEY, geom GEOMETRY);"
@@ -89,11 +103,13 @@ region-%-table: $(DATA_DIR)/region-%.tsv.gz
 	psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) -c "CREATE INDEX IF NOT EXISTS \"region-$*_geom_idx\" ON \"region-$*\" USING GIST (geom);"
 
 $(DATA_DIR)/class-%.tsv.gz:
-	curl -s https://qlever.cs.uni-freiburg.de/api/osm-planet -H "Accept: text/csv" -H "Content-type: application/sparql-query" --data "PREFIX osm: <https://www.openstreetmap.org/> PREFIX geo: <http://www.opengis.net/ont/geosparql#> PREFIX ogc: <http://www.opengis.net/rdf#> PREFIX osmrel: <https://www.openstreetmap.org/relation/> PREFIX osmkey: <https://www.openstreetmap.org/wiki/Key:> SELECT (REPLACE(REPLACE(STR(?osm_id_), STR(osm:), \"osm\"), \"/\", \":\") AS ?osm_id) (REPLACE(STR(osmkey:$*), STR(osmkey:), \"\") AS ?predicate) ?type ?geometry WHERE { { SELECT ?osm_id_ (SAMPLE(?type_) AS ?type) WHERE { ?osm_id_ osmkey:$* ?type_ } GROUP BY ?osm_id_ } ?osm_id_ geo:hasGeometry/geo:asWKT ?geometry }" | sed 's/,/\t/g;s|https://www.openstreetmap.org/|osm|;s|/|:|;s/"//g' | sed 's/"//g;s/\^\^<http[^\t]*>$$//' | gzip -1 > $@
+	curl -s $(QLEVER_ENDPOINT) -H "Accept: text/csv" -H "Content-type: application/sparql-query" --data "PREFIX osm: <https://www.openstreetmap.org/> PREFIX geo: <http://www.opengis.net/ont/geosparql#> PREFIX ogc: <http://www.opengis.net/rdf#> PREFIX osmrel: <https://www.openstreetmap.org/relation/> PREFIX osmkey: <https://www.openstreetmap.org/wiki/Key:> SELECT (REPLACE(REPLACE(STR(?osm_id_), STR(osm:), \"osm\"), \"/\", \":\") AS ?osm_id) (REPLACE(STR(osmkey:$*), STR(osmkey:), \"\") AS ?predicate) ?type ?geometry WHERE { { SELECT ?osm_id_ (SAMPLE(?type_) AS ?type) WHERE { ?osm_id_ osmkey:$* ?type_ } GROUP BY ?osm_id_ } ?osm_id_ geo:hasGeometry/geo:asWKT ?geometry }" | sed 's/,/\t/g;s|https://www.openstreetmap.org/|osm|;s|/|:|;s/"//g' | sed 's/"//g;s/\^\^<http[^\t]*>$$//' | gzip -1 > $@
 
 classes-table: $(DATA_DIR)/class-building.tsv.gz $(DATA_DIR)/class-highway.tsv.gz $(DATA_DIR)/class-amenity.tsv.gz $(DATA_DIR)/class-power.tsv.gz
-	psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) -c "CREATE TABLE classes (id VARCHAR PRIMARY KEY, class VARCHAR, type VARCHAR, geom GEOMETRY);"
-	psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) -c "CREATE TABLE classes_loader (id VARCHAR, class VARCHAR, type VARCHAR, geom_text VARCHAR);"
+	psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) -c "CREATE TABLE IF NOT EXISTS classes (id VARCHAR PRIMARY KEY, class VARCHAR, type VARCHAR, geom GEOMETRY);"
+	psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) -c "CREATE TABLE IF NOT EXISTS classes_loader (id VARCHAR, class VARCHAR, type VARCHAR, geom_text VARCHAR);"
+	psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) -c "DELETE FROM \"classes\";"
+	psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) -c "DELETE FROM \"classes_loader\";"
 	psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) -c "COPY classes_loader FROM PROGRAM 'gzip -dc $(shell realpath $(DATA_DIR)/class-building.tsv.gz)' WITH (FORMAT csv, DELIMITER E'\t', HEADER true);"
 	psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) -c "COPY classes_loader FROM PROGRAM 'gzip -dc $(shell realpath $(DATA_DIR)/class-highway.tsv.gz)' WITH (FORMAT csv, DELIMITER E'\t', HEADER true);"
 	psql -U $(POSTGRES_USER) -d $(POSTGRES_DB) -c "COPY classes_loader FROM PROGRAM 'gzip -dc $(shell realpath $(DATA_DIR)/class-amenity.tsv.gz)' WITH (FORMAT csv, DELIMITER E'\t', HEADER true);"
@@ -161,13 +177,23 @@ eval-combinations-%-spatialjoin: %.spatialjoin-input.tsv
 eval-self-join-%: eval-self-join-%-spatialjoin eval-self-join-%-postgres
 	@echo
 
-eval-query-%:
+eval-query-%-postgres:
 	@echo
 	@echo ++ Starting postgres evaluation for query $*:
 	@echo "(Query is: '$(QUERY_$*_POSTGRES)' )"
 	@psql -q -U $(POSTGRES_USER) -d $(POSTGRES_DB) -tA -c "SELECT FROM classes LIMIT 1" > /dev/null 2>&1 || (echo "ERROR: Table classes does not yet exist, run 'make classes-table' first\\n";false)
 	@echo Postgres result size and time:
 	@psql -q -U $(POSTGRES_USER) -d $(POSTGRES_DB) -tA -c "\timing" -c "SET statement_timeout = '$(POSTGRES_TIMEOUT)'; $(QUERY_$*_POSTGRES);" || true
+QUERY_4_QLEVER = PREFIX osmrel: <https://www.openstreetmap.org/relation/> PREFIX osmkey: <https://www.openstreetmap.org/wiki/Key:> PREFIX ogc: <http://www.opengis.net/rdf\#> PREFIX geo: <http://www.opengis.net/ont/geosparql\#> SELECT (COUNT(*) as ?count) WHERE { ?a ogc:sfIntersects ?b . ?a osmkey:highway \"residential\" . ?b osmkey:highway \"residential\" }
+
+eval-query-%-qlever:
+	@echo
+	@echo ++ Starting QLever evaluation for query $*:
+	@echo "(Query is: '$(QUERY_$*_QLEVER)' )"
+	@echo QLever result size and time:
+	@curl -s $(QLEVER_ENDPOINT) -H "Accept: application/qlever-results+json" -H "Content-type: application/sparql-query" --data "$(QUERY_$*_QLEVER)" | tee tmp-qlever-$* | grep \"computeResult\" | sed "s/.*\"computeResult\":\s*\"\([^\"]*\)\".*/\1/g" | tr -d '\n'
+	@cat tmp-qlever-$* | grep "XMLSchema#int" | sed -E "s/.*\\\\\"([0-9]*)\\\\\"\^\^<http:\/\/www\.w3\.org\/2001\/XMLSchema#int.*/ \1/g"
+	@rm tmp-qlever-$*
 
 eval-non-self-join-%-postgres:
 	@echo
@@ -195,7 +221,7 @@ eval-non-self-join-%: eval-non-self-join-%-spatialjoin eval-non-self-join-%-post
 
 tables: region-freiburg-table region-germany-table region-finland-table region-ohm-planet-table region-osm-planet-table classes-table static-restaurants-table static-residential-streets-table static-powerlines-tables static-administrative-regions-table
 
-eval-queries: eval-query-1 eval-query-2 eval-query-3 eval-query-4
+eval-queries: eval-query-1-qlever eval-query-2-qlever eval-query-3-qlever eval-query-4-qlever eval-query-1-postgres eval-query-2-postgres eval-query-3-postgres eval-query-4-postgres
 
 eval-self-joins: eval-self-join-region-ohm-planet eval-selfjoin-region-finland eval-selfjoin-region-germany eval-selfjoin-region-osm-planet
 
