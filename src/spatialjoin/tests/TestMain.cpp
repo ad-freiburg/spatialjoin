@@ -35,7 +35,6 @@ std::string fullRun(const std::string& file, const sj::SweeperCfg& cfg) {
     while ((len = read(f, buf, BUFF_SIZE)) > 0) {
       parser.parse(buf, len, 0);
     }
-
     parser.done();
 
     delete[] buf;

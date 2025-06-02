@@ -39,7 +39,7 @@ WKTParser::~WKTParser() {
   _jobs.add({});
 
   // wait for all workers to finish
-  for (auto& thr : _thrds) thr.join();
+  for (auto& thr : _thrds) if (thr.joinable()) thr.join();
 }
 
 // _____________________________________________________________________________
@@ -52,7 +52,7 @@ void WKTParser::done() {
   // end event
   _jobs.add({});
   // wait for all workers to finish
-  for (auto& thr : _thrds) thr.join();
+  for (auto& thr : _thrds) if (thr.joinable()) thr.join();
 
   // collect bounding box of parsed geometries
   for (const auto& box : _bboxes) {

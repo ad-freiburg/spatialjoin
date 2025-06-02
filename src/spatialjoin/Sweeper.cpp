@@ -1591,10 +1591,14 @@ std::tuple<bool, bool, bool, bool, bool> Sweeper::check(const SimpleLine* a,
       LineSegment<int32_t>(a->a, a->b), 32767, 32767,
       LineSegment<int32_t>(b->a, b->b), 32767, 32767);
 
-  bool weakIntersect = (r >> 0) & 1;
-  bool strictIntersect = (r >> 1) & 1;
-  bool overlaps = (r >> 2) & 1;
-  bool touches = (r >> 3) & 1;
+  bool weakIntersect = r;
+  bool strictIntersect = (r >> 0) & 1;
+  bool overlaps = (r >> 1) & 1;
+  const bool bFirstInA = (r >> 2) & 1;
+  const bool bSecondInA = (r >> 3) & 1;
+  const bool aFirstInB = (r >> 6) & 1;
+  const bool aSecondInB = (r >> 7) & 1;
+  bool touches = bFirstInA || bSecondInA || aFirstInB || aSecondInB;
 
   if (strictIntersect && !touches && !overlaps) {
     _stats[t].timeFullGeoCheckLineLine += TOOK(ts);
