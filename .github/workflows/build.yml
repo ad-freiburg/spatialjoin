@@ -12,7 +12,7 @@ jobs:
       - name: update apt
         run: sudo apt update
       - name: install dependencies
-        run: sudo apt install -y cmake gcc g++ libbz2-dev
+        run: sudo apt install -y cmake gcc g++ libbz2-dev libgeos-dev
       - name: cmake
         run: mkdir build && cd build && cmake ..
       - name: make
@@ -29,7 +29,7 @@ jobs:
       - name: update apt
         run: sudo apt update
       - name: install dependencies
-        run: sudo apt install -y cmake clang libbz2-dev
+        run: sudo apt install -y cmake clang libbz2-dev libgeos-dev
       - name: cmake
         run: mkdir build && cd build && cmake ..
         shell: bash
@@ -48,7 +48,7 @@ jobs:
       - name: Checkout submodules
         run: git submodule update --init --recursive
       - name: install dependencies
-        run: brew install cmake
+        run: brew install cmake geos
       - name: cmake
         run: mkdir build && cd build && cmake ..
       - name: make
@@ -63,10 +63,10 @@ jobs:
       - name: Checkout submodules
         run: git submodule update --init --recursive
       - name: install dependencies
-        run: brew install cmake
+        run: brew install cmake geos
       - name: cmake
         run: mkdir build && cd build && cmake ..
       - name: make
         run: cd build && make
       - name: tests
-        run: cd build && ctest --output-on-failure
+        run: cd build && ctest --output-on-failure libgeos-dev
