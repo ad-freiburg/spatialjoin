@@ -19,7 +19,7 @@ size_t NUM_THREADS = 1;
 // _____________________________________________________________________________
 std::string fullRun(const std::string& file, const sj::SweeperCfg& cfg) {
   {
-    Sweeper sweeper(cfg, ".", ".resTmp");
+    Sweeper sweeper(cfg, ".", ".resTmp", false);
 
     // extreme buffer size 1 here for test purposes
     const static size_t BUFF_SIZE = 1000000;

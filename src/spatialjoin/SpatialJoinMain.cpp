@@ -131,6 +131,7 @@ int main(int argc, char** argv) {
   bool useInnerOuter = false;
   bool noGeometryChecks = false;
   bool computeDE9IM = false;
+  bool useGEOS = false;
 
   size_t numThreads = NUM_THREADS;
   size_t numCaches = NUM_THREADS;
@@ -176,6 +177,8 @@ int main(int argc, char** argv) {
           state = 15;
         } else if (cur == "--de9im") {
           computeDE9IM = true;
+        } else if (cur == "--libgeos") {
+          useGEOS = true;
         } else if (cur == "--no-box-ids") {
           useBoxIds = false;
         } else if (cur == "--no-surface-area") {
@@ -288,7 +291,7 @@ int main(int argc, char** argv) {
                    [](const std::string& s) { std::cerr << s; },
                    {},
                    {}},
-                  cache, output);
+                  cache, output, useGEOS);
 
   LOGTO(INFO, std::cerr) << "Parsing input geometries...";
   auto ts = TIME();
