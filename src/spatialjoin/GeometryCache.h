@@ -58,6 +58,9 @@ struct Area {
   // inner geom
   util::geo::I32XSortedPolygon inner;
 
+  // optional inner libgeospolygon
+  GEOSPolygon innerGeosGeom;
+
   // inner polygon envelope
   util::geo::I32Box innerBox;
 
@@ -66,6 +69,9 @@ struct Area {
 
   // outer geom
   util::geo::I32XSortedPolygon outer;
+
+  // optional outer libgeospolygon
+  GEOSPolygon outerGeosGeom;
 
   // outer polygon envelope
   util::geo::I32Box outerBox;

@@ -4,9 +4,9 @@
 #ifndef SPATIALJOINS_LIBGEOS_H_
 #define SPATIALJOINS_LIBGEOS_H_
 
+#include <geos_c.h>
 #include <stdarg.h>
 #include <stdio.h>
-#include <geos_c.h>
 
 #include "util/geo/Geo.h"
 #include "util/log/Log.h"
@@ -130,7 +130,7 @@ inline GEOSGeometry* makeGeosPolygon(GEOSContextHandle_t geosHndl,
 
 class GEOSLineString {
  public:
-  GEOSLineString() : _geom(0){};
+  GEOSLineString() : _geom(0), _geosHndlDestroy(0){};
   GEOSLineString(GEOSGeometry* geom, GEOSContextHandle_t destroyHndl)
       : _geom(geom), _geosHndlDestroy(destroyHndl){};
   GEOSLineString(const GEOSLineString& other) = delete;
@@ -141,8 +141,10 @@ class GEOSLineString {
   GEOSLineString(GEOSContextHandle_t geosHndl, const I32Line& line)
       : _geom(makeGeosLinestring(geosHndl, line)), _geosHndlDestroy(geosHndl) {}
   GEOSLineString(GEOSContextHandle_t geosHndl, const LineSegment<int32_t>& ls)
-      : _geom(makeGeosLinestring(geosHndl, ls)) , _geosHndlDestroy(geosHndl){}
-  ~GEOSLineString() { GEOSGeom_destroy_r(_geosHndlDestroy, _geom); }
+      : _geom(makeGeosLinestring(geosHndl, ls)), _geosHndlDestroy(geosHndl) {}
+  ~GEOSLineString() {
+    if (_geom) GEOSGeom_destroy_r(_geosHndlDestroy, _geom);
+  }
 
   GEOSLineString& operator=(const GEOSLineString& other) = delete;
   GEOSLineString& operator=(GEOSLineString&& other) {
@@ -174,7 +176,9 @@ class GEOSPolygon {
   GEOSPolygon(GEOSContextHandle_t geosHndl, const Ring<int32_t>& ring)
       : _geom(makeGeosPolygon(geosHndl, ring)), _geosHndlDestroy(geosHndl) {}
 
-  ~GEOSPolygon() { GEOSGeom_destroy_r(_geosHndlDestroy, _geom); }
+  ~GEOSPolygon() {
+    if (_geom) GEOSGeom_destroy_r(_geosHndlDestroy, _geom);
+  }
 
   GEOSPolygon& operator=(const GEOSPolygon& other) = delete;
   GEOSPolygon& operator=(GEOSPolygon&& other) {
@@ -185,6 +189,9 @@ class GEOSPolygon {
   }
 
   GEOSGeometry* getGEOSGeom() const { return _geom; }
+  bool empty(GEOSContextHandle_t hndl) const {
+    return _geom == 0 || GEOSisEmpty_r(hndl, _geom);
+  }
 
  private:
   GEOSGeometry* _geom;
