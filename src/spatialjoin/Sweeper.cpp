@@ -39,6 +39,7 @@ using sj::boxids::packBoxIds;
 using sj::innerouter::Mode;
 using util::writeAll;
 using util::geo::area;
+using util::geo::DE9IM;
 using util::geo::FPoint;
 using util::geo::getBoundingBox;
 using util::geo::I32Box;
@@ -60,7 +61,6 @@ using util::LogLevel::INFO;
 using util::LogLevel::VDEBUG;
 using util::LogLevel::WARN;
 
-const static size_t CUTOUTS_MIN_SIZE = 100;
 const static size_t OBB_MIN_SIZE = 100;
 
 const static double sin45 = 1.0 / sqrt(2);
@@ -203,14 +203,9 @@ I32Box Sweeper::add(const I32Polygon& poly, const std::string& gidR,
   double areaSize = area(poly);
   double outerAreaSize = outerArea(poly);
   BoxIdList boxIds;
-  std::map<int32_t, size_t> cutouts;
 
   if (_cfg.useBoxIds) {
-    if (_cfg.useCutouts && poly.getOuter().size() > CUTOUTS_MIN_SIZE) {
-      boxIds = packBoxIds(getBoxIds(spoly, rawBox, outerAreaSize, &cutouts));
-    } else {
-      boxIds = packBoxIds(getBoxIds(spoly, rawBox, outerAreaSize, 0));
-    }
+    boxIds = packBoxIds(getBoxIds(spoly, rawBox, outerAreaSize, 0));
   }
 
   I32Box box45;
@@ -298,8 +293,8 @@ I32Box Sweeper::add(const I32Polygon& poly, const std::string& gidR,
     std::stringstream str;
     GeometryCache<Area>::writeTo(
         {std::move(spoly), std::move(geosPoly), box, gid, subid, areaSize,
-         _cfg.useArea ? outerAreaSize : 0, boxIds, cutouts, obb, inner,
-         innerBox, innerOuterAreaSize, outer, outerBox, outerOuterAreaSize},
+         _cfg.useArea ? outerAreaSize : 0, boxIds, obb, inner, innerBox,
+         innerOuterAreaSize, outer, outerBox, outerOuterAreaSize},
         str, batch.geosHndl);
     ;
 
@@ -359,14 +354,9 @@ I32Box Sweeper::add(const I32Line& line, const std::string& gidR, size_t subid,
   const auto& box = getPaddedBoundingBox(rawBox);
   if (!util::geo::intersects(box, _filterBox)) return {};
   BoxIdList boxIds;
-  std::map<int32_t, size_t> cutouts;
 
   if (_cfg.useBoxIds) {
-    if (_cfg.useCutouts && line.size() > CUTOUTS_MIN_SIZE) {
-      boxIds = packBoxIds(getBoxIds(line, rawBox, &cutouts));
-    } else {
-      boxIds = packBoxIds(getBoxIds(line, rawBox, 0));
-    }
+    boxIds = packBoxIds(getBoxIds(line, rawBox, 0));
   }
 
   const double len = util::geo::len(line);
@@ -434,9 +424,9 @@ I32Box Sweeper::add(const I32Line& line, const std::string& gidR, size_t subid,
     }
 
     std::stringstream str;
-    GeometryCache<Line>::writeTo({sline, std::move(geosLine), box, gid, subid,
-                                  len, boxIds, cutouts, obb},
-                                 str, batch.geosHndl);
+    GeometryCache<Line>::writeTo(
+        {sline, std::move(geosLine), box, gid, subid, len, boxIds, obb}, str,
+        batch.geosHndl);
     cur.raw = str.str();
 
     size_t estimatedSize =
@@ -720,6 +710,23 @@ void Sweeper::multiOut(size_t tOut, const std::string& gidA) {
           writeRel(tOut, a.first, gidA, "\t" + std::to_string(a.second) + "\t");
         }
         _subDistance[t].erase(i);
+      }
+    }
+    return;
+  }
+
+  // collect DE9IM
+  if (_cfg.computeDE9IM) {
+    for (size_t t = 0; t < _cfg.numThreads + 1; t++) {
+      std::unique_lock<std::mutex> lock(_mutsDE9IM[t]);
+      auto i = _subDE9IM[t].find(gidA);
+      if (i != _subDE9IM[t].end()) {
+        for (const auto& a : i->second) {
+          writeRel(tOut, gidA, a.first, "\t" + a.second.toString() + "\t");
+          writeRel(tOut, a.first, gidA,
+                   "\t" + a.second.transpose().toString() + "\t");
+        }
+        _subDE9IM[t].erase(i);
       }
     }
     return;
@@ -1065,6 +1072,7 @@ RelStats Sweeper::sweep() {
   _subCovered.resize(_cfg.numThreads + 1);
   _subContains.resize(_cfg.numThreads + 1);
   _subDistance.resize(_cfg.numThreads + 1);
+  _subDE9IM.resize(_cfg.numThreads + 1);
   _subNotOverlaps.resize(_cfg.numThreads + 1);
   _subOverlaps.resize(_cfg.numThreads + 1);
   _subNotTouches.resize(_cfg.numThreads + 1);
@@ -1082,6 +1090,7 @@ RelStats Sweeper::sweep() {
   _mutsNotCrosses = std::vector<std::mutex>(_cfg.numThreads + 1);
   _mutsCrosses = std::vector<std::mutex>(_cfg.numThreads + 1);
   _mutsDistance = std::vector<std::mutex>(_cfg.numThreads + 1);
+  _mutsDE9IM = std::vector<std::mutex>(_cfg.numThreads + 1);
   _atomicCurX = std::vector<std::atomic<int32_t>>(_cfg.numThreads + 1);
 
   size_t counts = 0, totalCheckCount = 0, jj = 0, checkPairs = 0;
@@ -1261,7 +1270,6 @@ sj::Line Sweeper::lineFromSimpleLine(const SimpleLine* sa, size_t t) const {
       0,
       util::geo::dist(sa->a, sa->b),
       (_cfg.useBoxIds ? BoxIdList{{1, 0}, {-getBoxId(sa->a), 0}} : BoxIdList{}),
-      {},
       {}};
 }
 
@@ -1288,11 +1296,96 @@ sj::Area Sweeper::areaFromSimpleArea(const SimpleArea* sa, size_t t) const {
           {},
           {},
           {},
-          {},
           0,
           {},
           {},
           0};
+}
+
+// _____________________________________________________________________________
+util::geo::DE9IMatrix Sweeper::DE9IMCheck(const Area* a, const Area* b,
+                                          size_t t) const {
+  // cheap equivalence check
+  if (a->box == b->box && a->area == b->area && a->geom == b->geom) {
+    // equivalent!
+    return "2FFF1FFF2";
+  }
+
+  if (_cfg.useBoxIds) {
+    auto ts = TIME();
+    auto r = boxIdIsect(a->boxIds, b->boxIds);
+    _stats[t].timeBoxIdIsectAreaArea += TOOK(ts);
+
+    // all boxes of a are fully contained in b, a is fully contained in b
+    if (r.first == a->boxIds.front().first) return "2FF1FF212";
+
+    // no box shared, we cannot have any spatial relation
+    if (r.first + r.second == 0) return "FF2FF1212";
+  }
+
+  if (_cfg.useOBB) {
+    if (!a->obb.empty() && !b->obb.empty()) {
+      auto ts = TIME();
+      auto r = util::geo::intersectsContainsCovers(a->obb, b->obb);
+      _stats[t].timeOBBIsectAreaArea += TOOK(ts);
+      if (!std::get<0>(r)) return "FF2FF1212";
+    }
+  }
+
+  if (_cfg.useInnerOuter && !a->outer.empty() && !b->outer.empty()) {
+    auto ts = TIME();
+    auto r = util::geo::intersectsContainsCovers(
+        a->outer, a->outerBox, a->outerOuterArea, b->outer, b->outerBox,
+        b->outerOuterArea);
+    _stats[t].timeInnerOuterCheckAreaArea += TOOK(ts);
+    _stats[t].innerOuterChecksAreaArea++;
+    if (!std::get<0>(r)) return "FF2FF1212";
+  }
+
+  if (_cfg.useInnerOuter && !a->outer.empty() && !b->inner.empty()) {
+    auto ts = TIME();
+    auto r = util::geo::intersectsContainsCovers(
+        a->outer, a->outerBox, a->outerOuterArea, b->inner, b->innerBox,
+        b->innerOuterArea);
+    _stats[t].timeInnerOuterCheckAreaArea += TOOK(ts);
+    _stats[t].innerOuterChecksAreaArea++;
+    if (std::get<1>(r)) return "2FF1FF212";
+  }
+
+  if (_cfg.useInnerOuter && a->outer.empty() && !b->outer.empty()) {
+    auto ts = TIME();
+    auto r = util::geo::intersectsContainsCovers(a->geom, a->box, a->outerArea,
+                                                 b->outer, b->outerBox,
+                                                 b->outerOuterArea);
+    _stats[t].timeInnerOuterCheckAreaArea += TOOK(ts);
+    _stats[t].innerOuterChecksAreaArea++;
+    if (!std::get<0>(r)) return "FF2FF1212";
+  }
+
+  if (_cfg.useInnerOuter && a->outer.empty() && !b->inner.empty()) {
+    auto ts = TIME();
+    auto r = util::geo::intersectsContainsCovers(a->geom, a->box, a->outerArea,
+                                                 b->inner, b->innerBox,
+                                                 b->innerOuterArea);
+    _stats[t].timeInnerOuterCheckAreaArea += TOOK(ts);
+    _stats[t].innerOuterChecksAreaArea++;
+    if (std::get<1>(r)) return "2FF1FF212";
+  }
+
+  auto ts = TIME();
+  util::geo::DE9IMatrix res;
+  if (_useGEOS) {
+    char* de9im =
+        GEOSRelate_r(_GEOScontextHandles[t], a->geosGeom.getGEOSGeom(),
+                     b->geosGeom.getGEOSGeom());
+    res = util::geo::DE9IMatrix(de9im);
+    GEOSFree(de9im);
+  } else {
+    res = DE9IM(a->geom, a->box, a->outerArea, b->geom, b->box, b->outerArea);
+  }
+  _stats[t].timeFullGeoCheckAreaArea += TOOK(ts);
+  _stats[t].fullGeoChecksAreaArea++;
+  return res;
 }
 
 // _____________________________________________________________________________
@@ -1319,28 +1412,11 @@ GeomCheckRes Sweeper::check(const Area* a, const Area* b, size_t t) const {
     // but the number of fully and partially contained boxes is smaller
     // than the number of boxes of A, so we cannot possible by contained
     if (r.first + r.second < a->boxIds.front().first && r.first > 0) {
-      // we surely overlap if the area of b is greater than the area of b
+      // we surely overlap if the area of b is greater than the area of a
       // of if the bounding box of b is not in a
       // otherwise, we cannot be sure
       if (b->area > a->area || !util::geo::contains(b->box, a->box))
         return {1, 0, 0, 0, 1};
-    }
-
-    // a has exactly one box, but this is not fully contained, use cutout
-    // if available
-    if (a->boxIds.front().first == 1 && b->cutouts.size()) {
-      auto i = b->cutouts.find(abs(a->boxIds[1].first));
-      if (i != b->cutouts.end()) {
-        size_t firstInA = 0;
-        size_t firstInB = i->second;
-        auto ts = TIME();
-        auto res = intersectsContainsCovers(a->geom, a->box, a->outerArea,
-                                            b->geom, b->box, b->outerArea,
-                                            &firstInA, &firstInB);
-        _stats[t].timeCutoutGeoCheckAreaArea += TOOK(ts);
-        _stats[t].cutoutGeoChecksAreaArea++;
-        return res;
-      }
     }
   }
 
@@ -1413,6 +1489,66 @@ GeomCheckRes Sweeper::check(const Area* a, const Area* b, size_t t) const {
 }
 
 // _____________________________________________________________________________
+util::geo::DE9IMatrix Sweeper::DE9IMCheck(const Line* a, const Area* b,
+                                          size_t t) const {
+  if (_cfg.useBoxIds) {
+    auto ts = TIME();
+    auto r = boxIdIsect(a->boxIds, b->boxIds);
+    _stats[t].timeBoxIdIsectAreaLine += TOOK(ts);
+
+    // all boxes of a are fully contained in b, we intersect and we are
+    // contained
+    if (r.first == a->boxIds.front().first) return "1FF0FF212";
+
+    // no box shared, we cannot contain or intersect
+    if (r.first + r.second == 0) return "FF1FF0212";
+  }
+
+  if (_cfg.useOBB) {
+    if (!a->obb.empty() && !b->obb.empty()) {
+      auto ts = TIME();
+      auto r = intersectsContainsCovers(a->obb, b->obb);
+      _stats[t].timeOBBIsectAreaLine += TOOK(ts);
+      if (!std::get<0>(r)) return "FF1FF0212";
+    }
+  }
+
+  if (_cfg.useInnerOuter && !b->outer.empty()) {
+    auto ts = TIME();
+    auto r = util::geo::intersectsContainsCovers(a->geom, a->box, b->outer,
+                                                 b->outerBox);
+    _stats[t].timeInnerOuterCheckAreaLine += TOOK(ts);
+    _stats[t].innerOuterChecksAreaLine++;
+    if (!std::get<0>(r)) return "FF1FF0212";
+  }
+
+  if (_cfg.useInnerOuter && !b->inner.empty()) {
+    auto ts = TIME();
+    auto r = util::geo::intersectsContainsCovers(a->geom, a->box, b->inner,
+                                                 b->innerBox);
+    _stats[t].timeInnerOuterCheckAreaLine += TOOK(ts);
+    _stats[t].innerOuterChecksAreaLine++;
+    if (std::get<1>(r)) return "1FF0FF212";
+  }
+
+  auto ts = TIME();
+  util::geo::DE9IMatrix res;
+  if (_useGEOS) {
+    char* de9im =
+        GEOSRelate_r(_GEOScontextHandles[t], a->geosGeom.getGEOSGeom(),
+                     b->geosGeom.getGEOSGeom());
+    res = util::geo::DE9IMatrix(de9im);
+    GEOSFree(de9im);
+  } else {
+    res = DE9IM(a->geom, a->box, b->geom, b->box);
+  }
+  _stats[t].timeFullGeoCheckAreaLine += TOOK(ts);
+  _stats[t].fullGeoChecksAreaLine++;
+
+  return res;
+}
+
+// _____________________________________________________________________________
 GeomCheckRes Sweeper::check(const Line* a, const Area* b, size_t t) const {
   if (_cfg.useBoxIds) {
     auto ts = TIME();
@@ -1431,22 +1567,6 @@ GeomCheckRes Sweeper::check(const Line* a, const Area* b, size_t t) const {
     // than the number of boxes of A, so we cannot possible by contained
     if (r.first + r.second < a->boxIds.front().first && r.first > 0) {
       return {1, 0, 0, 0, 1};
-    }
-
-    // a has exactly one box, but this is not fully contained, use cutout
-    // if available
-    if (a->boxIds.front().first == 1 && b->cutouts.size()) {
-      auto i = b->cutouts.find(a->boxIds[1].first);
-      if (i != b->cutouts.end()) {
-        size_t firstInA = 0;
-        size_t firstInB = i->second;
-        auto ts = TIME();
-        auto res = intersectsContainsCovers(a->geom, a->box, b->geom, b->box,
-                                            &firstInA, &firstInB);
-        _stats[t].timeCutoutGeoCheckAreaLine += TOOK(ts);
-        _stats[t].cutoutGeoChecksAreaLine++;
-        return res;
-      }
     }
   }
 
@@ -1499,6 +1619,50 @@ GeomCheckRes Sweeper::check(const Line* a, const Area* b, size_t t) const {
 }
 
 // _____________________________________________________________________________
+util::geo::DE9IMatrix Sweeper::DE9IMCheck(const Line* a, const Line* b,
+                                          size_t t) const {
+  // cheap equivalence check
+  if (a->box == b->box && a->geom == b->geom) {
+    // equivalent!
+    return "10FF0FFF2";
+  }
+
+  if (_cfg.useBoxIds) {
+    auto ts = TIME();
+    auto r = boxIdIsect(a->boxIds, b->boxIds);
+    _stats[t].timeBoxIdIsectLineLine += TOOK(ts);
+
+    // no box shared, we cannot contain or intersect
+    if (r.first + r.second == 0) return "FF1FF0102";
+  }
+
+  if (_cfg.useOBB) {
+    if (!a->obb.empty() && !b->obb.empty()) {
+      auto ts = TIME();
+      auto r = util::geo::intersectsContainsCovers(a->obb, b->obb);
+      _stats[t].timeOBBIsectLineLine += TOOK(ts);
+      if (!std::get<0>(r)) return "FF1FF0102";
+    }
+  }
+
+  auto ts = TIME();
+  util::geo::DE9IMatrix res;
+  if (_useGEOS) {
+    char* de9im =
+        GEOSRelate_r(_GEOScontextHandles[t], a->geosGeom.getGEOSGeom(),
+                     b->geosGeom.getGEOSGeom());
+    res = util::geo::DE9IMatrix(de9im);
+    GEOSFree(de9im);
+  } else {
+    res = DE9IM(a->geom, b->geom, a->box, b->box);
+  }
+  _stats[t].timeFullGeoCheckLineLine += TOOK(ts);
+  _stats[t].fullGeoChecksLineLine++;
+
+  return res;
+}
+
+// _____________________________________________________________________________
 GeomCheckRes Sweeper::check(const Line* a, const Line* b, size_t t) const {
   // cheap equivalence check
   if (a->box == b->box && a->geom == b->geom) {
@@ -1513,36 +1677,6 @@ GeomCheckRes Sweeper::check(const Line* a, const Line* b, size_t t) const {
 
     // no box shared, we cannot contain or intersect
     if (r.first + r.second == 0) return {0, 0, 0, 0, 0};
-
-    // a has exactly one box, use cutout if available
-    if (a->boxIds.front().first == 1 && b->cutouts.size()) {
-      auto i = b->cutouts.find(abs(a->boxIds[1].first));
-      if (i != b->cutouts.end()) {
-        size_t firstInA = 0;
-        size_t firstInB = i->second;
-        auto ts = TIME();
-        auto res = intersectsCovers(a->geom, b->geom, a->box, b->box, &firstInA,
-                                    &firstInB);
-        _stats[t].timeCutoutGeoCheckLineLine += TOOK(ts);
-        _stats[t].cutoutGeoChecksLineLine++;
-        return res;
-      }
-    }
-
-    // b has exactly one box, use cutout if available
-    if (b->boxIds.front().first == 1 && a->cutouts.size()) {
-      auto i = a->cutouts.find(abs(b->boxIds[1].first));
-      if (i != a->cutouts.end()) {
-        size_t firstInA = i->second;
-        size_t firstInB = 0;
-        auto ts = TIME();
-        auto res = intersectsCovers(a->geom, b->geom, a->box, b->box, &firstInA,
-                                    &firstInB);
-        _stats[t].timeCutoutGeoCheckLineLine += TOOK(ts);
-        _stats[t].cutoutGeoChecksLineLine++;
-        return res;
-      }
-    }
   }
 
   if (_cfg.useOBB) {
@@ -1575,6 +1709,69 @@ GeomCheckRes Sweeper::check(const Line* a, const Line* b, size_t t) const {
 }
 
 // _____________________________________________________________________________
+util::geo::DE9IMatrix Sweeper::DE9IMCheck(const SimpleLine* a, const Area* b,
+                                          size_t t) const {
+  if (_cfg.useBoxIds) {
+    auto ts = TIME();
+    auto r = boxIdIsect({{1, 0}, {getBoxId(a->a), 0}}, b->boxIds);
+    _stats[t].timeBoxIdIsectAreaLine += TOOK(ts);
+
+    // all boxes of a are fully contained in b, we intersect and we are
+    // contained
+    if (r.first == 1) return "1FF0FF212";
+
+    // no box shared, we cannot contain or intersect
+    if (r.first + r.second == 0) return "FF1FF0212";
+  }
+
+  if (_cfg.useOBB && !b->obb.empty()) {
+    auto ts = TIME();
+    auto r = intersectsContainsCovers(
+        I32XSortedLine(LineSegment<int32_t>(a->a, a->b)), b->obb);
+    _stats[t].timeOBBIsectAreaLine += TOOK(ts);
+    if (!std::get<0>(r)) return "FF1FF0212";
+  }
+
+  if (_cfg.useInnerOuter && !b->outer.empty()) {
+    auto ts = TIME();
+    auto r = util::geo::intersectsContainsCovers(
+        I32XSortedLine(LineSegment<int32_t>(a->a, a->b)),
+        getBoundingBox(LineSegment<int32_t>(a->a, a->b)), b->outer,
+        b->outerBox);
+    _stats[t].timeInnerOuterCheckAreaLine += TOOK(ts);
+    _stats[t].innerOuterChecksAreaLine++;
+    if (!std::get<0>(r)) return "FF1FF0212";
+  }
+
+  if (_cfg.useInnerOuter && !b->inner.empty()) {
+    auto ts = TIME();
+    auto r = util::geo::intersectsContainsCovers(
+        I32XSortedLine(LineSegment<int32_t>(a->a, a->b)),
+        getBoundingBox(LineSegment<int32_t>(a->a, a->b)), b->inner, b->box);
+    _stats[t].timeInnerOuterCheckAreaLine += TOOK(ts);
+    _stats[t].innerOuterChecksAreaLine++;
+    if (std::get<1>(r)) return "1FF0FF212";
+  }
+
+  auto ts = TIME();
+  util::geo::DE9IMatrix res;
+  if (_useGEOS) {
+    char* de9im = GEOSRelate_r(_GEOScontextHandles[t],
+                               lineFromSimpleLine(a, t).geosGeom.getGEOSGeom(),
+                               b->geosGeom.getGEOSGeom());
+    res = util::geo::DE9IMatrix(de9im);
+    GEOSFree(de9im);
+  } else {
+    res = DE9IM(I32XSortedLine(LineSegment<int32_t>(a->a, a->b)),
+                getBoundingBox(LineSegment<int32_t>(a->a, a->b)), b->geom,
+                b->box);
+  }
+  _stats[t].timeFullGeoCheckAreaLine += TOOK(ts);
+  _stats[t].fullGeoChecksAreaLine++;
+  return res;
+}
+
+// _____________________________________________________________________________
 GeomCheckRes Sweeper::check(const SimpleLine* a, const Area* b,
                             size_t t) const {
   if (_cfg.useBoxIds) {
@@ -1588,23 +1785,6 @@ GeomCheckRes Sweeper::check(const SimpleLine* a, const Area* b,
 
     // no box shared, we cannot contain or intersect
     if (r.first + r.second == 0) return {0, 0, 0, 0, 0};
-
-    // a has exactly one box, use cutout if available
-    if (b->cutouts.size()) {
-      auto i = b->cutouts.find(getBoxId(a->a));
-      if (i != b->cutouts.end()) {
-        size_t firstInA = 0;
-        size_t firstInB = i->second;
-        auto ts = TIME();
-        auto res = intersectsContainsCovers(
-            I32XSortedLine(LineSegment<int32_t>(a->a, a->b)),
-            getBoundingBox(LineSegment<int32_t>(a->a, a->b)), b->geom, b->box,
-            &firstInA, &firstInB);
-        _stats[t].timeCutoutGeoCheckLineLine += TOOK(ts);
-        _stats[t].cutoutGeoChecksLineLine++;
-        return res;
-      }
-    }
   }
 
   if (_cfg.useOBB && !b->obb.empty()) {
@@ -1659,6 +1839,55 @@ GeomCheckRes Sweeper::check(const SimpleLine* a, const Area* b,
 }
 
 // _____________________________________________________________________________
+util::geo::DE9IMatrix Sweeper::DE9IMCheck(const SimpleLine* a,
+                                          const SimpleLine* b, size_t t) const {
+  auto ts = TIME();
+
+  // no need to do a full sweep for two simple lines with all the required
+  // datastructures, just unroll the individual checks here
+
+  auto r = util::geo::IntersectorLine<int32_t>::check(
+      LineSegment<int32_t>(a->a, a->b), 32767, 32767,
+      LineSegment<int32_t>(b->a, b->b), 32767, 32767);
+
+  const bool weakIntersect = r;
+  const bool strictIntersect = (r >> 0) & 1;
+  const bool overlaps = (r >> 1) & 1;
+  const bool aFirstInB = (r >> 6) & 1;
+  const bool aSecondInB = (r >> 7) & 1;
+  const bool crosses = (r >> 4) & 1;
+  const bool strictIntersect2 = (r >> 5) & 1;
+  const bool bFirstInA = (r >> 2) & 1;
+  const bool bSecondInA = (r >> 3) & 1;
+
+  const bool aInB = !crosses && !strictIntersect && weakIntersect;
+  const bool bInA = !crosses && !strictIntersect2 && weakIntersect;
+
+  char ii = overlaps ? '1' : (crosses ? '0' : 'F');
+  char ib = ((bFirstInA && b->a != a->a && b->a != a->b) ||
+             (bSecondInA && b->b != a->a && b->b != a->b))
+                ? '0'
+                : 'F';
+  char ie = aInB ? 'F' : '1';
+  char bi = ((aFirstInB && a->a != b->a && a->a != b->b) ||
+             (aSecondInB && a->b != b->a && a->b != b->b))
+                ? '0'
+                : 'F';
+  char bb = (a->a == b->a || a->b == b->a || a->b == b->b || a->a == b->b)
+                ? '0'
+                : 'F';
+  char be = !(aFirstInB && aSecondInB) ? '0' : 'F';
+  char ei = bInA ? 'F' : '1';
+  char eb = !(bFirstInA && bSecondInA) ? '0' : 'F';
+  char ee = '2';
+
+  _stats[t].timeFullGeoCheckLineLine += TOOK(ts);
+  _stats[t].fullGeoChecksLineLine++;
+
+  return std::string{ii, ib, ie, bi, bb, be, ei, eb, ee};
+}
+
+// _____________________________________________________________________________
 GeomCheckRes Sweeper::check(const SimpleLine* a, const SimpleLine* b,
                             size_t t) const {
   auto ts = TIME();
@@ -1670,10 +1899,14 @@ GeomCheckRes Sweeper::check(const SimpleLine* a, const SimpleLine* b,
       LineSegment<int32_t>(a->a, a->b), 32767, 32767,
       LineSegment<int32_t>(b->a, b->b), 32767, 32767);
 
-  bool weakIntersect = (r >> 0) & 1;
-  bool strictIntersect = (r >> 1) & 1;
-  bool overlaps = (r >> 2) & 1;
-  bool touches = (r >> 3) & 1;
+  bool weakIntersect = r;
+  bool strictIntersect = (r >> 0) & 1;
+  bool overlaps = (r >> 1) & 1;
+  const bool bFirstInA = (r >> 2) & 1;
+  const bool bSecondInA = (r >> 3) & 1;
+  const bool aFirstInB = (r >> 6) & 1;
+  const bool aSecondInB = (r >> 7) & 1;
+  bool touches = bFirstInA || bSecondInA || aFirstInB || aSecondInB;
 
   if (strictIntersect && !touches && !overlaps) {
     _stats[t].timeFullGeoCheckLineLine += TOOK(ts);
@@ -1689,6 +1922,43 @@ GeomCheckRes Sweeper::check(const SimpleLine* a, const SimpleLine* b,
 }
 
 // _____________________________________________________________________________
+util::geo::DE9IMatrix Sweeper::DE9IMCheck(const SimpleLine* a, const Line* b,
+                                          size_t t) const {
+  if (_cfg.useBoxIds) {
+    auto ts = TIME();
+    auto r = boxIdIsect({{1, 0}, {getBoxId(a->a), 0}}, b->boxIds);
+    _stats[t].timeBoxIdIsectLineLine += TOOK(ts);
+
+    // no box shared, we cannot contain or intersect
+    if (r.first + r.second == 0) return "FF1FF0102";
+  }
+
+  if (_cfg.useOBB && !b->obb.empty()) {
+    auto ts = TIME();
+    auto r = intersectsContainsCovers(
+        I32XSortedLine(LineSegment<int32_t>(a->a, a->b)), b->obb);
+    _stats[t].timeOBBIsectLineLine += TOOK(ts);
+    if (!std::get<0>(r)) return "FF1FF0102";
+  }
+
+  auto ts = TIME();
+  util::geo::DE9IMatrix res;
+  if (_useGEOS) {
+    char* de9im = GEOSRelate_r(_GEOScontextHandles[t],
+                               lineFromSimpleLine(a, t).geosGeom.getGEOSGeom(),
+                               b->geosGeom.getGEOSGeom());
+    res = util::geo::DE9IMatrix(de9im);
+    GEOSFree(de9im);
+  } else {
+    res = DE9IM(I32XSortedLine(LineSegment<int32_t>(a->a, a->b)), b->geom,
+                getBoundingBox(LineSegment<int32_t>(a->a, a->b)), b->box);
+  }
+  _stats[t].timeFullGeoCheckLineLine += TOOK(ts);
+  _stats[t].fullGeoChecksLineLine++;
+  return res;
+}
+
+// _____________________________________________________________________________
 GeomCheckRes Sweeper::check(const SimpleLine* a, const Line* b,
                             size_t t) const {
   if (_cfg.useBoxIds) {
@@ -1698,23 +1968,6 @@ GeomCheckRes Sweeper::check(const SimpleLine* a, const Line* b,
 
     // no box shared, we cannot contain or intersect
     if (r.first + r.second == 0) return {0, 0, 0, 0, 0};
-
-    // use cutout if available
-    if (b->cutouts.size()) {
-      auto i = b->cutouts.find(getBoxId(a->a));
-      if (i != b->cutouts.end()) {
-        size_t firstInA = 0;
-        size_t firstInB = i->second;
-        auto ts = TIME();
-        auto res = intersectsCovers(
-            I32XSortedLine(LineSegment<int32_t>(a->a, a->b)), b->geom,
-            getBoundingBox(LineSegment<int32_t>(a->a, a->b)), b->box, &firstInA,
-            &firstInB);
-        _stats[t].timeCutoutGeoCheckLineLine += TOOK(ts);
-        _stats[t].cutoutGeoChecksLineLine++;
-        return res;
-      }
-    }
   }
 
   if (_cfg.useOBB && !b->obb.empty()) {
@@ -1757,23 +2010,6 @@ GeomCheckRes Sweeper::check(const Line* a, const SimpleLine* b,
 
     // no box shared, we cannot contain or intersect
     if (r.first + r.second == 0) return {0, 0, 0, 0, 0};
-
-    // use cutout if available
-    if (a->cutouts.size()) {
-      auto i = a->cutouts.find(getBoxId(b->a));
-      if (i != a->cutouts.end()) {
-        size_t firstInA = i->second;
-        size_t firstInB = 0;
-        auto ts = TIME();
-        auto res = intersectsCovers(
-            a->geom, I32XSortedLine(LineSegment<int32_t>(b->a, b->b)), a->box,
-            getBoundingBox(LineSegment<int32_t>(b->a, b->b)), &firstInA,
-            &firstInB);
-        _stats[t].timeCutoutGeoCheckLineLine += TOOK(ts);
-        _stats[t].cutoutGeoChecksLineLine++;
-        return res;
-      }
-    }
   }
 
   if (_cfg.useOBB && !a->obb.empty()) {
@@ -1819,18 +2055,6 @@ std::pair<bool, bool> Sweeper::check(const I32Point& a, const Area* b,
 
     // no box shared, we cannot contain or intersect
     if (r.first + r.second == 0) return {0, 0};
-
-    // use cutout if available
-    if (b->cutouts.size()) {
-      auto i = b->cutouts.find(getBoxId(a));
-      if (i != b->cutouts.end()) {
-        auto ts = TIME();
-        auto res = containsCovers(a, b->geom, i->second);
-        _stats[t].timeCutoutGeoCheckAreaPoint += TOOK(ts);
-        _stats[t].cutoutGeoChecksAreaPoint++;
-        return res;
-      }
-    }
   }
 
   if (_cfg.useOBB && b->obb.getOuter().rawRing().size()) {
@@ -1878,6 +2102,35 @@ std::pair<bool, bool> Sweeper::check(const I32Point& a, const Area* b,
 }
 
 // _____________________________________________________________________________
+util::geo::DE9IMatrix Sweeper::DE9IMCheck(const I32Point& a, const Line* b,
+                                          size_t t) const {
+  if (_cfg.useBoxIds) {
+    auto ts = TIME();
+    auto r = boxIdIsect({{1, 0}, {getBoxId(a), 0}}, b->boxIds);
+    _stats[t].timeBoxIdIsectLinePoint += TOOK(ts);
+
+    // no box shared, we cannot contain or intersect
+    if (r.first + r.second == 0) return "FF0FFF102";
+  }
+
+  auto ts = TIME();
+  util::geo::DE9IMatrix res;
+  if (_useGEOS) {
+    char* de9im = GEOSRelate_r(_GEOScontextHandles[t],
+                               makeGeosPoint(_GEOScontextHandles[t], a),
+                               b->geosGeom.getGEOSGeom());
+    res = util::geo::DE9IMatrix(de9im);
+    GEOSFree(de9im);
+  } else {
+    res = DE9IM(a, b->geom);
+  }
+  _stats[t].timeFullGeoCheckLinePoint += TOOK(ts);
+  _stats[t].fullGeoChecksLinePoint++;
+
+  return res;
+}
+
+// _____________________________________________________________________________
 std::tuple<bool, bool> Sweeper::check(const I32Point& a, const Line* b,
                                       size_t t) const {
   if (_cfg.useBoxIds) {
@@ -1887,18 +2140,6 @@ std::tuple<bool, bool> Sweeper::check(const I32Point& a, const Line* b,
 
     // no box shared, we cannot contain or intersect
     if (r.first + r.second == 0) return {0, 0};
-
-    // use cutout if available
-    if (b->cutouts.size()) {
-      auto i = b->cutouts.find(getBoxId(a));
-      if (i != b->cutouts.end()) {
-        auto ts = TIME();
-        auto res = util::geo::intersectsContains(a, b->geom, i->second);
-        _stats[t].timeCutoutGeoCheckLinePoint += TOOK(ts);
-        _stats[t].cutoutGeoChecksLinePoint++;
-        return res;
-      }
-    }
   }
 
   auto ts = TIME();
@@ -2029,6 +2270,36 @@ void Sweeper::writeRel(size_t t, const std::string& a, const std::string& b,
 }
 
 // ____________________________________________________________________________
+void Sweeper::writeDE9IM(size_t t, const std::string& a, size_t aSub,
+                         const std::string& b, size_t bSub,
+                         util::geo::DE9IMatrix de9im) {
+  if (a != b) {
+    if (bSub > 0 || aSub > 0) {
+      std::unique_lock<std::mutex> lock(_mutsDE9IM[t]);
+      if (bSub > 0) {
+        if (_subDE9IM[t][b].find(a) == _subDE9IM[t][b].end()) {
+          _subDE9IM[t][b][a] = de9im.transpose();
+        } else {
+          _subDE9IM[t][b][a] += de9im.transpose();
+        }
+      }
+      if (aSub > 0) {
+        if (_subDE9IM[t][a].find(b) == _subDE9IM[t][a].end()) {
+          _subDE9IM[t][a][b] = de9im.transpose();
+        } else {
+          _subDE9IM[t][a][b] += de9im.transpose();
+        }
+      }
+    } else {
+      writeRel(t, a, b, "\t" + de9im.toString() + "\t");
+      writeRel(t, b, a, "\t" + de9im.transpose().toString() + "\t");
+    }
+  }
+
+  // TODO: handle references
+}
+
+// ____________________________________________________________________________
 void Sweeper::writeDist(size_t t, const std::string& a, size_t aSub,
                         const std::string& b, size_t bSub, double dist) {
   if (a != b) {
@@ -2114,6 +2385,271 @@ void Sweeper::selfCheck(const BoxVal cur, size_t t) {
     writeIntersect(t, a->id, a->id);
     writeEquals(t, a->id, 0, a->id, 0);
     writeCovers(t, a->id, a->id, 0);
+  }
+}
+
+// ____________________________________________________________________________
+void Sweeper::doDE9IMCheck(const BoxVal cur, const SweepVal sv, size_t t) {
+  _checks[t]++;
+  _curX[t] = cur.val;
+
+  // every 10000 checks, update our position
+  if (_checks[t] % 10000 == 0) _atomicCurX[t] = _curX[t];
+
+  if (cur.type == POINT && sv.type == POINT) {
+    auto p1 = cur.point;
+    auto p2 = sv.point;
+
+    util::geo::DE9IMatrix de9im;
+    if (_useGEOS) {
+      char* de9imStr = GEOSRelate_r(_GEOScontextHandles[t],
+                                    makeGeosPoint(_GEOScontextHandles[t], p1),
+                                    makeGeosPoint(_GEOScontextHandles[t], p2));
+      de9im = util::geo::DE9IMatrix(de9imStr);
+      GEOSFree(de9imStr);
+    } else {
+      de9im = DE9IM(p1, p2);
+    }
+
+    if (!de9im.disjoint()) {
+      auto a = _pointCache.get(cur.id, cur.large ? -1 : t);
+      auto b = _pointCache.get(sv.id, sv.large ? -1 : t);
+      writeDE9IM(t, a->id, a->subId, b->id, b->subId, de9im);
+    }
+  } else if (cur.type == POINT &&
+             (sv.type == POLYGON || sv.type == SIMPLE_POLYGON)) {
+    auto p = cur.point;
+
+    const Area* a;
+    std::shared_ptr<Area> asp;
+    Area al;
+
+    if (sv.type == SIMPLE_POLYGON) {
+      auto p = _simpleAreaCache.get(sv.id, sv.large ? -1 : t);
+      al = areaFromSimpleArea(p.get(), t);
+      a = &al;
+    } else {
+      asp = _areaCache.get(sv.id, sv.large ? -1 : t);
+      a = asp.get();
+    }
+
+    auto de9im = DE9IMCheck(p, a, t);
+
+    if (!de9im.disjoint()) {
+      auto b = _pointCache.get(cur.id, cur.large ? -1 : t);
+      writeDE9IM(t, b->id, b->subId, a->id, a->subId, de9im);
+    }
+  } else if ((cur.type == POLYGON || cur.type == SIMPLE_POLYGON) &&
+             sv.type == POINT) {
+    auto p = sv.point;
+
+    const Area* a;
+    std::shared_ptr<Area> asp;
+    Area al;
+
+    if (cur.type == SIMPLE_POLYGON) {
+      auto p = _simpleAreaCache.get(cur.id, cur.large ? -1 : t);
+      al = areaFromSimpleArea(p.get(), t);
+      a = &al;
+    } else {
+      asp = _areaCache.get(cur.id, cur.large ? -1 : t);
+      a = asp.get();
+    }
+
+    auto de9im = DE9IMCheck(p, a, t).transpose();
+
+    if (!de9im.disjoint()) {
+      auto b = _pointCache.get(sv.id, sv.large ? -1 : t);
+      writeDE9IM(t, a->id, a->subId, b->id, b->subId, de9im);
+    }
+  } else if ((cur.type == SIMPLE_LINE || cur.type == LINE) &&
+             sv.type == POINT) {
+    auto p = sv.point;
+
+    if (cur.type == SIMPLE_LINE) {
+      auto b = _simpleLineCache.get(cur.id, cur.large ? -1 : t);
+      auto de9im = DE9IMCheck(p, b.get(), t);
+
+      if (!de9im.disjoint()) {
+        auto a = _pointCache.get(sv.id, sv.large ? -1 : t);
+        writeDE9IM(t, a->id, a->subId, b->id, 0, de9im);
+      }
+    } else {
+      auto b = _lineCache.get(cur.id, cur.large ? -1 : t);
+      auto de9im = DE9IMCheck(p, b.get(), t);
+
+      if (!de9im.disjoint()) {
+        auto a = _pointCache.get(sv.id, sv.large ? -1 : t);
+        writeDE9IM(t, a->id, a->subId, b->id, b->subId, de9im);
+      }
+    }
+  } else if ((sv.type == SIMPLE_LINE || sv.type == LINE) && cur.type == POINT) {
+    auto p = cur.point;
+
+    if (sv.type == SIMPLE_LINE) {
+      auto b = _simpleLineCache.get(sv.id, sv.large ? -1 : t);
+      auto de9im = DE9IMCheck(p, b.get(), t);
+
+      if (!de9im.disjoint()) {
+        auto a = _pointCache.get(cur.id, cur.large ? -1 : t);
+        writeDE9IM(t, a->id, a->subId, b->id, 0, de9im);
+      }
+    } else {
+      auto b = _lineCache.get(sv.id, sv.large ? -1 : t);
+      auto de9im = DE9IMCheck(p, b.get(), t);
+
+      if (!de9im.disjoint()) {
+        auto a = _pointCache.get(cur.id, cur.large ? -1 : t);
+        writeDE9IM(t, a->id, a->subId, b->id, b->subId, de9im);
+      }
+    }
+  } else if (sv.type == LINE && cur.type == LINE) {
+    auto a = _lineCache.get(sv.id, sv.large ? -1 : t);
+    auto b = _lineCache.get(cur.id, cur.large ? -1 : t);
+    auto de9im = DE9IMCheck(a.get(), b.get(), t);
+
+    if (!de9im.disjoint()) {
+      writeDE9IM(t, a->id, a->subId, b->id, b->subId, de9im);
+    }
+  } else if (sv.type == SIMPLE_LINE && cur.type == SIMPLE_LINE) {
+    auto a = _simpleLineCache.get(sv.id, sv.large ? -1 : t);
+    auto b = _simpleLineCache.get(cur.id, cur.large ? -1 : t);
+    auto de9im = DE9IMCheck(a.get(), b.get(), t);
+
+    if (!de9im.disjoint()) {
+      writeDE9IM(t, a->id, 0, b->id, 0, de9im);
+    }
+  } else if (sv.type == SIMPLE_LINE && cur.type == LINE) {
+    auto a = _simpleLineCache.get(sv.id, sv.large ? -1 : t);
+    auto b = _lineCache.get(cur.id, cur.large ? -1 : t);
+    auto de9im = DE9IMCheck(a.get(), b.get(), t);
+
+    if (!de9im.disjoint()) {
+      writeDE9IM(t, a->id, 0, b->id, b->subId, de9im);
+    }
+  } else if (sv.type == LINE && cur.type == SIMPLE_LINE) {
+    auto a = _lineCache.get(sv.id, sv.large ? -1 : t);
+    auto b = _simpleLineCache.get(cur.id, cur.large ? -1 : t);
+    auto de9im = DE9IMCheck(b.get(), a.get(), t);
+
+    if (!de9im.disjoint()) {
+      writeDE9IM(t, a->id, a->subId, b->id, 0, de9im.transpose());
+    }
+  } else if ((sv.type == SIMPLE_POLYGON || sv.type == POLYGON) &&
+             (cur.type == SIMPLE_POLYGON || cur.type == POLYGON)) {
+    const Area* a;
+    std::shared_ptr<Area> asp;
+    Area al;
+
+    if (sv.type == SIMPLE_POLYGON) {
+      auto p = _simpleAreaCache.get(sv.id, sv.large ? -1 : t);
+      al = areaFromSimpleArea(p.get(), t);
+      a = &al;
+    } else {
+      asp = _areaCache.get(sv.id, sv.large ? -1 : t);
+      a = asp.get();
+    }
+
+    const Area* b;
+    std::shared_ptr<Area> bsp;
+    Area bl;
+
+    if (cur.type == SIMPLE_POLYGON) {
+      auto p = _simpleAreaCache.get(cur.id, cur.large ? -1 : t);
+      bl = areaFromSimpleArea(p.get(), t);
+      b = &bl;
+    } else {
+      bsp = _areaCache.get(cur.id, cur.large ? -1 : t);
+      b = bsp.get();
+    }
+
+    auto de9im = DE9IMCheck(b, a, t);
+
+    if (!de9im.disjoint()) {
+      writeDE9IM(t, a->id, a->subId, b->id, b->subId, de9im.transpose());
+    }
+  } else if (sv.type == LINE &&
+             (cur.type == SIMPLE_POLYGON || cur.type == POLYGON)) {
+    auto a = _lineCache.get(sv.id, sv.large ? -1 : t);
+
+    const Area* b;
+    std::shared_ptr<Area> bsp;
+    Area bl;
+
+    if (cur.type == SIMPLE_POLYGON) {
+      auto p = _simpleAreaCache.get(cur.id, cur.large ? -1 : t);
+      bl = areaFromSimpleArea(p.get(), t);
+      b = &bl;
+    } else {
+      bsp = _areaCache.get(cur.id, cur.large ? -1 : t);
+      b = bsp.get();
+    }
+
+    auto de9im = DE9IMCheck(a.get(), b, t);
+
+    if (!de9im.disjoint()) {
+      writeDE9IM(t, a->id, a->subId, b->id, b->subId, de9im);
+    }
+  } else if ((sv.type == SIMPLE_POLYGON || sv.type == POLYGON) &&
+             cur.type == LINE) {
+    const Area* a;
+    std::shared_ptr<Area> asp;
+    Area al;
+
+    if (sv.type == SIMPLE_POLYGON) {
+      auto p = _simpleAreaCache.get(sv.id, sv.large ? -1 : t);
+      al = areaFromSimpleArea(p.get(), t);
+      a = &al;
+    } else {
+      asp = _areaCache.get(sv.id, sv.large ? -1 : t);
+      a = asp.get();
+    }
+    auto b = _lineCache.get(cur.id, cur.large ? -1 : t);
+    auto de9im = DE9IMCheck(b.get(), a, t);
+
+    if (!de9im.disjoint()) {
+      writeDE9IM(t, a->id, a->subId, b->id, b->subId, de9im.transpose());
+    }
+  } else if (sv.type == SIMPLE_LINE &&
+             (cur.type == SIMPLE_POLYGON || cur.type == POLYGON)) {
+    auto a = _simpleLineCache.get(sv.id, sv.large ? -1 : t);
+    const Area* b;
+    std::shared_ptr<Area> bsp;
+    Area bl;
+
+    if (cur.type == SIMPLE_POLYGON) {
+      auto p = _simpleAreaCache.get(cur.id, cur.large ? -1 : t);
+      bl = areaFromSimpleArea(p.get(), t);
+      b = &bl;
+    } else {
+      bsp = _areaCache.get(cur.id, cur.large ? -1 : t);
+      b = bsp.get();
+    }
+    auto de9im = DE9IMCheck(a.get(), b, t);
+
+    if (!de9im.disjoint()) {
+      writeDE9IM(t, a->id, 0, b->id, b->subId, de9im);
+    }
+  } else if ((sv.type == SIMPLE_POLYGON || sv.type == POLYGON) &&
+             cur.type == SIMPLE_LINE) {
+    const Area* a;
+    std::shared_ptr<Area> asp;
+    Area al;
+
+    if (sv.type == SIMPLE_POLYGON) {
+      auto p = _simpleAreaCache.get(sv.id, sv.large ? -1 : t);
+      al = areaFromSimpleArea(p.get(), t);
+      a = &al;
+    } else {
+      asp = _areaCache.get(sv.id, sv.large ? -1 : t);
+      a = asp.get();
+    }
+    auto b = _simpleLineCache.get(cur.id, cur.large ? -1 : t);
+    auto de9im = DE9IMCheck(b.get(), a, t);
+
+    if (!de9im.disjoint()) {
+      writeDE9IM(t, a->id, a->subId, b->id, 0, de9im.transpose());
+    }
   }
 }
 
@@ -3266,7 +3802,9 @@ void Sweeper::processQueue(size_t t) {
         if (_cancelled) break;
 
         if (job.multiOut.empty()) {
-          if (_cfg.withinDist >= 0) {
+          if (_cfg.computeDE9IM) {
+            doDE9IMCheck(job.boxVal, job.sweepVal, t);
+          } else if (_cfg.withinDist >= 0) {
             doDistCheck(job.boxVal, job.sweepVal, t);
           } else {
             doCheck(job.boxVal, job.sweepVal, t);
@@ -3751,6 +4289,61 @@ double Sweeper::distCheck(const I32Point& a, const Area* b, size_t t) const {
 }
 
 // _____________________________________________________________________________
+util::geo::DE9IMatrix Sweeper::DE9IMCheck(const I32Point& a, const Area* b,
+                                          size_t t) const {
+  if (_cfg.useBoxIds) {
+    auto ts = TIME();
+    auto r = boxIdIsect({{1, 0}, {getBoxId(a), 0}}, b->boxIds);
+    _stats[t].timeBoxIdIsectAreaPoint += TOOK(ts);
+
+    // all boxes of a are fully contained in b, we are contained
+    if (r.first) return "0F2FFF212";
+
+    // no box shared, we cannot contain or intersect
+    if (r.first + r.second == 0) return "FF0FFF212";
+  }
+
+  if (_cfg.useOBB && b->obb.getOuter().rawRing().size()) {
+    auto ts = TIME();
+    auto r = containsCovers(a, b->obb);
+    _stats[t].timeOBBIsectAreaPoint += TOOK(ts);
+    if (!std::get<1>(r)) return "FF0FFF212";
+  }
+
+  if (_cfg.useInnerOuter && !b->outer.empty()) {
+    auto ts = TIME();
+    auto r = containsCovers(a, b->outer);
+    _stats[t].timeInnerOuterCheckAreaPoint += TOOK(ts);
+    _stats[t].innerOuterChecksAreaPoint++;
+    if (!std::get<1>(r)) return "FF0FFF212";
+  }
+
+  if (_cfg.useInnerOuter && !b->inner.empty()) {
+    auto ts = TIME();
+    auto r = containsCovers(a, b->inner);
+    _stats[t].timeInnerOuterCheckAreaPoint += TOOK(ts);
+    _stats[t].innerOuterChecksAreaPoint++;
+    if (std::get<1>(r)) return "0F2FFF212";
+  }
+
+  auto ts = TIME();
+  util::geo::DE9IMatrix res;
+  if (_useGEOS) {
+    char* de9im = GEOSRelate_r(_GEOScontextHandles[t],
+                               makeGeosPoint(_GEOScontextHandles[t], a),
+                               b->geosGeom.getGEOSGeom());
+    res = util::geo::DE9IMatrix(de9im);
+    GEOSFree(de9im);
+  } else {
+   res = util::geo::DE9IM(a, b->geom);
+  }
+  _stats[t].timeFullGeoCheckAreaPoint += TOOK(ts);
+  _stats[t].fullGeoChecksAreaPoint++;
+
+  return res;
+}
+
+// _____________________________________________________________________________
 double Sweeper::distCheck(const I32Point& a, const Line* b, size_t t) const {
   auto ts = TIME();
   double scaleFactor =
@@ -3763,6 +4356,18 @@ double Sweeper::distCheck(const I32Point& a, const Line* b, size_t t) const {
   _stats[t].fullGeoChecksLinePoint++;
 
   return dist;
+}
+
+// _____________________________________________________________________________
+util::geo::DE9IMatrix Sweeper::DE9IMCheck(const I32Point& a,
+                                          const SimpleLine* b, size_t t) const {
+  auto ts = TIME();
+  auto res = util::geo::DE9IM(
+      a, util::geo::XSortedLine<int32_t>(LineSegment<int32_t>(b->a, b->b)));
+  _stats[t].timeFullGeoCheckLinePoint += TOOK(ts);
+  _stats[t].fullGeoChecksLinePoint++;
+
+  return res;
 }
 
 // _____________________________________________________________________________

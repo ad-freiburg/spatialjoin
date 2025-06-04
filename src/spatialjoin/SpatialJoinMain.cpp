@@ -79,8 +79,6 @@ void printHelp(int argc, char** argv) {
       << "disable surface area criteria for polygon contains/covers\n"
       << std::setw(41) << "  --no-oriented-envelope"
       << "disable oriented envelope cirteria for contains/intersect\n"
-      << std::setw(41) << "  --no-cutouts"
-      << "disable cutouts\n"
       << std::setw(41) << "  --no-diag-box"
       << "disable diagonal bounding-box based pre-filter\n"
       << std::setw(41) << "  --no-fast-sweep-skip"
@@ -128,15 +126,15 @@ int main(int argc, char** argv) {
   bool useBoxIds = true;
   bool useArea = true;
   bool useOBB = true;
-  bool useCutouts = true;
   bool useDiagBox = true;
   bool useFastSweepSkip = true;
   bool useInnerOuter = false;
   bool noGeometryChecks = false;
+  bool computeDE9IM = false;
 
   size_t numThreads = NUM_THREADS;
   size_t numCaches = NUM_THREADS;
-  size_t geomCacheMaxSize = 10000;
+  size_t geomCacheMaxSize = 5000;
 
   for (int i = 1; i < argc; i++) {
     std::string cur = argv[i];
@@ -176,14 +174,14 @@ int main(int argc, char** argv) {
           state = 14;
         } else if (cur == "--within-distance") {
           state = 15;
+        } else if (cur == "--de9im") {
+          computeDE9IM = true;
         } else if (cur == "--no-box-ids") {
           useBoxIds = false;
         } else if (cur == "--no-surface-area") {
           useArea = false;
         } else if (cur == "--no-oriented-envelope") {
           useOBB = false;
-        } else if (cur == "--no-cutouts") {
-          useCutouts = false;
         } else if (cur == "--no-diag-box") {
           useDiagBox = false;
         } else if (cur == "--no-geometry-checks") {
@@ -279,12 +277,12 @@ int main(int argc, char** argv) {
                    useBoxIds,
                    useArea,
                    useOBB,
-                   useCutouts,
                    useDiagBox,
                    useFastSweepSkip,
                    useInnerOuter,
                    noGeometryChecks,
                    withinDist,
+                   computeDE9IM,
                    {},
                    [](const std::string& s) { LOGTO(INFO, std::cerr) << s; },
                    [](const std::string& s) { std::cerr << s; },

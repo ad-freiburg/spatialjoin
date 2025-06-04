@@ -52,9 +52,6 @@ struct Area {
   // box ids
   std::vector<sj::boxids::BoxId> boxIds;
 
-  // cutouts
-  std::map<int32_t, size_t> cutouts;
-
   // OBB
   util::geo::I32XSortedPolygon obb;
 
@@ -107,9 +104,6 @@ struct Line {
 
   // box ids
   std::vector<sj::boxids::BoxId> boxIds;
-
-  // cutouts
-  std::map<int32_t, size_t> cutouts;
 
   // OBB
   util::geo::I32XSortedPolygon obb;

@@ -144,12 +144,12 @@ struct SweeperCfg {
   bool useBoxIds;
   bool useArea;
   bool useOBB;
-  bool useCutouts;
   bool useDiagBox;
   bool useFastSweepSkip;
   bool useInnerOuter;
   bool noGeometryChecks;
   double withinDist;
+  bool computeDE9IM;
   std::function<void(size_t t, const char* a, const char* b, const char* pred)>
       writeRelCb;
   std::function<void(const std::string&)> logCb;
@@ -178,11 +178,11 @@ static const size_t GEOM_LARGENESS_THRESHOLD = 1024 * 1024 * 1024;
 class Sweeper {
  public:
   explicit Sweeper(SweeperCfg cfg, const std::string& cache,
-                   const std::string& out)
-      : Sweeper(cfg, cache, out, ".spatialjoin") {}
-  Sweeper(SweeperCfg cfg, const std::string& cache, const std::string& out,
+                   const std::string& out, bool useGeos)
+      : Sweeper(cfg, cache, out, useGeos, ".spatialjoin") {}
+  Sweeper(SweeperCfg cfg, const std::string& cache, const std::string& out, bool useGeos,
           const std::string& tmpPrefix)
-      : _cfg(cfg),
+      : _useGEOS(useGeos), _cfg(cfg),
         _obufpos(0),
         _pointCache(POINT_CACHE_SIZE, cfg.numCacheThreads, cache, tmpPrefix),
         _areaCache(cfg.geomCacheMaxSize, cfg.numCacheThreads, cache, tmpPrefix),
@@ -418,6 +418,9 @@ class Sweeper {
 
   std::vector<std::map<std::string, std::map<std::string, double>>>
       _subDistance;
+  std::vector<
+      std::map<std::string, std::map<std::string, util::geo::DE9IMatrix>>>
+      _subDE9IM;
   std::vector<std::map<std::string, std::map<std::string, std::set<size_t>>>>
       _subContains;
   std::vector<std::map<std::string, std::map<std::string, std::set<size_t>>>>
@@ -455,9 +458,10 @@ class Sweeper {
   std::vector<std::mutex> _mutsOverlaps;
   std::vector<std::mutex> _mutsNotOverlaps;
   std::vector<std::mutex> _mutsDistance;
+  std::vector<std::mutex> _mutsDE9IM;
 
-  Area areaFromSimpleArea(const SimpleArea* sa, size_t t) const;
-  Line lineFromSimpleLine(const SimpleLine* sa, size_t t) const;
+  Area areaFromSimpleArea(const SimpleArea* sa, size_t) const;
+  Line lineFromSimpleLine(const SimpleLine* sl, size_t) const;
 
   GeomCheckRes check(const Area* a, const Area* b, size_t t) const;
   GeomCheckRes check(const Line* a, const Area* b, size_t t) const;
@@ -482,6 +486,25 @@ class Sweeper {
   double distCheck(const Area* a, const Area* b, size_t t) const;
   double distCheck(const Line* a, const Area* b, size_t t) const;
 
+  util::geo::DE9IMatrix DE9IMCheck(const util::geo::I32Point& a, const Area* b,
+                                   size_t t) const;
+  util::geo::DE9IMatrix DE9IMCheck(const util::geo::I32Point& a, const Line* b,
+                                   size_t t) const;
+  util::geo::DE9IMatrix DE9IMCheck(const util::geo::I32Point& a,
+                                   const SimpleLine* b, size_t t) const;
+  util::geo::DE9IMatrix DE9IMCheck(const SimpleLine* a, const SimpleLine* b,
+                                   size_t t) const;
+  util::geo::DE9IMatrix DE9IMCheck(const SimpleLine* a, const Line* b,
+                                   size_t t) const;
+  util::geo::DE9IMatrix DE9IMCheck(const SimpleLine* a, const Area* b,
+                                   size_t t) const;
+  util::geo::DE9IMatrix DE9IMCheck(const Line* a, const Line* b,
+                                   size_t t) const;
+  util::geo::DE9IMatrix DE9IMCheck(const Area* a, const Area* b,
+                                   size_t t) const;
+  util::geo::DE9IMatrix DE9IMCheck(const Line* a, const Area* b,
+                                   size_t t) const;
+
   bool refRelated(const std::string& a, const std::string& b) const;
 
   double getMaxScaleFactor(const util::geo::I32Box& geom) const;
@@ -505,6 +528,9 @@ class Sweeper {
                    size_t bSub);
   void writeEquals(size_t t, const std::string& a, size_t aSub,
                    const std::string& b, size_t bSub);
+  void writeDE9IM(size_t t, const std::string& a, size_t aSub,
+                  const std::string& b, size_t bSub,
+                  util::geo::DE9IMatrix de9im);
   void writeDist(size_t t, const std::string& a, size_t aSub,
                  const std::string& b, size_t bSub, double dist);
   void writeTouches(size_t t, const std::string& a, size_t aSub,
@@ -524,6 +550,7 @@ class Sweeper {
 
   void doCheck(BoxVal cur, SweepVal sv, size_t t);
   void doDistCheck(BoxVal cur, SweepVal sv, size_t t);
+  void doDE9IMCheck(BoxVal cur, SweepVal sv, size_t t);
   void selfCheck(BoxVal cur, size_t t);
 
   void processQueue(size_t t);
