@@ -26,6 +26,7 @@
 #include "util/geo/IntervalIdx.h"
 #include "util/log/Log.h"
 
+using sj::GeomCheckRes;
 using sj::GeomType;
 using sj::Sweeper;
 using sj::boxids::boxIdIsect;
@@ -287,9 +288,9 @@ I32Box Sweeper::add(const I32Polygon& poly, const std::string& gidR,
 
     std::stringstream str;
     GeometryCache<Area>::writeTo(
-        {spoly, box, gid, subid, areaSize, _cfg.useArea ? outerAreaSize : 0,
-         boxIds, obb, inner, innerBox, innerOuterAreaSize, outer,
-         outerBox, outerOuterAreaSize},
+        {std::move(spoly), box, gid, subid, areaSize, _cfg.useArea ? outerAreaSize : 0,
+         boxIds, obb, inner, innerBox, innerOuterAreaSize, outer, outerBox,
+         outerOuterAreaSize},
         str);
     ;
 
@@ -415,8 +416,8 @@ I32Box Sweeper::add(const I32Line& line, const std::string& gidR, size_t subid,
     }
 
     std::stringstream str;
-    GeometryCache<Line>::writeTo(
-        {sline, box, gid, subid, len, boxIds, obb}, str);
+    GeometryCache<Line>::writeTo({sline, box, gid, subid, len, boxIds, obb},
+                                 str);
     cur.raw = str.str();
 
     size_t estimatedSize =
@@ -713,7 +714,8 @@ void Sweeper::multiOut(size_t tOut, const std::string& gidA) {
       if (i != _subDE9IM[t].end()) {
         for (const auto& a : i->second) {
           writeRel(tOut, gidA, a.first, "\t" + a.second.toString() + "\t");
-          writeRel(tOut, a.first, gidA, "\t" + a.second.transpose().toString() + "\t");
+          writeRel(tOut, a.first, gidA,
+                   "\t" + a.second.transpose().toString() + "\t");
         }
         _subDE9IM[t].erase(i);
       }
@@ -1247,7 +1249,7 @@ sj::Area Sweeper::areaFromSimpleArea(const SimpleArea* sa) const {
     spoly.getOuter().setMaxSegLen(std::numeric_limits<int32_t>::max());
   }
 
-  return {spoly,
+  return {std::move(spoly),
           util::geo::getBoundingBox(sa->geom),
           sa->id,
           0,
@@ -1343,9 +1345,7 @@ util::geo::DE9IMatrix Sweeper::DE9IMCheck(const Area* a, const Area* b,
 }
 
 // _____________________________________________________________________________
-std::tuple<bool, bool, bool, bool, bool> Sweeper::check(const Area* a,
-                                                        const Area* b,
-                                                        size_t t) const {
+GeomCheckRes Sweeper::check(const Area* a, const Area* b, size_t t) const {
   // cheap equivalence check
   if (a->box == b->box && a->area == b->area && a->geom == b->geom) {
     // equivalent!
@@ -1485,9 +1485,7 @@ util::geo::DE9IMatrix Sweeper::DE9IMCheck(const Line* a, const Area* b,
 }
 
 // _____________________________________________________________________________
-std::tuple<bool, bool, bool, bool, bool> Sweeper::check(const Line* a,
-                                                        const Area* b,
-                                                        size_t t) const {
+GeomCheckRes Sweeper::check(const Line* a, const Area* b, size_t t) const {
   if (_cfg.useBoxIds) {
     auto ts = TIME();
     auto r = boxIdIsect(a->boxIds, b->boxIds);
@@ -1579,9 +1577,7 @@ util::geo::DE9IMatrix Sweeper::DE9IMCheck(const Line* a, const Line* b,
 }
 
 // _____________________________________________________________________________
-std::tuple<bool, bool, bool, bool, bool> Sweeper::check(const Line* a,
-                                                        const Line* b,
-                                                        size_t t) const {
+GeomCheckRes Sweeper::check(const Line* a, const Line* b, size_t t) const {
   // cheap equivalence check
   if (a->box == b->box && a->geom == b->geom) {
     // equivalent!
@@ -1669,9 +1665,8 @@ util::geo::DE9IMatrix Sweeper::DE9IMCheck(const SimpleLine* a, const Area* b,
 }
 
 // _____________________________________________________________________________
-std::tuple<bool, bool, bool, bool, bool> Sweeper::check(const SimpleLine* a,
-                                                        const Area* b,
-                                                        size_t t) const {
+GeomCheckRes Sweeper::check(const SimpleLine* a, const Area* b,
+                            size_t t) const {
   if (_cfg.useBoxIds) {
     auto ts = TIME();
     auto r = boxIdIsect({{1, 0}, {getBoxId(a->a), 0}}, b->boxIds);
@@ -1773,9 +1768,8 @@ util::geo::DE9IMatrix Sweeper::DE9IMCheck(const SimpleLine* a,
 }
 
 // _____________________________________________________________________________
-std::tuple<bool, bool, bool, bool, bool> Sweeper::check(const SimpleLine* a,
-                                                        const SimpleLine* b,
-                                                        size_t t) const {
+GeomCheckRes Sweeper::check(const SimpleLine* a, const SimpleLine* b,
+                            size_t t) const {
   auto ts = TIME();
 
   // no need to do a full sweep for two simple lines with all the required
@@ -1836,9 +1830,8 @@ util::geo::DE9IMatrix Sweeper::DE9IMCheck(const SimpleLine* a, const Line* b,
 }
 
 // _____________________________________________________________________________
-std::tuple<bool, bool, bool, bool, bool> Sweeper::check(const SimpleLine* a,
-                                                        const Line* b,
-                                                        size_t t) const {
+GeomCheckRes Sweeper::check(const SimpleLine* a, const Line* b,
+                            size_t t) const {
   if (_cfg.useBoxIds) {
     auto ts = TIME();
     auto r = boxIdIsect({{1, 0}, {getBoxId(a->a), 0}}, b->boxIds);
@@ -1866,9 +1859,8 @@ std::tuple<bool, bool, bool, bool, bool> Sweeper::check(const SimpleLine* a,
 }
 
 // _____________________________________________________________________________
-std::tuple<bool, bool, bool, bool, bool> Sweeper::check(const Line* a,
-                                                        const SimpleLine* b,
-                                                        size_t t) const {
+GeomCheckRes Sweeper::check(const Line* a, const SimpleLine* b,
+                            size_t t) const {
   if (_cfg.useBoxIds) {
     auto ts = TIME();
     auto r = boxIdIsect(a->boxIds, {{1, 0}, {getBoxId(b->a), 0}});

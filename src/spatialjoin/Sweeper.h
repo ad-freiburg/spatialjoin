@@ -123,6 +123,8 @@ inline bool operator==(const Job& a, const Job& b) {
 
 typedef std::vector<Job> JobBatch;
 
+typedef std::tuple<bool, bool, bool, bool, bool> GeomCheckRes;
+
 struct SweeperCfg {
   size_t numThreads;
   size_t numCacheThreads;
@@ -398,7 +400,8 @@ class Sweeper {
 
   std::vector<std::map<std::string, std::map<std::string, double>>>
       _subDistance;
-  std::vector<std::map<std::string, std::map<std::string, util::geo::DE9IMatrix>>>
+  std::vector<
+      std::map<std::string, std::map<std::string, util::geo::DE9IMatrix>>>
       _subDE9IM;
   std::vector<std::map<std::string, std::map<std::string, std::set<size_t>>>>
       _subContains;
@@ -442,22 +445,13 @@ class Sweeper {
   Area areaFromSimpleArea(const SimpleArea* sa) const;
   Line lineFromSimpleLine(const SimpleLine* sl) const;
 
-  std::tuple<bool, bool, bool, bool, bool> check(const Area* a, const Area* b,
-                                                 size_t t) const;
-  std::tuple<bool, bool, bool, bool, bool> check(const Line* a, const Area* b,
-                                                 size_t t) const;
-  std::tuple<bool, bool, bool, bool, bool> check(const SimpleLine* a,
-                                                 const Area* b, size_t t) const;
-  std::tuple<bool, bool, bool, bool, bool> check(const Line* a, const Line* b,
-                                                 size_t t) const;
-  std::tuple<bool, bool, bool, bool, bool> check(const Line* a,
-                                                 const SimpleLine* b,
-                                                 size_t t) const;
-  std::tuple<bool, bool, bool, bool, bool> check(const SimpleLine* a,
-                                                 const SimpleLine* b,
-                                                 size_t t) const;
-  std::tuple<bool, bool, bool, bool, bool> check(const SimpleLine* a,
-                                                 const Line* b, size_t t) const;
+  GeomCheckRes check(const Area* a, const Area* b, size_t t) const;
+  GeomCheckRes check(const Line* a, const Area* b, size_t t) const;
+  GeomCheckRes check(const SimpleLine* a, const Area* b, size_t t) const;
+  GeomCheckRes check(const Line* a, const Line* b, size_t t) const;
+  GeomCheckRes check(const Line* a, const SimpleLine* b, size_t t) const;
+  GeomCheckRes check(const SimpleLine* a, const SimpleLine* b, size_t t) const;
+  GeomCheckRes check(const SimpleLine* a, const Line* b, size_t t) const;
   std::pair<bool, bool> check(const util::geo::I32Point& a, const Area* b,
                               size_t t) const;
   std::tuple<bool, bool> check(const util::geo::I32Point& a, const Line* b,
@@ -475,20 +469,23 @@ class Sweeper {
   double distCheck(const Line* a, const Area* b, size_t t) const;
 
   util::geo::DE9IMatrix DE9IMCheck(const util::geo::I32Point& a, const Area* b,
-                              size_t t) const;
+                                   size_t t) const;
   util::geo::DE9IMatrix DE9IMCheck(const util::geo::I32Point& a, const Line* b,
-                              size_t t) const;
-  util::geo::DE9IMatrix DE9IMCheck(const util::geo::I32Point& a, const SimpleLine* b,
-                              size_t t) const;
+                                   size_t t) const;
+  util::geo::DE9IMatrix DE9IMCheck(const util::geo::I32Point& a,
+                                   const SimpleLine* b, size_t t) const;
   util::geo::DE9IMatrix DE9IMCheck(const SimpleLine* a, const SimpleLine* b,
-                              size_t t) const;
+                                   size_t t) const;
   util::geo::DE9IMatrix DE9IMCheck(const SimpleLine* a, const Line* b,
-                              size_t t) const;
+                                   size_t t) const;
   util::geo::DE9IMatrix DE9IMCheck(const SimpleLine* a, const Area* b,
-                              size_t t) const;
-  util::geo::DE9IMatrix DE9IMCheck(const Line* a, const Line* b, size_t t) const;
-  util::geo::DE9IMatrix DE9IMCheck(const Area* a, const Area* b, size_t t) const;
-  util::geo::DE9IMatrix DE9IMCheck(const Line* a, const Area* b, size_t t) const;
+                                   size_t t) const;
+  util::geo::DE9IMatrix DE9IMCheck(const Line* a, const Line* b,
+                                   size_t t) const;
+  util::geo::DE9IMatrix DE9IMCheck(const Area* a, const Area* b,
+                                   size_t t) const;
+  util::geo::DE9IMatrix DE9IMCheck(const Line* a, const Area* b,
+                                   size_t t) const;
 
   bool refRelated(const std::string& a, const std::string& b) const;
 
