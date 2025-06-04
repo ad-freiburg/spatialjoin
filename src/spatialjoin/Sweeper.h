@@ -90,8 +90,8 @@ inline bool operator==(const BoxVal& a, const BoxVal& b) {
 struct SweepVal {
   SweepVal(size_t id, GeomType type)
       : id(id), type(type), side(false), large(false) {}
-  SweepVal(size_t id, GeomType type, util::geo::I32Box b45, util::geo::I32Point point, bool side,
-           bool large)
+  SweepVal(size_t id, GeomType type, util::geo::I32Box b45,
+           util::geo::I32Point point, bool side, bool large)
       : id(id), type(type), b45(b45), point(point), side(side), large(large) {}
   SweepVal() : id(0), type(POLYGON) {}
   size_t id : 60;
@@ -139,12 +139,12 @@ struct SweeperCfg {
   bool useBoxIds;
   bool useArea;
   bool useOBB;
-  bool useCutouts;
   bool useDiagBox;
   bool useFastSweepSkip;
   bool useInnerOuter;
   bool noGeometryChecks;
   double withinDist;
+  bool computeDE9IM;
   std::function<void(size_t t, const char* a, const char* b, const char* pred)>
       writeRelCb;
   std::function<void(const std::string&)> logCb;
@@ -398,6 +398,8 @@ class Sweeper {
 
   std::vector<std::map<std::string, std::map<std::string, double>>>
       _subDistance;
+  std::vector<std::map<std::string, std::map<std::string, util::geo::DE9IMatrix>>>
+      _subDE9IM;
   std::vector<std::map<std::string, std::map<std::string, std::set<size_t>>>>
       _subContains;
   std::vector<std::map<std::string, std::map<std::string, std::set<size_t>>>>
@@ -435,8 +437,10 @@ class Sweeper {
   std::vector<std::mutex> _mutsOverlaps;
   std::vector<std::mutex> _mutsNotOverlaps;
   std::vector<std::mutex> _mutsDistance;
+  std::vector<std::mutex> _mutsDE9IM;
 
   Area areaFromSimpleArea(const SimpleArea* sa) const;
+  Line lineFromSimpleLine(const SimpleLine* sl) const;
 
   std::tuple<bool, bool, bool, bool, bool> check(const Area* a, const Area* b,
                                                  size_t t) const;
@@ -470,6 +474,22 @@ class Sweeper {
   double distCheck(const Area* a, const Area* b, size_t t) const;
   double distCheck(const Line* a, const Area* b, size_t t) const;
 
+  util::geo::DE9IMatrix DE9IMCheck(const util::geo::I32Point& a, const Area* b,
+                              size_t t) const;
+  util::geo::DE9IMatrix DE9IMCheck(const util::geo::I32Point& a, const Line* b,
+                              size_t t) const;
+  util::geo::DE9IMatrix DE9IMCheck(const util::geo::I32Point& a, const SimpleLine* b,
+                              size_t t) const;
+  util::geo::DE9IMatrix DE9IMCheck(const SimpleLine* a, const SimpleLine* b,
+                              size_t t) const;
+  util::geo::DE9IMatrix DE9IMCheck(const SimpleLine* a, const Line* b,
+                              size_t t) const;
+  util::geo::DE9IMatrix DE9IMCheck(const SimpleLine* a, const Area* b,
+                              size_t t) const;
+  util::geo::DE9IMatrix DE9IMCheck(const Line* a, const Line* b, size_t t) const;
+  util::geo::DE9IMatrix DE9IMCheck(const Area* a, const Area* b, size_t t) const;
+  util::geo::DE9IMatrix DE9IMCheck(const Line* a, const Area* b, size_t t) const;
+
   bool refRelated(const std::string& a, const std::string& b) const;
 
   double getMaxScaleFactor(const util::geo::I32Box& geom) const;
@@ -493,6 +513,9 @@ class Sweeper {
                    size_t bSub);
   void writeEquals(size_t t, const std::string& a, size_t aSub,
                    const std::string& b, size_t bSub);
+  void writeDE9IM(size_t t, const std::string& a, size_t aSub,
+                  const std::string& b, size_t bSub,
+                  util::geo::DE9IMatrix de9im);
   void writeDist(size_t t, const std::string& a, size_t aSub,
                  const std::string& b, size_t bSub, double dist);
   void writeTouches(size_t t, const std::string& a, size_t aSub,
@@ -512,6 +535,7 @@ class Sweeper {
 
   void doCheck(BoxVal cur, SweepVal sv, size_t t);
   void doDistCheck(BoxVal cur, SweepVal sv, size_t t);
+  void doDE9IMCheck(BoxVal cur, SweepVal sv, size_t t);
   void selfCheck(BoxVal cur, size_t t);
 
   void processQueue(size_t t);

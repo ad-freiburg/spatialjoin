@@ -180,17 +180,6 @@ sj::Line sj::GeometryCache<sj::Line>::getFrom(size_t off,
              sizeof(sj::boxids::BoxId) * numBoxIds);
   }
 
-  // cutouts
-  uint32_t numCutouts;
-  str.read(reinterpret_cast<char*>(&numCutouts), sizeof(uint32_t));
-
-  for (size_t i = 0; i < numCutouts; i++) {
-    int32_t boxid, cutout;
-    str.read(reinterpret_cast<char*>(&boxid), sizeof(int32_t));
-    str.read(reinterpret_cast<char*>(&cutout), sizeof(int32_t));
-    ret.cutouts[boxid] = cutout;
-  }
-
   // OBB
   readPoly(str, ret.obb);
 
@@ -236,17 +225,6 @@ sj::Area sj::GeometryCache<sj::Area>::getFrom(size_t off,
   if (numBoxIds > 0) {
     str.read(reinterpret_cast<char*>(&ret.boxIds[0]),
              sizeof(sj::boxids::BoxId) * numBoxIds);
-  }
-
-  // cutouts
-  uint32_t numCutouts;
-  str.read(reinterpret_cast<char*>(&numCutouts), sizeof(uint32_t));
-
-  for (size_t i = 0; i < numCutouts; i++) {
-    int32_t boxid, cutout;
-    str.read(reinterpret_cast<char*>(&boxid), sizeof(int32_t));
-    str.read(reinterpret_cast<char*>(&cutout), sizeof(int32_t));
-    ret.cutouts[boxid] = cutout;
   }
 
   // OBB
@@ -413,19 +391,6 @@ size_t sj::GeometryCache<sj::Line>::writeTo(const sj::Line& val,
 
   ret += sizeof(uint32_t) + sizeof(sj::boxids::BoxId) * size;
 
-  // cutouts
-  size = val.cutouts.size();
-  str.write(reinterpret_cast<const char*>(&size), sizeof(uint32_t));
-  ret += sizeof(uint32_t);
-
-  for (const auto& el : val.cutouts) {
-    int32_t boxid = el.first;
-    int32_t cutout = el.second;
-    str.write(reinterpret_cast<const char*>(&boxid), sizeof(int32_t));
-    str.write(reinterpret_cast<const char*>(&cutout), sizeof(int32_t));
-    ret += sizeof(int32_t) + sizeof(int32_t);
-  }
-
   // OBB
   ret += writePoly(val.obb, str);
 
@@ -474,19 +439,6 @@ size_t sj::GeometryCache<sj::Area>::writeTo(const sj::Area& val,
   }
 
   ret += sizeof(uint32_t) + sizeof(sj::boxids::BoxId) * size;
-
-  // cutouts
-  size = val.cutouts.size();
-  str.write(reinterpret_cast<const char*>(&size), sizeof(uint32_t));
-  ret += sizeof(uint32_t);
-
-  for (const auto& el : val.cutouts) {
-    int32_t boxid = el.first;
-    int32_t cutout = el.second;
-    str.write(reinterpret_cast<const char*>(&boxid), sizeof(int32_t));
-    str.write(reinterpret_cast<const char*>(&cutout), sizeof(int32_t));
-    ret += sizeof(int32_t) + sizeof(int32_t);
-  }
 
   // OBB
   ret += writePoly(val.obb, str);
@@ -664,6 +616,13 @@ void sj::GeometryCache<W>::readLine(std::istream& str,
   str.read(reinterpret_cast<char*>(&maxSegLen), sizeof(double));
   ret.setMaxSegLen(maxSegLen);
 
+  util::geo::I32Point firstPoint;
+  util::geo::I32Point lastPoint;
+  str.read(reinterpret_cast<char*>(&firstPoint), sizeof(uint32_t) * 2);
+  str.read(reinterpret_cast<char*>(&lastPoint), sizeof(uint32_t) * 2);
+  ret.setFirstPoint(firstPoint);
+  ret.setLastPoint(lastPoint);
+
   uint32_t sizeOuter;
   str.read(reinterpret_cast<char*>(&sizeOuter), sizeof(uint32_t));
 
@@ -681,10 +640,15 @@ template <typename W>
 size_t sj::GeometryCache<W>::writeLine(const util::geo::I32XSortedLine& geom,
                                        std::ostream& str) {
   size_t ret = 0;
-  // geom, outer
+
   double maxSegLen = geom.getMaxSegLen();
   str.write(reinterpret_cast<const char*>(&maxSegLen), sizeof(double));
   ret += sizeof(double);
+
+  auto firstPoint = geom.firstPoint();
+  auto lastPoint = geom.lastPoint();
+  str.write(reinterpret_cast<const char*>(&firstPoint), sizeof(uint32_t) * 2);
+  str.write(reinterpret_cast<const char*>(&lastPoint), sizeof(uint32_t) * 2);
 
   uint32_t locSize = geom.rawLine().size();
   str.write(reinterpret_cast<const char*>(&locSize), sizeof(uint32_t));

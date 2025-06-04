@@ -83,8 +83,8 @@ int main(int, char**) {
                           false,
                           false,
                           false,
-                          false,
                           -1,
+                          false,
                           {},
                           {},
                           {},
@@ -109,9 +109,9 @@ int main(int, char**) {
                      true,
                      true,
                      true,
-                     true,
                      false,
                      -1,
+                     false,
                      {},
                      {},
                      {},
@@ -136,9 +136,9 @@ int main(int, char**) {
                                true,
                                true,
                                true,
-                               true,
                                false,
                                -1,
+                               false,
                                {},
                                {},
                                {},
@@ -163,9 +163,9 @@ int main(int, char**) {
                           true,
                           true,
                           true,
-                          true,
                           false,
                           -1,
+                          false,
                           {},
                           {},
                           {},
@@ -190,41 +190,14 @@ int main(int, char**) {
                        true,
                        true,
                        true,
-                       true,
                        false,
                        -1,
+                       false,
                        {},
                        {},
                        {},
                        {},
                        {}};
-
-  sj::SweeperCfg noCutouts{NUM_THREADS,
-                           NUM_THREADS,
-                           1000,
-                           "$",
-                           " intersects ",
-                           " contains ",
-                           " covers ",
-                           " touches ",
-                           " equals ",
-                           " overlaps ",
-                           " crosses ",
-                           "$\n",
-                           true,
-                           true,
-                           true,
-                           false,
-                           true,
-                           true,
-                           true,
-                           false,
-                           -1,
-                           {},
-                           {},
-                           {},
-                           {},
-                           {}};
 
   sj::SweeperCfg noDiagBox{NUM_THREADS,
                            NUM_THREADS,
@@ -241,12 +214,12 @@ int main(int, char**) {
                            true,
                            true,
                            true,
-                           true,
                            false,
                            true,
                            true,
                            false,
                            -1,
+                           false,
                            {},
                            {},
                            {},
@@ -269,11 +242,11 @@ int main(int, char**) {
                              true,
                              true,
                              true,
-                             true,
                              false,
                              true,
                              false,
                              -1,
+                             false,
                              {},
                              {},
                              {},
@@ -297,19 +270,19 @@ int main(int, char**) {
                               true,
                               true,
                               true,
-                              true,
                               false,
                               false,
                               -1,
+                              false,
                               {},
                               {},
                               {},
                               {},
                               {}};
 
-  std::vector<sj::SweeperCfg> cfgs{baseline,  all,         noSurfaceArea,
-                                   noBoxIds,  noObb,       noCutouts,
-                                   noDiagBox, noFastSweep, noInnerOuter};
+  std::vector<sj::SweeperCfg> cfgs{baseline,    all,         noSurfaceArea,
+                                   noBoxIds,    noObb,       noDiagBox,
+                                   noFastSweep, noInnerOuter};
 
   for (auto cfg : cfgs) {
     {
@@ -856,6 +829,24 @@ int main(int, char**) {
       TEST(res.find("$<> equals RefJ$") != std::string::npos);
       TEST(res.find("$RefJ equals RefG$") != std::string::npos);
       TEST(res.find("$RefJ equals <>$") != std::string::npos);
+    }
+  }
+
+  // DE9IM
+  for (auto cfg : cfgs) {
+    cfg.computeDE9IM = true;
+    {
+      auto res = fullRun("../src/spatialjoin/tests/datasets/freiburg", cfg);
+      TEST(res.find("$freiburg1\t2FFF1FFF2\tfreiburg2$") != std::string::npos);
+      TEST(res.find("$freiburg2\t2FFF1FFF2\tfreiburg1$") != std::string::npos);
+      TEST(res.find("$freiburg1\t2FFF1FFF2\tfreiburg2$") != std::string::npos);
+      TEST(res.find("$freiburg2\t2FFF1FFF2\tfreiburg1$") != std::string::npos);
+
+      TEST(res.find("$freiburg1\tFF2101FF2\tgrenzpart$") != std::string::npos);
+      TEST(res.find("$grenzpart\tF1FF0F212\tfreiburg1$") != std::string::npos);
+
+      TEST(res.find("$Umkirch\tFF2F11212\tfreiburg1$") != std::string::npos);
+      TEST(res.find("$freiburg1\t212FF1FF2\tAltstadt$") != std::string::npos);
     }
   }
 }
