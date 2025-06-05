@@ -2,9 +2,9 @@ cmake_minimum_required (VERSION 3.5)
 
 project (spatialjoin)
 
-if (CMAKE_BUILD_TYPE)
-	string(TOUPPER ${CMAKE_BUILD_TYPE} CMAKE_BUILD_TYPE)
-endif()
+IF(NOT CMAKE_CONFIGURATION_TYPES AND NOT CMAKE_BUILD_TYPE)
+	SET(CMAKE_BUILD_TYPE Release)
+ENDIF(NOT CMAKE_CONFIGURATION_TYPES AND NOT CMAKE_BUILD_TYPE)
 
 if(PROJECT_IS_TOP_LEVEL)
 	enable_testing()
@@ -14,13 +14,18 @@ set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake/")
 set(EXECUTABLE_OUTPUT_PATH "${CMAKE_SOURCE_DIR}/build")
 
 # set compiler flags, see http://stackoverflow.com/questions/7724569/debug-vs-release-in-cmake
-set(CMAKE_CXX_FLAGS "-march=native -O3 -fno-signed-zeros -fno-trapping-math -Wall -Wno-format-extra-args -Wextra -Wformat-nonliteral -Wformat-security -Wformat=2 -Wextra -Wno-implicit-fallthrough -Wno-narrowing -pedantic")
-set(CMAKE_C_FLAGS "-march=native -O3 -fno-signed-zeros -fno-trapping-math -Wall -Wno-format-extra-args -Wextra -Wformat-nonliteral -Wformat-security -Wformat=2 -Wextra -Wno-implicit-fallthrough -Wno-narrowing -pedantic")
+set(CMAKE_CXX_FLAGS "-Wall -Wno-format-extra-args -Wextra -Wformat-nonliteral -Wformat-security -Wformat=2 -Wextra -Wno-implicit-fallthrough -Wno-narrowing -pedantic")
+set(CMAKE_C_FLAGS "-Wall -Wno-format-extra-args -Wextra -Wformat-nonliteral -Wformat-security -Wformat=2 -Wextra -Wno-implicit-fallthrough -Wno-narrowing -pedantic")
 
-set(CMAKE_CXX_FLAGS_DEBUG          "-Og -g -DLOGLEVEL=3")
-set(CMAKE_CXX_FLAGS_MINSIZEREL     "${CMAKE_CXX_FLAGS} -DLOGLEVEL=2")
-set(CMAKE_CXX_FLAGS_RELEASE        "${CMAKE_CXX_FLAGS} -DLOGLEVEL=2")
-set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS} -g -DLOGLEVEL=3")
+set(CMAKE_CXX_FLAGS_DEBUG          "${CMAKE_CXX_FLAGS} -Og -g -DLOGLEVEL=3")
+set(CMAKE_CXX_FLAGS_MINSIZEREL     "${CMAKE_CXX_FLAGS} -march=native -O3 -fno-signed-zeros -fno-trapping-math -DLOGLEVEL=2")
+set(CMAKE_CXX_FLAGS_RELEASE        "${CMAKE_CXX_FLAGS} -march=native -O3 -fno-signed-zeros -fno-trapping-math -DLOGLEVEL=2")
+set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS} -march=native -O3 -fno-signed-zeros -fno-trapping-math -g -DLOGLEVEL=3")
+
+set(CMAKE_C_FLAGS_DEBUG          "${CMAKE_C_FLAGS} -Og -g -DLOGLEVEL=3")
+set(CMAKE_C_FLAGS_MINSIZEREL     "${CMAKE_C_FLAGS} -march=native -O3 -fno-signed-zeros -fno-trapping-math -DLOGLEVEL=2")
+set(CMAKE_C_FLAGS_RELEASE        "${CMAKE_C_FLAGS} -march=native -O3 -fno-signed-zeros -fno-trapping-math -DLOGLEVEL=2")
+set(CMAKE_C_FLAGS_RELWITHDEBINFO "${CMAKE_C_FLAGS} -march=native -O3 -fno-signed-zeros -fno-trapping-math -g -DLOGLEVEL=3")
 
 find_package(BZip2)
 find_package(ZLIB)

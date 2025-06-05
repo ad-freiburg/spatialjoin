@@ -167,6 +167,10 @@ class GeometryCache {
       if (_geomsFReads[i].is_open()) _geomsFReads[i].close();
     }
     if (_writeBuffer) delete[] _writeBuffer;
+
+    for (size_t i = 0; i < _numThreads + 1; i++) {
+      GEOS_finish_r(_GEOScontextHandles[i]);
+    }
   }
 
   size_t add(const std::string& raw);

@@ -613,6 +613,7 @@ void sj::GeometryCache<W>::readGEOSPoly(std::istream& str, GEOSPolygon& ret,
                                  GEOSGeom_createLinearRing_r(geosHndl, seq),
                                  innerRings, numInners),
         geosHndl));
+    delete[] innerRings;
   } else {
     ret = std::move(
         GEOSPolygon(GEOSGeom_createEmptyPolygon_r(geosHndl), geosHndl));

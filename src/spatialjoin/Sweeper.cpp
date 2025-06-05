@@ -1459,7 +1459,7 @@ util::geo::DE9IMatrix Sweeper::DE9IMCheck(const Area* a, const Area* b,
         GEOSRelate_r(_GEOScontextHandles[t], a->geosGeom.getGEOSGeom(),
                      b->geosGeom.getGEOSGeom());
     res = util::geo::DE9IMatrix(de9im);
-    GEOSFree(de9im);
+    GEOSFree_r(_GEOScontextHandles[t], de9im);
   } else {
     res = DE9IM(a->geom, a->box, a->outerArea, b->geom, b->box, b->outerArea);
   }
@@ -1642,7 +1642,7 @@ util::geo::DE9IMatrix Sweeper::DE9IMCheck(const Line* a, const Area* b,
         GEOSRelate_r(_GEOScontextHandles[t], a->geosGeom.getGEOSGeom(),
                      b->geosGeom.getGEOSGeom());
     res = util::geo::DE9IMatrix(de9im);
-    GEOSFree(de9im);
+    GEOSFree_r(_GEOScontextHandles[t], de9im);
   } else {
     res = DE9IM(a->geom, a->box, b->geom, b->box);
   }
@@ -1756,7 +1756,7 @@ util::geo::DE9IMatrix Sweeper::DE9IMCheck(const Line* a, const Line* b,
         GEOSRelate_r(_GEOScontextHandles[t], a->geosGeom.getGEOSGeom(),
                      b->geosGeom.getGEOSGeom());
     res = util::geo::DE9IMatrix(de9im);
-    GEOSFree(de9im);
+    GEOSFree_r(_GEOScontextHandles[t], de9im);
   } else {
     res = DE9IM(a->geom, b->geom, a->box, b->box);
   }
@@ -1864,7 +1864,7 @@ util::geo::DE9IMatrix Sweeper::DE9IMCheck(const SimpleLine* a, const Area* b,
                                lineFromSimpleLine(a, t).geosGeom.getGEOSGeom(),
                                b->geosGeom.getGEOSGeom());
     res = util::geo::DE9IMatrix(de9im);
-    GEOSFree(de9im);
+    GEOSFree_r(_GEOScontextHandles[t], de9im);
   } else {
     res = DE9IM(I32XSortedLine(LineSegment<int32_t>(a->a, a->b)),
                 getBoundingBox(LineSegment<int32_t>(a->a, a->b)), b->geom,
@@ -2052,7 +2052,7 @@ util::geo::DE9IMatrix Sweeper::DE9IMCheck(const SimpleLine* a, const Line* b,
                                lineFromSimpleLine(a, t).geosGeom.getGEOSGeom(),
                                b->geosGeom.getGEOSGeom());
     res = util::geo::DE9IMatrix(de9im);
-    GEOSFree(de9im);
+    GEOSFree_r(_GEOScontextHandles[t], de9im);
   } else {
     res = DE9IM(I32XSortedLine(LineSegment<int32_t>(a->a, a->b)), b->geom,
                 getBoundingBox(LineSegment<int32_t>(a->a, a->b)), b->box);
@@ -2186,16 +2186,7 @@ std::pair<bool, bool> Sweeper::check(const I32Point& a, const Area* b,
 
   auto ts = TIME();
   if (_useGEOS) {
-    auto intersects = GEOSIntersects_r(_GEOScontextHandles[t],
-                                       makeGeosPoint(_GEOScontextHandles[t], a),
-                                       b->geosGeom.getGEOSGeom());
-    auto contains =
-        GEOSContains_r(_GEOScontextHandles[t], b->geosGeom.getGEOSGeom(),
-                       makeGeosPoint(_GEOScontextHandles[t], a));
-    _stats[t].timeFullGeoCheckAreaPoint += TOOK(ts);
-    _stats[t].fullGeoChecksAreaPoint++;
-
-    return {intersects, contains};
+    throw std::runtime_error("Not implemented");
   } else {
     auto res = containsCovers(a, b->geom);
     _stats[t].timeFullGeoCheckAreaPoint += TOOK(ts);
@@ -2220,11 +2211,12 @@ util::geo::DE9IMatrix Sweeper::DE9IMCheck(const I32Point& a, const Line* b,
   auto ts = TIME();
   util::geo::DE9IMatrix res;
   if (_useGEOS) {
-    char* de9im = GEOSRelate_r(_GEOScontextHandles[t],
-                               makeGeosPoint(_GEOScontextHandles[t], a),
-                               b->geosGeom.getGEOSGeom());
+    auto p = makeGeosPoint(_GEOScontextHandles[t], a);
+    char* de9im =
+        GEOSRelate_r(_GEOScontextHandles[t], p, b->geosGeom.getGEOSGeom());
     res = util::geo::DE9IMatrix(de9im);
-    GEOSFree(de9im);
+    GEOSFree_r(_GEOScontextHandles[t], de9im);
+    GEOSGeom_destroy_r(_GEOScontextHandles[t], p);
   } else {
     res = DE9IM(a, b->geom);
   }
@@ -2248,16 +2240,7 @@ std::tuple<bool, bool> Sweeper::check(const I32Point& a, const Line* b,
 
   auto ts = TIME();
   if (_useGEOS) {
-    auto intersects = GEOSIntersects_r(_GEOScontextHandles[t],
-                                       makeGeosPoint(_GEOScontextHandles[t], a),
-                                       b->geosGeom.getGEOSGeom());
-    auto contains =
-        GEOSContains_r(_GEOScontextHandles[t], b->geosGeom.getGEOSGeom(),
-                       makeGeosPoint(_GEOScontextHandles[t], a));
-    _stats[t].timeFullGeoCheckLinePoint += TOOK(ts);
-    _stats[t].fullGeoChecksLinePoint++;
-
-    return {intersects, contains};
+    throw std::runtime_error("Not implemented");
   } else {
     auto res = util::geo::intersectsContains(a, b->geom);
     _stats[t].timeFullGeoCheckLinePoint += TOOK(ts);
@@ -2506,11 +2489,13 @@ void Sweeper::doDE9IMCheck(const BoxVal cur, const SweepVal sv, size_t t) {
 
     util::geo::DE9IMatrix de9im;
     if (_useGEOS) {
-      char* de9imStr = GEOSRelate_r(_GEOScontextHandles[t],
-                                    makeGeosPoint(_GEOScontextHandles[t], p1),
-                                    makeGeosPoint(_GEOScontextHandles[t], p2));
+      auto geosp1 = makeGeosPoint(_GEOScontextHandles[t], p1);
+      auto geosp2 = makeGeosPoint(_GEOScontextHandles[t], p2);
+      char* de9imStr = GEOSRelate_r(_GEOScontextHandles[t], geosp1, geosp2);
       de9im = util::geo::DE9IMatrix(de9imStr);
-      GEOSFree(de9imStr);
+      GEOSFree_r(_GEOScontextHandles[t], de9imStr);
+      GEOSGeom_destroy_r(_GEOScontextHandles[t], geosp1);
+      GEOSGeom_destroy_r(_GEOScontextHandles[t], geosp2);
     } else {
       de9im = DE9IM(p1, p2);
     }
@@ -4433,11 +4418,12 @@ util::geo::DE9IMatrix Sweeper::DE9IMCheck(const I32Point& a, const Area* b,
   auto ts = TIME();
   util::geo::DE9IMatrix res;
   if (_useGEOS) {
-    char* de9im = GEOSRelate_r(_GEOScontextHandles[t],
-                               makeGeosPoint(_GEOScontextHandles[t], a),
-                               b->geosGeom.getGEOSGeom());
+    auto p = makeGeosPoint(_GEOScontextHandles[t], a);
+    char* de9im =
+        GEOSRelate_r(_GEOScontextHandles[t], p, b->geosGeom.getGEOSGeom());
     res = util::geo::DE9IMatrix(de9im);
-    GEOSFree(de9im);
+    GEOSFree_r(_GEOScontextHandles[t], de9im);
+    GEOSGeom_destroy_r(_GEOScontextHandles[t], p);
   } else {
     res = util::geo::DE9IM(a, b->geom);
   }
