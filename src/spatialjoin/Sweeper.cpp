@@ -288,9 +288,9 @@ I32Box Sweeper::add(const I32Polygon& poly, const std::string& gidR,
 
     std::stringstream str;
     GeometryCache<Area>::writeTo(
-        {std::move(spoly), box, gid, subid, areaSize, _cfg.useArea ? outerAreaSize : 0,
-         boxIds, obb, inner, innerBox, innerOuterAreaSize, outer, outerBox,
-         outerOuterAreaSize},
+        {std::move(spoly), box, gid, subid, areaSize,
+         _cfg.useArea ? outerAreaSize : 0, boxIds, obb, inner, innerBox,
+         innerOuterAreaSize, outer, outerBox, outerOuterAreaSize},
         str);
     ;
 
@@ -1230,10 +1230,6 @@ RelStats Sweeper::sweep() {
   if (_cfg.statsCb) {
     _cfg.statsCb(sum.toString() + "\n\n");
     _cfg.statsCb(sumRel.toString() + "\n");
-    _cfg.statsCb(std::string("Checked ") + std::to_string(totalCheckCount) +
-                 " candidates (with overlapping bounding box" +
-                 (_cfg.useDiagBox ? " and overlapping diagonal box" : "") +
-                 ")\n\n");
   }
 
   return sumRel;
@@ -1269,6 +1265,7 @@ sj::Area Sweeper::areaFromSimpleArea(const SimpleArea* sa) const {
 // _____________________________________________________________________________
 util::geo::DE9IMatrix Sweeper::DE9IMCheck(const Area* a, const Area* b,
                                           size_t t) const {
+  _stats[t].totalComps++;
   // cheap equivalence check
   if (a->box == b->box && a->area == b->area && a->geom == b->geom) {
     // equivalent!
@@ -1436,6 +1433,7 @@ GeomCheckRes Sweeper::check(const Area* a, const Area* b, size_t t) const {
 // _____________________________________________________________________________
 util::geo::DE9IMatrix Sweeper::DE9IMCheck(const Line* a, const Area* b,
                                           size_t t) const {
+  _stats[t].totalComps++;
   if (_cfg.useBoxIds) {
     auto ts = TIME();
     auto r = boxIdIsect(a->boxIds, b->boxIds);
@@ -1544,6 +1542,7 @@ GeomCheckRes Sweeper::check(const Line* a, const Area* b, size_t t) const {
 // _____________________________________________________________________________
 util::geo::DE9IMatrix Sweeper::DE9IMCheck(const Line* a, const Line* b,
                                           size_t t) const {
+  _stats[t].totalComps++;
   // cheap equivalence check
   if (a->box == b->box && a->geom == b->geom) {
     // equivalent!
@@ -1613,6 +1612,7 @@ GeomCheckRes Sweeper::check(const Line* a, const Line* b, size_t t) const {
 // _____________________________________________________________________________
 util::geo::DE9IMatrix Sweeper::DE9IMCheck(const SimpleLine* a, const Area* b,
                                           size_t t) const {
+  _stats[t].totalComps++;
   if (_cfg.useBoxIds) {
     auto ts = TIME();
     auto r = boxIdIsect({{1, 0}, {getBoxId(a->a), 0}}, b->boxIds);
@@ -1721,6 +1721,7 @@ GeomCheckRes Sweeper::check(const SimpleLine* a, const Area* b,
 // _____________________________________________________________________________
 util::geo::DE9IMatrix Sweeper::DE9IMCheck(const SimpleLine* a,
                                           const SimpleLine* b, size_t t) const {
+  _stats[t].totalComps++;
   auto ts = TIME();
 
   // no need to do a full sweep for two simple lines with all the required
@@ -1804,6 +1805,7 @@ GeomCheckRes Sweeper::check(const SimpleLine* a, const SimpleLine* b,
 // _____________________________________________________________________________
 util::geo::DE9IMatrix Sweeper::DE9IMCheck(const SimpleLine* a, const Line* b,
                                           size_t t) const {
+  _stats[t].totalComps++;
   if (_cfg.useBoxIds) {
     auto ts = TIME();
     auto r = boxIdIsect({{1, 0}, {getBoxId(a->a), 0}}, b->boxIds);
@@ -1936,6 +1938,7 @@ std::pair<bool, bool> Sweeper::check(const I32Point& a, const Area* b,
 // _____________________________________________________________________________
 util::geo::DE9IMatrix Sweeper::DE9IMCheck(const I32Point& a, const Line* b,
                                           size_t t) const {
+  _stats[t].totalComps++;
   if (_cfg.useBoxIds) {
     auto ts = TIME();
     auto r = boxIdIsect({{1, 0}, {getBoxId(a), 0}}, b->boxIds);
@@ -2101,6 +2104,8 @@ void Sweeper::writeDE9IM(size_t t, const std::string& a, size_t aSub,
         }
       }
     } else {
+      _relStats[t].de9im++;
+      _relStats[t].de9im++;
       writeRel(t, a, b, "\t" + de9im.toString() + "\t");
       writeRel(t, b, a, "\t" + de9im.transpose().toString() + "\t");
     }
@@ -2208,18 +2213,22 @@ void Sweeper::doDE9IMCheck(const BoxVal cur, const SweepVal sv, size_t t) {
   if (cur.type == POINT && sv.type == POINT) {
     auto p1 = cur.point;
     auto p2 = sv.point;
+    _stats[t].totalComps++;
 
     auto de9im = DE9IM(p1, p2);
 
     if (!de9im.disjoint()) {
+      auto ts = TIME();
       auto a = _pointCache.get(cur.id, cur.large ? -1 : t);
       auto b = _pointCache.get(sv.id, sv.large ? -1 : t);
+      _stats[t].timeGeoCacheRetrievalPoint += TOOK(ts);
       writeDE9IM(t, a->id, a->subId, b->id, b->subId, de9im);
     }
   } else if (cur.type == POINT &&
              (sv.type == POLYGON || sv.type == SIMPLE_POLYGON)) {
     auto p = cur.point;
 
+    auto ts = TIME();
     const Area* a;
     std::shared_ptr<Area> asp;
     Area al;
@@ -2233,16 +2242,21 @@ void Sweeper::doDE9IMCheck(const BoxVal cur, const SweepVal sv, size_t t) {
       a = asp.get();
     }
 
+    _stats[t].timeGeoCacheRetrievalArea += TOOK(ts);
+
     auto de9im = DE9IMCheck(p, a, t);
 
     if (!de9im.disjoint()) {
+      auto ts = TIME();
       auto b = _pointCache.get(cur.id, cur.large ? -1 : t);
+      _stats[t].timeGeoCacheRetrievalPoint += TOOK(ts);
       writeDE9IM(t, b->id, b->subId, a->id, a->subId, de9im);
     }
   } else if ((cur.type == POLYGON || cur.type == SIMPLE_POLYGON) &&
              sv.type == POINT) {
     auto p = sv.point;
 
+    auto ts = TIME();
     const Area* a;
     std::shared_ptr<Area> asp;
     Area al;
@@ -2256,10 +2270,14 @@ void Sweeper::doDE9IMCheck(const BoxVal cur, const SweepVal sv, size_t t) {
       a = asp.get();
     }
 
+    _stats[t].timeGeoCacheRetrievalArea += TOOK(ts);
+
     auto de9im = DE9IMCheck(p, a, t).transpose();
 
     if (!de9im.disjoint()) {
+      auto ts = TIME();
       auto b = _pointCache.get(sv.id, sv.large ? -1 : t);
+      _stats[t].timeGeoCacheRetrievalPoint += TOOK(ts);
       writeDE9IM(t, a->id, a->subId, b->id, b->subId, de9im);
     }
   } else if ((cur.type == SIMPLE_LINE || cur.type == LINE) &&
@@ -2267,19 +2285,28 @@ void Sweeper::doDE9IMCheck(const BoxVal cur, const SweepVal sv, size_t t) {
     auto p = sv.point;
 
     if (cur.type == SIMPLE_LINE) {
+      auto ts = TIME();
       auto b = _simpleLineCache.get(cur.id, cur.large ? -1 : t);
+      _stats[t].timeGeoCacheRetrievalLine += TOOK(ts);
+
       auto de9im = DE9IMCheck(p, b.get(), t);
 
       if (!de9im.disjoint()) {
+        auto ts = TIME();
         auto a = _pointCache.get(sv.id, sv.large ? -1 : t);
+        _stats[t].timeGeoCacheRetrievalPoint += TOOK(ts);
         writeDE9IM(t, a->id, a->subId, b->id, 0, de9im);
       }
     } else {
+      auto ts = TIME();
       auto b = _lineCache.get(cur.id, cur.large ? -1 : t);
+      _stats[t].timeGeoCacheRetrievalLine += TOOK(ts);
       auto de9im = DE9IMCheck(p, b.get(), t);
 
       if (!de9im.disjoint()) {
+        auto ts = TIME();
         auto a = _pointCache.get(sv.id, sv.large ? -1 : t);
+        _stats[t].timeGeoCacheRetrievalPoint += TOOK(ts);
         writeDE9IM(t, a->id, a->subId, b->id, b->subId, de9im);
       }
     }
@@ -2287,49 +2314,65 @@ void Sweeper::doDE9IMCheck(const BoxVal cur, const SweepVal sv, size_t t) {
     auto p = cur.point;
 
     if (sv.type == SIMPLE_LINE) {
+      auto ts = TIME();
       auto b = _simpleLineCache.get(sv.id, sv.large ? -1 : t);
+      _stats[t].timeGeoCacheRetrievalLine += TOOK(ts);
       auto de9im = DE9IMCheck(p, b.get(), t);
 
       if (!de9im.disjoint()) {
+        auto ts = TIME();
         auto a = _pointCache.get(cur.id, cur.large ? -1 : t);
+        _stats[t].timeGeoCacheRetrievalPoint += TOOK(ts);
         writeDE9IM(t, a->id, a->subId, b->id, 0, de9im);
       }
     } else {
+      auto ts = TIME();
       auto b = _lineCache.get(sv.id, sv.large ? -1 : t);
+      _stats[t].timeGeoCacheRetrievalLine += TOOK(ts);
       auto de9im = DE9IMCheck(p, b.get(), t);
 
       if (!de9im.disjoint()) {
+        auto ts = TIME();
         auto a = _pointCache.get(cur.id, cur.large ? -1 : t);
+        _stats[t].timeGeoCacheRetrievalPoint += TOOK(ts);
         writeDE9IM(t, a->id, a->subId, b->id, b->subId, de9im);
       }
     }
   } else if (sv.type == LINE && cur.type == LINE) {
+    auto ts = TIME();
     auto a = _lineCache.get(sv.id, sv.large ? -1 : t);
     auto b = _lineCache.get(cur.id, cur.large ? -1 : t);
+    _stats[t].timeGeoCacheRetrievalLine += TOOK(ts);
     auto de9im = DE9IMCheck(a.get(), b.get(), t);
 
     if (!de9im.disjoint()) {
       writeDE9IM(t, a->id, a->subId, b->id, b->subId, de9im);
     }
   } else if (sv.type == SIMPLE_LINE && cur.type == SIMPLE_LINE) {
+    auto ts = TIME();
     auto a = _simpleLineCache.get(sv.id, sv.large ? -1 : t);
     auto b = _simpleLineCache.get(cur.id, cur.large ? -1 : t);
+    _stats[t].timeGeoCacheRetrievalLine += TOOK(ts);
     auto de9im = DE9IMCheck(a.get(), b.get(), t);
 
     if (!de9im.disjoint()) {
       writeDE9IM(t, a->id, 0, b->id, 0, de9im);
     }
   } else if (sv.type == SIMPLE_LINE && cur.type == LINE) {
+    auto ts = TIME();
     auto a = _simpleLineCache.get(sv.id, sv.large ? -1 : t);
     auto b = _lineCache.get(cur.id, cur.large ? -1 : t);
+    _stats[t].timeGeoCacheRetrievalLine += TOOK(ts);
     auto de9im = DE9IMCheck(a.get(), b.get(), t);
 
     if (!de9im.disjoint()) {
       writeDE9IM(t, a->id, 0, b->id, b->subId, de9im);
     }
   } else if (sv.type == LINE && cur.type == SIMPLE_LINE) {
+    auto ts = TIME();
     auto a = _lineCache.get(sv.id, sv.large ? -1 : t);
     auto b = _simpleLineCache.get(cur.id, cur.large ? -1 : t);
+    _stats[t].timeGeoCacheRetrievalLine += TOOK(ts);
     auto de9im = DE9IMCheck(b.get(), a.get(), t);
 
     if (!de9im.disjoint()) {
@@ -2337,6 +2380,7 @@ void Sweeper::doDE9IMCheck(const BoxVal cur, const SweepVal sv, size_t t) {
     }
   } else if ((sv.type == SIMPLE_POLYGON || sv.type == POLYGON) &&
              (cur.type == SIMPLE_POLYGON || cur.type == POLYGON)) {
+    auto ts = TIME();
     const Area* a;
     std::shared_ptr<Area> asp;
     Area al;
@@ -2362,6 +2406,7 @@ void Sweeper::doDE9IMCheck(const BoxVal cur, const SweepVal sv, size_t t) {
       bsp = _areaCache.get(cur.id, cur.large ? -1 : t);
       b = bsp.get();
     }
+    _stats[t].timeGeoCacheRetrievalArea += TOOK(ts);
 
     auto de9im = DE9IMCheck(b, a, t);
 
@@ -2370,7 +2415,10 @@ void Sweeper::doDE9IMCheck(const BoxVal cur, const SweepVal sv, size_t t) {
     }
   } else if (sv.type == LINE &&
              (cur.type == SIMPLE_POLYGON || cur.type == POLYGON)) {
+    auto ts = TIME();
     auto a = _lineCache.get(sv.id, sv.large ? -1 : t);
+    _stats[t].timeGeoCacheRetrievalLine += TOOK(ts);
+    ts = TIME();
 
     const Area* b;
     std::shared_ptr<Area> bsp;
@@ -2384,6 +2432,7 @@ void Sweeper::doDE9IMCheck(const BoxVal cur, const SweepVal sv, size_t t) {
       bsp = _areaCache.get(cur.id, cur.large ? -1 : t);
       b = bsp.get();
     }
+    _stats[t].timeGeoCacheRetrievalArea += TOOK(ts);
 
     auto de9im = DE9IMCheck(a.get(), b, t);
 
@@ -2392,6 +2441,7 @@ void Sweeper::doDE9IMCheck(const BoxVal cur, const SweepVal sv, size_t t) {
     }
   } else if ((sv.type == SIMPLE_POLYGON || sv.type == POLYGON) &&
              cur.type == LINE) {
+    auto ts = TIME();
     const Area* a;
     std::shared_ptr<Area> asp;
     Area al;
@@ -2404,7 +2454,10 @@ void Sweeper::doDE9IMCheck(const BoxVal cur, const SweepVal sv, size_t t) {
       asp = _areaCache.get(sv.id, sv.large ? -1 : t);
       a = asp.get();
     }
+    _stats[t].timeGeoCacheRetrievalArea += TOOK(ts);
+    ts = TIME();
     auto b = _lineCache.get(cur.id, cur.large ? -1 : t);
+    _stats[t].timeGeoCacheRetrievalLine += TOOK(ts);
     auto de9im = DE9IMCheck(b.get(), a, t);
 
     if (!de9im.disjoint()) {
@@ -2412,7 +2465,11 @@ void Sweeper::doDE9IMCheck(const BoxVal cur, const SweepVal sv, size_t t) {
     }
   } else if (sv.type == SIMPLE_LINE &&
              (cur.type == SIMPLE_POLYGON || cur.type == POLYGON)) {
+    auto ts = TIME();
     auto a = _simpleLineCache.get(sv.id, sv.large ? -1 : t);
+    _stats[t].timeGeoCacheRetrievalLine += TOOK(ts);
+
+    ts = TIME();
     const Area* b;
     std::shared_ptr<Area> bsp;
     Area bl;
@@ -2425,6 +2482,7 @@ void Sweeper::doDE9IMCheck(const BoxVal cur, const SweepVal sv, size_t t) {
       bsp = _areaCache.get(cur.id, cur.large ? -1 : t);
       b = bsp.get();
     }
+    _stats[t].timeGeoCacheRetrievalArea += TOOK(ts);
     auto de9im = DE9IMCheck(a.get(), b, t);
 
     if (!de9im.disjoint()) {
@@ -2432,6 +2490,7 @@ void Sweeper::doDE9IMCheck(const BoxVal cur, const SweepVal sv, size_t t) {
     }
   } else if ((sv.type == SIMPLE_POLYGON || sv.type == POLYGON) &&
              cur.type == SIMPLE_LINE) {
+    auto ts = TIME();
     const Area* a;
     std::shared_ptr<Area> asp;
     Area al;
@@ -2444,7 +2503,10 @@ void Sweeper::doDE9IMCheck(const BoxVal cur, const SweepVal sv, size_t t) {
       asp = _areaCache.get(sv.id, sv.large ? -1 : t);
       a = asp.get();
     }
+    _stats[t].timeGeoCacheRetrievalArea += TOOK(ts);
+    ts = TIME();
     auto b = _simpleLineCache.get(cur.id, cur.large ? -1 : t);
+    _stats[t].timeGeoCacheRetrievalLine += TOOK(ts);
     auto de9im = DE9IMCheck(b.get(), a, t);
 
     if (!de9im.disjoint()) {
@@ -3316,7 +3378,10 @@ void Sweeper::doCheck(const BoxVal cur, const SweepVal sv, size_t t) {
 
     _stats[t].anchorSum += 1;
 
-    if (a->id == b->id) return;  // no self-checks in multigeometries
+    if (a->id == b->id)
+      return;  // no self-checks in multigeometries
+               //
+    _stats[t].totalComps++;
 
     writeIntersect(t, a->id, b->id);
     writeEquals(t, a->id, a->subId, b->id, b->subId);
@@ -4091,6 +4156,7 @@ double Sweeper::distCheck(const I32Point& a, const Area* b, size_t t) const {
 // _____________________________________________________________________________
 util::geo::DE9IMatrix Sweeper::DE9IMCheck(const I32Point& a, const Area* b,
                                           size_t t) const {
+  _stats[t].totalComps++;
   if (_cfg.useBoxIds) {
     auto ts = TIME();
     auto r = boxIdIsect({{1, 0}, {getBoxId(a), 0}}, b->boxIds);
@@ -4152,6 +4218,7 @@ double Sweeper::distCheck(const I32Point& a, const Line* b, size_t t) const {
 // _____________________________________________________________________________
 util::geo::DE9IMatrix Sweeper::DE9IMCheck(const I32Point& a,
                                           const SimpleLine* b, size_t t) const {
+  _stats[t].totalComps++;
   auto ts = TIME();
   auto res = util::geo::DE9IM(
       a, util::geo::XSortedLine<int32_t>(LineSegment<int32_t>(b->a, b->b)));
