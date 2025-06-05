@@ -29,12 +29,6 @@ struct Stats {
   uint64_t timeFullGeoCheckLineLine = 0;
   uint64_t timeFullGeoCheckLinePoint = 0;
 
-  uint64_t timeCutoutGeoCheckAreaArea = 0;
-  uint64_t timeCutoutGeoCheckAreaLine = 0;
-  uint64_t timeCutoutGeoCheckAreaPoint = 0;
-  uint64_t timeCutoutGeoCheckLineLine = 0;
-  uint64_t timeCutoutGeoCheckLinePoint = 0;
-
   uint64_t timeInnerOuterCheckAreaArea = 0;
   uint64_t timeInnerOuterCheckAreaLine = 0;
   uint64_t timeInnerOuterCheckAreaPoint = 0;
@@ -44,12 +38,6 @@ struct Stats {
   size_t fullGeoChecksAreaPoint = 0;
   size_t fullGeoChecksLineLine = 0;
   size_t fullGeoChecksLinePoint = 0;
-
-  size_t cutoutGeoChecksAreaArea = 0;
-  size_t cutoutGeoChecksAreaLine = 0;
-  size_t cutoutGeoChecksAreaPoint = 0;
-  size_t cutoutGeoChecksLineLine = 0;
-  size_t cutoutGeoChecksLinePoint = 0;
 
   size_t innerOuterChecksAreaArea = 0;
   size_t innerOuterChecksAreaLine = 0;
@@ -81,9 +69,7 @@ inline std::string Stats::toString() {
              timeBoxIdIsectLineLine + timeBoxIdIsectLinePoint +
              timeFullGeoCheckAreaArea + timeFullGeoCheckAreaLine +
              timeFullGeoCheckAreaPoint + timeFullGeoCheckLineLine +
-             timeFullGeoCheckLinePoint + timeCutoutGeoCheckAreaArea +
-             timeCutoutGeoCheckAreaLine + timeCutoutGeoCheckAreaPoint +
-             timeCutoutGeoCheckLineLine + timeCutoutGeoCheckLinePoint +
+             timeFullGeoCheckLinePoint +
              timeInnerOuterCheckAreaArea + timeInnerOuterCheckAreaLine) /
       1000000000.0;
 
@@ -160,31 +146,6 @@ inline std::string Stats::toString() {
   t = double(timeFullGeoCheckLinePoint) / 1000000000.0;
   ss << "time for " << fullGeoChecksLinePoint
      << " full geom checks LINE/POINT: " << t << " s (" << ((t / sum) * 100.0)
-     << "%)\n";
-
-  t = double(timeCutoutGeoCheckAreaArea) / 1000000000.0;
-  ss << "time for " << cutoutGeoChecksAreaArea
-     << " cutout geom checks AREA/AREA: " << t << " s (" << ((t / sum) * 100.0)
-     << "%)\n";
-
-  t = double(timeCutoutGeoCheckAreaLine) / 1000000000.0;
-  ss << "time for " << cutoutGeoChecksAreaLine
-     << " cutout geom checks AREA/LINE: " << t << " s (" << ((t / sum) * 100.0)
-     << "%)\n";
-
-  t = double(timeCutoutGeoCheckAreaPoint) / 1000000000.0;
-  ss << "time for " << cutoutGeoChecksAreaPoint
-     << " cutout geom checks AREA/POINT: " << t << " s (" << ((t / sum) * 100.0)
-     << "%)\n";
-
-  t = double(timeCutoutGeoCheckLineLine) / 1000000000.0;
-  ss << "time for " << cutoutGeoChecksLineLine
-     << " cutout geom checks LINE/LINE: " << t << " s (" << ((t / sum) * 100.0)
-     << "%)\n";
-
-  t = double(timeCutoutGeoCheckLinePoint) / 1000000000.0;
-  ss << "time for " << cutoutGeoChecksLinePoint
-     << " cutout geom checks LINE/POINT: " << t << " s (" << ((t / sum) * 100.0)
      << "%)\n";
 
   t = double(timeInnerOuterCheckAreaArea) / 1000000000.0;
@@ -305,11 +266,6 @@ inline Stats operator+(const Stats& a, const Stats& b) {
                a.timeFullGeoCheckAreaPoint + b.timeFullGeoCheckAreaPoint,
                a.timeFullGeoCheckLineLine + b.timeFullGeoCheckLineLine,
                a.timeFullGeoCheckLinePoint + b.timeFullGeoCheckLinePoint,
-               a.timeCutoutGeoCheckAreaArea + b.timeCutoutGeoCheckAreaArea,
-               a.timeCutoutGeoCheckAreaLine + b.timeCutoutGeoCheckAreaLine,
-               a.timeCutoutGeoCheckAreaPoint + b.timeCutoutGeoCheckAreaPoint,
-               a.timeCutoutGeoCheckLineLine + b.timeCutoutGeoCheckLineLine,
-               a.timeCutoutGeoCheckLinePoint + b.timeCutoutGeoCheckLinePoint,
                a.timeInnerOuterCheckAreaArea + b.timeInnerOuterCheckAreaArea,
                a.timeInnerOuterCheckAreaLine + b.timeInnerOuterCheckAreaLine,
                a.timeInnerOuterCheckAreaPoint + b.timeInnerOuterCheckAreaPoint,
@@ -318,11 +274,6 @@ inline Stats operator+(const Stats& a, const Stats& b) {
                a.fullGeoChecksAreaPoint + b.fullGeoChecksAreaPoint,
                a.fullGeoChecksLineLine + b.fullGeoChecksLineLine,
                a.fullGeoChecksLinePoint + b.fullGeoChecksLinePoint,
-               a.cutoutGeoChecksAreaArea + b.cutoutGeoChecksAreaArea,
-               a.cutoutGeoChecksAreaLine + b.cutoutGeoChecksAreaLine,
-               a.cutoutGeoChecksAreaPoint + b.cutoutGeoChecksAreaPoint,
-               a.cutoutGeoChecksLineLine + b.cutoutGeoChecksLineLine,
-               a.cutoutGeoChecksLinePoint + b.cutoutGeoChecksLinePoint,
                a.innerOuterChecksAreaArea + b.innerOuterChecksAreaArea,
                a.innerOuterChecksAreaLine + b.innerOuterChecksAreaLine,
                a.innerOuterChecksAreaPoint + b.innerOuterChecksAreaPoint,
@@ -345,12 +296,13 @@ struct RelStats {
   size_t overlaps = 0;
   size_t crosses = 0;
   size_t touches = 0;
+  size_t de9im = 0;
 
   std::string toString() {
     std::stringstream ss;
     ss << intersects << " intersection, " << equals << " equals, " << covers
        << " covers, " << contains << " contains, " << overlaps << " overlaps, "
-       << crosses << " crosses, " << touches << " touches relations"
+       << crosses << " crosses, " << touches << " touches, " << de9im << " de9im relations"
        << std::endl;
     return ss.str();
   }
@@ -360,7 +312,7 @@ inline RelStats operator+(const RelStats& a, const RelStats& b) {
   return {a.intersects + b.intersects, a.equals + b.equals,
           a.covers + b.covers,         a.contains + b.contains,
           a.overlaps + b.overlaps,     a.crosses + b.crosses,
-          a.touches + b.touches};
+          a.touches + b.touches, a.de9im + b.de9im};
 }
 
 inline void operator+=(RelStats& a, const RelStats& b) { a = a + b; }
