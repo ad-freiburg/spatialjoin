@@ -732,6 +732,8 @@ void Sweeper::multiOut(size_t tOut, const std::string& gidA) {
       auto i = _subDistance[t].find(gidA);
       if (i != _subDistance[t].end()) {
         for (const auto& a : i->second) {
+          _relStats[t].de9im++;
+          _relStats[t].de9im++;
           writeRel(tOut, gidA, a.first, "\t" + std::to_string(a.second) + "\t");
           writeRel(tOut, a.first, gidA, "\t" + std::to_string(a.second) + "\t");
         }
