@@ -297,8 +297,6 @@ I32Box Sweeper::add(const I32Polygon& poly, const std::string& gidR,
         geosInner = GEOSPolygon(batch.geosHndl, innerPoly);
         geosOuter = GEOSPolygon(batch.geosHndl, outerPoly);
       }
-
-      std::cout << area(poly) << " vs " << area(innerPoly) << std::endl;
     }
 
     util::geo::I32Polygon obb;
