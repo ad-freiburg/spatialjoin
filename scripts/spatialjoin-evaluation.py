@@ -70,12 +70,12 @@ def compute(args: argparse.Namespace):
     combinations = set(args.combinations.split(","))
 
     # Create empty log file (clear it if it already exists).
-    log_file_name = (
-        f"{args.basename}.spatialjoin-evaluation.log" if not args.no_log_file else None
-    )
-    if log_file_name:
-        log_file = open(log_file_name, "w")
-        log_file.close()
+    if args.log_file:
+        log_file_name = args.log_file
+    else:
+        log_file_name = f"{args.basename}.spatialjoin-evaluation.tsv"
+    log_file = open(log_file_name, "w")
+    log_file.close()
 
     # Try all combinations of the options.
     count = 0
@@ -208,7 +208,7 @@ def analyze_selected(args: argparse.Namespace):
         if first_name is None:
             first_name, first_time = name, time
             if args.minutes:
-                print(f"{name} -> {time / 60:6.1f} min")
+                print(f"{name} -> {time/60:6.1f} min")
             else:
                 print(f"{name} -> {time:6.1f} s")
         else:
@@ -220,12 +220,12 @@ def analyze_selected(args: argparse.Namespace):
             previous_time = results[previous_name]
             # Show the speedup.
             if args.minutes:
-                print(f"{name} -> {time / 60:6.1f} min, ", end="")
+                print(f"{name} -> {time/60:6.1f} min, ", end="")
             else:
                 print(f"{name} -> {time:6.1f} s, ", end="")
             print(
-                f"{first_time / time:5.2f}x speedup over {first_name}"
-                f" ({previous_time / time:5.2f}x over {previous_name})"
+                f"{previous_time / time:5.2f}x speedup over {previous_name}"
+                f" ({first_time / time:5.2f}x over {first_name})"
             )
 
 
@@ -421,10 +421,9 @@ if __name__ == "__main__":
         help="Compute / analyze only these " "combinations",
     ).completer = ChoicesCompleter(combinations)
     parser.add_argument(
-        "--no-log-file",
-        action="store_true",
-        default=False,
-        help="No log file " "(default: <basename>.spatialjoin-evaluation.log)",
+        "--log-file",
+        type=str,
+        help="Name of log file (default: <basename>.spatialjoin-evaluation.log)",
     )
     parser.add_argument(
         "--rdf-output", action="store_true", default=False, help="Generate RDF output"
