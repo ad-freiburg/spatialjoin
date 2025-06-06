@@ -297,6 +297,8 @@ I32Box Sweeper::add(const I32Polygon& poly, const std::string& gidR,
         geosInner = GEOSPolygon(batch.geosHndl, innerPoly);
         geosOuter = GEOSPolygon(batch.geosHndl, outerPoly);
       }
+
+      std::cout << area(poly) << " vs " << area(innerPoly) << std::endl;
     }
 
     util::geo::I32Polygon obb;
@@ -390,8 +392,8 @@ I32Box Sweeper::add(const I32Line& line, const std::string& gidR, size_t subid,
   cur.subid = subid;
   cur.gid = gid;
 
-  if (line.size() == 2 && (!_cfg.useBoxIds || boxIds.front().first == 1) &&
-      subid == 0) {
+  if (line.size() == 2 &&
+      (!_cfg.useBoxIds || boxIds.front().first == 1) && subid == 0) {
     // simple line
 
     std::stringstream str;
@@ -732,8 +734,6 @@ void Sweeper::multiOut(size_t tOut, const std::string& gidA) {
       auto i = _subDistance[t].find(gidA);
       if (i != _subDistance[t].end()) {
         for (const auto& a : i->second) {
-          _relStats[t].de9im++;
-          _relStats[t].de9im++;
           writeRel(tOut, gidA, a.first, "\t" + std::to_string(a.second) + "\t");
           writeRel(tOut, a.first, gidA, "\t" + std::to_string(a.second) + "\t");
         }
@@ -750,6 +750,8 @@ void Sweeper::multiOut(size_t tOut, const std::string& gidA) {
       auto i = _subDE9IM[t].find(gidA);
       if (i != _subDE9IM[t].end()) {
         for (const auto& a : i->second) {
+          _relStats[t].de9im++;
+          _relStats[t].de9im++;
           writeRel(tOut, gidA, a.first, "\t" + a.second.toString() + "\t");
           writeRel(tOut, a.first, gidA,
                    "\t" + a.second.transpose().toString() + "\t");
@@ -1390,8 +1392,8 @@ util::geo::DE9IMatrix Sweeper::DE9IMCheck(const Area* a, const Area* b,
 
     if (_useGEOS) {
       auto contains =
-          GEOSContains_r(_GEOScontextHandles[t], a->outerGeosGeom.getGEOSGeom(),
-                         b->innerGeosGeom.getGEOSGeom());
+          GEOSContains_r(_GEOScontextHandles[t], b->innerGeosGeom.getGEOSGeom(),
+                         a->outerGeosGeom.getGEOSGeom());
       _stats[t].timeInnerOuterCheckAreaArea += TOOK(ts);
       _stats[t].innerOuterChecksAreaArea++;
       if (contains) return "2FF1FF212";
@@ -1436,8 +1438,8 @@ util::geo::DE9IMatrix Sweeper::DE9IMCheck(const Area* a, const Area* b,
 
     if (_useGEOS) {
       auto contains =
-          GEOSContains_r(_GEOScontextHandles[t], a->geosGeom.getGEOSGeom(),
-                         b->innerGeosGeom.getGEOSGeom());
+          GEOSContains_r(_GEOScontextHandles[t], b->innerGeosGeom.getGEOSGeom(),
+                         a->geosGeom.getGEOSGeom());
       _stats[t].timeInnerOuterCheckAreaArea += TOOK(ts);
       _stats[t].innerOuterChecksAreaArea++;
       if (contains) return "2FF1FF212";
@@ -1547,17 +1549,7 @@ GeomCheckRes Sweeper::check(const Area* a, const Area* b, size_t t) const {
   auto ts = TIME();
 
   if (_useGEOS) {
-    // TODO: compute full check here?
-    auto intersects =
-        GEOSIntersects_r(_GEOScontextHandles[t], b->geosGeom.getGEOSGeom(),
-                         a->geosGeom.getGEOSGeom());
-    auto contains =
-        GEOSContains_r(_GEOScontextHandles[t], b->geosGeom.getGEOSGeom(),
-                       a->geosGeom.getGEOSGeom());
-    _stats[t].timeFullGeoCheckAreaArea += TOOK(ts);
-    _stats[t].fullGeoChecksAreaArea++;
-
-    return {intersects, contains, 0, 0, 0};
+    throw std::runtime_error("Not implemented");
   } else {
     auto res = intersectsContainsCovers(a->geom, a->box, a->outerArea, b->geom,
                                         b->box, b->outerArea);
@@ -1601,8 +1593,8 @@ util::geo::DE9IMatrix Sweeper::DE9IMCheck(const Line* a, const Area* b,
       auto intersects =
           GEOSIntersects_r(_GEOScontextHandles[t], a->geosGeom.getGEOSGeom(),
                            b->outerGeosGeom.getGEOSGeom());
-      _stats[t].timeInnerOuterCheckAreaArea += TOOK(ts);
-      _stats[t].innerOuterChecksAreaArea++;
+      _stats[t].timeInnerOuterCheckAreaLine += TOOK(ts);
+      _stats[t].innerOuterChecksAreaLine++;
       if (!intersects) return "FF1FF0212";
     } else {
       auto ts = TIME();
@@ -1620,10 +1612,10 @@ util::geo::DE9IMatrix Sweeper::DE9IMCheck(const Line* a, const Area* b,
     if (_useGEOS) {
       auto ts = TIME();
       auto contains =
-          GEOSContains_r(_GEOScontextHandles[t], a->geosGeom.getGEOSGeom(),
-                         b->innerGeosGeom.getGEOSGeom());
-      _stats[t].timeInnerOuterCheckAreaArea += TOOK(ts);
-      _stats[t].innerOuterChecksAreaArea++;
+          GEOSContains_r(_GEOScontextHandles[t], b->innerGeosGeom.getGEOSGeom(),
+                         a->geosGeom.getGEOSGeom());
+      _stats[t].timeInnerOuterCheckAreaLine += TOOK(ts);
+      _stats[t].innerOuterChecksAreaLine++;
       if (!contains) return "1FF0FF212";
     } else {
       auto ts = TIME();
@@ -1637,6 +1629,7 @@ util::geo::DE9IMatrix Sweeper::DE9IMCheck(const Line* a, const Area* b,
 
   auto ts = TIME();
   util::geo::DE9IMatrix res;
+
   if (_useGEOS) {
     char* de9im =
         GEOSRelate_r(_GEOScontextHandles[t], a->geosGeom.getGEOSGeom(),
@@ -1703,16 +1696,7 @@ GeomCheckRes Sweeper::check(const Line* a, const Area* b, size_t t) const {
 
   auto ts = TIME();
   if (_useGEOS) {
-    auto intersects =
-        GEOSIntersects_r(_GEOScontextHandles[t], b->geosGeom.getGEOSGeom(),
-                         a->geosGeom.getGEOSGeom());
-    auto contains =
-        GEOSContains_r(_GEOScontextHandles[t], b->geosGeom.getGEOSGeom(),
-                       a->geosGeom.getGEOSGeom());
-    _stats[t].timeFullGeoCheckAreaLine += TOOK(ts);
-    _stats[t].fullGeoChecksAreaLine++;
-
-    return {intersects, contains, 0, 0, 0};
+    throw std::runtime_error("Not implemented");
   } else {
     auto res = intersectsContainsCovers(a->geom, a->box, b->geom, b->box);
     _stats[t].timeFullGeoCheckAreaLine += TOOK(ts);
@@ -1795,16 +1779,7 @@ GeomCheckRes Sweeper::check(const Line* a, const Line* b, size_t t) const {
 
   auto ts = TIME();
   if (_useGEOS) {
-    auto intersects =
-        GEOSIntersects_r(_GEOScontextHandles[t], b->geosGeom.getGEOSGeom(),
-                         a->geosGeom.getGEOSGeom());
-    auto contains =
-        GEOSContains_r(_GEOScontextHandles[t], b->geosGeom.getGEOSGeom(),
-                       a->geosGeom.getGEOSGeom());
-    _stats[t].timeFullGeoCheckLineLine += TOOK(ts);
-    _stats[t].fullGeoChecksLineLine++;
-
-    return {intersects, contains, 0, 0, 0};
+    throw std::runtime_error("Not implemented");
   } else {
     auto res = intersectsCovers(a->geom, b->geom, a->box, b->box);
     _stats[t].timeFullGeoCheckLineLine += TOOK(ts);
@@ -1838,15 +1813,50 @@ util::geo::DE9IMatrix Sweeper::DE9IMCheck(const SimpleLine* a, const Area* b,
     if (!std::get<0>(r)) return "FF1FF0212";
   }
 
-  if (_cfg.useInnerOuter && !b->outer.empty()) {
-    auto ts = TIME();
-    auto r = util::geo::intersectsContainsCovers(
-        I32XSortedLine(LineSegment<int32_t>(a->a, a->b)),
-        getBoundingBox(LineSegment<int32_t>(a->a, a->b)), b->outer,
-        b->outerBox);
-    _stats[t].timeInnerOuterCheckAreaLine += TOOK(ts);
-    _stats[t].innerOuterChecksAreaLine++;
-    if (!std::get<0>(r)) return "FF1FF0212";
+  if (_cfg.useInnerOuter &&
+      ((!_useGEOS && !b->outer.empty()) ||
+       (_useGEOS && !b->outerGeosGeom.empty(_GEOScontextHandles[t])))) {
+    if (_useGEOS) {
+      auto ts = TIME();
+      auto intersects =
+          GEOSIntersects_r(_GEOScontextHandles[t],
+                           lineFromSimpleLine(a, t).geosGeom.getGEOSGeom(),
+                           b->outerGeosGeom.getGEOSGeom());
+      _stats[t].timeInnerOuterCheckAreaLine += TOOK(ts);
+      _stats[t].innerOuterChecksAreaLine++;
+      if (!intersects) return "FF1FF0212";
+    } else {
+      auto ts = TIME();
+      auto r = util::geo::intersectsContainsCovers(
+          I32XSortedLine(LineSegment<int32_t>(a->a, a->b)),
+          getBoundingBox(LineSegment<int32_t>(a->a, a->b)), b->outer,
+          b->outerBox);
+      _stats[t].timeInnerOuterCheckAreaLine += TOOK(ts);
+      _stats[t].innerOuterChecksAreaLine++;
+      if (!std::get<0>(r)) return "FF1FF0212";
+    }
+  }
+
+  if (_cfg.useInnerOuter &&
+      ((!_useGEOS && !b->inner.empty()) ||
+       (_useGEOS && !b->innerGeosGeom.empty(_GEOScontextHandles[t])))) {
+    if (_useGEOS) {
+      auto ts = TIME();
+      auto contains =
+          GEOSContains_r(_GEOScontextHandles[t], b->innerGeosGeom.getGEOSGeom(),
+                         lineFromSimpleLine(a, t).geosGeom.getGEOSGeom());
+      _stats[t].timeInnerOuterCheckAreaLine += TOOK(ts);
+      _stats[t].innerOuterChecksAreaLine++;
+      if (!contains) return "1FF0FF212";
+    } else {
+      auto ts = TIME();
+      auto r = util::geo::intersectsContainsCovers(
+          I32XSortedLine(LineSegment<int32_t>(a->a, a->b)),
+          getBoundingBox(LineSegment<int32_t>(a->a, a->b)), b->inner, b->box);
+      _stats[t].timeInnerOuterCheckAreaLine += TOOK(ts);
+      _stats[t].innerOuterChecksAreaLine++;
+      if (std::get<1>(r)) return "1FF0FF212";
+    }
   }
 
   if (_cfg.useInnerOuter && !b->inner.empty()) {
@@ -1860,6 +1870,7 @@ util::geo::DE9IMatrix Sweeper::DE9IMCheck(const SimpleLine* a, const Area* b,
   }
 
   auto ts = TIME();
+
   util::geo::DE9IMatrix res;
   if (_useGEOS) {
     char* de9im = GEOSRelate_r(_GEOScontextHandles[t],
@@ -1924,16 +1935,7 @@ GeomCheckRes Sweeper::check(const SimpleLine* a, const Area* b,
 
   auto ts = TIME();
   if (_useGEOS) {
-    auto intersects =
-        GEOSIntersects_r(_GEOScontextHandles[t], b->geosGeom.getGEOSGeom(),
-                         lineFromSimpleLine(a, t).geosGeom.getGEOSGeom());
-    auto contains =
-        GEOSContains_r(_GEOScontextHandles[t], b->geosGeom.getGEOSGeom(),
-                       lineFromSimpleLine(a, t).geosGeom.getGEOSGeom());
-    _stats[t].timeFullGeoCheckAreaLine += TOOK(ts);
-    _stats[t].fullGeoChecksAreaLine++;
-
-    return {intersects, contains, 0, 0, 0};
+    throw std::runtime_error("Not implemented");
   } else {
     auto res = intersectsContainsCovers(
         I32XSortedLine(LineSegment<int32_t>(a->a, a->b)),
@@ -2088,16 +2090,7 @@ GeomCheckRes Sweeper::check(const SimpleLine* a, const Line* b,
 
   auto ts = TIME();
   if (_useGEOS) {
-    auto intersects = GEOSIntersects_r(
-        _GEOScontextHandles[t], lineFromSimpleLine(a, t).geosGeom.getGEOSGeom(),
-        b->geosGeom.getGEOSGeom());
-    auto contains = GEOSContains_r(
-        _GEOScontextHandles[t], lineFromSimpleLine(a, t).geosGeom.getGEOSGeom(),
-        b->geosGeom.getGEOSGeom());
-    _stats[t].timeFullGeoCheckLineLine += TOOK(ts);
-    _stats[t].fullGeoChecksLineLine++;
-
-    return {intersects, contains, 0, 0, 0};
+    throw std::runtime_error("Not implemented");
   } else {
     auto res = intersectsCovers(
         I32XSortedLine(LineSegment<int32_t>(a->a, a->b)), b->geom,
@@ -2130,16 +2123,7 @@ GeomCheckRes Sweeper::check(const Line* a, const SimpleLine* b,
 
   auto ts = TIME();
   if (_useGEOS) {
-    auto intersects =
-        GEOSIntersects_r(_GEOScontextHandles[t], a->geosGeom.getGEOSGeom(),
-                         lineFromSimpleLine(b, t).geosGeom.getGEOSGeom());
-    auto contains = GEOSContains_r(
-        _GEOScontextHandles[t], lineFromSimpleLine(b, t).geosGeom.getGEOSGeom(),
-        a->geosGeom.getGEOSGeom());
-    _stats[t].timeFullGeoCheckLineLine += TOOK(ts);
-    _stats[t].fullGeoChecksLineLine++;
-
-    return {intersects, contains, 0, 0, 0};
+    throw std::runtime_error("Not implemented");
   } else {
     auto res = intersectsCovers(
         a->geom, I32XSortedLine(LineSegment<int32_t>(b->a, b->b)), a->box,
@@ -4467,20 +4451,52 @@ util::geo::DE9IMatrix Sweeper::DE9IMCheck(const I32Point& a, const Area* b,
     if (!std::get<1>(r)) return "FF0FFF212";
   }
 
-  if (_cfg.useInnerOuter && !b->outer.empty()) {
+  if (_cfg.useInnerOuter &&
+      ((!_useGEOS && !b->outer.empty()) ||
+       (_useGEOS &&
+        !b->outerGeosGeom.empty(_GEOScontextHandles[t])))) {
     auto ts = TIME();
-    auto r = containsCovers(a, b->outer);
-    _stats[t].timeInnerOuterCheckAreaPoint += TOOK(ts);
-    _stats[t].innerOuterChecksAreaPoint++;
-    if (!std::get<1>(r)) return "FF0FFF212";
+
+    if (_useGEOS) {
+      auto p = makeGeosPoint(_GEOScontextHandles[t], a);
+      auto contains =
+          GEOSContains_r(_GEOScontextHandles[t], b->outerGeosGeom.getGEOSGeom(),
+                         p);
+      GEOSGeom_destroy_r(_GEOScontextHandles[t], p);
+      _stats[t].timeInnerOuterCheckAreaPoint += TOOK(ts);
+      _stats[t].innerOuterChecksAreaPoint++;
+      if (!contains) return "FF0FFF212";
+    } else {
+      auto ts = TIME();
+      auto r = containsCovers(a, b->outer);
+      _stats[t].timeInnerOuterCheckAreaPoint += TOOK(ts);
+      _stats[t].innerOuterChecksAreaPoint++;
+      if (!std::get<1>(r)) return "FF0FFF212";
+    }
   }
 
-  if (_cfg.useInnerOuter && !b->inner.empty()) {
+  if (_cfg.useInnerOuter &&
+      ((!_useGEOS && !b->inner.empty()) ||
+       (_useGEOS &&
+        !b->innerGeosGeom.empty(_GEOScontextHandles[t])))) {
     auto ts = TIME();
-    auto r = containsCovers(a, b->inner);
-    _stats[t].timeInnerOuterCheckAreaPoint += TOOK(ts);
-    _stats[t].innerOuterChecksAreaPoint++;
-    if (std::get<1>(r)) return "0F2FFF212";
+
+    if (_useGEOS) {
+      auto p = makeGeosPoint(_GEOScontextHandles[t], a);
+      auto contains =
+          GEOSContains_r(_GEOScontextHandles[t], b->innerGeosGeom.getGEOSGeom(),
+                         p);
+      GEOSGeom_destroy_r(_GEOScontextHandles[t], p);
+      _stats[t].timeInnerOuterCheckAreaPoint += TOOK(ts);
+      _stats[t].innerOuterChecksAreaPoint++;
+      if (contains) return "0F2FFF212";
+    } else {
+      auto ts = TIME();
+      auto r = containsCovers(a, b->outer);
+      _stats[t].timeInnerOuterCheckAreaPoint += TOOK(ts);
+      _stats[t].innerOuterChecksAreaPoint++;
+      if (std::get<1>(r)) return "0F2FFF212";
+    }
   }
 
   auto ts = TIME();

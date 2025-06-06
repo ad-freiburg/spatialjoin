@@ -91,7 +91,7 @@ bool innerOuterDouglasPeucker(const util::geo::Ring<T>& inputPoints,
   // INNER Douglas-Peucker: Simplify iff there is no point to the *left* and the
   // rightmost point has distance <= eps. Otherwise m is the leftmost point or,
   // if there is no such point, the rightmost point.
-  if (MODE == Mode::INNER) {
+  if (MODE == Mode::OUTER) {
     simplify = (max_dist_left == 0 && max_dist_right <= eps);
     m = max_dist_left > 0 ? m_left : m_right;
   }
@@ -99,7 +99,7 @@ bool innerOuterDouglasPeucker(const util::geo::Ring<T>& inputPoints,
   // OUTER Douglas-Peucker: Simplify iff there is no point to the *right*
   // *and* the leftmost point has distance <= eps. Otherwise m is the rightmost
   // point or if there is no such point the leftmost point.
-  if (MODE == Mode::OUTER) {
+  if (MODE == Mode::INNER) {
     simplify = (max_dist_right == 0 && max_dist_left <= eps);
     m = max_dist_right > 0 ? m_right : m_left;
   }

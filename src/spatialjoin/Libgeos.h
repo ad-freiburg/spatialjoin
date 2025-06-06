@@ -68,14 +68,19 @@ inline GEOSGeometry* makeGeosLinestring(GEOSContextHandle_t geosHndl,
 // _____________________________________________________________________________
 inline GEOSGeometry* makeGeosPolygon(GEOSContextHandle_t geosHndl,
                                      const Ring<int32_t>& ring) {
-  double* coordBufOuter = new double[ring.size() * 2];
+  if (ring.size() == 0) return GEOSGeom_createEmptyPolygon_r(geosHndl);
+
+  double* coordBufOuter = new double[(ring.size() + 1) * 2];
   for (size_t i = 0; i < ring.size(); i++) {
     coordBufOuter[i * 2] = ring[i].getX();
     coordBufOuter[i * 2 + 1] = ring[i].getY();
   }
 
-  auto seqOuter =
-      GEOSCoordSeq_copyFromBuffer_r(geosHndl, coordBufOuter, ring.size(), 0, 0);
+  coordBufOuter[ring.size() * 2] = ring[0].getX();
+  coordBufOuter[ring.size() * 2 + 1] = ring[0].getY();
+
+  auto seqOuter = GEOSCoordSeq_copyFromBuffer_r(geosHndl, coordBufOuter,
+                                                ring.size() + 1, 0, 0);
   delete[] coordBufOuter;
   auto outer = GEOSGeom_createLinearRing_r(geosHndl, seqOuter);
 
@@ -102,28 +107,36 @@ inline GEOSGeometry* makeGeosPolygon(GEOSContextHandle_t geosHndl,
   coordBufOuter[poly.getOuter().size() * 2] = poly.getOuter()[0].getX();
   coordBufOuter[poly.getOuter().size() * 2 + 1] = poly.getOuter()[0].getY();
 
-  auto seqOuter = GEOSCoordSeq_copyFromBuffer_r(geosHndl, coordBufOuter,
-                                                poly.getOuter().size(), 0, 0);
+  auto seqOuter = GEOSCoordSeq_copyFromBuffer_r(
+      geosHndl, coordBufOuter, poly.getOuter().size() + 1, 0, 0);
 
   delete[] coordBufOuter;
   auto outer = GEOSGeom_createLinearRing_r(geosHndl, seqOuter);
 
   GEOSGeometry** innerRings = new GEOSGeometry*[poly.getInners().size()];
+  size_t realInners = 0;
 
   for (size_t j = 0; j < poly.getInners().size(); j++) {
-    double* coordBuf = new double[poly.getInners()[j].size() * 2];
+    if (poly.getInners()[j].size() == 0) continue;
+    realInners++;
+
+    double* coordBuf = new double[(poly.getInners()[j].size() + 1) * 2];
     for (size_t i = 0; i < poly.getInners()[j].size(); i++) {
       coordBuf[i * 2] = poly.getInners()[j][i].getX();
       coordBuf[i * 2 + 1] = poly.getInners()[j][i].getY();
     }
+    coordBuf[poly.getInners()[j].size() * 2] = poly.getInners()[j][0].getX();
+    coordBuf[poly.getInners()[j].size() * 2 + 1] =
+        poly.getInners()[j][0].getY();
+
     auto seqInner = GEOSCoordSeq_copyFromBuffer_r(
-        geosHndl, coordBuf, poly.getInners()[j].size(), 0, 0);
+        geosHndl, coordBuf, poly.getInners()[j].size() + 1, 0, 0);
     delete[] coordBuf;
     innerRings[j] = GEOSGeom_createLinearRing_r(geosHndl, seqInner);
   }
 
-  auto geosPoly = GEOSGeom_createPolygon_r(geosHndl, outer, innerRings,
-                                           poly.getInners().size());
+  auto geosPoly =
+      GEOSGeom_createPolygon_r(geosHndl, outer, innerRings, realInners);
   delete[] innerRings;
   return geosPoly;
 }
