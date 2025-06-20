@@ -7,9 +7,9 @@ Relations are written to stdout (or to a BZ2/GZ/plain file specified with `-o`).
 Can handle massive amounts of input data. For example, the full self-join on the complete ~1.5 B geometries of OpenStreetMap can be computed (excluding the time required for input parsing and output writing) in around 90 minutes on an AMD
 Ryzen 9 7950X machine with 16 physical and 32 virtual cores, 128 GB of RAM (DDR5), and 7.7 TB of disk space (NVMe SSD).
 
-## Reproducibility materials for SIGSPATIAL'24 submission 192
+## Reproducibility materials for SIGSPATIAL'25 submission 143
 
-Additional materials required to do a full evaluation of our tool and a comparison against PostgreSQL+PostGIS can be found [here](https://github.com/ad-freiburg/spatialjoin/blob/master/sigspatial-reproducibility/README.md).
+Additional materials required to do a full evaluation of our tool and a comparison against `libgeos` can be found [here](https://github.com/ad-freiburg/spatialjoin/tree/use-libgeos-option/sigspatial-reproducibility-143).
 
 ## Requirements
 
