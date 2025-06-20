@@ -73,7 +73,7 @@ def compute(args: argparse.Namespace):
     if args.log_file:
         log_file_name = args.log_file
     else:
-        log_file_name = f"{args.basename}.spatialjoin-evaluation.tsv"
+        log_file_name = f"{args.basename}.spatialjoin-evaluation.log"
     log_file = open(log_file_name, "w")
     log_file.close()
 
