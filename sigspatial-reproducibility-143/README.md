@@ -1,7 +1,4 @@
-# Reproducibility materials for SIGSPATIAL'24 submission 192
-
-Here is the link to the [PDF of the
-paper](https://ad-publications.cs.uni-freiburg.de/SIGSPATIAL_spatialjoin_BBKL_2024.pdf).
+# Reproducibility materials for SIGSPATIAL'25 submission 143
 
 ## Datasets
 
@@ -9,29 +6,30 @@ Here are the links to the datasets used in the Evaluation in Section 4. Each
 dataset is provided as a TSV file with two columns, with one geometry per line
 (ID in the first column, WKT in the second column).
 
-Datasets from Section 4.2 (and Table 2):
-[OHM](https://ad-publications.cs.uni-freiburg.de/SIGSPATIAL_spatialjoin_BBKL_2024.materials/OHM.tsv),
-[FIN](https://ad-publications.cs.uni-freiburg.de/SIGSPATIAL_spatialjoin_BBKL_2024.materials/FIN.tsv),
-[GER](https://ad-publications.cs.uni-freiburg.de/SIGSPATIAL_spatialjoin_BBKL_2024.materials/GER.tsv),
-[OSM](https://ad-publications.cs.uni-freiburg.de/SIGSPATIAL_spatialjoin_BBKL_2024.materials/OSM.tsv.bz2).
+Datasets from Section 4.2 (and Tables 2 and 3):
+[FIN](https://ad-publications.cs.uni-freiburg.de/SIGSPATIAL_spatialjoin_BBK_2025.materials/FIN.spatialjoin-input.tsv),
+[GER](https://ad-publications.cs.uni-freiburg.de/SIGSPATIAL_spatialjoin_BBK_2025.materials/GER.spatialjoin-input.tsv),
+[OHM](https://ad-publications.cs.uni-freiburg.de/SIGSPATIAL_spatialjoin_BBK_2025.materials/OHM.spatialjoin-input.tsv),
+[OSM](https://ad-publications.cs.uni-freiburg.de/SIGSPATIAL_spatialjoin_BBK_2025.materials/OSM.spatialjoin-input.tsv).
 
-Datasets from Section 4.3.2:
-[restaurants](https://ad-publications.cs.uni-freiburg.de/SIGSPATIAL_spatialjoin_BBKL_2024.materials/restaurants.tsv),
-[transit stops](https://ad-publications.cs.uni-freiburg.de/SIGSPATIAL_spatialjoin_BBKL_2024.materials/transit-stops.tsv),
-[residential streets](https://ad-publications.cs.uni-freiburg.de/SIGSPATIAL_spatialjoin_BBKL_2024.materials/residential-streets.tsv.bz2),
-[administrative regions](https://ad-publications.cs.uni-freiburg.de/SIGSPATIAL_spatialjoin_BBKL_2024.materials/administrative-regions.tsv),
-[powerlines](https://ad-publications.cs.uni-freiburg.de/SIGSPATIAL_spatialjoin_BBKL_2024.materials/powerlines.tsv).
+Datasets for queries from Section 4.3.2 (and Table 4):
+[Q1](https://ad-publications.cs.uni-freiburg.de/SIGSPATIAL_spatialjoin_BBK_2025.materials/Q1.spatialjoin-input.tsv),
+[Q2](https://ad-publications.cs.uni-freiburg.de/SIGSPATIAL_spatialjoin_BBK_2025.materials/Q2.spatialjoin-input.tsv),
+[Q3](https://ad-publications.cs.uni-freiburg.de/SIGSPATIAL_spatialjoin_BBK_2025.materials/Q3.spatialjoin-input.tsv),
+[Q4](https://ad-publications.cs.uni-freiburg.de/SIGSPATIAL_spatialjoin_BBK_2025.materials/Q4.spatialjoin-input.tsv).
 
 
 ## Comparison of our standalone tool (Section 4.2)
 
 ### Build and install spatialjoin
 
-Fetch this repository and init submodules:
+Fetch the `use-libgeos-option` branch of this repository and init submodules:
 
 ```
-git clone --recurse-submodules https://github.com/ad-freiburg/spatialjoin
+git clone -b use-libgeos-option --recurse-submodules https://github.com/ad-freiburg/spatialjoin
 ```
+
+Aftewards, build the tool:
 
 ```
 cd spatialjoin
@@ -40,32 +38,20 @@ cmake ..
 make -j
 ```
 
-To install, type
-```
-make install
-```
-
-Alternatively, add the `build` directory to your `PATH`.
-
-Go back to the root directory:
+Then go into the sigspatial-reproducibilty-143 folder:
 ```
 cd ..
+cd sigspatial-reproducibilty-143
 ```
-### Preparing data for spatialjoin
 
+## Pre-flight checks
+
+Run
 ```
-wget https://ad-publications.cs.uni-freiburg.de/SIGSPATIAL_spatialjoin_BBKL_2024.materials/OHM.tsv -O OHM.spatialjoin-input.tsv
-wget https://ad-publications.cs.uni-freiburg.de/SIGSPATIAL_spatialjoin_BBKL_2024.materials/FIN.tsv -O FIN.spatialjoin-input.tsv
-wget https://ad-publications.cs.uni-freiburg.de/SIGSPATIAL_spatialjoin_BBKL_2024.materials/GER.tsv -O GER.spatialjoin-input.tsv
-wget https://ad-publications.cs.uni-freiburg.de/SIGSPATIAL_spatialjoin_BBKL_2024.materials/OSM.tsv.bz2 -O OSM.spatialjoin-input.tsv.bz2
-bunzip2 OSM.spatialjoin.input.tsv.bz2
-wget https://ad-publications.cs.uni-freiburg.de/SIGSPATIAL_spatialjoin_BBKL_2024.materials/restaurants.tsv
-wget https://ad-publications.cs.uni-freiburg.de/SIGSPATIAL_spatialjoin_BBKL_2024.materials/transit-stops.tsv
-wget https://ad-publications.cs.uni-freiburg.de/SIGSPATIAL_spatialjoin_BBKL_2024.materials/residential-streets.tsv.bz2
-bunzip2 residential-streets.tsv.bz2
-wget https://ad-publications.cs.uni-freiburg.de/SIGSPATIAL_spatialjoin_BBKL_2024.materials/administrative-regions.tsv
-wget https://ad-publications.cs.uni-freiburg.de/SIGSPATIAL_spatialjoin_BBKL_2024.materials/powerlines.tsv
+make check
 ```
+to check if your evaluation environment is correctly set up.
+
 
 ### Running the evaluation and analyzing the results for Table 3
 
