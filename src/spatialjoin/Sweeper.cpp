@@ -1107,6 +1107,11 @@ RelStats Sweeper::sweep() {
 
       for (ssize_t i = 0; i < len; i += sizeof(BoxVal)) {
         auto cur = reinterpret_cast<const BoxVal*>(buf + i);
+
+        if (_cfg.sweepCancellationCb && jj % 10000 == 0) {
+          _cfg.sweepCancellationCb();
+        }
+
         jj++;
 
         if (!cur->out && cur->loY == 1 && cur->upY == 0 && cur->type == POINT) {
@@ -1117,10 +1122,6 @@ RelStats Sweeper::sweep() {
           actives[cur->side].insert({cur->loY, cur->upY},
                                     {cur->id, cur->type, cur->b45, cur->point,
                                      cur->side, cur->large});
-
-          if (_cfg.sweepCancellationCb && jj % 10000 == 0) {
-            _cfg.sweepCancellationCb();
-          }
 
           if (jj % 500000 == 0) {
             auto lon =
@@ -1184,7 +1185,7 @@ RelStats Sweeper::sweep() {
     _jobs.add({});
 
     // again wait for all workers to finish
-    for (auto& thr : thrds) thr.join();
+    for (auto& thr : thrds) if (thr.joinable()) thr.join();
 
     // rethrow exception
     throw;
@@ -1198,7 +1199,7 @@ RelStats Sweeper::sweep() {
   _jobs.add({});
 
   // wait for all workers to finish
-  for (auto& thr : thrds) thr.join();
+  for (auto& thr : thrds) if (thr.joinable()) thr.join();
 
   // empty job queue
   _jobs.reset();
@@ -1212,7 +1213,7 @@ RelStats Sweeper::sweep() {
   _jobs.add({});
 
   // again wait for all workers to finish
-  for (auto& thr : thrds) thr.join();
+  for (auto& thr : thrds) if (thr.joinable()) thr.join();
 
   flushOutputFiles();
 
@@ -2127,8 +2128,9 @@ void Sweeper::writeDist(size_t t, const std::string& a, size_t aSub,
                        _subDistance[t][a][b] > dist))
         _subDistance[t][a][b] = dist;
     } else {
-      writeRel(t, a, b, "\t" + std::to_string(dist) + "\t");
-      writeRel(t, b, a, "\t" + std::to_string(dist) + "\t");
+      const auto& dStr = util::formatFloat(dist, 4);
+      writeRel(t, a, b, "\t" + dStr + "\t");
+      writeRel(t, b, a, "\t" + dStr + "\t");
     }
   }
 
