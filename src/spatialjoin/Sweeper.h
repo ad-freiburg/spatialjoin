@@ -162,7 +162,8 @@ static const size_t BUFFER_S_PAIRS = 1024 * 1024 * 10;
 
 static const size_t MAX_OUT_LINE_LENGTH = 1000;
 
-static const size_t POINT_CACHE_SIZE = 1000;
+static const size_t POINT_CACHE_SIZE = 10000;
+static const size_t SIMPLE_LINE_CACHE_SIZE = 10000;
 
 // only use large geom cache for extreme geometries
 static const size_t GEOM_LARGENESS_THRESHOLD = 1024 * 1024 * 1024;
@@ -187,7 +188,7 @@ class Sweeper {
         _simpleAreaCache(cfg.geomCacheMaxSize, cfg.numCacheThreads, cache,
                          tmpPrefix),
         _lineCache(cfg.geomCacheMaxSize, cfg.numCacheThreads, cache, tmpPrefix),
-        _simpleLineCache(cfg.geomCacheMaxSize, cfg.numCacheThreads, cache,
+        _simpleLineCache(SIMPLE_LINE_CACHE_SIZE, cfg.numCacheThreads, cache,
                          tmpPrefix),
         _cache(cache),
         _out(out),

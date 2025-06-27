@@ -109,6 +109,12 @@ struct Point {
   uint16_t subId;
 };
 
+template <typename W>
+struct ValEntry {
+  size_t estimatedSize;
+  std::shared_ptr<W> val;
+};
+
 const static size_t WRITE_BUFF_SIZE = 1024 * 1024 * 4l;
 
 template <typename W>
@@ -126,6 +132,7 @@ class GeometryCache {
     _geomsFReads.resize(numthreads + 1);
 
     _vals.resize(numthreads + 1);
+    _valSizes.resize(numthreads + 1);
     _idMap.resize(numthreads + 1);
 
     _fName = getFName();
@@ -154,10 +161,12 @@ class GeometryCache {
   static size_t writeTo(const W& val, std::ostream& str);
 
   std::shared_ptr<W> get(size_t off, ssize_t tid) const;
-  W getFrom(size_t off, std::istream& str) const;
-  std::shared_ptr<W> cache(size_t off, const W& val, size_t tid) const;
+  std::pair<size_t, W> getFrom(size_t off, std::istream& str) const;
+  std::shared_ptr<W> cache(size_t off, const W& val, size_t estSize, size_t tid) const;
 
   std::shared_ptr<W> get(size_t off) const { return get(off, 0); }
+
+  std::pair<size_t, size_t> size() const;
 
   void flush();
 
@@ -179,27 +188,24 @@ class GeometryCache {
 
  private:
   std::string getFName() const;
-  void readLine(std::istream& str, util::geo::I32XSortedLine& ret) const;
+  size_t readLine(std::istream& str, util::geo::I32XSortedLine& ret) const;
   static size_t writeLine(const util::geo::I32XSortedLine& ret,
                           std::ostream& str);
 
-  void readPoly(std::istream& str, util::geo::I32XSortedPolygon& ret) const;
+  size_t readPoly(std::istream& str, util::geo::I32XSortedPolygon& ret) const;
   static size_t writePoly(const util::geo::I32XSortedPolygon& ret,
                           std::ostream& str);
-
-  void readMultiPoly(std::istream& str,
-                     util::geo::I32XSortedMultiPolygon& ret) const;
-  void writeMultiPoly(const util::geo::I32XSortedMultiPolygon& ret);
 
   mutable std::fstream _geomsF;
   mutable std::vector<std::fstream> _geomsFReads;
   size_t _geomsOffset = 0;
 
-  mutable std::vector<std::list<std::pair<size_t, std::shared_ptr<W>>>> _vals;
+  mutable std::vector<std::list<std::pair<size_t, ValEntry<W>>>> _vals;
   mutable std::vector<std::unordered_map<
       size_t,
-      typename std::list<std::pair<size_t, std::shared_ptr<W>>>::iterator>>
+      typename std::list<std::pair<size_t, ValEntry<W>>>::iterator>>
       _idMap;
+  mutable std::vector<size_t> _valSizes;
 
   size_t _maxSize, _numThreads;
   std::string _dir, _tmpPrefix;

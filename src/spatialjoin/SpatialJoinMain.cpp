@@ -32,6 +32,7 @@ static const char* COPY =
 static const char* AUTHORS = "Patrick Brosi <brosi@informatik.uni-freiburg.de>";
 
 static const size_t NUM_THREADS = std::thread::hardware_concurrency();
+static const size_t DEFAULT_CACHE_SIZE = 300 * 1000 * 1000 * (NUM_THREADS * 3);
 
 // _____________________________________________________________________________
 void printHelp(int argc, char** argv) {
@@ -43,58 +44,59 @@ void printHelp(int argc, char** argv) {
       << "Usage: " << argv[0] << " [--help] [-h] <input>\n\n"
       << "Allowed options:\n\n"
       << std::setfill(' ') << std::left << "General:\n"
-      << std::setw(41) << "  -h [ --help ]"
+      << std::setw(42) << "  -h [ --help ]"
       << "show this help message\n"
-      << std::setw(41) << "  -o [ --output ] (default: '')"
+      << std::setw(42) << "  -o [ --output ] (default: '')"
       << "output file (.bz2 or .gz supported), empty prints to stdout\n"
-      << std::setw(41) << "  -c [ --cache ] (default: '.')"
+      << std::setw(42) << "  -c [ --cache ] (default: '.')"
       << "cache directory for intermediate files\n"
-      // << std::setw(41) << "  -C"
-      // << "don't parse input, re-use intermediate cache files\n"
-      << std::setw(41) << "  --prefix (default: '')"
+      << std::setw(42) << "  --de9im"
+      << "output DE-9IM relationships\n"
+      << std::setw(42) << "  --prefix (default: '')"
       << "prefix added at the beginning of every relation\n"
-      << std::setw(41) << "  --intersects (default: ' intersects ')"
+      << std::setw(42) << "  --intersects (default: ' intersects ')"
       << "separator between intersecting geometry IDs\n"
-      << std::setw(41) << "  --contains (default: ' contains ')"
+      << std::setw(42) << "  --contains (default: ' contains ')"
       << "separator between containing geometry IDs\n"
-      << std::setw(41) << "  --covers (default: ' covers ')"
+      << std::setw(42) << "  --covers (default: ' covers ')"
       << "separator between covering geometry IDs\n"
-      << std::setw(41) << "  --touches (default: ' touches ')"
+      << std::setw(42) << "  --touches (default: ' touches ')"
       << "separator between touching geometry IDs\n"
-      << std::setw(41) << "  --equals (default: ' equals ')"
+      << std::setw(42) << "  --equals (default: ' equals ')"
       << "separator between equivalent geometry IDs\n"
-      << std::setw(41) << "  --overlaps (default: ' overlaps ')"
+      << std::setw(42) << "  --overlaps (default: ' overlaps ')"
       << "separator between overlapping geometry IDs\n"
-      << std::setw(41) << "  --crosses (default: ' crosses ')"
+      << std::setw(42) << "  --crosses (default: ' crosses ')"
       << "separator between crossing geometry IDs\n"
-      << std::setw(41) << "  --suffix (default: '\\n')"
+      << std::setw(42) << "  --suffix (default: '\\n')"
       << "suffix added at the beginning of every relation\n\n"
-      << std::setw(41) << "  --within-distance (default: '')"
+      << std::setw(42) << "  --within-distance (default: '')"
       << "if set to non-negative value, only compute for each object the "
          "objects within the given distance\n\n"
       << std::setfill(' ') << std::left << "Geometric computation:\n"
-      << std::setw(41) << "  --no-box-ids"
+      << std::setw(42) << "  --no-box-ids"
       << "disable box id criteria for contains/covers/intersect computation\n"
-      << std::setw(41) << "  --no-surface-area"
+      << std::setw(42) << "  --no-surface-area"
       << "disable surface area criteria for polygon contains/covers\n"
-      << std::setw(41) << "  --no-oriented-envelope"
+      << std::setw(42) << "  --no-oriented-envelope"
       << "disable oriented envelope cirteria for contains/intersect\n"
-      << std::setw(41) << "  --no-diag-box"
+      << std::setw(42) << "  --no-diag-box"
       << "disable diagonal bounding-box based pre-filter\n"
-      << std::setw(41) << "  --no-fast-sweep-skip"
+      << std::setw(42) << "  --no-fast-sweep-skip"
       << "disable fast sweep skip using binary search\n"
-      << std::setw(41) << "  --use-inner-outer"
+      << std::setw(42) << "  --use-inner-outer"
       << "(experimental) use inner/outer geometries\n\n"
       << std::setfill(' ') << std::left << "Misc:\n"
-      << std::setw(41)
+      << std::setw(42)
       << "  --num-threads (default: " + std::to_string(NUM_THREADS) + ")"
       << "number of threads for geometric computation\n"
-      << std::setw(41)
+      << std::setw(42)
       << "  --num-caches (default: " + std::to_string(NUM_THREADS) + ")"
       << "number of geometry caches (if < --num-threads, syncing\n"
-      << std::setw(41) << " "
-      << "is done via locks)\n"
-      << std::setw(41) << "  --no-geometry-checks"
+      << std::setw(42)
+      << "  --cache-max-size (default: " + std::to_string(DEFAULT_CACHE_SIZE) + ")"
+      << "maximum approx. size in bytes of cache per type and thread\n"
+      << std::setw(42) << "  --no-geometry-checks"
       << "do not compute geometric relations, only report number of "
          "candidates\n"
       << std::endl;
@@ -134,7 +136,7 @@ int main(int argc, char** argv) {
 
   size_t numThreads = NUM_THREADS;
   size_t numCaches = NUM_THREADS;
-  size_t geomCacheMaxSize = 5000;
+  size_t geomCacheMaxSizeBytes = DEFAULT_CACHE_SIZE;
 
   for (int i = 1; i < argc; i++) {
     std::string cur = argv[i];
@@ -248,7 +250,7 @@ int main(int argc, char** argv) {
         state = 0;
         break;
       case 14:
-        geomCacheMaxSize = atoi(cur.c_str());
+        std::stringstream(cur) >> geomCacheMaxSizeBytes;
         state = 0;
         break;
       case 15:
@@ -264,7 +266,7 @@ int main(int argc, char** argv) {
 
   Sweeper sweeper({numThreads,
                    numCaches,
-                   geomCacheMaxSize,
+                   geomCacheMaxSizeBytes / (numThreads * 3),
                    prefix,
                    intersects,
                    contains,
