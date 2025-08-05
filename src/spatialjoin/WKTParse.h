@@ -5,10 +5,10 @@
 #ifndef SPATIALJOINS_WKTPARSE_H_
 #define SPATIALJOINS_WKTPARSE_H_
 
-#include <atomic>
 #include "Sweeper.h"
 #include "util/geo/Geo.h"
 #include "util/log/Log.h"
+#include <atomic>
 
 #ifdef __cpp_lib_string_view
 #include <string_view>
@@ -23,55 +23,60 @@ struct ParseJob {
   util::geo::DPoint point;
 };
 
-inline bool operator==(const ParseJob& a, const ParseJob& b) {
+inline bool operator==(const ParseJob &a, const ParseJob &b) {
   return a.line == b.line && a.str == b.str && a.side == b.side;
 }
 
 typedef std::vector<ParseJob> ParseBatch;
 
-class WKTParser {
- public:
-  WKTParser(sj::Sweeper* sweeper, size_t numThreads);
-  ~WKTParser();
-  void parse(char* c, size_t size, bool side);
-  void parseWKT(const char* c, size_t id, bool side);
-  void parseWKT(const std::string& str, size_t id, bool side);
-#ifdef __cpp_lib_string_view
-  void parseWKT(const std::string_view str, size_t id, bool side);
-#endif
-  void parsePoint(util::geo::DPoint point, size_t id, bool side);
+template <typename ParseJobT> class WKTParserBase {
+public:
+  WKTParserBase(sj::Sweeper *sweeper, size_t numThreads);
+  ~WKTParserBase();
 
   util::geo::I32Box getBoundingBox() const { return _bbox; }
 
   void done();
 
- private:
-  void parseLine(char* c, size_t len, size_t gid, size_t t,
-                 sj::WriteBatch& batch, bool side);
-  void processQueue(size_t t);
+  static util::geo::I32Point projFunc(const util::geo::DPoint &p) {
+    auto projPoint = latLngToWebMerc(p);
+    return {static_cast<int>(projPoint.getX() * PREC),
+            static_cast<int>(projPoint.getY() * PREC)};
+  }
+
+protected:
+  void parseLine(char *c, size_t len, size_t gid, size_t t,
+                 sj::WriteBatch &batch, bool side);
+  virtual void processQueue(size_t t);
   size_t _gid = 1;
   std::string _dangling;
 
-  sj::Sweeper* _sweeper;
+  sj::Sweeper *_sweeper;
 
-  ParseBatch _curBatch;
+  std::vector<ParseJobT> _curBatch;
 
   util::geo::I32Box _bbox;
 
-  util::JobQueue<ParseBatch> _jobs;
+  util::JobQueue<std::vector<ParseJobT>> _jobs;
   std::vector<std::thread> _thrds;
 
   std::vector<util::geo::I32Box> _bboxes;
 
   std::atomic<bool> _cancelled;
-
-  static util::geo::I32Point projFunc(const util::geo::DPoint& p) {
-    auto projPoint = latLngToWebMerc(p);
-    return {static_cast<int>(projPoint.getX() * PREC),
-            static_cast<int>(projPoint.getY() * PREC)};
-  }
 };
 
-}  // namespace sj
+class WKTParser : public WKTParserBase<ParseJob> {
+public:
+  WKTParser(sj::Sweeper *sweeper, size_t numThreads);
+  void parse(char *c, size_t size, bool side);
+  void parseWKT(const char *c, size_t id, bool side);
+  void parseWKT(const std::string &str, size_t id, bool side);
+#ifdef __cpp_lib_string_view
+  void parseWKT(const std::string_view str, size_t id, bool side);
+#endif
+  void parsePoint(util::geo::DPoint point, size_t id, bool side);
+};
+
+} // namespace sj
 
 #endif
