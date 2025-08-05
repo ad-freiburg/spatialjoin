@@ -13,7 +13,11 @@ using sj::WKTParserBase;
 
 // _____________________________________________________________________________
 WKTParser::WKTParser(sj::Sweeper *sweeper, size_t numThreads)
-    : WKTParserBase<ParseJob>(sweeper, numThreads) {}
+    : WKTParserBase<ParseJob>(sweeper, numThreads) {
+  for (size_t i = 0; i < _thrds.size(); i++) {
+    _thrds[i] = std::thread(&WKTParser::processQueue, this, i);
+  }
+}
 
 // _____________________________________________________________________________
 void WKTParser::processQueue(size_t t) {

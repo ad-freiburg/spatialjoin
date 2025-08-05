@@ -33,11 +33,7 @@ template <typename ParseJobT> class WKTParserBase {
 public:
   WKTParserBase(sj::Sweeper *sweeper, size_t numThreads)
       : _sweeper(sweeper), _jobs(1000), _thrds(numThreads), _bboxes(numThreads),
-        _cancelled(false) {
-    for (size_t i = 0; i < _thrds.size(); i++) {
-      _thrds[i] = std::thread(&WKTParserBase<ParseJobT>::processQueue, this, i);
-    }
-  };
+        _cancelled(false) {};
   ~WKTParserBase() {
     // graceful shutdown of all threads, should they be still running
     _cancelled = true;
