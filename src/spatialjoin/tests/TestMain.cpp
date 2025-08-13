@@ -842,8 +842,8 @@ int main(int, char**) {
       TEST(res.find("$freiburg1\t2FFF1FFF2\tfreiburg2$") != std::string::npos);
       TEST(res.find("$freiburg2\t2FFF1FFF2\tfreiburg1$") != std::string::npos);
 
-      TEST(res.find("$freiburg1\tFF2101FF2\tgrenzpart$") != std::string::npos);
-      TEST(res.find("$grenzpart\tF1FF0F212\tfreiburg1$") != std::string::npos);
+      TEST(res.find("$freiburg1\tFF210FFF2\tgrenzpart$") != std::string::npos);
+      TEST(res.find("$grenzpart\tF1FF0F2F2\tfreiburg1$") != std::string::npos);
 
       TEST(res.find("$Umkirch\tFF2F11212\tfreiburg1$") != std::string::npos);
       TEST(res.find("$freiburg1\t212FF1FF2\tAltstadt$") != std::string::npos);
