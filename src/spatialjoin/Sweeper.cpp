@@ -1786,8 +1786,8 @@ util::geo::DE9IMatrix Sweeper::DE9IMCheck(const SimpleLine* a,
   // datastructures, just unroll the individual checks here
 
   auto r = util::geo::IntersectorLine<int32_t>::check(
-      LineSegment<int32_t>(a->a, a->b), 32767, 32767,
-      LineSegment<int32_t>(b->a, b->b), 32767, 32767);
+      LineSegment<int32_t>(a->a, a->b), 32767, true, 32767, true,
+      LineSegment<int32_t>(b->a, b->b), 32767, true, 32767, true);
 
   const bool weakIntersect = r;
   const bool strictIntersect = (r >> 0) & 1;
@@ -1835,8 +1835,8 @@ GeomCheckRes Sweeper::check(const SimpleLine* a, const SimpleLine* b,
   // datastructures, just unroll the individual checks here
 
   auto r = util::geo::IntersectorLine<int32_t>::check(
-      LineSegment<int32_t>(a->a, a->b), 32767, 32767,
-      LineSegment<int32_t>(b->a, b->b), 32767, 32767);
+      LineSegment<int32_t>(a->a, a->b), 32767, true, 32767, true,
+      LineSegment<int32_t>(b->a, b->b), 32767, true, 32767, true);
 
   bool weakIntersect = r;
   bool strictIntersect = (r >> 0) & 1;
