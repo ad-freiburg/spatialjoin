@@ -25,12 +25,10 @@ void WKTParser::processQueue(size_t t) {
   while ((batch = _jobs.get()).size()) {
     sj::WriteBatch w;
     for (const auto &job : batch) {
-      if (_cancelled)
-        break;
+      if (_cancelled) break;
 
       if (job.str.size()) {
-        parseLine(const_cast<char *>(job.str.c_str()), job.str.size(), job.line,
-                  t, w, job.side);
+        parseLine(job.str.c_str(), job.str.size(), job.line, t, w, job.side);
       } else {
         // parse point directly
         auto mercPoint = latLngToWebMerc(job.point);
@@ -50,8 +48,7 @@ void WKTParser::processQueue(size_t t) {
 // _____________________________________________________________________________
 void WKTParser::parseWKT(const char *c, size_t id, bool side) {
   // dont parse empty strings
-  if (*c == 0)
-    return;
+  if (*c == 0) return;
 
   _curBatch.reserve(10000);
   _curBatch.push_back({std::string(c), id, side, {0, 0}});
@@ -64,8 +61,7 @@ void WKTParser::parseWKT(const char *c, size_t id, bool side) {
 
 // _____________________________________________________________________________
 void WKTParser::parseWKT(const std::string &str, size_t id, bool side) {
-  if (str.empty())
-    return;
+  if (str.empty()) return;
 
   _curBatch.reserve(10000);
   _curBatch.push_back({str, id, side, {0, 0}});
@@ -80,8 +76,7 @@ void WKTParser::parseWKT(const std::string &str, size_t id, bool side) {
 // _____________________________________________________________________________
 void WKTParser::parseWKT(const std::string_view str, size_t id, bool side) {
   // dont parse empty strings
-  if (str.empty())
-    return;
+  if (str.empty()) return;
 
   _curBatch.reserve(10000);
   _curBatch.push_back({std::string{str}, id, side, {0, 0}});
@@ -117,16 +112,15 @@ void WKTParser::parse(char *c, size_t size, bool side) {
       c[pNext] = 0;
 
       if (_dangling.size()) {
-        _dangling += (c + p); // guaranteed to be null terminated
+        _dangling += (c + p);  // guaranteed to be null terminated
         _curBatch.push_back({_dangling, _gid, side, {0, 0}});
         _dangling.clear();
       } else {
-        if (*(c + p))
-          _curBatch.push_back({c + p, _gid, side, {0, 0}});
+        if (*(c + p)) _curBatch.push_back({c + p, _gid, side, {0, 0}});
 
         if (_curBatch.size() > 1000) {
           _jobs.add(std::move(_curBatch));
-          _curBatch.clear(); // std doesnt guarantee that after move
+          _curBatch.clear();  // std doesnt guarantee that after move
           _curBatch.reserve(1000);
         }
       }
@@ -137,11 +131,11 @@ void WKTParser::parse(char *c, size_t size, bool side) {
     } else {
       size_t oldSize = _dangling.size();
       _dangling.resize(oldSize + (size - p));
-      memcpy(const_cast<char *>(&_dangling.data()[oldSize]), (c + p), size - p);
+      memcpy(&_dangling[oldSize], (c + p), size - p);
 
       if (_curBatch.size()) {
         _jobs.add(std::move(_curBatch));
-        _curBatch.clear(); // std doesnt guarantee that after move
+        _curBatch.clear();  // std doesnt guarantee that after move
         _curBatch.reserve(1000);
       }
 
@@ -151,7 +145,7 @@ void WKTParser::parse(char *c, size_t size, bool side) {
 
   if (_curBatch.size()) {
     _jobs.add(std::move(_curBatch));
-    _curBatch.clear(); // std doesnt guarantee that after move
+    _curBatch.clear();  // std doesnt guarantee that after move
     _curBatch.reserve(1000);
   }
 }

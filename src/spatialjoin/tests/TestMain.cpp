@@ -21,8 +21,9 @@ std::string fullRun(const std::string& file, const sj::SweeperCfg& cfg) {
   {
     Sweeper sweeper(cfg, ".", ".resTmp");
 
-    // extreme buffer size 1 here for test purposes
-    const static size_t BUFF_SIZE = 1000000;
+    // small buffer size 1 here for test purposes to force buffer overflows
+    // during parsing
+    const static size_t BUFF_SIZE = 100;
     char* buf = new char[BUFF_SIZE];
 
     size_t len = 0;

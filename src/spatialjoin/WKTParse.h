@@ -5,10 +5,11 @@
 #ifndef SPATIALJOINS_WKTPARSE_H_
 #define SPATIALJOINS_WKTPARSE_H_
 
+#include <atomic>
+
 #include "Sweeper.h"
 #include "util/geo/Geo.h"
 #include "util/log/Log.h"
-#include <atomic>
 
 #ifdef __cpp_lib_string_view
 #include <string_view>
@@ -29,11 +30,15 @@ inline bool operator==(const ParseJob &a, const ParseJob &b) {
 
 typedef std::vector<ParseJob> ParseBatch;
 
-template <typename ParseJobT> class WKTParserBase {
-public:
+template <typename ParseJobT>
+class WKTParserBase {
+ public:
   WKTParserBase(sj::Sweeper *sweeper, size_t numThreads)
-      : _sweeper(sweeper), _jobs(1000), _thrds(numThreads), _bboxes(numThreads),
-        _cancelled(false) {};
+      : _sweeper(sweeper),
+        _jobs(1000),
+        _thrds(numThreads),
+        _bboxes(numThreads),
+        _cancelled(false){};
   ~WKTParserBase() {
     // graceful shutdown of all threads, should they be still running
     _cancelled = true;
@@ -43,8 +48,7 @@ public:
 
     // wait for all workers to finish
     for (auto &thr : _thrds)
-      if (thr.joinable())
-        thr.join();
+      if (thr.joinable()) thr.join();
   };
 
   util::geo::I32Box getBoundingBox() const { return _bbox; }
@@ -58,8 +62,7 @@ public:
     // end event
     _jobs.add({});
     // wait for all workers to finish
-    for (auto &thr : _thrds)
-      thr.join();
+    for (auto &thr : _thrds) thr.join();
 
     // collect bounding box of parsed geometries
     for (const auto &box : _bboxes) {
@@ -73,62 +76,66 @@ public:
             static_cast<int>(projPoint.getY() * PREC)};
   }
 
-protected:
-  void parseLine(char *c, size_t len, size_t gid, size_t t,
+ protected:
+  void parseLine(const char *c, size_t len, size_t gid, size_t t,
                  sj::WriteBatch &batch, bool side) {
     using namespace util::geo;
 
-    char *idp = reinterpret_cast<char *>(strchr(c, '\t'));
+    const char *lastC = c + len;
+
+    // search for first occurance of tab
+    const char *idp = strchr(c, '\t');
 
     std::string id;
 
     if (idp) {
-      *idp = 0;
-      id = c;
-      len -= (idp - c) + 1;
+      // if we have a tab, set id
+      id.assign(c, idp - c);
       c = idp + 1;
     } else {
       id = std::to_string(gid);
     }
 
-    idp = reinterpret_cast<char *>(strchr(c, '\t'));
+    // search for next tab occurance
+    idp = strchr(c, '\t');
 
     if (idp) {
-      *idp = 0;
       side = atoi(c);
-      len -= (idp - c) + 1;
       c = idp + 1;
     }
 
-    if (len > 2 && *c == '<') {
-      char *end = strchr(c, ',');
+    if (lastC - c > 2 && *c == '<') {
+      // handle reference geometries
+      const char *end = strchr(c, ',');
       size_t subId = 0;
       c += 1;
-      if (end) {
-        subId = 1;
-        do {
-          *end = 0;
+
+      if (end) subId = 1;
+
+      if (!end) end = strrchr(c, '>');
+
+      do {
+        c += std::strspn(c, " \f\n\r\t\v");
+        if (!end) {
+          return;  // erroneous line, ignore
+        }
+
+        std::string referenceId;
+        referenceId.assign(c, end - c);
+
+        if (!referenceId.empty()) {
           _sweeper->add(
-              c,
+              referenceId,
               util::geo::I32Box({std::numeric_limits<int32_t>::min(),
                                  std::numeric_limits<int32_t>::min()},
                                 {std::numeric_limits<int32_t>::max(),
                                  std::numeric_limits<int32_t>::max()}),
               id, subId, side, batch);
-          len -= (end - c) + 1;
-          c = end + 1;
-        } while (len > 0 && (end = strchr(c, ',')));
-      }
-
-      c[len - 2] = 0;
-      _sweeper->add(c,
-                    util::geo::I32Box({std::numeric_limits<int32_t>::min(),
-                                       std::numeric_limits<int32_t>::min()},
-                                      {std::numeric_limits<int32_t>::max(),
-                                       std::numeric_limits<int32_t>::max()}),
-                    id, subId, side, batch);
+        }
+        c = end + 1;
+      } while (c < lastC && ((end = strchr(c, ',')) || (end = strchr(c, '>'))));
     } else {
-      auto wktType = getWKTType(c, const_cast<const char **>(&c));
+      auto wktType = getWKTType(c, &c);
       if (wktType == util::geo::WKTType::POINT) {
         const auto &point = pointFromWKT<int32_t>(c, 0, &projFunc);
         _bboxes[t] = util::geo::extendBox(_sweeper->add(point, id, side, batch),
@@ -162,18 +169,12 @@ protected:
 
         size_t numGeoms = 0;
         for (const auto &a : col) {
-          if (a.getType() == 0)
-            numGeoms++;
-          if (a.getType() == 1)
-            numGeoms++;
-          if (a.getType() == 2)
-            numGeoms++;
-          if (a.getType() == 3)
-            numGeoms += a.getMultiLine().size();
-          if (a.getType() == 4)
-            numGeoms += a.getMultiPolygon().size();
-          if (a.getType() == 6)
-            numGeoms += a.getMultiPoint().size();
+          if (a.getType() == 0) numGeoms++;
+          if (a.getType() == 1) numGeoms++;
+          if (a.getType() == 2) numGeoms++;
+          if (a.getType() == 3) numGeoms += a.getMultiLine().size();
+          if (a.getType() == 4) numGeoms += a.getMultiPolygon().size();
+          if (a.getType() == 6) numGeoms += a.getMultiPoint().size();
         }
 
         size_t subId = numGeoms > 1 ? 1 : 0;
@@ -226,7 +227,7 @@ protected:
 };
 
 class WKTParser : public WKTParserBase<ParseJob> {
-public:
+ public:
   WKTParser(sj::Sweeper *sweeper, size_t numThreads);
   void parse(char *c, size_t size, bool side);
   void parseWKT(const char *c, size_t id, bool side);
@@ -236,10 +237,10 @@ public:
 #endif
   void parsePoint(util::geo::DPoint point, size_t id, bool side);
 
-protected:
+ protected:
   void processQueue(size_t t) override;
 };
 
-} // namespace sj
+}  // namespace sj
 
 #endif
