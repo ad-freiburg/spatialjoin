@@ -68,7 +68,7 @@ endif()
 add_subdirectory(src)
 
 # tests
-if(CMAKE_TESTING_ENABLED)
+if(PROJECT_IS_TOP_LEVEL AND CMAKE_TESTING_ENABLED)
   add_test("utilTest" utilTest)
   add_test("spatialjoinTest" spatialjoinTest)
 endif()
