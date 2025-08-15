@@ -63,7 +63,7 @@ $ spatialjoin < example.txt
 You may specify a custom geometry string ID, outputted instead of the line number, before the WKT, separated by a tab:
 
 ```
-$ cat example.txt
+$ cat example_id.txt
 polygon1	POLYGON((0 0, 10  0 ,10 10, 0 10, 0 0))
 polygon2	POLYGON((0 0, 10 0, 10 10, 0 10, 0 0), (1 1, 9 1, 9 9, 1 9, 1 1))
 multipolygon3	MULTIPOLYGON(((0 0, 10 0, 10 10, 0 10, 0 0), (1 1, 9 1, 9 9, 1 9, 1 1)))
@@ -76,7 +76,7 @@ point9	POINT(0.5 0.5)
 ```
 
 ```
-$ spatialjoin < example.txt
+$ spatialjoin < example_id.txt
 polygon1 contains point9
 point9 intersects polygon1
 [...]
@@ -87,7 +87,7 @@ point9 intersects polygon1
 You may specify a "side" (either 0 or 1) per geometry, as an additional tab-separated field after the custom geometry ID. If sides are defined, only geometries from different sides are compared. Note that a custom geometry ID *must* be given, otherwise the side will be interpreted as the custom geometry ID. The default side is 0.
 
 ```
-$ cat example.txt
+$ cat example_nonself.txt
 polygon1	0	POLYGON((0 0, 10  0 ,10 10, 0 10, 0 0))
 polygon2	0	POLYGON((0 0, 10 0, 10 10, 0 10, 0 0), (1 1, 9 1, 9 9, 1 9, 1 1))
 multipolygon3	0	MULTIPOLYGON(((0 0, 10 0, 10 10, 0 10, 0 0), (1 1, 9 1, 9 9, 1 9, 1 1)))
