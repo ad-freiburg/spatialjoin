@@ -41,7 +41,7 @@ void printHelp(int argc, char** argv) {
       << "\n"
       << "(C) 2023-" << YEAR << " " << COPY << "\n"
       << "Authors: " << AUTHORS << "\n\n"
-      << "Usage: " << argv[0] << " [--help] [-h] <input>\n\n"
+      << "Usage: " << argv[0] << " [--help] [-h] [input]\n\n"
       << "Allowed options:\n\n"
       << std::setfill(' ') << std::left << "General:\n"
       << std::setw(42) << "  -h [ --help ]"
@@ -138,6 +138,8 @@ int main(int argc, char** argv) {
   size_t numCaches = NUM_THREADS;
   size_t geomCacheMaxSizeBytes = DEFAULT_CACHE_SIZE;
 
+  std::vector<std::string> inputFiles;
+
   for (int i = 1; i < argc; i++) {
     std::string cur = argv[i];
     switch (state) {
@@ -193,8 +195,7 @@ int main(int argc, char** argv) {
         } else if (cur == "--use-inner-outer") {
           useInnerOuter = true;
         } else {
-          std::cerr << "Unknown option '" << cur << "', see -h" << std::endl;
-          exit(1);
+          inputFiles.push_back(cur);
         }
         break;
       case 1:
@@ -260,7 +261,7 @@ int main(int argc, char** argv) {
     }
   }
 
-  const static size_t CACHE_SIZE = 1024 * 1024 * 100;
+  const static size_t CACHE_SIZE = 1024 * 1024;
   unsigned char* buf = new unsigned char[CACHE_SIZE];
   size_t len;
 
@@ -297,8 +298,26 @@ int main(int argc, char** argv) {
 
   sj::WKTParser parser(&sweeper, NUM_THREADS);
 
-  while ((len = util::readAll(0, buf, CACHE_SIZE)) > 0) {
-    parser.parse(reinterpret_cast<char*>(buf), len, 0);
+  if (!inputFiles.empty()) {
+    if (inputFiles.size() > 2) {
+      std::cerr << "Either 1 input files (for self join), or 2 input files (for non-self join) can be provided." << std::endl;
+      exit(1);
+    }
+    for (size_t i = 0; i < inputFiles.size(); i++) {
+      int f = open(inputFiles[i].c_str(), O_RDONLY);
+
+      if (f < 0) {
+        throw std::runtime_error("Could not open input file " + inputFiles[i]);
+      }
+
+      while ((len = util::readAll(f, buf, CACHE_SIZE)) > 0) {
+        parser.parse(reinterpret_cast<char*>(buf), len, i != 0);
+      }
+    }
+  } else {
+    while ((len = util::readAll(0, buf, CACHE_SIZE)) > 0) {
+      parser.parse(reinterpret_cast<char*>(buf), len, 0);
+    }
   }
 
   parser.done();
