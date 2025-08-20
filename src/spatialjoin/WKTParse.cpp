@@ -19,6 +19,7 @@ WKTParser::WKTParser(sj::Sweeper *sweeper, size_t numThreads)
   }
 }
 
+// _____________________________________________________________________________
 void WKTParser::processQueue(size_t t) {
   ParseBatch batch;
   while ((batch = _jobs.get()).size()) {

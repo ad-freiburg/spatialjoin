@@ -252,6 +252,8 @@ class Sweeper {
     }
   }
 
+  void log(const std::string& msg);
+
   util::geo::I32Box add(const util::geo::I32MultiPolygon& a,
                         const std::string& gid, bool side,
                         WriteBatch& batch) const;
@@ -540,8 +542,6 @@ class Sweeper {
 
   void prepareOutputFiles();
   void flushOutputFiles();
-
-  void log(const std::string& msg);
 
   bool notOverlaps(const std::string& a, const std::string& b);
   bool notTouches(const std::string& a, const std::string& b);

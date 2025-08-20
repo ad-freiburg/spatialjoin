@@ -41,7 +41,11 @@ void printHelp(int argc, char** argv) {
       << "\n"
       << "(C) 2023-" << YEAR << " " << COPY << "\n"
       << "Authors: " << AUTHORS << "\n\n"
-      << "Usage: " << argv[0] << " [--help] [-h] [input]\n\n"
+      << "Usage: " << argv[0] << " [OPTIONS] [INPUT1] [INPUT1]\n\n"
+      << "With input from either stdin, or from file(s) [INPUT1] and [INPUT2] "
+         "(.bz2 or .gz\nsupported). If "
+      << "both [INPUT1] and [INPUT2] are given, compute a non-self join with\n"
+      << "[INPUT1] on the left side, [INPUT2] on the right side.\n\n"
       << "Allowed options:\n\n"
       << std::setfill(' ') << std::left << "General:\n"
       << std::setw(42) << "  -h [ --help ]"
@@ -52,6 +56,11 @@ void printHelp(int argc, char** argv) {
       << "cache directory for intermediate files\n"
       << std::setw(42) << "  --de9im"
       << "output DE-9IM relationships\n"
+      << std::setw(42) << "  --within-distance (default: '')"
+      << "if set to non-negative value, only compute for each object\n"
+      << std::setw(42) << " "
+      << "the objects within the given distance\n\n"
+      << std::setfill(' ') << std::left << "Formatting:\n"
       << std::setw(42) << "  --prefix (default: '')"
       << "prefix added at the beginning of every relation\n"
       << std::setw(42) << "  --intersects (default: ' intersects ')"
@@ -70,12 +79,11 @@ void printHelp(int argc, char** argv) {
       << "separator between crossing geometry IDs\n"
       << std::setw(42) << "  --suffix (default: '\\n')"
       << "suffix added at the beginning of every relation\n\n"
-      << std::setw(42) << "  --within-distance (default: '')"
-      << "if set to non-negative value, only compute for each object the "
-         "objects within the given distance\n\n"
       << std::setfill(' ') << std::left << "Geometric computation:\n"
       << std::setw(42) << "  --no-box-ids"
-      << "disable box id criteria for contains/covers/intersect computation\n"
+      << "disable box id criteria for contains/covers/intersect\n"
+      << std::setw(42) << " "
+      << "computation\n"
       << std::setw(42) << "  --no-surface-area"
       << "disable surface area criteria for polygon contains/covers\n"
       << std::setw(42) << "  --no-oriented-envelope"
@@ -94,11 +102,17 @@ void printHelp(int argc, char** argv) {
       << "  --num-caches (default: " + std::to_string(NUM_THREADS) + ")"
       << "number of geometry caches (if < --num-threads, syncing\n"
       << std::setw(42)
-      << "  --cache-max-size (default: " + std::to_string(DEFAULT_CACHE_SIZE) + ")"
+      << "  --cache-max-size (default: " + std::to_string(DEFAULT_CACHE_SIZE) +
+             ")"
       << "maximum approx. size in bytes of cache per type and thread\n"
       << std::setw(42) << "  --no-geometry-checks"
-      << "do not compute geometric relations, only report number of "
-         "candidates\n"
+      << "do not compute geometric relations, only report number of\n"
+      << std::setw(42) << " "
+      << "candidates\n"
+      << std::setw(42) << "  --stats"
+      << "output stats\n"
+      << std::setw(42) << "  -v [ --verbose ]"
+      << "verbose logging\n"
       << std::endl;
 }
 
@@ -133,6 +147,9 @@ int main(int argc, char** argv) {
   bool useInnerOuter = false;
   bool noGeometryChecks = false;
   bool computeDE9IM = false;
+
+  bool printStats = false;
+  bool verbose = false;
 
   size_t numThreads = NUM_THREADS;
   size_t numCaches = NUM_THREADS;
@@ -194,6 +211,10 @@ int main(int argc, char** argv) {
           useFastSweepSkip = false;
         } else if (cur == "--use-inner-outer") {
           useInnerOuter = true;
+        } else if (cur == "--stats") {
+          printStats = true;
+        } else if (cur == "--verbose" || cur == "-v") {
+          verbose = true;
         } else {
           inputFiles.push_back(cur);
         }
@@ -265,53 +286,116 @@ int main(int argc, char** argv) {
   unsigned char* buf = new unsigned char[CACHE_SIZE];
   size_t len;
 
-  Sweeper sweeper({numThreads,
-                   numCaches,
-                   geomCacheMaxSizeBytes / (numThreads * 3),
-                   prefix,
-                   intersects,
-                   contains,
-                   covers,
-                   touches,
-                   equals,
-                   overlaps,
-                   crosses,
-                   suffix,
-                   useBoxIds,
-                   useArea,
-                   useOBB,
-                   useDiagBox,
-                   useFastSweepSkip,
-                   useInnerOuter,
-                   noGeometryChecks,
-                   withinDist,
-                   computeDE9IM,
-                   {},
-                   [](const std::string& s) { LOGTO(INFO, std::cerr) << s; },
-                   [](const std::string& s) { std::cerr << s; },
-                   {},
-                   {}},
-                  cache, output);
+  sj::SweeperCfg sweeperCfg{numThreads,
+                            numCaches,
+                            geomCacheMaxSizeBytes / (numThreads * 3),
+                            prefix,
+                            intersects,
+                            contains,
+                            covers,
+                            touches,
+                            equals,
+                            overlaps,
+                            crosses,
+                            suffix,
+                            useBoxIds,
+                            useArea,
+                            useOBB,
+                            useDiagBox,
+                            useFastSweepSkip,
+                            useInnerOuter,
+                            noGeometryChecks,
+                            withinDist,
+                            computeDE9IM,
+                            {},
+                            {},
+                            {},
+                            {},
+                            {}};
 
-  LOGTO(INFO, std::cerr) << "Parsing input geometries...";
+  if (printStats)
+    sweeperCfg.statsCb = [](const std::string& s) { std::cerr << s; };
+
+  if (verbose)
+    sweeperCfg.logCb = [](const std::string& s) {
+      LOGTO(INFO, std::cerr) << s;
+    };
+
+  Sweeper sweeper(sweeperCfg, cache, output);
+
+  sweeper.log("Parsing input geometries...");
   auto ts = TIME();
 
   sj::WKTParser parser(&sweeper, NUM_THREADS);
 
   if (!inputFiles.empty()) {
     if (inputFiles.size() > 2) {
-      std::cerr << "Either 1 input files (for self join), or 2 input files (for non-self join) can be provided." << std::endl;
+      std::cerr << "Either 1 input files (for self join), or 2 input files "
+                   "(for non-self join) can be provided."
+                << std::endl;
       exit(1);
     }
     for (size_t i = 0; i < inputFiles.size(); i++) {
-      int f = open(inputFiles[i].c_str(), O_RDONLY);
+      if (util::endsWith(inputFiles[i], ".bz2")) {
+#ifndef SPATIALJOIN_NO_BZIP2
+        auto fh = fopen(inputFiles[i].c_str(), "r");
+        if (!fh) {
+          std::cerr << "Could not open input file " << inputFiles[i]
+                    << std::endl;
+          exit(1);
+        }
+        int err;
+        BZFILE* f = BZ2_bzReadOpen(&err, fh, 0, 0, NULL, 0);
+        if (!f || err != BZ_OK) {
+          std::cerr << "Could not open input file " << inputFiles[i]
+                    << std::endl;
+          exit(1);
+        }
+        while ((len = util::bz2readAll(f, buf, CACHE_SIZE)) > 0) {
+          parser.parse(reinterpret_cast<char*>(buf), len, i != 0);
+        }
 
-      if (f < 0) {
-        throw std::runtime_error("Could not open input file " + inputFiles[i]);
-      }
+        BZ2_bzReadClose(&err, f);
+        fclose(fh);
+#else
+        std::cerr << "Could not open input file " << inputFiles[i]
+                  << ", spatialjoin was compiled without BZip2 support"
+                  << std::endl;
+        exit(1);
+#endif
+      } else if (util::endsWith(inputFiles[i], ".gz")) {
+#ifndef SPATIALJOIN_NO_ZLIB
+        gzFile f = gzopen(inputFiles[i].c_str(), "r");
+        if (f == Z_NULL) {
+          std::cerr << "Could not open input file " << inputFiles[i]
+                    << std::endl;
+          exit(1);
+        }
+        while ((len = util::zreadAll(f, buf, CACHE_SIZE)) > 0) {
+          parser.parse(reinterpret_cast<char*>(buf), len, i != 0);
+        }
 
-      while ((len = util::readAll(f, buf, CACHE_SIZE)) > 0) {
-        parser.parse(reinterpret_cast<char*>(buf), len, i != 0);
+        gzclose(f);
+#else
+        std::cerr << "Could not open input file " << inputFiles[i]
+                  << ", spatialjoin was compiled without gzip support"
+                  << std::endl;
+        exit(1);
+#endif
+      } else {
+        int f = open(inputFiles[i].c_str(), O_RDONLY);
+
+        if (f < 0) {
+          std::cerr << "Could not open input file " << inputFiles[i]
+                    << std::endl;
+          exit(1);
+        }
+
+        while ((len = util::readAll(f, buf, CACHE_SIZE)) > 0) {
+          parser.parse(reinterpret_cast<char*>(buf), len, i != 0);
+        }
+
+        close(f);
       }
     }
   } else {
@@ -322,20 +406,20 @@ int main(int argc, char** argv) {
 
   parser.done();
 
-  LOGTO(INFO, std::cerr) << "Done parsing ("
-                         << TOOK(ts) / 1000000000.0 << "s).";
+  sweeper.log("Done parsing (" + std::to_string(TOOK(ts) / 1000000000.0) +
+              "s).");
   ts = TIME();
 
-  LOGTO(INFO, std::cerr) << "Sorting sweep events...";
+  sweeper.log("Sorting sweep events...");
 
   sweeper.flush();
 
-  LOGTO(INFO, std::cerr) << "done (" << TOOK(ts) / 1000000000.0 << "s).";
+  sweeper.log("done (" + std::to_string(TOOK(ts) / 1000000000.0) + "s).");
 
-  LOGTO(INFO, std::cerr) << "Sweeping...";
+  sweeper.log("Sweeping...");
   ts = TIME();
   sweeper.sweep();
-  LOGTO(INFO, std::cerr) << "done (" << TOOK(ts) / 1000000000.0 << "s).";
+  sweeper.log("done (" + std::to_string(TOOK(ts) / 1000000000.0) + "s).");
 
   delete[] buf;
 }
