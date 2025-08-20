@@ -47,7 +47,8 @@ std::shared_ptr<W> sj::GeometryCache<W>::get(size_t off, ssize_t desTid) const {
 
 // ____________________________________________________________________________
 template <typename W>
-std::shared_ptr<W> sj::GeometryCache<W>::cache(size_t off, const W& val, size_t estSize,
+std::shared_ptr<W> sj::GeometryCache<W>::cache(size_t off, const W& val,
+                                               size_t estSize,
                                                size_t tid) const {
   // if cache is too large, pop last elements until we have space
   while (_vals[tid].size() > 0 && _valSizes[tid] > _maxSize) {
@@ -95,8 +96,8 @@ std::pair<size_t, sj::SimpleLine> sj::GeometryCache<sj::SimpleLine>::getFrom(
 
 // ____________________________________________________________________________
 template <>
-std::pair<size_t, sj::Point> sj::GeometryCache<sj::Point>::getFrom(size_t off,
-                                                std::istream& str) const {
+std::pair<size_t, sj::Point> sj::GeometryCache<sj::Point>::getFrom(
+    size_t off, std::istream& str) const {
   sj::Point ret;
 
   str.seekg(off);
@@ -113,7 +114,7 @@ std::pair<size_t, sj::Point> sj::GeometryCache<sj::Point>::getFrom(size_t off,
   // sub id
   str.read(reinterpret_cast<char*>(&ret.subId), sizeof(uint16_t));
 
-  return {len* sizeof(char) + sizeof(uint16_t), ret};
+  return {len * sizeof(char) + sizeof(uint16_t), ret};
 }
 
 // ____________________________________________________________________________
@@ -143,13 +144,15 @@ std::pair<size_t, sj::SimpleArea> sj::GeometryCache<sj::SimpleArea>::getFrom(
     str.read(reinterpret_cast<char*>(&ret.id[0]), len * sizeof(char));
   }
 
-  return {sizeof(uint32_t) + size * sizeof(util::geo::I32Point) + len * sizeof(char), ret};
+  return {sizeof(uint32_t) + size * sizeof(util::geo::I32Point) +
+              len * sizeof(char),
+          ret};
 }
 
 // ____________________________________________________________________________
 template <>
-std::pair<size_t, sj::Line> sj::GeometryCache<sj::Line>::getFrom(size_t off,
-                                              std::istream& str) const {
+std::pair<size_t, sj::Line> sj::GeometryCache<sj::Line>::getFrom(
+    size_t off, std::istream& str) const {
   sj::Line ret;
   size_t estSize = 0;
 
@@ -174,11 +177,11 @@ std::pair<size_t, sj::Line> sj::GeometryCache<sj::Line>::getFrom(size_t off,
 
   // sub id
   str.read(reinterpret_cast<char*>(&ret.subId), sizeof(uint16_t));
-    estSize += sizeof(uint16_t);
+  estSize += sizeof(uint16_t);
 
   // length
   str.read(reinterpret_cast<char*>(&ret.length), sizeof(double));
-    estSize += sizeof(double);
+  estSize += sizeof(double);
 
   // boxIds
   uint32_t numBoxIds;
@@ -198,8 +201,8 @@ std::pair<size_t, sj::Line> sj::GeometryCache<sj::Line>::getFrom(size_t off,
 
 // ____________________________________________________________________________
 template <>
-std::pair<size_t, sj::Area> sj::GeometryCache<sj::Area>::getFrom(size_t off,
-                                              std::istream& str) const {
+std::pair<size_t, sj::Area> sj::GeometryCache<sj::Area>::getFrom(
+    size_t off, std::istream& str) const {
   sj::Area ret;
   size_t estSize = 0;
 
@@ -505,7 +508,7 @@ void sj::GeometryCache<W>::flush() {
 // ____________________________________________________________________________
 template <typename W>
 size_t sj::GeometryCache<W>::readPoly(std::istream& str,
-                                    util::geo::I32XSortedPolygon& ret) const {
+                                      util::geo::I32XSortedPolygon& ret) const {
   size_t estSize = 0;
   double maxSegLen;
   str.read(reinterpret_cast<char*>(&maxSegLen), sizeof(double));
@@ -526,11 +529,11 @@ size_t sj::GeometryCache<W>::readPoly(std::istream& str,
 
   uint32_t numInners;
   str.read(reinterpret_cast<char*>(&numInners), sizeof(uint32_t));
-    estSize += sizeof(uint32_t) ;
+  estSize += sizeof(uint32_t);
 
   double innerMaxSegLen;
   str.read(reinterpret_cast<char*>(&innerMaxSegLen), sizeof(double));
-    estSize += sizeof(double) ;
+  estSize += sizeof(double);
 
   ret.setInnerMaxSegLen(innerMaxSegLen);
 
@@ -643,7 +646,7 @@ size_t sj::GeometryCache<W>::writePoly(const util::geo::I32XSortedPolygon& geom,
 // ____________________________________________________________________________
 template <typename W>
 size_t sj::GeometryCache<W>::readLine(std::istream& str,
-                                    util::geo::I32XSortedLine& ret) const {
+                                      util::geo::I32XSortedLine& ret) const {
   size_t estSize = 0;
   double maxSegLen;
   str.read(reinterpret_cast<char*>(&maxSegLen), sizeof(double));

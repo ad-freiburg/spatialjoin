@@ -49,8 +49,7 @@ inline int32_t getBoxId(const util::geo::I32Point& p) {
 inline void getBoxIds(const util::geo::I32XSortedLine& line,
                       const util::geo::I32Box& envelope, int xFrom, int xTo,
                       int yFrom, int yTo, int xWidth, int yHeight,
-                      BoxIdList* ret, std::map<int32_t, size_t>* cutouts,
-                      size_t startA, size_t startB) {
+                      BoxIdList* ret, size_t startA, size_t startB) {
   for (int32_t y = yFrom; y < yTo; y += yHeight) {
     size_t firstInA = startA;
     size_t firstInB = startB;
@@ -76,8 +75,6 @@ inline void getBoxIds(const util::geo::I32XSortedLine& line,
         if (localXWidth == 1 && localYHeight == 1) {
           int32_t newId = y * NUM_GRID_CELLS + x + 1;
 
-          if (cutouts) (*cutouts)[newId] = firstInB;
-
           if (!ret->empty() && ret->back().second < 254 &&
               ret->back().first - ret->back().second == newId + 1) {
             ret->back().second++;
@@ -91,7 +88,7 @@ inline void getBoxIds(const util::geo::I32XSortedLine& line,
           int newYHeight = (localYHeight + 1) / 2;
 
           getBoxIds(line, envelope, x, x + localXWidth, y, y + localYHeight,
-                    newXWidth, newYHeight, ret, cutouts, firstInA, firstInB);
+                    newXWidth, newYHeight, ret, firstInA, firstInB);
         }
       }
     }
@@ -102,8 +99,7 @@ inline void getBoxIds(const util::geo::I32XSortedLine& line,
 inline void getBoxIds(const util::geo::I32XSortedPolygon& poly,
                       const util::geo::I32Box& envelope, double area, int xFrom,
                       int xTo, int yFrom, int yTo, int xWidth, int yHeight,
-                      BoxIdList* ret, std::map<int32_t, size_t>* cutouts,
-                      size_t startA, size_t startB) {
+                      BoxIdList* ret, size_t startA, size_t startB) {
   for (int32_t y = yFrom; y < yTo; y += yHeight) {
     size_t firstInA = startA;
     size_t firstInB = startB;
@@ -144,8 +140,6 @@ inline void getBoxIds(const util::geo::I32XSortedPolygon& poly,
           // only intersecting
           int32_t newId = -(y * NUM_GRID_CELLS + x + 1);
 
-          if (cutouts) (*cutouts)[-newId] = firstInB;
-
           if (!ret->empty() && ret->back().second < 254 &&
               ret->back().first - ret->back().second == newId + 1) {
             ret->back().second++;
@@ -159,8 +153,8 @@ inline void getBoxIds(const util::geo::I32XSortedPolygon& poly,
           int newYHeight = (localYHeight + 1) / 2;
 
           getBoxIds(poly, envelope, area, x, x + localXWidth, y,
-                    y + localYHeight, newXWidth, newYHeight, ret, cutouts,
-                    firstInA, firstInB);
+                    y + localYHeight, newXWidth, newYHeight, ret, firstInA,
+                    firstInB);
         }
       }
     }
@@ -169,8 +163,7 @@ inline void getBoxIds(const util::geo::I32XSortedPolygon& poly,
 
 // ____________________________________________________________________________
 inline BoxIdList getBoxIds(const util::geo::I32XSortedLine& line,
-                           const util::geo::I32Box& envelope,
-                           std::map<int32_t, size_t>* cutouts) {
+                           const util::geo::I32Box& envelope) {
   int32_t a = getBoxId(envelope.getLowerLeft());
   int32_t b = getBoxId(envelope.getUpperRight());
   if (a == b) return {{a, 0}};  // shortcut
@@ -192,7 +185,7 @@ inline BoxIdList getBoxIds(const util::geo::I32XSortedLine& line,
   BoxIdList boxIds;
 
   getBoxIds(line, envelope, startX, endX, startY, endY, (endX - startX + 3) / 4,
-            (endY - startY + 3) / 4, &boxIds, cutouts, 0, 0);
+            (endY - startY + 3) / 4, &boxIds, 0, 0);
   std::sort(boxIds.begin(), boxIds.end(), BoxIdCmp());
 
   return boxIds;
@@ -200,8 +193,7 @@ inline BoxIdList getBoxIds(const util::geo::I32XSortedLine& line,
 
 // ____________________________________________________________________________
 inline BoxIdList getBoxIds(const util::geo::I32XSortedPolygon& poly,
-                           const util::geo::I32Box& envelope, double area,
-                           std::map<int32_t, size_t>* cutouts) {
+                           const util::geo::I32Box& envelope, double area) {
   int32_t a = getBoxId(envelope.getLowerLeft());
   int32_t b = getBoxId(envelope.getUpperRight());
   if (a == b) return {{-a, 0}};  // shortcut
@@ -221,10 +213,10 @@ inline BoxIdList getBoxIds(const util::geo::I32XSortedPolygon& poly,
       1;
 
   BoxIdList boxIds;
+  boxIds.reserve((area / (GRID_AREA)) / 10);
 
   getBoxIds(poly, envelope, area, startX, endX, startY, endY,
-            (endX - startX + 3) / 4, (endY - startY + 3) / 4, &boxIds, cutouts,
-            0, 0);
+            (endX - startX + 3) / 4, (endY - startY + 3) / 4, &boxIds, 0, 0);
   std::sort(boxIds.begin(), boxIds.end(), BoxIdCmp());
 
   return boxIds;
@@ -243,19 +235,19 @@ inline BoxIdList packBoxIds(const BoxIdList& ids) {
   // assume the list is sorted!
 
   BoxIdList ret;
+  ret.reserve(ids.size() / 2);
   // dummy value, will later hold number of entries
   ret.push_back({ids.front().second + 1, 0});
   ret.push_back(ids.front());
 
   for (size_t i = 1; i < ids.size(); i++) {
     ret[0].first += ids[i].second + 1;
-    if (ret.back().second < 254 - ids[i].second && ids[i].first > 0 &&
-        ret.back().first > 0 &&
-        ret.back().first + ret.back().second == ids[i].first - 1) {
-      ret.back().second += 1 + ids[i].second;
-    } else if (ret.back().second < 254 - ids[i].second && ids[i].first < 0 &&
-               ret.back().first < 0 &&
-               ret.back().first - ret.back().second == ids[i].first + 1) {
+    if ((ret.back().second < 254 - ids[i].second && ids[i].first > 0 &&
+         ret.back().first > 0 &&
+         ret.back().first + ret.back().second == ids[i].first - 1) ||
+        (ret.back().second < 254 - ids[i].second && ids[i].first < 0 &&
+         ret.back().first < 0 &&
+         ret.back().first - ret.back().second == ids[i].first + 1)) {
       ret.back().second += 1 + ids[i].second;
     } else {
       ret.push_back(ids[i]);

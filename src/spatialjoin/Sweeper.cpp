@@ -202,7 +202,7 @@ I32Box Sweeper::add(const I32Polygon& poly, const std::string& gidR,
   BoxIdList boxIds;
 
   if (_cfg.useBoxIds) {
-    boxIds = packBoxIds(getBoxIds(spoly, rawBox, outerAreaSize, 0));
+    boxIds = packBoxIds(getBoxIds(spoly, rawBox, outerAreaSize));
   }
 
   I32Box box45;
@@ -352,7 +352,7 @@ I32Box Sweeper::add(const I32Line& line, const std::string& gidR, size_t subid,
   BoxIdList boxIds;
 
   if (_cfg.useBoxIds) {
-    boxIds = packBoxIds(getBoxIds(line, rawBox, 0));
+    boxIds = packBoxIds(getBoxIds(line, rawBox));
   }
 
   const double len = util::geo::len(line);
