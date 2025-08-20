@@ -358,26 +358,26 @@ int main(int, char**) {
       TEST(res.find("$freiburg1 covers Sankt Georgen$") != std::string::npos);
       TEST(res.find("$freiburg1 intersects Sankt Georgen$") !=
            std::string::npos);
-      TEST(res.find("$freiburg1 contains Sankt Georgen$") == std::string::npos);
+      TEST(res.find("$freiburg1 contains Sankt Georgen$") != std::string::npos);
 
       TEST(res.find("$freiburg1 covers Haslach$") != std::string::npos);
 
       TEST(res.find("$freiburg1 covers Günterstal$") != std::string::npos);
       TEST(res.find("$freiburg1 intersects Günterstal$") != std::string::npos);
-      TEST(res.find("$freiburg1 contains Günterstal$") == std::string::npos);
+      TEST(res.find("$freiburg1 contains Günterstal$") != std::string::npos);
 
       TEST(res.find("$freiburg1 covers Kappel$") != std::string::npos);
       TEST(res.find("$freiburg1 intersects Kappel$") != std::string::npos);
-      TEST(res.find("$freiburg1 contains Kappel$") == std::string::npos);
+      TEST(res.find("$freiburg1 contains Kappel$") != std::string::npos);
 
       TEST(res.find("$freiburg1 covers Littenweiler$") != std::string::npos);
       TEST(res.find("$freiburg1 intersects Littenweiler$") !=
            std::string::npos);
-      TEST(res.find("$freiburg1 contains Littenweiler$") == std::string::npos);
+      TEST(res.find("$freiburg1 contains Littenweiler$") != std::string::npos);
 
       TEST(res.find("$freiburg1 covers Waldsee$") != std::string::npos);
       TEST(res.find("$freiburg1 intersects Waldsee$") != std::string::npos);
-      TEST(res.find("$freiburg1 contains Waldsee$") == std::string::npos);
+      TEST(res.find("$freiburg1 contains Waldsee$") != std::string::npos);
 
       TEST(res.find("$freiburg1 covers Wiehre$") != std::string::npos);
       TEST(res.find("$freiburg1 covers Waltershofen$") != std::string::npos);
@@ -391,11 +391,11 @@ int main(int, char**) {
 
       TEST(res.find("$freiburg1 covers Munzingen$") != std::string::npos);
       TEST(res.find("$freiburg1 intersects Munzingen$") != std::string::npos);
-      TEST(res.find("$freiburg1 contains Munzingen$") == std::string::npos);
+      TEST(res.find("$freiburg1 contains Munzingen$") != std::string::npos);
 
       TEST(res.find("$freiburg1 covers Tiengen$") != std::string::npos);
       TEST(res.find("$freiburg1 intersects Tiengen$") != std::string::npos);
-      TEST(res.find("$freiburg1 contains Tiengen$") == std::string::npos);
+      TEST(res.find("$freiburg1 contains Tiengen$") != std::string::npos);
 
       TEST(res.find("$freiburg1 covers Mundenhof$") != std::string::npos);
       TEST(res.find("$freiburg1 covers Rieselfeld$") != std::string::npos);
@@ -451,9 +451,9 @@ int main(int, char**) {
       TEST(res.find("$freiburg1 covers Mittelwiehre$") != std::string::npos);
       TEST(res.find("$freiburg1 covers Oberwiehre$") != std::string::npos);
       TEST(res.find("$Wiehre covers Mittelwiehre$") != std::string::npos);
-      TEST(res.find("$Wiehre contains Mittelwiehre$") == std::string::npos);
+      TEST(res.find("$Wiehre contains Mittelwiehre$") != std::string::npos);
       TEST(res.find("$Wiehre covers Oberwiehre$") != std::string::npos);
-      TEST(res.find("$Wiehre contains Oberwiehre$") == std::string::npos);
+      TEST(res.find("$Wiehre contains Oberwiehre$") != std::string::npos);
       TEST(res.find("$freiburg1 covers Alt-Betzenhausen$") !=
            std::string::npos);
       TEST(res.find("$freiburg1 covers Mooswald-West$") != std::string::npos);
