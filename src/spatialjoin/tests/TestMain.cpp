@@ -831,6 +831,12 @@ int main(int, char**) {
       TEST(res.find("$RefJ equals RefG$") != std::string::npos);
       TEST(res.find("$RefJ equals <>$") != std::string::npos);
     }
+
+    {
+      auto res = fullRun("../src/spatialjoin/tests/datasets/bawue", cfg);
+      TEST(res.find("$germany covers bawue$") != std::string::npos);
+      TEST(res.find("$germany contains bawue$") != std::string::npos);
+    }
   }
 
   // DE9IM

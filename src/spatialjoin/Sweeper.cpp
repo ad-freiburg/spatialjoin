@@ -1404,7 +1404,7 @@ GeomCheckRes Sweeper::check(const Area* a, const Area* b, size_t t) const {
   // cheap equivalence check
   if (a->box == b->box && a->area == b->area && a->geom == b->geom) {
     // equivalent!
-    return {1, 0, 1, 0, 0};
+    return {1, 1, 1, 0, 0};
   }
 
   if (_cfg.useBoxIds) {
@@ -2974,7 +2974,11 @@ void Sweeper::doCheck(const BoxVal cur, const SweepVal sv, size_t t) {
         // both areas were equivalent
         writeEquals(t, a->id, a->subId, b->id, b->subId);
 
+        // covers in other direction
         writeCovers(t, a->id, b->id, b->subId);
+
+        // contains in other direction
+        writeContains(t, a->id, b->id, b->subId);
       }
     }
 
@@ -4075,10 +4079,8 @@ void Sweeper::writeCovers(size_t t, const std::string& a, const std::string& b,
                           size_t bSub) {
   if (a != b) {
     if (bSub > 0) {
-      {
         std::unique_lock<std::mutex> lock(_mutsCovers[t]);
         _subCovered[t][b][a].insert(bSub);
-      }
     } else {
       writeRel(t, a, b, _cfg.sepCovers);
       _relStats[t].covers++;
