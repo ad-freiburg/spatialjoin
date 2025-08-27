@@ -293,8 +293,8 @@ int main(int, char**) {
       TEST(res.find("$freiburg2 covers freiburg1$") != std::string::npos);
       TEST(res.find("$freiburg1 equals freiburg2$") != std::string::npos);
       TEST(res.find("$freiburg2 equals freiburg1$") != std::string::npos);
-      TEST(res.find("$freiburg1 contains freiburg2$") == std::string::npos);
-      TEST(res.find("$freiburg2 contains freiburg1$") == std::string::npos);
+      TEST(res.find("$freiburg1 contains freiburg2$") != std::string::npos);
+      TEST(res.find("$freiburg2 contains freiburg1$") != std::string::npos);
       TEST(res.find("$freiburg1 intersects freiburg2$") != std::string::npos);
       TEST(res.find("$freiburg2 intersects freiburg1$") != std::string::npos);
       TEST(res.find("$freiburg2 overlaps freiburg1$") == std::string::npos);
