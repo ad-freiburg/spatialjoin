@@ -129,6 +129,7 @@ struct SweeperCfg {
   size_t numThreads;
   size_t numCacheThreads;
   size_t geomCacheMaxSize;
+  size_t geomCacheMaxNumElements;
   std::string pairStart;
   std::string sepIsect;
   std::string sepContains;
@@ -162,17 +163,11 @@ static const size_t BUFFER_S_PAIRS = 1024 * 1024 * 10;
 
 static const size_t MAX_OUT_LINE_LENGTH = 1000;
 
-static const size_t POINT_CACHE_SIZE = 10000;
-static const size_t SIMPLE_LINE_CACHE_SIZE = 10000;
+static const size_t POINT_CACHE_MAX_ELEMENTS = 10000;
+static const size_t SIMPLE_LINE_CACHE_MAX_ELEMENTS = 10000;
 
 // only use large geom cache for extreme geometries
 static const size_t GEOM_LARGENESS_THRESHOLD = 1024 * 1024 * 1024;
-;
-
-// static const size_t AREA_CACHE_SIZE = 10000;
-// static const size_t SIMPLE_AREA_CACHE_SIZE = 10000;
-// static const size_t LINE_CACHE_SIZE = 10000;
-// static const size_t SIMPLE_LINE_CACHE_SIZE = 10000;
 
 class Sweeper {
  public:
@@ -183,13 +178,16 @@ class Sweeper {
           const std::string& tmpPrefix)
       : _cfg(cfg),
         _obufpos(0),
-        _pointCache(POINT_CACHE_SIZE, cfg.numCacheThreads, cache, tmpPrefix),
-        _areaCache(cfg.geomCacheMaxSize, cfg.numCacheThreads, cache, tmpPrefix),
-        _simpleAreaCache(cfg.geomCacheMaxSize, cfg.numCacheThreads, cache,
-                         tmpPrefix),
-        _lineCache(cfg.geomCacheMaxSize, cfg.numCacheThreads, cache, tmpPrefix),
-        _simpleLineCache(SIMPLE_LINE_CACHE_SIZE, cfg.numCacheThreads, cache,
-                         tmpPrefix),
+        _pointCache(cfg.geomCacheMaxSize, POINT_CACHE_MAX_ELEMENTS,
+                    cfg.numCacheThreads, cache, tmpPrefix),
+        _areaCache(cfg.geomCacheMaxSize, cfg.geomCacheMaxNumElements,
+                   cfg.numCacheThreads, cache, tmpPrefix),
+        _simpleAreaCache(cfg.geomCacheMaxSize, cfg.geomCacheMaxNumElements,
+                         cfg.numCacheThreads, cache, tmpPrefix),
+        _lineCache(cfg.geomCacheMaxSize, cfg.geomCacheMaxNumElements,
+                   cfg.numCacheThreads, cache, tmpPrefix),
+        _simpleLineCache(cfg.geomCacheMaxSize, SIMPLE_LINE_CACHE_MAX_ELEMENTS,
+                         cfg.numCacheThreads, cache, tmpPrefix),
         _cache(cache),
         _out(out),
         _jobs(100) {

@@ -32,7 +32,8 @@ static const char* COPY =
 static const char* AUTHORS = "Patrick Brosi <brosi@informatik.uni-freiburg.de>";
 
 static const size_t NUM_THREADS = std::thread::hardware_concurrency();
-static const size_t DEFAULT_CACHE_SIZE = 300 * 1000 * 1000 * (NUM_THREADS * 3);
+static const size_t DEFAULT_CACHE_SIZE = 1000 * 1000 * 1000;
+static const size_t DEFAULT_CACHE_NUM_ELEMENTS = 10000;
 
 // _____________________________________________________________________________
 void printHelp(int argc, char** argv) {
@@ -104,7 +105,13 @@ void printHelp(int argc, char** argv) {
       << std::setw(42)
       << "  --cache-max-size (default: " + std::to_string(DEFAULT_CACHE_SIZE) +
              ")"
-      << "maximum approx. size in bytes of cache per type and thread\n"
+      << "maximum approx. size in bytes of cache per type and thread, 0 = "
+         "unlimited\n"
+      << std::setw(42)
+      << "  --cache-max-elements (default: " +
+             std::to_string(DEFAULT_CACHE_NUM_ELEMENTS) + ")"
+      << "maximum number of elements per cache, type and thread, 0 = "
+         "unlimited\n"
       << std::setw(42) << "  --no-geometry-checks"
       << "do not compute geometric relations, only report number of\n"
       << std::setw(42) << " "
@@ -154,6 +161,7 @@ int main(int argc, char** argv) {
   size_t numThreads = NUM_THREADS;
   size_t numCaches = NUM_THREADS;
   size_t geomCacheMaxSizeBytes = DEFAULT_CACHE_SIZE;
+  size_t geomCacheMaxNumElements = DEFAULT_CACHE_NUM_ELEMENTS;
 
   std::vector<std::string> inputFiles;
 
@@ -195,6 +203,8 @@ int main(int argc, char** argv) {
           state = 14;
         } else if (cur == "--within-distance") {
           state = 15;
+        } else if (cur == "--cache-max-elements") {
+          state = 16;
         } else if (cur == "--de9im") {
           computeDE9IM = true;
         } else if (cur == "--no-box-ids") {
@@ -279,6 +289,10 @@ int main(int argc, char** argv) {
         withinDist = atof(cur.c_str());
         state = 0;
         break;
+      case 16:
+        std::stringstream(cur) >> geomCacheMaxNumElements;
+        state = 0;
+        break;
     }
   }
 
@@ -288,7 +302,8 @@ int main(int argc, char** argv) {
 
   sj::SweeperCfg sweeperCfg{numThreads,
                             numCaches,
-                            geomCacheMaxSizeBytes / (numThreads * 3),
+                            geomCacheMaxSizeBytes,
+                            geomCacheMaxNumElements,
                             prefix,
                             intersects,
                             contains,

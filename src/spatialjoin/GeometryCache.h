@@ -120,11 +120,14 @@ const static size_t WRITE_BUFF_SIZE = 1024 * 1024 * 4l;
 template <typename W>
 class GeometryCache {
  public:
-  GeometryCache(size_t maxSize, size_t numthreads, const std::string& dir)
-      : GeometryCache(maxSize, numthreads, dir, ".spatialjoin"){};
-  GeometryCache(size_t maxSize, size_t numthreads, const std::string& dir,
-                const std::string& tmpPrefix)
+  GeometryCache(size_t maxSize, size_t maxNumElements, size_t numthreads,
+                const std::string& dir)
+      : GeometryCache(maxSize, maxNumElements, numthreads, dir,
+                      ".spatialjoin"){};
+  GeometryCache(size_t maxSize, size_t maxNumElements, size_t numthreads,
+                const std::string& dir, const std::string& tmpPrefix)
       : _maxSize(maxSize),
+        _maxNumElements(maxNumElements),
         _numThreads(numthreads),
         _dir(dir),
         _tmpPrefix(tmpPrefix),
@@ -140,8 +143,7 @@ class GeometryCache {
     _writeBuffer = new char[WRITE_BUFF_SIZE];
 
     _geomsF.rdbuf()->pubsetbuf(_writeBuffer, WRITE_BUFF_SIZE);
-    _geomsF.open(_fName, std::ios::out | std::ios::binary |
-                             std::ios::trunc);
+    _geomsF.open(_fName, std::ios::out | std::ios::binary | std::ios::trunc);
 
     for (size_t i = 0; i < _geomsFReads.size(); i++) {
       _geomsFReads[i].open(_fName, std::ios::in | std::ios::binary);
@@ -154,7 +156,7 @@ class GeometryCache {
     for (size_t i = 0; i < _geomsFReads.size(); i++) {
       if (_geomsFReads[i].is_open()) _geomsFReads[i].close();
     }
-    if (_writeBuffer) delete[]_writeBuffer;
+    if (_writeBuffer) delete[] _writeBuffer;
   }
 
   size_t add(const std::string& raw);
@@ -162,7 +164,8 @@ class GeometryCache {
 
   std::shared_ptr<W> get(size_t off, ssize_t tid) const;
   std::pair<size_t, W> getFrom(size_t off, std::istream& str) const;
-  std::shared_ptr<W> cache(size_t off, const W& val, size_t estSize, size_t tid) const;
+  std::shared_ptr<W> cache(size_t off, const W& val, size_t estSize,
+                           size_t tid) const;
 
   std::shared_ptr<W> get(size_t off) const { return get(off, 0); }
 
@@ -179,6 +182,7 @@ class GeometryCache {
     _vals = std::move(other._vals);
     _idMap = std::move(other._idMap);
     _maxSize = other._maxSize;
+    _maxNumElements = other._maxNumElements;
     _dir = other._dir;
     _fName = other._fName;
     _numThreads = other._numThreads;
@@ -202,12 +206,11 @@ class GeometryCache {
 
   mutable std::vector<std::list<std::pair<size_t, ValEntry<W>>>> _vals;
   mutable std::vector<std::unordered_map<
-      size_t,
-      typename std::list<std::pair<size_t, ValEntry<W>>>::iterator>>
+      size_t, typename std::list<std::pair<size_t, ValEntry<W>>>::iterator>>
       _idMap;
   mutable std::vector<size_t> _valSizes;
 
-  size_t _maxSize, _numThreads;
+  size_t _maxSize, _maxNumElements, _numThreads;
   std::string _dir, _tmpPrefix;
   std::string _fName;
 

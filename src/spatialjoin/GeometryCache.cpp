@@ -1,13 +1,12 @@
 // Copyright 2023, University of Freiburg
 // Authors: Patrick Brosi <brosi@cs.uni-freiburg.de>
 
-#include "GeometryCache.h"
-
 #include <fstream>
 #include <iostream>
 #include <mutex>
 #include <vector>
 
+#include "GeometryCache.h"
 #include "util/geo/Geo.h"
 
 const static size_t MAX_MEM_CACHE_SIZE = 1 * 1024 * 1024 * 20l;
@@ -51,7 +50,7 @@ std::shared_ptr<W> sj::GeometryCache<W>::cache(size_t off, const W& val,
                                                size_t estSize,
                                                size_t tid) const {
   // if cache is too large, pop last elements until we have space
-  while (_vals[tid].size() > 0 && _valSizes[tid] > _maxSize) {
+  while (_maxSize > 0 && _vals[tid].size() > 0 && _valSizes[tid] > _maxSize) {
     auto last = _vals[tid].rbegin();
     _valSizes[tid] -= last->second.estimatedSize;
     _idMap[tid].erase(last->first);
@@ -60,6 +59,14 @@ std::shared_ptr<W> sj::GeometryCache<W>::cache(size_t off, const W& val,
 
   // push value to front
   _vals[tid].push_front({off, {estSize, std::make_shared<W>(val)}});
+
+  // if cache has too many elements, pop last element
+  if (_maxNumElements > 0 && _vals[tid].size() > _maxNumElements) {
+    auto last = _vals[tid].rbegin();
+    _valSizes[tid] -= last->second.estimatedSize;
+    _idMap[tid].erase(last->first);
+    _vals[tid].pop_back();
+  }
 
   // set map to front iterator
   _idMap[tid][off] = _vals[tid].begin();
