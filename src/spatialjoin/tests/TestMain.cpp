@@ -68,6 +68,7 @@ int main(int, char**) {
   sj::SweeperCfg baseline{NUM_THREADS,
                           NUM_THREADS,
                           1000,
+                          1000,
                           "$",
                           " intersects ",
                           " contains ",
@@ -94,6 +95,7 @@ int main(int, char**) {
 
   sj::SweeperCfg all{NUM_THREADS,
                      NUM_THREADS,
+                     1000,
                      1000,
                      "$",
                      " intersects ",
@@ -122,6 +124,7 @@ int main(int, char**) {
   sj::SweeperCfg noSurfaceArea{NUM_THREADS,
                                NUM_THREADS,
                                1000,
+                               1000,
                                "$",
                                " intersects ",
                                " contains ",
@@ -148,6 +151,7 @@ int main(int, char**) {
 
   sj::SweeperCfg noBoxIds{NUM_THREADS,
                           NUM_THREADS,
+                          1000,
                           1000,
                           "$",
                           " intersects ",
@@ -176,6 +180,7 @@ int main(int, char**) {
   sj::SweeperCfg noObb{NUM_THREADS,
                        NUM_THREADS,
                        1000,
+                       1000,
                        "$",
                        " intersects ",
                        " contains ",
@@ -202,6 +207,7 @@ int main(int, char**) {
 
   sj::SweeperCfg noDiagBox{NUM_THREADS,
                            NUM_THREADS,
+                           1000,
                            1000,
                            "$",
                            " intersects ",
@@ -230,6 +236,7 @@ int main(int, char**) {
   sj::SweeperCfg noFastSweep{NUM_THREADS,
                              NUM_THREADS,
                              1000,
+                             1000,
                              "$",
                              " intersects ",
                              " contains ",
@@ -256,6 +263,7 @@ int main(int, char**) {
 
   sj::SweeperCfg noInnerOuter{NUM_THREADS,
                               NUM_THREADS,
+                              1000,
                               1000,
                               "$",
                               " intersects ",
