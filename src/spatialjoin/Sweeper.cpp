@@ -2066,7 +2066,8 @@ void Sweeper::writeRel(size_t t, const std::string& a, const std::string& b,
   }
 
   if (_cfg.writeRelCb) {
-    _cfg.writeRelCb(t, a.c_str() + 1, b.c_str() + 1, pred.c_str());
+    _cfg.writeRelCb(t, a.c_str() + 1, a.size() - 1, b.c_str() + 1, b.size() - 1,
+                    pred.c_str(), pred.size());
   } else {
     size_t totSize = _cfg.pairStart.size() + a.size() + pred.size() + b.size() +
                      _cfg.pairEnd.size() - off - off;
@@ -4079,8 +4080,8 @@ void Sweeper::writeCovers(size_t t, const std::string& a, const std::string& b,
                           size_t bSub) {
   if (a != b) {
     if (bSub > 0) {
-        std::unique_lock<std::mutex> lock(_mutsCovers[t]);
-        _subCovered[t][b][a].insert(bSub);
+      std::unique_lock<std::mutex> lock(_mutsCovers[t]);
+      _subCovered[t][b][a].insert(bSub);
     } else {
       writeRel(t, a, b, _cfg.sepCovers);
       _relStats[t].covers++;

@@ -148,7 +148,8 @@ struct SweeperCfg {
   bool noGeometryChecks;
   double withinDist;
   bool computeDE9IM;
-  std::function<void(size_t t, const char* a, const char* b, const char* pred)>
+  std::function<void(size_t t, const char* a, size_t an, const char* b,
+                     size_t bn, const char* pred, size_t predn)>
       writeRelCb;
   std::function<void(const std::string&)> logCb;
   std::function<void(const std::string&)> statsCb;
