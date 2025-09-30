@@ -39,7 +39,7 @@ static const size_t DEFAULT_CACHE_NUM_ELEMENTS = 10000;
 // _____________________________________________________________________________
 void printHelp(int argc, char** argv) {
   UNUSED(argc);
-  std::cout
+  std::cerr
       << "\n"
       << "(C) 2023-" << YEAR << " " << COPY << "\n"
       << "Authors: " << AUTHORS << "\n\n"
@@ -102,7 +102,7 @@ void printHelp(int argc, char** argv) {
       << "number of threads for geometric computation\n"
       << std::setw(42)
       << "  --num-caches (default: " + std::to_string(NUM_THREADS) + ")"
-      << "number of geometry caches (if < --num-threads, syncing\n"
+      << "number of geometry caches (if < --num-threads, syncing)\n"
       << std::setw(42)
       << "  --cache-max-size (default: " + std::to_string(DEFAULT_CACHE_SIZE) +
              ")"
@@ -303,35 +303,41 @@ int main(int argc, char** argv) {
 
   sj::OutputWriter outWriter(numThreads, prefix, suffix, output, cache);
 
-  sj::SweeperCfg sweeperCfg{
-      numThreads,
-      numCaches,
-      geomCacheMaxSizeBytes,
-      geomCacheMaxNumElements,
-      intersects,
-      contains,
-      covers,
-      touches,
-      equals,
-      overlaps,
-      crosses,
-      useBoxIds,
-      useArea,
-      useOBB,
-      useDiagBox,
-      useFastSweepSkip,
-      useInnerOuter,
-      noGeometryChecks,
-      withinDist,
-      computeDE9IM,
-      [&outWriter](size_t t, const char* a, size_t an, const char* b, size_t bn,
-                   const char* pred, size_t predn) {
-        outWriter.writeRelCb(t, a, an, b, bn, pred, predn);
-      },
-      {},
-      {},
-      {},
-      {}};
+  std::function<void(size_t, const char*, size_t, const char*, size_t,
+                     const char*, size_t)>
+      writeRelCb;
+
+  if (outWriter.getOutMode() != sj::OutMode::NONE)
+    writeRelCb = [&outWriter](size_t t, const char* a, size_t an, const char* b,
+                              size_t bn, const char* pred, size_t predn) {
+      outWriter.writeRelCb(t, a, an, b, bn, pred, predn);
+    };
+
+  sj::SweeperCfg sweeperCfg{numThreads,
+                            numCaches,
+                            geomCacheMaxSizeBytes,
+                            geomCacheMaxNumElements,
+                            intersects,
+                            contains,
+                            covers,
+                            touches,
+                            equals,
+                            overlaps,
+                            crosses,
+                            useBoxIds,
+                            useArea,
+                            useOBB,
+                            useDiagBox,
+                            useFastSweepSkip,
+                            useInnerOuter,
+                            noGeometryChecks,
+                            withinDist,
+                            computeDE9IM,
+                            writeRelCb,
+                            {},
+                            {},
+                            {},
+                            {}};
 
   if (printStats)
     sweeperCfg.statsCb = [](const std::string& s) { std::cerr << s; };

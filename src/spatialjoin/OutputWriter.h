@@ -72,6 +72,8 @@ class OutputWriter {
     prepareOutputFiles();
   }
 
+  OutMode getOutMode() const { return _outMode; }
+
   void flushOutputFiles() {
     if (_outMode == COUT) {
       for (size_t i = 0; i < _numThreads + 1; i++) {
@@ -238,16 +240,16 @@ class OutputWriter {
     }
   }
 
-  void writeRelToBuf(size_t t, const std::string& a, const std::string& b,
-                     const std::string& pred) {
+  void writeRelToBuf(size_t t, const char* a, size_t an, const char* b, size_t bn,
+                     const char* pred, size_t predn) {
     memcpy(_outBuffers[t] + _outBufPos[t], _prefix.c_str(), _prefix.size());
     _outBufPos[t] += _prefix.size();
-    memcpy(_outBuffers[t] + _outBufPos[t], a.c_str(), a.size());
-    _outBufPos[t] += a.size();
-    memcpy(_outBuffers[t] + _outBufPos[t], pred.c_str(), pred.size());
-    _outBufPos[t] += pred.size();
-    memcpy(_outBuffers[t] + _outBufPos[t], b.c_str(), b.size());
-    _outBufPos[t] += b.size();
+    memcpy(_outBuffers[t] + _outBufPos[t], a, an);
+    _outBufPos[t] += an;
+    memcpy(_outBuffers[t] + _outBufPos[t], pred, predn);
+    _outBufPos[t] += predn;
+    memcpy(_outBuffers[t] + _outBufPos[t], b, bn);
+    _outBufPos[t] += bn;
     memcpy(_outBuffers[t] + _outBufPos[t], _suffix.c_str(), _suffix.size());
     _outBufPos[t] += _suffix.size();
   }
@@ -274,7 +276,7 @@ class OutputWriter {
         _outBufPos[t] = 0;
       }
 
-      writeRelToBuf(t, a, b, pred);
+      writeRelToBuf(t, a, an, b, bn, pred, predn);
 #endif
     } else if (_outMode == GZ) {
 #ifndef SPATIALJOIN_NO_ZLIB
@@ -293,7 +295,7 @@ class OutputWriter {
         _outBufPos[t] = 0;
       }
 
-      writeRelToBuf(t, a, b, pred);
+      writeRelToBuf(t, a, an, b, bn, pred, predn);
 #endif
     } else if (_outMode == PLAIN) {
       if (_outBufPos[t] + totSize >= BUFFER_S_PAIRS) {
@@ -311,14 +313,14 @@ class OutputWriter {
         _outBufPos[t] = 0;
       }
 
-      writeRelToBuf(t, a, b, pred);
+      writeRelToBuf(t, a, an, b, bn, pred, predn);
     } else if (_outMode == COUT) {
       if (_outBufPos[t] + totSize + 1 >= BUFFER_S_PAIRS) {
         _outBuffers[t][_outBufPos[t]] = 0;
         fputs(reinterpret_cast<const char*>(_outBuffers[t]), stdout);
         _outBufPos[t] = 0;
       }
-      writeRelToBuf(t, a, b, pred);
+      writeRelToBuf(t, a, an, b, bn, pred, predn);
     }
   }
 

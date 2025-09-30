@@ -37,7 +37,10 @@ enum GeomType : uint8_t {
   POINT = 2,
   SIMPLE_LINE = 3,
   SIMPLE_POLYGON = 4,
-  FOLDED_POINT = 5
+  FOLDED_POINT = 5,
+  // currently not used
+  FOLDED_SIMPLE_LINE_UP = 6,
+  FOLDED_SIMPLE_LINE_DOWN = 7
 };
 
 struct BoxVal {
@@ -72,8 +75,8 @@ struct WriteBatch {
   std::vector<WriteCand> refs;
 
   size_t size() const {
-    return points.size() + foldedPoints.size() + simpleLines.size() + lines.size() +
-           simpleAreas.size() + areas.size() + refs.size();
+    return points.size() + foldedPoints.size() + simpleLines.size() +
+           lines.size() + simpleAreas.size() + areas.size() + refs.size();
   }
 };
 
@@ -162,7 +165,8 @@ static const size_t GEOM_LARGENESS_THRESHOLD = 1024 * 1024 * 1024;
 
 class Sweeper {
  public:
-  Sweeper(SweeperCfg cfg, const std::string& cache) : Sweeper(cfg, cache, ".spatialjoin") {}
+  Sweeper(SweeperCfg cfg, const std::string& cache)
+      : Sweeper(cfg, cache, ".spatialjoin") {}
   Sweeper(SweeperCfg cfg, const std::string& cache,
           const std::string& tmpPrefix)
       : _cfg(cfg),
@@ -202,10 +206,7 @@ class Sweeper {
     _outBuffer = new unsigned char[BUFFER_S];
   };
 
-  ~Sweeper() {
-    close(_file);
-
-  }
+  ~Sweeper() { close(_file); }
 
   void log(const std::string& msg);
 
@@ -319,7 +320,6 @@ class Sweeper {
 
     return bbox;
   }
-
 
   static size_t foldString(const std::string& s) {
     size_t ret = 0;
@@ -511,6 +511,19 @@ class Sweeper {
   bool notCrosses(const std::string& a, const std::string& b);
 
   std::shared_ptr<sj::Point> getPoint(size_t id, GeomType gt, size_t t) const;
+  static bool isPoint(GeomType gt) { return gt == POINT || gt == FOLDED_POINT; }
+
+  std::shared_ptr<sj::SimpleLine> getSimpleLine(size_t id, GeomType gt,
+                                                size_t t) const;
+  static bool isLine(GeomType gt) {
+    return gt == LINE || gt == SIMPLE_LINE || gt == FOLDED_SIMPLE_LINE_UP ||
+           gt == FOLDED_SIMPLE_LINE_DOWN;
+  }
+
+  static bool isSimpleLine(GeomType gt) {
+    return gt == SIMPLE_LINE || gt == FOLDED_SIMPLE_LINE_UP ||
+           gt == FOLDED_SIMPLE_LINE_DOWN;
+  }
 
   static double meterDist(const util::geo::I32Point& p1,
                           const util::geo::I32Point& p2);
