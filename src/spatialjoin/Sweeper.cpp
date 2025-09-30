@@ -464,16 +464,10 @@ I32Box Sweeper::add(const I32Point& point, const std::string& gidR,
 
   WriteCand cur;
 
-  std::stringstream str;
-  GeometryCache<Point>::writeTo({gid, subid}, str);
-
-  cur.raw = str.str();
-
-  cur.subid = subid;
-  cur.gid = gid;
-
   const auto& rawBox = getBoundingBox(point);
   const auto& box = getPaddedBoundingBox(rawBox);
+
+  cur.subid = subid;
 
   if (!util::geo::intersects(box, _filterBox)) return {};
 
@@ -501,13 +495,37 @@ I32Box Sweeper::add(const I32Point& point, const std::string& gidR,
                    side,
                    false};
 
-  batch.points.emplace_back(cur);
+  cur.gid = gid;
+
+  // check if we can fold the gid into the offset id, because the gid is all
+  // we store in the cache for points
+  if (subid == 0 && gid.size() < 7) {
+    cur.boxvalIn.type = FOLDED_POINT;
+    cur.boxvalOut.type = FOLDED_POINT;
+    batch.foldedPoints.emplace_back(cur);
+  } else {
+    std::stringstream str;
+    GeometryCache<Point>::writeTo({gid, subid}, str);
+
+    cur.raw = str.str();
+
+    batch.points.emplace_back(cur);
+  }
 
   return box;
 }
 
 // _____________________________________________________________________________
 void Sweeper::addBatch(WriteBatch& cands) {
+  {
+    std::unique_lock<std::mutex> lock(_pointGeomCacheWriteMtx);
+    for (auto& cand : cands.foldedPoints) {
+      if (cand.boxvalIn.side) _numSides = 2;
+      cand.boxvalIn.id = foldString(cand.gid);
+      cand.boxvalOut.id = cand.boxvalIn.id;
+    }
+  }
+
   {
     std::unique_lock<std::mutex> lock(_pointGeomCacheWriteMtx);
     for (auto& cand : cands.points) {
@@ -603,6 +621,12 @@ void Sweeper::addBatch(WriteBatch& cands) {
 
   {
     std::unique_lock<std::mutex> lock(_sweepEventWriteMtx);
+    for (const auto& cand : cands.foldedPoints) {
+      diskAdd(cand.boxvalIn);
+      diskAdd(cand.boxvalOut);
+      if (_curSweepId / 2 % 1000000 == 0)
+        log("@ " + std::to_string(_curSweepId / 2));
+    }
     for (const auto& cand : cands.points) {
       diskAdd(cand.boxvalIn);
       diskAdd(cand.boxvalOut);
@@ -1073,24 +1097,6 @@ RelStats Sweeper::sweep() {
 
   util::geo::IntervalIdx<int32_t, SweepVal> actives[2];
 
-  _rawFiles = {};
-
-#ifndef SPATIALJOIN_NO_BZIP2
-  _bzFiles = {};
-  _bzFiles.resize(_cfg.numThreads + 1);
-#endif
-
-#ifndef SPATIALJOIN_NO_ZLIB
-  _gzFiles = {};
-  _gzFiles.resize(_cfg.numThreads + 1);
-#endif
-
-  _outBufPos = {};
-  _outBuffers = {};
-
-  _rawFiles.resize(_cfg.numThreads + 1);
-  _outBufPos.resize(_cfg.numThreads + 1);
-  _outBuffers.resize(_cfg.numThreads + 1);
   _stats.resize(_cfg.numThreads + 1);
   _relStats.resize(_cfg.numThreads + 1);
   _checks.resize(_cfg.numThreads);
@@ -1122,8 +1128,6 @@ RelStats Sweeper::sweep() {
 
   size_t counts = 0, totalCheckCount = 0, jj = 0, checkPairs = 0;
   auto t = TIME();
-
-  prepareOutputFiles();
 
   // fire up worker threads for geometry checking
   std::vector<std::thread> thrds(_cfg.numThreads);
@@ -1271,8 +1275,6 @@ RelStats Sweeper::sweep() {
   // again wait for all workers to finish
   for (auto& thr : thrds)
     if (thr.joinable()) thr.join();
-
-  flushOutputFiles();
 
   // final check count aggregation
   totalCheckCount += checkPairs;
@@ -2035,108 +2037,16 @@ std::tuple<bool, bool> Sweeper::check(const I32Point& a, const Line* b,
 }
 
 // ____________________________________________________________________________
-void Sweeper::writeRelToBuf(size_t t, const std::string& a,
-                            const std::string& b, const std::string& pred) {
-  size_t off = 1;
-  memcpy(_outBuffers[t] + _outBufPos[t], _cfg.pairStart.c_str(),
-         _cfg.pairStart.size());
-  _outBufPos[t] += _cfg.pairStart.size();
-  memcpy(_outBuffers[t] + _outBufPos[t], a.c_str() + off, a.size() - off);
-  _outBufPos[t] += a.size() - off;
-  memcpy(_outBuffers[t] + _outBufPos[t], pred.c_str(), pred.size());
-  _outBufPos[t] += pred.size();
-  memcpy(_outBuffers[t] + _outBufPos[t], b.c_str() + off, b.size() - off);
-  _outBufPos[t] += b.size() - off;
-  memcpy(_outBuffers[t] + _outBufPos[t], _cfg.pairEnd.c_str(),
-         _cfg.pairEnd.size());
-  _outBufPos[t] += _cfg.pairEnd.size();
-}
-
-// ____________________________________________________________________________
 void Sweeper::writeRel(size_t t, const std::string& a, const std::string& b,
                        const std::string& pred) {
+  if (!_cfg.writeRelCb) return;
+
   auto ts = TIME();
 
-  if (!_cfg.writeRelCb && _outMode == NONE) return;
+  if (_numSides == 2 && (a[0] != 'A' || a[0] == b[0])) return;
 
-  size_t off = 1;
-
-  if (_numSides == 2) {
-    if (a[0] != 'A' || a[0] == b[0]) return;
-  }
-
-  if (_cfg.writeRelCb) {
-    _cfg.writeRelCb(t, a.c_str() + 1, a.size() - 1, b.c_str() + 1, b.size() - 1,
-                    pred.c_str(), pred.size());
-  } else {
-    size_t totSize = _cfg.pairStart.size() + a.size() + pred.size() + b.size() +
-                     _cfg.pairEnd.size() - off - off;
-
-    if (_outMode == BZ2) {
-#ifndef SPATIALJOIN_NO_BZIP2
-      if (_outBufPos[t] + totSize >= BUFFER_S_PAIRS) {
-        int err = 0;
-        BZ2_bzWrite(&err, _bzFiles[t], _outBuffers[t], _outBufPos[t]);
-        if (err == BZ_IO_ERROR) {
-          BZ2_bzWriteClose(&err, _bzFiles[t], 0, 0, 0);
-          std::string fname = _cache + "/.rels" + std::to_string(getpid()) +
-                              "-" + std::to_string(t);
-          std::stringstream ss;
-          ss << "Could not write spatial relation to temporary bzip2 file '"
-             << fname << "':\n";
-          ss << strerror(errno) << std::endl;
-          throw std::runtime_error(ss.str());
-        }
-        _outBufPos[t] = 0;
-      }
-
-      writeRelToBuf(t, a, b, pred);
-#endif
-    } else if (_outMode == GZ) {
-#ifndef SPATIALJOIN_NO_ZLIB
-      if (_outBufPos[t] + totSize >= BUFFER_S_PAIRS) {
-        int r = gzwrite(_gzFiles[t], _outBuffers[t], _outBufPos[t]);
-        if (r != (int)_outBufPos[t]) {
-          gzclose(_gzFiles[t]);
-          std::string fname = _cache + "/.rels" + std::to_string(getpid()) +
-                              "-" + std::to_string(t);
-          std::stringstream ss;
-          ss << "Could not write spatial relation to temporary gzip file '"
-             << fname << "':\n";
-          ss << strerror(errno) << std::endl;
-          throw std::runtime_error(ss.str());
-        }
-        _outBufPos[t] = 0;
-      }
-
-      writeRelToBuf(t, a, b, pred);
-#endif
-    } else if (_outMode == PLAIN) {
-      if (_outBufPos[t] + totSize >= BUFFER_S_PAIRS) {
-        size_t r =
-            fwrite(_outBuffers[t], sizeof(char), _outBufPos[t], _rawFiles[t]);
-        if (r != _outBufPos[t]) {
-          std::string fname = _cache + "/.rels" + std::to_string(getpid()) +
-                              "-" + std::to_string(t);
-          std::stringstream ss;
-          ss << "Could not write spatial relation to temporary file '" << fname
-             << "':\n";
-          ss << strerror(errno) << std::endl;
-          throw std::runtime_error(ss.str());
-        }
-        _outBufPos[t] = 0;
-      }
-
-      writeRelToBuf(t, a, b, pred);
-    } else if (_outMode == COUT) {
-      if (_outBufPos[t] + totSize + 1 >= BUFFER_S_PAIRS) {
-        _outBuffers[t][_outBufPos[t]] = 0;
-        fputs(reinterpret_cast<const char*>(_outBuffers[t]), stdout);
-        _outBufPos[t] = 0;
-      }
-      writeRelToBuf(t, a, b, pred);
-    }
-  }
+  _cfg.writeRelCb(t, a.c_str() + 1, a.size() - 1, b.c_str() + 1, b.size() - 1,
+                  pred.c_str(), pred.size());
 
   _stats[t].timeWrite += TOOK(ts);
 }
@@ -2241,7 +2151,15 @@ void Sweeper::writeIntersect(size_t t, const std::string& a,
 
 // ____________________________________________________________________________
 void Sweeper::selfCheck(const BoxVal cur, size_t t) {
-  if (cur.type == POINT) {
+  if (cur.type == FOLDED_POINT) {
+    auto ts = TIME();
+    auto gid = unfoldString(cur.id);
+    _stats[t].timeGeoCacheRetrievalPoint += TOOK(ts);
+
+    writeIntersect(t, gid, gid);
+    writeEquals(t, gid, 0, gid, 0);
+    writeCovers(t, gid, gid, 0);
+  } else if (cur.type == POINT) {
     auto ts = TIME();
     auto a = _pointCache.get(cur.id, cur.large ? -1 : t);
     _stats[t].timeGeoCacheRetrievalPoint += TOOK(ts);
@@ -2284,7 +2202,8 @@ void Sweeper::doDE9IMCheck(const BoxVal cur, const SweepVal sv, size_t t) {
   // every 10000 checks, update our position
   if (_checks[t] % 10000 == 0) _atomicCurX[t] = _curX[t];
 
-  if (cur.type == POINT && sv.type == POINT) {
+  if ((cur.type == POINT || cur.type == FOLDED_POINT) &&
+      (sv.type == POINT && sv.type == FOLDED_POINT)) {
     auto p1 = cur.point;
     auto p2 = sv.point;
     _stats[t].totalComps++;
@@ -2293,8 +2212,8 @@ void Sweeper::doDE9IMCheck(const BoxVal cur, const SweepVal sv, size_t t) {
 
     if (!de9im.disjoint()) {
       auto ts = TIME();
-      auto a = _pointCache.get(cur.id, cur.large ? -1 : t);
-      auto b = _pointCache.get(sv.id, sv.large ? -1 : t);
+      auto a = getPoint(cur.id, cur.type, cur.large ? -1 : t);
+      auto b = getPoint(sv.id, sv.type, sv.large ? -1 : t);
 
       _stats[t].timeGeoCacheRetrievalPoint += TOOK(ts);
 
@@ -2302,7 +2221,7 @@ void Sweeper::doDE9IMCheck(const BoxVal cur, const SweepVal sv, size_t t) {
 
       writeDE9IM(t, a->id, a->subId, b->id, b->subId, de9im);
     }
-  } else if (cur.type == POINT &&
+  } else if ((cur.type == POINT || cur.type == FOLDED_POINT) &&
              (sv.type == POLYGON || sv.type == SIMPLE_POLYGON)) {
     auto p = cur.point;
 
@@ -2326,7 +2245,7 @@ void Sweeper::doDE9IMCheck(const BoxVal cur, const SweepVal sv, size_t t) {
 
     if (!de9im.disjoint()) {
       auto ts = TIME();
-      auto b = _pointCache.get(cur.id, cur.large ? -1 : t);
+      auto b = getPoint(cur.id, cur.type, cur.large ? -1 : t);
       _stats[t].timeGeoCacheRetrievalPoint += TOOK(ts);
 
       if (a->id == b->id) return;  // no self-checks in multigeometries
@@ -2334,7 +2253,7 @@ void Sweeper::doDE9IMCheck(const BoxVal cur, const SweepVal sv, size_t t) {
       writeDE9IM(t, b->id, b->subId, a->id, a->subId, de9im);
     }
   } else if ((cur.type == POLYGON || cur.type == SIMPLE_POLYGON) &&
-             sv.type == POINT) {
+             (sv.type == POINT || sv.type == FOLDED_POINT)) {
     auto p = sv.point;
 
     auto ts = TIME();
@@ -2357,7 +2276,7 @@ void Sweeper::doDE9IMCheck(const BoxVal cur, const SweepVal sv, size_t t) {
 
     if (!de9im.disjoint()) {
       auto ts = TIME();
-      auto b = _pointCache.get(sv.id, sv.large ? -1 : t);
+      auto b = getPoint(sv.id, sv.type, sv.large ? -1 : t);
       _stats[t].timeGeoCacheRetrievalPoint += TOOK(ts);
 
       if (a->id == b->id) return;  // no self-checks in multigeometries
@@ -2365,7 +2284,7 @@ void Sweeper::doDE9IMCheck(const BoxVal cur, const SweepVal sv, size_t t) {
       writeDE9IM(t, a->id, a->subId, b->id, b->subId, de9im);
     }
   } else if ((cur.type == SIMPLE_LINE || cur.type == LINE) &&
-             sv.type == POINT) {
+             (sv.type == POINT || sv.type == FOLDED_POINT)) {
     auto p = sv.point;
 
     if (cur.type == SIMPLE_LINE) {
@@ -2392,7 +2311,7 @@ void Sweeper::doDE9IMCheck(const BoxVal cur, const SweepVal sv, size_t t) {
 
       if (!de9im.disjoint()) {
         auto ts = TIME();
-        auto a = _pointCache.get(sv.id, sv.large ? -1 : t);
+        auto a = getPoint(sv.id, sv.type, sv.large ? -1 : t);
         _stats[t].timeGeoCacheRetrievalPoint += TOOK(ts);
 
         if (a->id == b->id) return;  // no self-checks in multigeometries
@@ -2400,7 +2319,8 @@ void Sweeper::doDE9IMCheck(const BoxVal cur, const SweepVal sv, size_t t) {
         writeDE9IM(t, a->id, a->subId, b->id, b->subId, de9im);
       }
     }
-  } else if ((sv.type == SIMPLE_LINE || sv.type == LINE) && cur.type == POINT) {
+  } else if ((sv.type == SIMPLE_LINE || sv.type == LINE) &&
+             (cur.type == POINT || cur.type == FOLDED_POINT)) {
     auto p = cur.point;
 
     if (sv.type == SIMPLE_LINE) {
@@ -2411,7 +2331,7 @@ void Sweeper::doDE9IMCheck(const BoxVal cur, const SweepVal sv, size_t t) {
 
       if (!de9im.disjoint()) {
         auto ts = TIME();
-        auto a = _pointCache.get(cur.id, cur.large ? -1 : t);
+        auto a = getPoint(cur.id, cur.type, cur.large ? -1 : t);
         _stats[t].timeGeoCacheRetrievalPoint += TOOK(ts);
 
         if (a->id == b->id) return;  // no self-checks in multigeometries
@@ -2426,7 +2346,7 @@ void Sweeper::doDE9IMCheck(const BoxVal cur, const SweepVal sv, size_t t) {
 
       if (!de9im.disjoint()) {
         auto ts = TIME();
-        auto a = _pointCache.get(cur.id, cur.large ? -1 : t);
+        auto a = getPoint(cur.id, cur.type, cur.large ? -1 : t);
         _stats[t].timeGeoCacheRetrievalPoint += TOOK(ts);
 
         if (a->id == b->id) return;  // no self-checks in multigeometries
@@ -2646,19 +2566,20 @@ void Sweeper::doDistCheck(const BoxVal cur, const SweepVal sv, size_t t) {
   // every 10000 checks, update our position
   if (_checks[t] % 10000 == 0) _atomicCurX[t] = _curX[t];
 
-  if (cur.type == POINT && sv.type == POINT) {
+  if ((cur.type == POINT || cur.type == FOLDED_POINT) &&
+      (sv.type == POINT || sv.type == FOLDED_POINT)) {
     auto p1 = cur.point;
     auto p2 = sv.point;
 
     auto dist = meterDist(p1, p2);
 
     if (dist <= _cfg.withinDist) {
-      auto a = _pointCache.get(cur.id, cur.large ? -1 : t);
-      auto b = _pointCache.get(sv.id, sv.large ? -1 : t);
+      auto a = getPoint(cur.id, cur.type, cur.large ? -1 : t);
+      auto b = getPoint(sv.id, sv.type, sv.large ? -1 : t);
 
       writeDist(t, a->id, a->subId, b->id, b->subId, dist);
     }
-  } else if (cur.type == POINT &&
+  } else if ((cur.type == POINT || cur.type == FOLDED_POINT) &&
              (sv.type == POLYGON || sv.type == SIMPLE_POLYGON)) {
     auto p = cur.point;
 
@@ -2678,11 +2599,11 @@ void Sweeper::doDistCheck(const BoxVal cur, const SweepVal sv, size_t t) {
     double dist = distCheck(p, a, t);
 
     if (dist <= _cfg.withinDist) {
-      auto b = _pointCache.get(cur.id, cur.large ? -1 : t);
+      auto b = getPoint(cur.id, cur.type, cur.large ? -1 : t);
       writeDist(t, a->id, a->subId, b->id, b->subId, dist);
     }
   } else if ((cur.type == POLYGON || cur.type == SIMPLE_POLYGON) &&
-             sv.type == POINT) {
+             (sv.type == POINT || sv.type == FOLDED_POINT)) {
     auto p = sv.point;
 
     const Area* a;
@@ -2701,11 +2622,11 @@ void Sweeper::doDistCheck(const BoxVal cur, const SweepVal sv, size_t t) {
     double dist = distCheck(p, a, t);
 
     if (dist <= _cfg.withinDist) {
-      auto b = _pointCache.get(sv.id, sv.large ? -1 : t);
+      auto b = getPoint(sv.id, sv.type, sv.large ? -1 : t);
       writeDist(t, a->id, a->subId, b->id, b->subId, dist);
     }
   } else if ((cur.type == SIMPLE_LINE || cur.type == LINE) &&
-             sv.type == POINT) {
+             (sv.type == POINT || sv.type == FOLDED_POINT)) {
     auto p = sv.point;
 
     double dist = std::numeric_limits<double>::max();
@@ -2715,7 +2636,7 @@ void Sweeper::doDistCheck(const BoxVal cur, const SweepVal sv, size_t t) {
       dist = distCheck(p, b.get(), t);
 
       if (dist <= _cfg.withinDist) {
-        auto a = _pointCache.get(sv.id, sv.large ? -1 : t);
+        auto a = getPoint(sv.id, sv.type, sv.large ? -1 : t);
         writeDist(t, a->id, a->subId, b->id, 0, dist);
       }
     } else {
@@ -2723,11 +2644,12 @@ void Sweeper::doDistCheck(const BoxVal cur, const SweepVal sv, size_t t) {
       dist = distCheck(p, b.get(), t);
 
       if (dist <= _cfg.withinDist) {
-        auto a = _pointCache.get(sv.id, sv.large ? -1 : t);
+        auto a = getPoint(sv.id, sv.type, sv.large ? -1 : t);
         writeDist(t, a->id, a->subId, b->id, b->subId, dist);
       }
     }
-  } else if ((sv.type == SIMPLE_LINE || sv.type == LINE) && cur.type == POINT) {
+  } else if ((sv.type == SIMPLE_LINE || sv.type == LINE) &&
+             (cur.type == POINT || cur.type == FOLDED_POINT)) {
     auto p = cur.point;
 
     double dist = std::numeric_limits<double>::max();
@@ -2737,7 +2659,7 @@ void Sweeper::doDistCheck(const BoxVal cur, const SweepVal sv, size_t t) {
       dist = distCheck(p, b.get(), t);
 
       if (dist <= _cfg.withinDist) {
-        auto a = _pointCache.get(cur.id, cur.large ? -1 : t);
+        auto a = getPoint(cur.id, cur.type, cur.large ? -1 : t);
         writeDist(t, a->id, a->subId, b->id, 0, dist);
       }
     } else {
@@ -2745,7 +2667,7 @@ void Sweeper::doDistCheck(const BoxVal cur, const SweepVal sv, size_t t) {
       dist = distCheck(p, b.get(), t);
 
       if (dist <= _cfg.withinDist) {
-        auto a = _pointCache.get(cur.id, cur.large ? -1 : t);
+        auto a = getPoint(cur.id, cur.type, cur.large ? -1 : t);
         writeDist(t, a->id, a->subId, b->id, b->subId, dist);
       }
     }
@@ -3495,12 +3417,13 @@ void Sweeper::doCheck(const BoxVal cur, const SweepVal sv, size_t t) {
     if (std::get<3>(res)) {
       writeOverlaps(t, a->id, 0, b->id, 0);
     }
-  } else if (cur.type == POINT && sv.type == POINT) {
+  } else if ((cur.type == POINT || cur.type == FOLDED_POINT) &&
+             (sv.type == POINT || sv.type == FOLDED_POINT)) {
     // point/point: trivial intersect & cover & contains
 
     auto ts = TIME();
-    auto a = _pointCache.get(cur.id, cur.large ? -1 : t);
-    auto b = _pointCache.get(sv.id, sv.large ? -1 : t);
+    auto a = getPoint(cur.id, cur.type, cur.large ? -1 : t);
+    auto b = getPoint(sv.id, sv.type, sv.large ? -1 : t);
     _stats[t].timeGeoCacheRetrievalPoint += TOOK(ts);
 
     _stats[t].anchorSum += 1;
@@ -3518,7 +3441,8 @@ void Sweeper::doCheck(const BoxVal cur, const SweepVal sv, size_t t) {
 
     writeCovers(t, a->id, b->id, b->subId);
     writeContains(t, a->id, b->id, b->subId);
-  } else if (cur.type == POINT && sv.type == SIMPLE_LINE) {
+  } else if ((cur.type == POINT || cur.type == FOLDED_POINT) &&
+             sv.type == SIMPLE_LINE) {
     auto p = I32Point(cur.val, cur.loY);
     auto ts = TIME();
     auto b = _simpleLineCache.get(sv.id, sv.large ? -1 : t);
@@ -3531,7 +3455,7 @@ void Sweeper::doCheck(const BoxVal cur, const SweepVal sv, size_t t) {
 
     if (util::geo::contains(p, LineSegment<int32_t>(b->a, b->b))) {
       auto ts = TIME();
-      auto a = _pointCache.get(cur.id, sv.large ? -1 : t);
+      auto a = getPoint(cur.id, sv.type, sv.large ? -1 : t);
       _stats[t].timeGeoCacheRetrievalPoint += TOOK(ts);
       writeIntersect(t, a->id, b->id);
 
@@ -3545,7 +3469,8 @@ void Sweeper::doCheck(const BoxVal cur, const SweepVal sv, size_t t) {
         writeTouches(t, a->id, a->subId, b->id, 0);
       }
     }
-  } else if (cur.type == POINT && sv.type == LINE) {
+  } else if ((cur.type == POINT || cur.type == FOLDED_POINT) &&
+             sv.type == LINE) {
     auto ts = TIME();
     auto a = I32Point(cur.val, cur.loY);
     auto b = _lineCache.get(sv.id, sv.large ? -1 : t);
@@ -3565,7 +3490,7 @@ void Sweeper::doCheck(const BoxVal cur, const SweepVal sv, size_t t) {
 
     if (std::get<0>(res)) {
       auto ts = TIME();
-      auto a = _pointCache.get(cur.id, cur.large ? -1 : t);
+      auto a = getPoint(cur.id, cur.type, cur.large ? -1 : t);
       _stats[t].timeGeoCacheRetrievalPoint += TOOK(ts);
 
       if (a->id == b->id) return;  // no self-checks in multigeometries
@@ -3587,7 +3512,7 @@ void Sweeper::doCheck(const BoxVal cur, const SweepVal sv, size_t t) {
         writeCovers(t, a->id, b->id, b->subId);
       }
     }
-  } else if (cur.type == POINT &&
+  } else if ((cur.type == POINT || cur.type == FOLDED_POINT) &&
              (sv.type == SIMPLE_POLYGON || sv.type == POLYGON)) {
     const Area* b;
     std::shared_ptr<Area> bsp;
@@ -3614,7 +3539,7 @@ void Sweeper::doCheck(const BoxVal cur, const SweepVal sv, size_t t) {
 
     if (res.second) {
       auto ts = TIME();
-      auto a = _pointCache.get(cur.id, cur.large ? -1 : t);
+      auto a = getPoint(cur.id, cur.type, cur.large ? -1 : t);
       _stats[t].timeGeoCacheRetrievalPoint += TOOK(ts);
 
       writeCovers(t, b->id, a->id, a->subId);
@@ -3633,157 +3558,6 @@ void Sweeper::doCheck(const BoxVal cur, const SweepVal sv, size_t t) {
   }
 }
 
-// _____________________________________________________________________________
-void Sweeper::flushOutputFiles() {
-  if (_cfg.writeRelCb) return;
-
-  if (_outMode == COUT) {
-    for (size_t i = 0; i < _cfg.numThreads + 1; i++) {
-      _outBuffers[i][_outBufPos[i]] = 0;
-      fputs(reinterpret_cast<const char*>(_outBuffers[i]), stdout);
-    }
-  }
-  if (_outMode == BZ2 || _outMode == GZ || _outMode == PLAIN) {
-    if (_outMode == BZ2) {
-#ifndef SPATIALJOIN_NO_BZIP2
-      for (size_t i = 0; i < _cfg.numThreads + 1; i++) {
-        int err = 0;
-        BZ2_bzWrite(&err, _bzFiles[i], _outBuffers[i], _outBufPos[i]);
-        if (err == BZ_IO_ERROR) {
-          BZ2_bzWriteClose(&err, _bzFiles[i], 0, 0, 0);
-          std::string fname = _cache + "/.rels" + std::to_string(getpid()) +
-                              "-" + std::to_string(i);
-          std::stringstream ss;
-          ss << "Could not write spatial relation to temporary bzip2 file '"
-             << fname << "':\n";
-          ss << strerror(errno) << std::endl;
-          throw std::runtime_error(ss.str());
-        }
-        BZ2_bzWriteClose(&err, _bzFiles[i], 0, 0, 0);
-        fclose(_rawFiles[i]);
-      }
-#endif
-    } else if (_outMode == GZ) {
-#ifndef SPATIALJOIN_NO_ZLIB
-      for (size_t i = 0; i < _cfg.numThreads + 1; i++) {
-        int r = gzwrite(_gzFiles[i], _outBuffers[i], _outBufPos[i]);
-        if (r != (int)_outBufPos[i]) {
-          gzclose(_gzFiles[i]);
-          std::string fname = _cache + "/.rels" + std::to_string(getpid()) +
-                              "-" + std::to_string(i);
-          std::stringstream ss;
-          ss << "Could not write spatial relation to temporary gzip file '"
-             << fname << "':\n";
-          ss << strerror(errno) << std::endl;
-          throw std::runtime_error(ss.str());
-        }
-        gzclose(_gzFiles[i]);
-      }
-#endif
-    } else {
-      for (size_t i = 0; i < _cfg.numThreads + 1; i++) {
-        size_t r =
-            fwrite(_outBuffers[i], sizeof(char), _outBufPos[i], _rawFiles[i]);
-        if (r != _outBufPos[i]) {
-          std::string fname = _cache + "/.rels" + std::to_string(getpid()) +
-                              "-" + std::to_string(i);
-          std::stringstream ss;
-          ss << "Could not write spatial relation to temporary file '" << fname
-             << "':\n";
-          ss << strerror(errno) << std::endl;
-          throw std::runtime_error(ss.str());
-        }
-        fclose(_rawFiles[i]);
-      }
-    }
-
-    // merge files into first file
-    std::ofstream out(
-        _cache + "/.rels" + std::to_string(getpid()) + "-0",
-        std::ios_base::binary | std::ios_base::app | std::ios_base::ate);
-    for (size_t i = 1; i < _cfg.numThreads + 1; i++) {
-      std::string fName = _cache + "/.rels" + std::to_string(getpid()) + "-" +
-                          std::to_string(i);
-      std::ifstream ifCur(fName, std::ios_base::binary);
-      if (ifCur.peek() != std::ifstream::traits_type::eof())
-        out << ifCur.rdbuf();
-      std::remove(fName.c_str());
-    }
-
-    // move first file to output file
-    std::rename((_cache + "/.rels" + std::to_string(getpid()) + "-0").c_str(),
-                _out.c_str());
-  }
-}
-
-// _____________________________________________________________________________
-void Sweeper::prepareOutputFiles() {
-  if (_cfg.writeRelCb) return;
-
-  if (_outMode == BZ2) {
-#ifndef SPATIALJOIN_NO_BZIP2
-    for (size_t i = 0; i < _cfg.numThreads + 1; i++) {
-      std::string fname = _cache + "/.rels" + std::to_string(getpid()) + "-" +
-                          std::to_string(i);
-      _rawFiles[i] = fopen(fname.c_str(), "w");
-
-      if (_rawFiles[i] == NULL) {
-        std::stringstream ss;
-        ss << "Could not open temporary bzip2 file '" << fname
-           << "' for writing:\n";
-        ss << strerror(errno) << std::endl;
-        throw std::runtime_error(ss.str());
-      }
-
-      int err = 0;
-      _bzFiles[i] = BZ2_bzWriteOpen(&err, _rawFiles[i], 6, 0, 30);
-      if (err != BZ_OK) {
-        std::stringstream ss;
-        ss << "Could not open temporary bzip2 file '" << fname
-           << "' for writing:\n";
-        ss << strerror(errno) << std::endl;
-        throw std::runtime_error(ss.str());
-      }
-      _outBuffers[i] = new unsigned char[BUFFER_S_PAIRS];
-    }
-#endif
-  } else if (_outMode == GZ) {
-#ifndef SPATIALJOIN_NO_ZLIB
-    for (size_t i = 0; i < _cfg.numThreads + 1; i++) {
-      std::string fname = _cache + "/.rels" + std::to_string(getpid()) + "-" +
-                          std::to_string(i);
-      _gzFiles[i] = gzopen(fname.c_str(), "w");
-      if (_gzFiles[i] == Z_NULL) {
-        std::stringstream ss;
-        ss << "Could not open temporary gzip file '" << fname
-           << "' for writing:\n";
-        ss << strerror(errno) << std::endl;
-        throw std::runtime_error(ss.str());
-      }
-      _outBuffers[i] = new unsigned char[BUFFER_S_PAIRS];
-    }
-#endif
-  } else if (_outMode == PLAIN) {
-    for (size_t i = 0; i < _cfg.numThreads + 1; i++) {
-      std::string fname = _cache + "/.rels" + std::to_string(getpid()) + "-" +
-                          std::to_string(i);
-      _rawFiles[i] = fopen(fname.c_str(), "w");
-
-      if (_rawFiles[i] == NULL) {
-        std::stringstream ss;
-        ss << "Could not open temporary file '" << fname << "' for writing:\n";
-        ss << strerror(errno) << std::endl;
-        throw std::runtime_error(ss.str());
-      }
-
-      _outBuffers[i] = new unsigned char[BUFFER_S_PAIRS];
-    }
-  } else if (_outMode == COUT) {
-    for (size_t i = 0; i < _cfg.numThreads + 1; i++) {
-      _outBuffers[i] = new unsigned char[BUFFER_S_PAIRS];
-    }
-  }
-}
 
 // _____________________________________________________________________________
 void Sweeper::processQueue(size_t t) {
@@ -4509,4 +4283,13 @@ double Sweeper::distCheck(const Area* a, const Area* b, size_t t) const {
   _stats[t].fullGeoChecksAreaArea++;
 
   return dist;
+}
+
+// _____________________________________________________________________________
+std::shared_ptr<sj::Point> Sweeper::getPoint(size_t id, GeomType gt,
+                                             size_t t) const {
+  if (gt == sj::FOLDED_POINT)
+    return std::make_shared<sj::Point>(sj::Point{unfoldString(id), 0});
+
+  return _pointCache.get(id, t);
 }

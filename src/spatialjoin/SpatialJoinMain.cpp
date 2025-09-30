@@ -5,6 +5,7 @@
 #include <iostream>
 
 #include "BoxIds.h"
+#include "OutputWriter.h"
 #include "Sweeper.h"
 #include "WKTParse.h"
 #include "util/Misc.h"
@@ -300,33 +301,37 @@ int main(int argc, char** argv) {
   unsigned char* buf = new unsigned char[CACHE_SIZE];
   size_t len;
 
-  sj::SweeperCfg sweeperCfg{numThreads,
-                            numCaches,
-                            geomCacheMaxSizeBytes,
-                            geomCacheMaxNumElements,
-                            prefix,
-                            intersects,
-                            contains,
-                            covers,
-                            touches,
-                            equals,
-                            overlaps,
-                            crosses,
-                            suffix,
-                            useBoxIds,
-                            useArea,
-                            useOBB,
-                            useDiagBox,
-                            useFastSweepSkip,
-                            useInnerOuter,
-                            noGeometryChecks,
-                            withinDist,
-                            computeDE9IM,
-                            {},
-                            {},
-                            {},
-                            {},
-                            {}};
+  sj::OutputWriter outWriter(numThreads, prefix, suffix, output, cache);
+
+  sj::SweeperCfg sweeperCfg{
+      numThreads,
+      numCaches,
+      geomCacheMaxSizeBytes,
+      geomCacheMaxNumElements,
+      intersects,
+      contains,
+      covers,
+      touches,
+      equals,
+      overlaps,
+      crosses,
+      useBoxIds,
+      useArea,
+      useOBB,
+      useDiagBox,
+      useFastSweepSkip,
+      useInnerOuter,
+      noGeometryChecks,
+      withinDist,
+      computeDE9IM,
+      [&outWriter](size_t t, const char* a, size_t an, const char* b, size_t bn,
+                   const char* pred, size_t predn) {
+        outWriter.writeRelCb(t, a, an, b, bn, pred, predn);
+      },
+      {},
+      {},
+      {},
+      {}};
 
   if (printStats)
     sweeperCfg.statsCb = [](const std::string& s) { std::cerr << s; };
@@ -336,7 +341,7 @@ int main(int argc, char** argv) {
       LOGTO(INFO, std::cerr) << s;
     };
 
-  Sweeper sweeper(sweeperCfg, cache, output);
+  Sweeper sweeper(sweeperCfg, cache);
 
   sweeper.log("Parsing input geometries...");
   auto ts = TIME();
