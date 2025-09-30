@@ -258,9 +258,6 @@ class Sweeper {
 
   size_t numElements() const { return _curSweepId / 2; }
 
-  static std::string intToBase126(uint64_t id);
-  static uint64_t base126ToInt(const std::string& id);
-
   void setFilterBox(const util::geo::I32Box& filterBox) {
     _filterBox = filterBox;
   }
@@ -324,12 +321,13 @@ class Sweeper {
   static size_t foldString(const std::string& s) {
     size_t ret = 0;
     for (size_t i = 0; i < std::min((size_t)7, s.size()); i++) {
-      size_t tmp = s[i];
+      size_t tmp = static_cast<unsigned char>(s[i]);
       ret |= tmp << (i * 8);
     }
 
     // highest byte stores the length
     ret |= (s.size() << 56);
+
     return ret;
   };
 

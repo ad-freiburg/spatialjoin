@@ -28,6 +28,40 @@ inline bool operator==(const ParseJob &a, const ParseJob &b) {
   return a.line == b.line && a.str == b.str && a.side == b.side;
 }
 
+inline std::string intInString(uint64_t oid) {
+  unsigned char id[9] = {0, 0, 0, 0, 0, 0, 0, 0, 0};
+  int a = 0;
+  uint64_t tmp;
+
+  while (a < 8 && (oid >> (a * 8))) {
+    tmp = (oid & (0xFFLL << (a * 8)));
+    id[8 - a] = tmp >> (a * 8);
+    a++;
+  }
+
+  a--;
+
+  return std::string{reinterpret_cast<char *>(id + (8 - a)),
+                     static_cast<size_t>(a + 1)};
+}
+
+inline std::string idEnhance(const std::string& id) {
+    bool digitId = true;
+    for (size_t i = 0; i < id.size(); i++) {
+      if (!isdigit(id[i])) {
+        digitId = false;
+        break;
+      }
+    }
+
+    if (digitId) {
+      size_t i = std::atoll(id.c_str());
+      return std::string("d") + intInString(i);
+    } else {
+      return std::string("s") + id;
+    }
+}
+
 typedef std::vector<ParseJob> ParseBatch;
 
 template <typename ParseJobT>
@@ -96,6 +130,8 @@ class WKTParserBase {
       id = std::to_string(gid);
     }
 
+    id = idEnhance(id);
+
     // search for next tab occurance
     idp = strchr(c, '\t');
 
@@ -125,7 +161,7 @@ class WKTParserBase {
 
         if (!referenceId.empty()) {
           _sweeper->add(
-              referenceId,
+              idEnhance(referenceId),
               util::geo::I32Box({std::numeric_limits<int32_t>::min(),
                                  std::numeric_limits<int32_t>::min()},
                                 {std::numeric_limits<int32_t>::max(),

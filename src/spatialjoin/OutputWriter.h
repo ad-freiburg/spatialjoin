@@ -24,6 +24,17 @@ static const size_t BUFFER_S_PAIRS = 1024 * 1024 * 10;
 
 enum OutMode : uint8_t { PLAIN = 0, BZ2 = 1, GZ = 2, COUT = 3, NONE = 4 };
 
+inline uint64_t intFromString(const char* s, size_t n) {
+  uint64_t id = 0;
+
+  for (size_t i = n; i > 0; i--) {
+    id |= static_cast<uint64_t>(static_cast<unsigned char>(s[i - 1]))
+          << (8 * (n - 1 - (i - 1)));
+  }
+
+  return id;
+}
+
 class OutputWriter {
  public:
   ~OutputWriter() {
@@ -256,6 +267,26 @@ class OutputWriter {
 
   void writeRelCb(size_t t, const char* a, size_t an, const char* b, size_t bn,
                   const char* pred, size_t predn) {
+    std::string tmpa, tmpb;
+
+    if (an > 0 && a[0] == 's') {
+      a = &a[1];
+      an--;
+    } else if (an > 0 && a[0] == 'd') {
+      tmpa = std::to_string(intFromString(&a[1], an - 1));
+      a = tmpa.c_str();
+      an = tmpa.size();
+    }
+
+    if (bn > 0 && b[0] == 's') {
+      b = &b[1];
+      bn--;
+    } else if (bn > 0 && b[0] == 'd') {
+      tmpb = std::to_string(intFromString(&b[1], bn - 1));
+      b = tmpb.c_str();
+      bn = tmpb.size();
+    }
+
     size_t totSize = _prefix.size() + an + predn + bn + _suffix.size();
 
     if (_outMode == BZ2) {

@@ -499,7 +499,7 @@ I32Box Sweeper::add(const I32Point& point, const std::string& gidR,
 
   // check if we can fold the gid into the offset id, because the gid is all
   // we store in the cache for points
-  if (subid == 0 && gid.size() < 7) {
+  if (subid == 0 && gid.size() < 8) {
     cur.boxvalIn.type = FOLDED_POINT;
     cur.boxvalOut.type = FOLDED_POINT;
     batch.foldedPoints.emplace_back(cur);
@@ -3447,7 +3447,7 @@ void Sweeper::doCheck(const BoxVal cur, const SweepVal sv, size_t t) {
 
     if (util::geo::contains(p, LineSegment<int32_t>(b->a, b->b))) {
       auto ts = TIME();
-      auto a = getPoint(cur.id, sv.type, sv.large ? -1 : t);
+      auto a = getPoint(cur.id, cur.type, cur.large ? -1 : t);
       _stats[t].timeGeoCacheRetrievalPoint += TOOK(ts);
       writeIntersect(t, a->id, b->id);
 
@@ -3962,25 +3962,6 @@ bool Sweeper::refRelated(const std::string& a, const std::string& b) const {
 }
 
 // _____________________________________________________________________________
-std::string Sweeper::intToBase126(uint64_t id) {
-  if (id == 0) return std::string("\1");
-
-  std::string ret;
-  ret.reserve(::log(id) / ::log(126) + 1);
-
-  div_t d = {id, 0};
-  uint64_t pos = 126;
-
-  do {
-    d = div(d.quot, pos);
-    ret.push_back(d.rem + 1);  // avoid 0 bytes, although std::string allows it
-    pos *= 126;
-  } while (d.quot);
-
-  return ret;
-}
-
-// _____________________________________________________________________________
 double Sweeper::getMaxScaleFactor(const I32Box& bbox) const {
   double invScaleFactor = std::min(
       util::geo::webMercDistFactor(I32Point{bbox.getLowerLeft().getX() / PREC,
@@ -3996,17 +3977,6 @@ double Sweeper::getMaxScaleFactor(const I32Box& bbox) const {
 double Sweeper::getMaxScaleFactor(const I32Point& p) const {
   return 1.0 / util::geo::webMercDistFactor(
                    I32Point{p.getX() / PREC, p.getY() / PREC});
-}
-
-// _____________________________________________________________________________
-uint64_t Sweeper::base126ToInt(const std::string& id) {
-  uint64_t ret = 0;
-  uint64_t pos = 1;
-  for (size_t i = 0; i < id.size(); i++) {
-    ret += (id[i] - 1) * pos;
-    pos *= 126;
-  }
-  return ret;
 }
 
 // _____________________________________________________________________________
