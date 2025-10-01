@@ -548,10 +548,10 @@ class Sweeper {
       return 1;
 
     // points before lines
-    if (boxa->type == POINT &&
+    if ((boxa->type == POINT || boxa->type == FOLDED_POINT) &&
         (boxb->type == SIMPLE_LINE || boxb->type == LINE))
       return -1;
-    if (boxb->type == POINT &&
+    if ((boxb->type == POINT || boxb->type == FOLDED_POINT) &&
         (boxa->type == SIMPLE_LINE || boxa->type == LINE))
       return 1;
 
