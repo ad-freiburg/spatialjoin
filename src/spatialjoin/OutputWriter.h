@@ -218,6 +218,7 @@ class OutputWriter {
         std::string fname = _cache + "/.rels" + std::to_string(getpid()) + "-" +
                             std::to_string(i);
         _gzFiles[i] = gzopen(fname.c_str(), "w");
+
         if (_gzFiles[i] == Z_NULL) {
           std::stringstream ss;
           ss << "Could not open temporary gzip file '" << fname

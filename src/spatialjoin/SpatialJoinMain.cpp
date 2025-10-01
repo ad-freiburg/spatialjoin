@@ -58,7 +58,7 @@ void printHelp(int argc, char** argv) {
       << "cache directory for intermediate files\n"
       << std::setw(42) << "  --de9im"
       << "output DE-9IM relationships\n"
-      << std::setw(42) << "  --within-distance (default: '')"
+      << std::setw(42) << "  --within-distance (default: '-1')"
       << "if set to non-negative value, only compute for each object\n"
       << std::setw(42) << " "
       << "the objects within the given distance\n\n"
@@ -106,13 +106,13 @@ void printHelp(int argc, char** argv) {
       << std::setw(42)
       << "  --cache-max-size (default: " + std::to_string(DEFAULT_CACHE_SIZE) +
              ")"
-      << "maximum approx. size in bytes of cache per type and thread, 0 = "
-         "unlimited\n"
+      << "maximum approx. size in bytes of cache per type and\n"
+      << std::setw(42) << " " << "thread, 0 = unlimited\n"
       << std::setw(42)
       << "  --cache-max-elements (default: " +
              std::to_string(DEFAULT_CACHE_NUM_ELEMENTS) + ")"
-      << "maximum number of elements per cache, type and thread, 0 = "
-         "unlimited\n"
+      << "maximum number of elements per cache, type and thread,\n"
+      << std::setw(42) << " " << "0 = unlimited\n"
       << std::setw(42) << "  --no-geometry-checks"
       << "do not compute geometric relations, only report number of\n"
       << std::setw(42) << " "
