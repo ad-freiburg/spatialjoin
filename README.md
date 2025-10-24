@@ -60,6 +60,8 @@ $ spatialjoin < example.txt
 [...]
 ```
 
+You can also give the input file as an argument.
+
 ### Custom IDs
 
 You may specify a custom geometry string ID, outputted instead of the line number, before the WKT, separated by a tab:
@@ -84,9 +86,30 @@ point9 intersects polygon1
 [...]
 ```
 
+### DE9-IM joins
+
+To calculate the DE9-IM matrix between intersecting geometries, use the `--de9im` option:
+
+```
+$ spatialjoin --de9im < example.txt
+9	0FFFFF212	1
+1	0F2FF1FF2	9
+9	0FFFFF212	2
+2	0F2FF1FF2	9
+9	0FFFFF212	3
+3	0F2FF1FF2	9
+[...]
+```
+
 ### Non-self joins
 
-You may specify a "side" (either 0 or 1) per geometry, as an additional tab-separated field after the custom geometry ID. If sides are defined, only geometries from different sides are compared. Note that a custom geometry ID *must* be given, otherwise the side will be interpreted as the custom geometry ID. The default side is 0.
+For non-self joins, you can give the left and right side as two file arguments:
+
+```
+$ spatialjoin example_left.txt example_right.txt
+```
+
+Alternatively, you may specify a "side" (either 0 or 1) per geometry, as an additional tab-separated field after the custom geometry ID. If sides are defined, only geometries from different sides are compared. Note that a custom geometry ID *must* be given, otherwise the side will be interpreted as the custom geometry ID. The default side is 0.
 
 ```
 $ cat example_nonself.txt
