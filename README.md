@@ -86,9 +86,9 @@ point9 intersects polygon1
 [...]
 ```
 
-### DE9-IM joins
+### DE-9IM joins
 
-To calculate the DE9-IM matrix between intersecting geometries, use the `--de9im` option:
+To calculate the DE-9IM matrix between intersecting geometries, use the `--de9im` option:
 
 ```
 $ spatialjoin --de9im < example.txt
