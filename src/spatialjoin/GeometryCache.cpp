@@ -1,12 +1,13 @@
 // Copyright 2023, University of Freiburg
 // Authors: Patrick Brosi <brosi@cs.uni-freiburg.de>
 
+#include "GeometryCache.h"
+
 #include <fstream>
 #include <iostream>
 #include <mutex>
 #include <vector>
 
-#include "GeometryCache.h"
 #include "util/geo/Geo.h"
 
 const static size_t MAX_MEM_CACHE_SIZE = 1 * 1024 * 1024 * 20l;
@@ -200,8 +201,10 @@ std::pair<size_t, sj::Line> sj::GeometryCache<sj::Line>::getFrom(
     estSize += sizeof(sj::boxids::BoxId) * numBoxIds;
   }
 
-  // OBB
-  estSize += readPoly(str, ret.obb);
+  if (_opts.storeOBB) {
+    // OBB
+    estSize += readPoly(str, ret.obb);
+  }
 
   return {estSize, ret};
 }
@@ -254,25 +257,31 @@ std::pair<size_t, sj::Area> sj::GeometryCache<sj::Area>::getFrom(
     estSize += sizeof(sj::boxids::BoxId) * numBoxIds;
   }
 
-  // OBB
-  estSize += readPoly(str, ret.obb);
-
-  // simplified inner
-  estSize += readPoly(str, ret.inner);
-
-  if (!ret.inner.empty()) {
-    str.read(reinterpret_cast<char*>(&ret.innerBox), sizeof(util::geo::I32Box));
-    str.read(reinterpret_cast<char*>(&ret.innerOuterArea), sizeof(double));
-    estSize += sizeof(double) + sizeof(util::geo::I32Box);
+  if (_opts.storeOBB) {
+    // OBB
+    estSize += readPoly(str, ret.obb);
   }
 
-  // simplified outer
-  estSize += readPoly(str, ret.outer);
+  if (_opts.storeInnerOuter) {
+    // simplified inner
+    estSize += readPoly(str, ret.inner);
 
-  if (!ret.outer.empty()) {
-    str.read(reinterpret_cast<char*>(&ret.outerBox), sizeof(util::geo::I32Box));
-    str.read(reinterpret_cast<char*>(&ret.outerOuterArea), sizeof(double));
-    estSize += sizeof(double) + sizeof(util::geo::I32Box);
+    if (!ret.inner.empty()) {
+      str.read(reinterpret_cast<char*>(&ret.innerBox),
+               sizeof(util::geo::I32Box));
+      str.read(reinterpret_cast<char*>(&ret.innerOuterArea), sizeof(double));
+      estSize += sizeof(double) + sizeof(util::geo::I32Box);
+    }
+
+    // simplified outer
+    estSize += readPoly(str, ret.outer);
+
+    if (!ret.outer.empty()) {
+      str.read(reinterpret_cast<char*>(&ret.outerBox),
+               sizeof(util::geo::I32Box));
+      str.read(reinterpret_cast<char*>(&ret.outerOuterArea), sizeof(double));
+      estSize += sizeof(double) + sizeof(util::geo::I32Box);
+    }
   }
 
   return {estSize, ret};
@@ -281,7 +290,7 @@ std::pair<size_t, sj::Area> sj::GeometryCache<sj::Area>::getFrom(
 // ____________________________________________________________________________
 template <>
 size_t sj::GeometryCache<sj::Point>::writeTo(const sj::Point& val,
-                                             std::ostream& str) {
+                                             std::ostream& str) const {
   size_t ret = 0;
 
   // id
@@ -333,7 +342,7 @@ size_t sj::GeometryCache<W>::add(const std::string& raw) {
 // ____________________________________________________________________________
 template <>
 size_t sj::GeometryCache<sj::SimpleArea>::writeTo(const sj::SimpleArea& val,
-                                                  std::ostream& str) {
+                                                  std::ostream& str) const {
   size_t ret = 0;
 
   // geom
@@ -362,7 +371,7 @@ size_t sj::GeometryCache<sj::SimpleArea>::writeTo(const sj::SimpleArea& val,
 
 template <>
 size_t sj::GeometryCache<sj::SimpleLine>::writeTo(const sj::SimpleLine& val,
-                                                  std::ostream& str) {
+                                                  std::ostream& str) const {
   size_t ret = 0;
 
   // geoms
@@ -384,7 +393,7 @@ size_t sj::GeometryCache<sj::SimpleLine>::writeTo(const sj::SimpleLine& val,
 // ____________________________________________________________________________
 template <>
 size_t sj::GeometryCache<sj::Line>::writeTo(const sj::Line& val,
-                                            std::ostream& str) {
+                                            std::ostream& str) const {
   size_t ret = 0;
 
   // geoms
@@ -420,8 +429,10 @@ size_t sj::GeometryCache<sj::Line>::writeTo(const sj::Line& val,
 
   ret += sizeof(uint32_t) + sizeof(sj::boxids::BoxId) * size;
 
-  // OBB
-  ret += writePoly(val.obb, str);
+  if (_opts.storeOBB) {
+    // OBB
+    ret += writePoly(val.obb, str);
+  }
 
   return ret;
 }
@@ -429,7 +440,7 @@ size_t sj::GeometryCache<sj::Line>::writeTo(const sj::Line& val,
 // ____________________________________________________________________________
 template <>
 size_t sj::GeometryCache<sj::Area>::writeTo(const sj::Area& val,
-                                            std::ostream& str) {
+                                            std::ostream& str) const {
   size_t ret = 0;
 
   // geoms
@@ -469,35 +480,39 @@ size_t sj::GeometryCache<sj::Area>::writeTo(const sj::Area& val,
 
   ret += sizeof(uint32_t) + sizeof(sj::boxids::BoxId) * size;
 
-  // OBB
-  ret += writePoly(val.obb, str);
-
-  // innerGeom
-  ret += writePoly(val.inner, str);
-
-  if (!val.inner.empty()) {
-    str.write(reinterpret_cast<const char*>(&val.innerBox),
-              sizeof(util::geo::I32Box));
-    ret += sizeof(util::geo::I32Box);
-
-    // inner area
-    str.write(reinterpret_cast<const char*>(&val.innerOuterArea),
-              sizeof(double));
-    ret += sizeof(double);
+  if (_opts.storeOBB) {
+    // OBB
+    ret += writePoly(val.obb, str);
   }
 
-  // outerGeom
-  ret += writePoly(val.outer, str);
+  if (_opts.storeInnerOuter) {
+    // innerGeom
+    ret += writePoly(val.inner, str);
 
-  if (!val.outer.empty()) {
-    str.write(reinterpret_cast<const char*>(&val.outerBox),
-              sizeof(util::geo::I32Box));
-    ret += sizeof(util::geo::I32Box);
+    if (!val.inner.empty()) {
+      str.write(reinterpret_cast<const char*>(&val.innerBox),
+                sizeof(util::geo::I32Box));
+      ret += sizeof(util::geo::I32Box);
 
-    // outer area
-    str.write(reinterpret_cast<const char*>(&val.outerOuterArea),
-              sizeof(double));
-    ret += sizeof(double);
+      // inner area
+      str.write(reinterpret_cast<const char*>(&val.innerOuterArea),
+                sizeof(double));
+      ret += sizeof(double);
+    }
+
+    // outerGeom
+    ret += writePoly(val.outer, str);
+
+    if (!val.outer.empty()) {
+      str.write(reinterpret_cast<const char*>(&val.outerBox),
+                sizeof(util::geo::I32Box));
+      ret += sizeof(util::geo::I32Box);
+
+      // outer area
+      str.write(reinterpret_cast<const char*>(&val.outerOuterArea),
+                sizeof(double));
+      ret += sizeof(double);
+    }
   }
 
   return ret;

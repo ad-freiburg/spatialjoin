@@ -8,6 +8,7 @@ namespace sj {
 struct Stats {
   uint64_t timeGeoCacheRetrievalArea = 0;
   uint64_t timeGeoCacheRetrievalLine = 0;
+  uint64_t timeGeoCacheRetrievalSimpleLine = 0;
   uint64_t timeGeoCacheRetrievalPoint = 0;
 
   uint64_t timeWrite = 0;
@@ -62,14 +63,14 @@ struct Stats {
 inline std::string Stats::toString() {
   double sum =
       double(timeGeoCacheRetrievalArea + timeGeoCacheRetrievalLine +
-             timeGeoCacheRetrievalPoint + timeWrite + timeBoxIdIsectAreaArea +
-             timeBoxIdIsectAreaLine + timeOBBIsectAreaArea +
-             timeOBBIsectAreaLine + timeOBBIsectAreaPoint +
-             timeOBBIsectLineLine + timeBoxIdIsectAreaPoint +
-             timeBoxIdIsectLineLine + timeBoxIdIsectLinePoint +
-             timeFullGeoCheckAreaArea + timeFullGeoCheckAreaLine +
-             timeFullGeoCheckAreaPoint + timeFullGeoCheckLineLine +
-             timeFullGeoCheckLinePoint +
+             timeGeoCacheRetrievalSimpleLine + timeGeoCacheRetrievalPoint +
+             timeWrite + timeBoxIdIsectAreaArea + timeBoxIdIsectAreaLine +
+             timeOBBIsectAreaArea + timeOBBIsectAreaLine +
+             timeOBBIsectAreaPoint + timeOBBIsectLineLine +
+             timeBoxIdIsectAreaPoint + timeBoxIdIsectLineLine +
+             timeBoxIdIsectLinePoint + timeFullGeoCheckAreaArea +
+             timeFullGeoCheckAreaLine + timeFullGeoCheckAreaPoint +
+             timeFullGeoCheckLineLine + timeFullGeoCheckLinePoint +
              timeInnerOuterCheckAreaArea + timeInnerOuterCheckAreaLine) /
       1000000000.0;
 
@@ -77,6 +78,10 @@ inline std::string Stats::toString() {
 
   double t = double(timeGeoCacheRetrievalArea) / 1000000000.0;
   ss << "time for geo cache retrieval of AREAS: " << t << " s ("
+     << ((t / sum) * 100.0) << "%)\n";
+
+  t = double(timeGeoCacheRetrievalSimpleLine) / 1000000000.0;
+  ss << "time for geo cache retrieval of SIMPLE LINES: " << t << " s ("
      << ((t / sum) * 100.0) << "%)\n";
 
   t = double(timeGeoCacheRetrievalLine) / 1000000000.0;
@@ -207,10 +212,13 @@ inline std::string Stats::toString() {
 
   ss << "\n";
 
-  ss << "    Avg. max surface area between cmps: " << std::fixed << (areaSizeSum / (areaCmps * 1.0)) / 100.0 << " (map units)^2\n";
-  ss << "    Avg. max line length between cmps: " <<  std::fixed << (lineLenSum / (lineCmps * 1.0)) / 10.0 << " map units\n";
+  ss << "    Avg. max surface area between cmps: " << std::fixed
+     << (areaSizeSum / (areaCmps * 1.0)) / 100.0 << " (map units)^2\n";
+  ss << "    Avg. max line length between cmps: " << std::fixed
+     << (lineLenSum / (lineCmps * 1.0)) / 10.0 << " map units\n";
 
-  ss << "    Avg. max num anchor points between cmps: " <<  std::fixed << (anchorSum * 1.0) / (totalComps * 1.0) << "\n";
+  ss << "    Avg. max num anchor points between cmps: " << std::fixed
+     << (anchorSum * 1.0) / (totalComps * 1.0) << "\n";
 
   ss << "\n    SUM: " << sum << " s\n";
   ss << "    TOTAL COMPARISONS (after bbox / diag box filter): " << totalComps;
@@ -248,40 +256,47 @@ inline void Stats::timeHisto(size_t numPoints, uint64_t time) {
 }
 
 inline Stats operator+(const Stats& a, const Stats& b) {
-  return Stats{a.timeGeoCacheRetrievalArea + b.timeGeoCacheRetrievalArea,
-               a.timeGeoCacheRetrievalLine + b.timeGeoCacheRetrievalLine,
-               a.timeGeoCacheRetrievalPoint + b.timeGeoCacheRetrievalPoint,
-               a.timeWrite + b.timeWrite,
-               a.timeBoxIdIsectAreaArea + b.timeBoxIdIsectAreaArea,
-               a.timeBoxIdIsectAreaLine + b.timeBoxIdIsectAreaLine,
-               a.timeBoxIdIsectAreaPoint + b.timeBoxIdIsectAreaPoint,
-               a.timeBoxIdIsectLineLine + b.timeBoxIdIsectLineLine,
-               a.timeBoxIdIsectLinePoint + b.timeBoxIdIsectLinePoint,
-               a.timeOBBIsectAreaArea + b.timeOBBIsectAreaArea,
-               a.timeOBBIsectAreaLine + b.timeOBBIsectAreaLine,
-               a.timeOBBIsectAreaPoint + b.timeOBBIsectAreaPoint,
-               a.timeOBBIsectLineLine + b.timeOBBIsectLineLine,
-               a.timeFullGeoCheckAreaArea + b.timeFullGeoCheckAreaArea,
-               a.timeFullGeoCheckAreaLine + b.timeFullGeoCheckAreaLine,
-               a.timeFullGeoCheckAreaPoint + b.timeFullGeoCheckAreaPoint,
-               a.timeFullGeoCheckLineLine + b.timeFullGeoCheckLineLine,
-               a.timeFullGeoCheckLinePoint + b.timeFullGeoCheckLinePoint,
-               a.timeInnerOuterCheckAreaArea + b.timeInnerOuterCheckAreaArea,
-               a.timeInnerOuterCheckAreaLine + b.timeInnerOuterCheckAreaLine,
-               a.timeInnerOuterCheckAreaPoint + b.timeInnerOuterCheckAreaPoint,
-               a.fullGeoChecksAreaArea + b.fullGeoChecksAreaArea,
-               a.fullGeoChecksAreaLine + b.fullGeoChecksAreaLine,
-               a.fullGeoChecksAreaPoint + b.fullGeoChecksAreaPoint,
-               a.fullGeoChecksLineLine + b.fullGeoChecksLineLine,
-               a.fullGeoChecksLinePoint + b.fullGeoChecksLinePoint,
-               a.innerOuterChecksAreaArea + b.innerOuterChecksAreaArea,
-               a.innerOuterChecksAreaLine + b.innerOuterChecksAreaLine,
-               a.innerOuterChecksAreaPoint + b.innerOuterChecksAreaPoint,
-               a.totalComps + b.totalComps,
-               {a.timeSums[0] + b.timeSums[0], a.timeSums[1] + b.timeSums[1],
-                a.timeSums[2] + b.timeSums[2], a.timeSums[3] + b.timeSums[3],
-                a.timeSums[4] + b.timeSums[4], a.timeSums[5] + b.timeSums[5],
-                a.timeSums[6] + b.timeSums[6]}, a.areaSizeSum + b.areaSizeSum, a.areaCmps + b.areaCmps, a.lineLenSum + b.lineLenSum, a.lineCmps + b.lineCmps, a.anchorSum + b.anchorSum};
+  return Stats{
+      a.timeGeoCacheRetrievalArea + b.timeGeoCacheRetrievalArea,
+      a.timeGeoCacheRetrievalLine + b.timeGeoCacheRetrievalLine,
+      a.timeGeoCacheRetrievalSimpleLine + b.timeGeoCacheRetrievalSimpleLine,
+      a.timeGeoCacheRetrievalPoint + b.timeGeoCacheRetrievalPoint,
+      a.timeWrite + b.timeWrite,
+      a.timeBoxIdIsectAreaArea + b.timeBoxIdIsectAreaArea,
+      a.timeBoxIdIsectAreaLine + b.timeBoxIdIsectAreaLine,
+      a.timeBoxIdIsectAreaPoint + b.timeBoxIdIsectAreaPoint,
+      a.timeBoxIdIsectLineLine + b.timeBoxIdIsectLineLine,
+      a.timeBoxIdIsectLinePoint + b.timeBoxIdIsectLinePoint,
+      a.timeOBBIsectAreaArea + b.timeOBBIsectAreaArea,
+      a.timeOBBIsectAreaLine + b.timeOBBIsectAreaLine,
+      a.timeOBBIsectAreaPoint + b.timeOBBIsectAreaPoint,
+      a.timeOBBIsectLineLine + b.timeOBBIsectLineLine,
+      a.timeFullGeoCheckAreaArea + b.timeFullGeoCheckAreaArea,
+      a.timeFullGeoCheckAreaLine + b.timeFullGeoCheckAreaLine,
+      a.timeFullGeoCheckAreaPoint + b.timeFullGeoCheckAreaPoint,
+      a.timeFullGeoCheckLineLine + b.timeFullGeoCheckLineLine,
+      a.timeFullGeoCheckLinePoint + b.timeFullGeoCheckLinePoint,
+      a.timeInnerOuterCheckAreaArea + b.timeInnerOuterCheckAreaArea,
+      a.timeInnerOuterCheckAreaLine + b.timeInnerOuterCheckAreaLine,
+      a.timeInnerOuterCheckAreaPoint + b.timeInnerOuterCheckAreaPoint,
+      a.fullGeoChecksAreaArea + b.fullGeoChecksAreaArea,
+      a.fullGeoChecksAreaLine + b.fullGeoChecksAreaLine,
+      a.fullGeoChecksAreaPoint + b.fullGeoChecksAreaPoint,
+      a.fullGeoChecksLineLine + b.fullGeoChecksLineLine,
+      a.fullGeoChecksLinePoint + b.fullGeoChecksLinePoint,
+      a.innerOuterChecksAreaArea + b.innerOuterChecksAreaArea,
+      a.innerOuterChecksAreaLine + b.innerOuterChecksAreaLine,
+      a.innerOuterChecksAreaPoint + b.innerOuterChecksAreaPoint,
+      a.totalComps + b.totalComps,
+      {a.timeSums[0] + b.timeSums[0], a.timeSums[1] + b.timeSums[1],
+       a.timeSums[2] + b.timeSums[2], a.timeSums[3] + b.timeSums[3],
+       a.timeSums[4] + b.timeSums[4], a.timeSums[5] + b.timeSums[5],
+       a.timeSums[6] + b.timeSums[6]},
+      a.areaSizeSum + b.areaSizeSum,
+      a.areaCmps + b.areaCmps,
+      a.lineLenSum + b.lineLenSum,
+      a.lineCmps + b.lineCmps,
+      a.anchorSum + b.anchorSum};
 }
 
 inline void operator+=(Stats& a, const Stats& b) { a = a + b; }
@@ -302,8 +317,8 @@ struct RelStats {
     std::stringstream ss;
     ss << intersects << " intersection, " << equals << " equals, " << covers
        << " covers, " << contains << " contains, " << overlaps << " overlaps, "
-       << crosses << " crosses, " << touches << " touches, " << de9im << " de9im relations"
-       << std::endl;
+       << crosses << " crosses, " << touches << " touches, " << de9im
+       << " de9im relations" << std::endl;
     return ss.str();
   }
 };
@@ -312,7 +327,7 @@ inline RelStats operator+(const RelStats& a, const RelStats& b) {
   return {a.intersects + b.intersects, a.equals + b.equals,
           a.covers + b.covers,         a.contains + b.contains,
           a.overlaps + b.overlaps,     a.crosses + b.crosses,
-          a.touches + b.touches, a.de9im + b.de9im};
+          a.touches + b.touches,       a.de9im + b.de9im};
 }
 
 inline void operator+=(RelStats& a, const RelStats& b) { a = a + b; }

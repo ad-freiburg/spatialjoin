@@ -117,16 +117,22 @@ struct ValEntry {
 
 const static size_t WRITE_BUFF_SIZE = 1024 * 1024 * 4l;
 
+struct StorageOptions {
+  bool storeOBB;
+  bool storeInnerOuter;
+};
+
 template <typename W>
 class GeometryCache {
  public:
-  GeometryCache(size_t maxSize, size_t maxNumElements, size_t numthreads,
+  GeometryCache(const StorageOptions& opts, size_t maxSize, size_t maxNumElements, size_t numthreads,
                 const std::string& dir)
-      : GeometryCache(maxSize, maxNumElements, numthreads, dir,
+      : GeometryCache(opts, maxSize, maxNumElements, numthreads, dir,
                       ".spatialjoin"){};
-  GeometryCache(size_t maxSize, size_t maxNumElements, size_t numthreads,
+  GeometryCache(const StorageOptions& opts, size_t maxSize, size_t maxNumElements, size_t numthreads,
                 const std::string& dir, const std::string& tmpPrefix)
-      : _maxSize(maxSize),
+      : _opts(opts),
+        _maxSize(maxSize),
         _maxNumElements(maxNumElements),
         _numThreads(numthreads),
         _dir(dir),
@@ -160,7 +166,7 @@ class GeometryCache {
   }
 
   size_t add(const std::string& raw);
-  static size_t writeTo(const W& val, std::ostream& str);
+  size_t writeTo(const W& val, std::ostream& str) const;
 
   std::shared_ptr<W> get(size_t off, ssize_t tid) const;
   std::pair<size_t, W> getFrom(size_t off, std::istream& str) const;
@@ -210,6 +216,7 @@ class GeometryCache {
       _idMap;
   mutable std::vector<size_t> _valSizes;
 
+  StorageOptions _opts;
   size_t _maxSize, _maxNumElements, _numThreads;
   std::string _dir, _tmpPrefix;
   std::string _fName;

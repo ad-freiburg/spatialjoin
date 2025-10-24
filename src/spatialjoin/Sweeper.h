@@ -4,18 +4,11 @@
 #ifndef SPATIALJOINS_SWEEPER_H_
 #define SPATIALJOINS_SWEEPER_H_
 
-#ifndef SPATIALJOIN_NO_BZIP2
-#include <bzlib.h>
-#endif
 #include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/stat.h>
 #include <unistd.h>
-
-#ifndef SPATIALJOIN_NO_ZLIB
-#include <zlib.h>
-#endif
 
 #include <atomic>
 #include <condition_variable>
@@ -43,12 +36,15 @@ enum GeomType : uint8_t {
   LINE = 1,
   POINT = 2,
   SIMPLE_LINE = 3,
-  SIMPLE_POLYGON = 4
+  SIMPLE_POLYGON = 4,
+  FOLDED_POINT = 5,
+  // currently not used
+  FOLDED_SIMPLE_LINE_UP = 6,
+  FOLDED_SIMPLE_LINE_DOWN = 7
 };
-enum OutMode : uint8_t { PLAIN = 0, BZ2 = 1, GZ = 2, COUT = 3, NONE = 4 };
 
 struct BoxVal {
-  size_t id : 60;
+  size_t id;
   int32_t loY;
   int32_t upY;
   int32_t val;
@@ -71,6 +67,7 @@ struct WriteCand {
 
 struct WriteBatch {
   std::vector<WriteCand> points;
+  std::vector<WriteCand> foldedPoints;
   std::vector<WriteCand> simpleLines;
   std::vector<WriteCand> lines;
   std::vector<WriteCand> simpleAreas;
@@ -78,8 +75,8 @@ struct WriteBatch {
   std::vector<WriteCand> refs;
 
   size_t size() const {
-    return points.size() + simpleLines.size() + lines.size() +
-           simpleAreas.size() + areas.size() + refs.size();
+    return points.size() + foldedPoints.size() + simpleLines.size() +
+           lines.size() + simpleAreas.size() + areas.size() + refs.size();
   }
 };
 
@@ -94,7 +91,7 @@ struct SweepVal {
            util::geo::I32Point point, bool side, bool large)
       : id(id), type(type), b45(b45), point(point), side(side), large(large) {}
   SweepVal() : id(0), type(POLYGON) {}
-  size_t id : 60;
+  size_t id;
   GeomType type : 3;
   util::geo::I32Box b45;
   util::geo::I32Point point;
@@ -130,7 +127,6 @@ struct SweeperCfg {
   size_t numCacheThreads;
   size_t geomCacheMaxSize;
   size_t geomCacheMaxNumElements;
-  std::string pairStart;
   std::string sepIsect;
   std::string sepContains;
   std::string sepCovers;
@@ -138,7 +134,6 @@ struct SweeperCfg {
   std::string sepEquals;
   std::string sepOverlaps;
   std::string sepCrosses;
-  std::string pairEnd;
   bool useBoxIds;
   bool useArea;
   bool useOBB;
@@ -160,8 +155,6 @@ struct SweeperCfg {
 // buffer size _must_ be multiples of sizeof(BoxVal)
 static const ssize_t BUFFER_S = sizeof(BoxVal) * 64 * 1024 * 512;
 
-static const size_t BUFFER_S_PAIRS = 1024 * 1024 * 10;
-
 static const size_t MAX_OUT_LINE_LENGTH = 1000;
 
 static const size_t POINT_CACHE_MAX_ELEMENTS = 10000;
@@ -172,55 +165,30 @@ static const size_t GEOM_LARGENESS_THRESHOLD = 1024 * 1024 * 1024;
 
 class Sweeper {
  public:
-  explicit Sweeper(SweeperCfg cfg, const std::string& cache,
-                   const std::string& out)
-      : Sweeper(cfg, cache, out, ".spatialjoin") {}
-  Sweeper(SweeperCfg cfg, const std::string& cache, const std::string& out,
+  Sweeper(SweeperCfg cfg, const std::string& cache)
+      : Sweeper(cfg, cache, ".spatialjoin") {}
+  Sweeper(SweeperCfg cfg, const std::string& cache,
           const std::string& tmpPrefix)
       : _cfg(cfg),
         _obufpos(0),
-        _pointCache(cfg.geomCacheMaxSize, POINT_CACHE_MAX_ELEMENTS,
-                    cfg.numCacheThreads, cache, tmpPrefix),
-        _areaCache(cfg.geomCacheMaxSize, cfg.geomCacheMaxNumElements,
-                   cfg.numCacheThreads, cache, tmpPrefix),
-        _simpleAreaCache(cfg.geomCacheMaxSize, cfg.geomCacheMaxNumElements,
-                         cfg.numCacheThreads, cache, tmpPrefix),
-        _lineCache(cfg.geomCacheMaxSize, cfg.geomCacheMaxNumElements,
-                   cfg.numCacheThreads, cache, tmpPrefix),
-        _simpleLineCache(cfg.geomCacheMaxSize, SIMPLE_LINE_CACHE_MAX_ELEMENTS,
-                         cfg.numCacheThreads, cache, tmpPrefix),
+        _pointCache({cfg.useOBB, cfg.useInnerOuter}, cfg.geomCacheMaxSize,
+                    POINT_CACHE_MAX_ELEMENTS, cfg.numCacheThreads, cache,
+                    tmpPrefix),
+        _areaCache({cfg.useOBB, cfg.useInnerOuter}, cfg.geomCacheMaxSize,
+                   cfg.geomCacheMaxNumElements, cfg.numCacheThreads, cache,
+                   tmpPrefix),
+        _simpleAreaCache({cfg.useOBB, cfg.useInnerOuter}, cfg.geomCacheMaxSize,
+                         cfg.geomCacheMaxNumElements, cfg.numCacheThreads,
+                         cache, tmpPrefix),
+        _lineCache({cfg.useOBB, cfg.useInnerOuter}, cfg.geomCacheMaxSize,
+                   cfg.geomCacheMaxNumElements, cfg.numCacheThreads, cache,
+                   tmpPrefix),
+        _simpleLineCache({cfg.useOBB, cfg.useInnerOuter}, cfg.geomCacheMaxSize,
+                         SIMPLE_LINE_CACHE_MAX_ELEMENTS, cfg.numCacheThreads,
+                         cache, tmpPrefix),
         _cache(cache),
-        _out(out),
         _jobs(100) {
     if (!_cfg.writeRelCb) {
-      if (util::endsWith(_out, ".bz2")) {
-#ifndef SPATIALJOIN_NO_BZIP2
-        _outMode = BZ2;
-#else
-        throw std::runtime_error(
-            "spatialjoin was compiled without BZ2 support");
-#endif
-      } else if (util::endsWith(_out, ".gz")) {
-#ifndef SPATIALJOIN_NO_ZLIB
-        _outMode = GZ;
-#else
-        throw std::runtime_error("spatialjoin was compiled without GZ support");
-#endif
-      } else if (out.size())
-        _outMode = PLAIN;
-      else {
-        struct stat std_out;
-        struct stat dev_null;
-        if (fstat(STDOUT_FILENO, &std_out) == 0 && S_ISCHR(std_out.st_mode) &&
-            stat("/dev/null", &dev_null) == 0 &&
-            std_out.st_dev == dev_null.st_dev &&
-            std_out.st_ino == dev_null.st_ino) {
-          // output to /dev/null, print nothing
-          _outMode = NONE;
-        } else {
-          _outMode = COUT;
-        }
-      }
     }
 
     // OUTFACTOR 1
@@ -243,13 +211,7 @@ class Sweeper {
     _outBuffer = new unsigned char[BUFFER_S];
   };
 
-  ~Sweeper() {
-    close(_file);
-
-    for (size_t i = 0; i < _outBuffers.size(); i++) {
-      if (_outBuffers[i]) delete[] _outBuffers[i];
-    }
-  }
+  ~Sweeper() { close(_file); }
 
   void log(const std::string& msg);
 
@@ -300,9 +262,6 @@ class Sweeper {
   void refDuplicates();
 
   size_t numElements() const { return _curSweepId / 2; }
-
-  static std::string intToBase126(uint64_t id);
-  static uint64_t base126ToInt(const std::string& id);
 
   void setFilterBox(const util::geo::I32Box& filterBox) {
     _filterBox = filterBox;
@@ -364,6 +323,33 @@ class Sweeper {
     return bbox;
   }
 
+  static size_t foldString(const std::string& s) {
+    size_t ret = 0;
+    for (size_t i = 0; i < std::min((size_t)7, s.size()); i++) {
+      size_t tmp = static_cast<unsigned char>(s[i]);
+      ret |= tmp << (i * 8);
+    }
+
+    // highest byte stores the length
+    ret |= (s.size() << 56);
+
+    return ret;
+  };
+
+  static std::string unfoldString(size_t folded) {
+    // shift by 7 bytes to get size
+    size_t n = folded >> 56;
+
+    std::string ret;
+    ret.reserve(n);
+
+    for (size_t i = 0; i < n; i++) {
+      ret.push_back(static_cast<char>(folded >> (i * 8)) & 0xFF);
+    }
+
+    return ret;
+  };
+
  private:
   const SweeperCfg _cfg;
   size_t _curSweepId = 0;
@@ -371,19 +357,6 @@ class Sweeper {
   int _file;
   unsigned char* _outBuffer;
   ssize_t _obufpos;
-
-  OutMode _outMode;
-
-  std::vector<FILE*> _rawFiles;
-
-#ifndef SPATIALJOIN_NO_BZIP2
-  std::vector<BZFILE*> _bzFiles;
-#endif
-#ifndef SPATIALJOIN_NO_ZLIB
-  std::vector<gzFile> _gzFiles;
-#endif
-  std::vector<size_t> _outBufPos;
-  std::vector<unsigned char*> _outBuffers;
 
   std::vector<size_t> _checks;
   std::vector<int32_t> _curX;
@@ -426,7 +399,6 @@ class Sweeper {
   std::map<std::string, size_t> _multiGidToId[2];
 
   std::string _cache;
-  std::string _out;
 
   util::JobQueue<JobBatch> _jobs;
 
@@ -504,8 +476,6 @@ class Sweeper {
   void writeIntersect(size_t t, const std::string& a, const std::string& b);
   void writeRel(size_t t, const std::string& a, const std::string& b,
                 const std::string& pred);
-  void writeRelToBuf(size_t t, const std::string& a, const std::string& b,
-                     const std::string& pred);
   void writeContains(size_t t, const std::string& a, const std::string& b,
                      size_t bSub);
   void writeCovers(size_t t, const std::string& a, const std::string& b,
@@ -539,12 +509,24 @@ class Sweeper {
 
   void processQueue(size_t t);
 
-  void prepareOutputFiles();
-  void flushOutputFiles();
-
   bool notOverlaps(const std::string& a, const std::string& b);
   bool notTouches(const std::string& a, const std::string& b);
   bool notCrosses(const std::string& a, const std::string& b);
+
+  std::shared_ptr<sj::Point> getPoint(size_t id, GeomType gt, size_t t) const;
+  static bool isPoint(GeomType gt) { return gt == POINT || gt == FOLDED_POINT; }
+
+  std::shared_ptr<sj::SimpleLine> getSimpleLine(size_t id, GeomType gt,
+                                                size_t t) const;
+  static bool isLine(GeomType gt) {
+    return gt == LINE || gt == SIMPLE_LINE || gt == FOLDED_SIMPLE_LINE_UP ||
+           gt == FOLDED_SIMPLE_LINE_DOWN;
+  }
+
+  static bool isSimpleLine(GeomType gt) {
+    return gt == SIMPLE_LINE || gt == FOLDED_SIMPLE_LINE_UP ||
+           gt == FOLDED_SIMPLE_LINE_DOWN;
+  }
 
   static double meterDist(const util::geo::I32Point& p1,
                           const util::geo::I32Point& p2);
@@ -571,10 +553,10 @@ class Sweeper {
       return 1;
 
     // points before lines
-    if (boxa->type == POINT &&
+    if ((boxa->type == POINT || boxa->type == FOLDED_POINT) &&
         (boxb->type == SIMPLE_LINE || boxb->type == LINE))
       return -1;
-    if (boxb->type == POINT &&
+    if ((boxb->type == POINT || boxb->type == FOLDED_POINT) &&
         (boxa->type == SIMPLE_LINE || boxa->type == LINE))
       return 1;
 

@@ -5,6 +5,7 @@
 #include <iostream>
 
 #include "BoxIds.h"
+#include "OutputWriter.h"
 #include "Sweeper.h"
 #include "WKTParse.h"
 #include "util/Misc.h"
@@ -38,7 +39,7 @@ static const size_t DEFAULT_CACHE_NUM_ELEMENTS = 10000;
 // _____________________________________________________________________________
 void printHelp(int argc, char** argv) {
   UNUSED(argc);
-  std::cout
+  std::cerr
       << "\n"
       << "(C) 2023-" << YEAR << " " << COPY << "\n"
       << "Authors: " << AUTHORS << "\n\n"
@@ -57,7 +58,7 @@ void printHelp(int argc, char** argv) {
       << "cache directory for intermediate files\n"
       << std::setw(42) << "  --de9im"
       << "output DE-9IM relationships\n"
-      << std::setw(42) << "  --within-distance (default: '')"
+      << std::setw(42) << "  --within-distance (default: '-1')"
       << "if set to non-negative value, only compute for each object\n"
       << std::setw(42) << " "
       << "the objects within the given distance\n\n"
@@ -101,17 +102,17 @@ void printHelp(int argc, char** argv) {
       << "number of threads for geometric computation\n"
       << std::setw(42)
       << "  --num-caches (default: " + std::to_string(NUM_THREADS) + ")"
-      << "number of geometry caches (if < --num-threads, syncing\n"
+      << "number of geometry caches (if < --num-threads, syncing)\n"
       << std::setw(42)
       << "  --cache-max-size (default: " + std::to_string(DEFAULT_CACHE_SIZE) +
              ")"
-      << "maximum approx. size in bytes of cache per type and thread, 0 = "
-         "unlimited\n"
+      << "maximum approx. size in bytes of cache per type and\n"
+      << std::setw(42) << " " << "thread, 0 = unlimited\n"
       << std::setw(42)
       << "  --cache-max-elements (default: " +
              std::to_string(DEFAULT_CACHE_NUM_ELEMENTS) + ")"
-      << "maximum number of elements per cache, type and thread, 0 = "
-         "unlimited\n"
+      << "maximum number of elements per cache, type and thread,\n"
+      << std::setw(42) << " " << "0 = unlimited\n"
       << std::setw(42) << "  --no-geometry-checks"
       << "do not compute geometric relations, only report number of\n"
       << std::setw(42) << " "
@@ -300,11 +301,22 @@ int main(int argc, char** argv) {
   unsigned char* buf = new unsigned char[CACHE_SIZE];
   size_t len;
 
+  sj::OutputWriter outWriter(numThreads, prefix, suffix, output, cache);
+
+  std::function<void(size_t, const char*, size_t, const char*, size_t,
+                     const char*, size_t)>
+      writeRelCb;
+
+  if (outWriter.getOutMode() != sj::OutMode::NONE)
+    writeRelCb = [&outWriter](size_t t, const char* a, size_t an, const char* b,
+                              size_t bn, const char* pred, size_t predn) {
+      outWriter.writeRelCb(t, a, an, b, bn, pred, predn);
+    };
+
   sj::SweeperCfg sweeperCfg{numThreads,
                             numCaches,
                             geomCacheMaxSizeBytes,
                             geomCacheMaxNumElements,
-                            prefix,
                             intersects,
                             contains,
                             covers,
@@ -312,7 +324,6 @@ int main(int argc, char** argv) {
                             equals,
                             overlaps,
                             crosses,
-                            suffix,
                             useBoxIds,
                             useArea,
                             useOBB,
@@ -322,7 +333,7 @@ int main(int argc, char** argv) {
                             noGeometryChecks,
                             withinDist,
                             computeDE9IM,
-                            {},
+                            writeRelCb,
                             {},
                             {},
                             {},
@@ -336,7 +347,7 @@ int main(int argc, char** argv) {
       LOGTO(INFO, std::cerr) << s;
     };
 
-  Sweeper sweeper(sweeperCfg, cache, output);
+  Sweeper sweeper(sweeperCfg, cache);
 
   sweeper.log("Parsing input geometries...");
   auto ts = TIME();
