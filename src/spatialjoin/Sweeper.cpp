@@ -214,12 +214,41 @@ I32Box Sweeper::add(const I32Polygon& poly, const std::string& gidR,
   cur.subid = subid;
   cur.gid = gid;
 
-  if (area(poly) == area(rawBox)) {
-    std::cerr << "A" << std::endl;
-  }
+  if (false && poly.getInners().size() == 0 && subid == 0 &&
+      (!_cfg.useBoxIds || boxIds.front().first == 1) &&
+      area(rawBox) == areaSize) {
+    std::stringstream str;
+    _simpleAreaCache.writeTo({poly.getOuter(), gid}, str);
+    cur.raw = str.str();
 
-  if (poly.getInners().size() == 0 && poly.getOuter().size() < 10 &&
-      subid == 0 && (!_cfg.useBoxIds || boxIds.front().first == 1)) {
+    size_t estimatedSize =
+        poly.getOuter().size() * sizeof(util::geo::XSortedTuple<int32_t>);
+
+    cur.boxvalIn = {0,  // placeholder, will be overwritten later on
+                    box.getLowerLeft().getY(),
+                    box.getUpperRight().getY(),
+                    box.getLowerLeft().getX(),
+                    false,
+                    BOX_POLYGON,
+                    areaSize,
+                    {},
+                    box45,
+                    side,
+                    estimatedSize > GEOM_LARGENESS_THRESHOLD};
+    cur.boxvalOut = {0,  // placeholder, will be overwritten later on
+                     box.getLowerLeft().getY(),
+                     box.getUpperRight().getY(),
+                     box.getUpperRight().getX(),
+                     true,
+                     BOX_POLYGON,
+                     areaSize,
+                     {},
+                     box45,
+                     side,
+                     estimatedSize > GEOM_LARGENESS_THRESHOLD};
+    batch.boxAreas.emplace_back(cur);
+  } else if (poly.getInners().size() == 0 && poly.getOuter().size() < 10 &&
+             subid == 0 && (!_cfg.useBoxIds || boxIds.front().first == 1)) {
     std::stringstream str;
     _simpleAreaCache.writeTo({poly.getOuter(), gid}, str);
     cur.raw = str.str();
@@ -2226,73 +2255,35 @@ void Sweeper::doDE9IMCheck(const JobVal cur, const JobVal sv, size_t t) {
     auto de9im = DE9IM(p1, p2);
 
     if (!de9im.disjoint()) {
-      auto ts = TIME();
       auto a = getPoint(cur.id, cur.type, cur.large ? -1 : t);
       auto b = getPoint(sv.id, sv.type, sv.large ? -1 : t);
-
-      _stats[t].timeGeoCacheRetrievalPoint += TOOK(ts);
 
       if (a->id == b->id) return;  // no self-checks in multigeometries
 
       writeDE9IM(t, a->id, a->subId, b->id, b->subId, de9im);
     }
-  } else if (isPoint(cur.type) &&
-             (sv.type == POLYGON || sv.type == SIMPLE_POLYGON)) {
+  } else if (isPoint(cur.type) && isArea(sv.type)) {
     auto p = cur.point;
 
-    auto ts = TIME();
-    const Area* a;
-    std::shared_ptr<Area> asp;
-    Area al;
+    std::shared_ptr<Area> a = getArea(sv, sv.large ? -1 : t);
 
-    if (sv.type == SIMPLE_POLYGON) {
-      auto p = _simpleAreaCache.get(sv.id, sv.large ? -1 : t);
-      al = areaFromSimpleArea(p.get());
-      a = &al;
-    } else {
-      asp = _areaCache.get(sv.id, sv.large ? -1 : t);
-      a = asp.get();
-    }
-
-    _stats[t].timeGeoCacheRetrievalArea += TOOK(ts);
-
-    auto de9im = DE9IMCheck(p, a, t);
+    auto de9im = DE9IMCheck(p, a.get(), t);
 
     if (!de9im.disjoint()) {
-      auto ts = TIME();
       auto b = getPoint(cur.id, cur.type, cur.large ? -1 : t);
-      _stats[t].timeGeoCacheRetrievalPoint += TOOK(ts);
 
       if (a->id == b->id) return;  // no self-checks in multigeometries
 
       writeDE9IM(t, b->id, b->subId, a->id, a->subId, de9im);
     }
-  } else if ((cur.type == POLYGON || cur.type == SIMPLE_POLYGON) &&
-             isPoint(sv.type)) {
+  } else if (isArea(cur.type) && isPoint(sv.type)) {
     auto p = sv.point;
+    std::shared_ptr<Area> a = getArea(cur, cur.large ? -1 : t);
 
-    auto ts = TIME();
-    const Area* a;
-    std::shared_ptr<Area> asp;
-    Area al;
-
-    if (cur.type == SIMPLE_POLYGON) {
-      auto p = _simpleAreaCache.get(cur.id, cur.large ? -1 : t);
-      al = areaFromSimpleArea(p.get());
-      a = &al;
-    } else {
-      asp = _areaCache.get(cur.id, cur.large ? -1 : t);
-      a = asp.get();
-    }
-
-    _stats[t].timeGeoCacheRetrievalArea += TOOK(ts);
-
-    auto de9im = DE9IMCheck(p, a, t).transpose();
+    auto de9im = DE9IMCheck(p, a.get(), t).transpose();
 
     if (!de9im.disjoint()) {
-      auto ts = TIME();
       auto b = getPoint(sv.id, sv.type, sv.large ? -1 : t);
-      _stats[t].timeGeoCacheRetrievalPoint += TOOK(ts);
 
       if (a->id == b->id) return;  // no self-checks in multigeometries
 
@@ -2305,11 +2296,9 @@ void Sweeper::doDE9IMCheck(const JobVal cur, const JobVal sv, size_t t) {
       auto de9im = DE9IMCheck(p, {cur.point, cur.point2}, t);
 
       if (!de9im.disjoint()) {
-        auto ts = TIME();
         auto a = getPoint(sv.id, sv.type, sv.large ? -1 : t);
-        _stats[t].timeGeoCacheRetrievalPoint += TOOK(ts);
 
-        ts = TIME();
+        auto ts = TIME();
         auto b = getSimpleLine(cur, cur.large ? -1 : t);
         _stats[t].timeGeoCacheRetrievalSimpleLine += TOOK(ts);
 
@@ -2324,9 +2313,7 @@ void Sweeper::doDE9IMCheck(const JobVal cur, const JobVal sv, size_t t) {
       auto de9im = DE9IMCheck(p, b.get(), t);
 
       if (!de9im.disjoint()) {
-        auto ts = TIME();
         auto a = getPoint(sv.id, sv.type, sv.large ? -1 : t);
-        _stats[t].timeGeoCacheRetrievalPoint += TOOK(ts);
 
         if (a->id == b->id) return;  // no self-checks in multigeometries
 
@@ -2340,11 +2327,9 @@ void Sweeper::doDE9IMCheck(const JobVal cur, const JobVal sv, size_t t) {
       auto de9im = DE9IMCheck(p, {sv.point, sv.point2}, t);
 
       if (!de9im.disjoint()) {
-        auto ts = TIME();
         auto a = getPoint(cur.id, cur.type, cur.large ? -1 : t);
-        _stats[t].timeGeoCacheRetrievalPoint += TOOK(ts);
 
-        ts = TIME();
+        auto ts = TIME();
         auto b = getSimpleLine(sv, sv.large ? -1 : t);
         _stats[t].timeGeoCacheRetrievalSimpleLine += TOOK(ts);
 
@@ -2359,9 +2344,7 @@ void Sweeper::doDE9IMCheck(const JobVal cur, const JobVal sv, size_t t) {
       auto de9im = DE9IMCheck(p, b.get(), t);
 
       if (!de9im.disjoint()) {
-        auto ts = TIME();
         auto a = getPoint(cur.id, cur.type, cur.large ? -1 : t);
-        _stats[t].timeGeoCacheRetrievalPoint += TOOK(ts);
 
         if (a->id == b->id) return;  // no self-checks in multigeometries
 
@@ -2422,151 +2405,69 @@ void Sweeper::doDE9IMCheck(const JobVal cur, const JobVal sv, size_t t) {
     if (!de9im.disjoint()) {
       writeDE9IM(t, a->id, a->subId, b->id, 0, de9im.transpose());
     }
-  } else if ((sv.type == SIMPLE_POLYGON || sv.type == POLYGON) &&
-             (cur.type == SIMPLE_POLYGON || cur.type == POLYGON)) {
-    auto ts = TIME();
-
-    const Area* a;
-    const Area* b;
-
-    std::shared_ptr<Area> asp;
-    std::shared_ptr<Area> bsp;
-
-    Area al, bl;
-
-    if (cur.type == SIMPLE_POLYGON) {
-      auto p = _simpleAreaCache.get(cur.id, cur.large ? -1 : t);
-      al = areaFromSimpleArea(p.get());
-      a = &al;
-    } else {
-      asp = _areaCache.get(cur.id, cur.large ? -1 : t);
-      a = asp.get();
-    }
-
-    if (sv.type == SIMPLE_POLYGON) {
-      bl = areaFromSimpleArea(
-          _simpleAreaCache.get(sv.id, sv.large ? -1 : t).get());
-      b = &bl;
-    } else {
-      bsp = _areaCache.get(sv.id, sv.large ? -1 : t);
-      b = bsp.get();
-    }
-
-    _stats[t].timeGeoCacheRetrievalArea += TOOK(ts);
+  } else if (isArea(sv.type) && isArea(cur.type)) {
+    std::shared_ptr<Area> a = getArea(cur, cur.large ? -1 : t);
+    std::shared_ptr<Area> b = getArea(sv, sv.large ? -1 : t);
 
     if (a->id == b->id) return;  // no self-checks in multigeometries
 
-    auto de9im = DE9IMCheck(a, b, t);
+    auto de9im = DE9IMCheck(a.get(), b.get(), t);
 
     if (!de9im.disjoint()) {
       writeDE9IM(t, a->id, a->subId, b->id, b->subId, de9im);
     }
-  } else if (sv.type == LINE &&
-             (cur.type == SIMPLE_POLYGON || cur.type == POLYGON)) {
+  } else if (sv.type == LINE && isArea(cur.type)) {
     auto ts = TIME();
     auto a = _lineCache.get(sv.id, sv.large ? -1 : t);
     _stats[t].timeGeoCacheRetrievalLine += TOOK(ts);
-    ts = TIME();
 
-    const Area* b;
-    std::shared_ptr<Area> bsp;
-    Area bl;
-
-    if (cur.type == SIMPLE_POLYGON) {
-      auto p = _simpleAreaCache.get(cur.id, cur.large ? -1 : t);
-      bl = areaFromSimpleArea(p.get());
-      b = &bl;
-    } else {
-      bsp = _areaCache.get(cur.id, cur.large ? -1 : t);
-      b = bsp.get();
-    }
-    _stats[t].timeGeoCacheRetrievalArea += TOOK(ts);
+    std::shared_ptr<Area> b = getArea(cur, cur.large ? -1 : t);
 
     if (a->id == b->id) return;  // no self-checks in multigeometries
 
-    auto de9im = DE9IMCheck(a.get(), b, t);
+    auto de9im = DE9IMCheck(a.get(), b.get(), t);
 
     if (!de9im.disjoint()) {
       writeDE9IM(t, a->id, a->subId, b->id, b->subId, de9im);
     }
-  } else if ((sv.type == SIMPLE_POLYGON || sv.type == POLYGON) &&
-             cur.type == LINE) {
-    auto ts = TIME();
-    const Area* a;
-    std::shared_ptr<Area> asp;
-    Area al;
+  } else if (isArea(sv.type) && cur.type == LINE) {
+    std::shared_ptr<Area> a = getArea(sv, sv.large ? -1 : t);
 
-    if (sv.type == SIMPLE_POLYGON) {
-      auto p = _simpleAreaCache.get(sv.id, sv.large ? -1 : t);
-      al = areaFromSimpleArea(p.get());
-      a = &al;
-    } else {
-      asp = _areaCache.get(sv.id, sv.large ? -1 : t);
-      a = asp.get();
-    }
-    _stats[t].timeGeoCacheRetrievalArea += TOOK(ts);
-    ts = TIME();
+    auto ts = TIME();
     auto b = _lineCache.get(cur.id, cur.large ? -1 : t);
     _stats[t].timeGeoCacheRetrievalLine += TOOK(ts);
 
     if (a->id == b->id) return;  // no self-checks in multigeometries
 
-    auto de9im = DE9IMCheck(b.get(), a, t);
+    auto de9im = DE9IMCheck(b.get(), a.get(), t);
 
     if (!de9im.disjoint()) {
       writeDE9IM(t, a->id, a->subId, b->id, b->subId, de9im.transpose());
     }
-  } else if (isSimpleLine(sv.type) &&
-             (cur.type == SIMPLE_POLYGON || cur.type == POLYGON)) {
+  } else if (isSimpleLine(sv.type) && isArea(cur.type)) {
     auto ts = TIME();
     auto a = getSimpleLine(sv, sv.large ? -1 : t);
     _stats[t].timeGeoCacheRetrievalSimpleLine += TOOK(ts);
 
-    ts = TIME();
-    const Area* b;
-    std::shared_ptr<Area> bsp;
-    Area bl;
-
-    if (cur.type == SIMPLE_POLYGON) {
-      auto p = _simpleAreaCache.get(cur.id, cur.large ? -1 : t);
-      bl = areaFromSimpleArea(p.get());
-      b = &bl;
-    } else {
-      bsp = _areaCache.get(cur.id, cur.large ? -1 : t);
-      b = bsp.get();
-    }
-    _stats[t].timeGeoCacheRetrievalArea += TOOK(ts);
+    std::shared_ptr<Area> b = getArea(cur, cur.large ? -1 : t);
 
     if (a->id == b->id) return;  // no self-checks in multigeometries
 
-    auto de9im = DE9IMCheck({sv.point, sv.point2}, b, t);
+    auto de9im = DE9IMCheck({sv.point, sv.point2}, b.get(), t);
 
     if (!de9im.disjoint()) {
       writeDE9IM(t, a->id, 0, b->id, b->subId, de9im);
     }
-  } else if ((sv.type == SIMPLE_POLYGON || sv.type == POLYGON) &&
-             isSimpleLine(cur.type)) {
-    auto ts = TIME();
-    const Area* a;
-    std::shared_ptr<Area> asp;
-    Area al;
+  } else if (isArea(sv.type) && isSimpleLine(cur.type)) {
+    std::shared_ptr<Area> a = getArea(sv, sv.large ? -1 : t);
 
-    if (sv.type == SIMPLE_POLYGON) {
-      auto p = _simpleAreaCache.get(sv.id, sv.large ? -1 : t);
-      al = areaFromSimpleArea(p.get());
-      a = &al;
-    } else {
-      asp = _areaCache.get(sv.id, sv.large ? -1 : t);
-      a = asp.get();
-    }
-    _stats[t].timeGeoCacheRetrievalArea += TOOK(ts);
-    ts = TIME();
+    auto ts = TIME();
     auto b = getSimpleLine(cur, cur.large ? -1 : t);
     _stats[t].timeGeoCacheRetrievalSimpleLine += TOOK(ts);
 
     if (a->id == b->id) return;  // no self-checks in multigeometries
 
-    auto de9im = DE9IMCheck({cur.point, cur.point2}, a, t);
+    auto de9im = DE9IMCheck({cur.point, cur.point2}, a.get(), t);
 
     if (!de9im.disjoint()) {
       writeDE9IM(t, a->id, a->subId, b->id, 0, de9im.transpose());
@@ -2594,47 +2495,23 @@ void Sweeper::doDistCheck(const JobVal cur, const JobVal sv, size_t t) {
 
       writeDist(t, a->id, a->subId, b->id, b->subId, dist);
     }
-  } else if (isPoint(cur.type) &&
-             (sv.type == POLYGON || sv.type == SIMPLE_POLYGON)) {
+  } else if (isPoint(cur.type) && isArea(sv.type)) {
     auto p = cur.point;
 
-    const Area* a;
-    std::shared_ptr<Area> asp;
-    Area al;
+    std::shared_ptr<Area> a = getArea(sv, sv.large ? -1 : t);
 
-    if (sv.type == SIMPLE_POLYGON) {
-      auto p = _simpleAreaCache.get(sv.id, sv.large ? -1 : t);
-      al = areaFromSimpleArea(p.get());
-      a = &al;
-    } else {
-      asp = _areaCache.get(sv.id, sv.large ? -1 : t);
-      a = asp.get();
-    }
-
-    double dist = distCheck(p, a, t);
+    double dist = distCheck(p, a.get(), t);
 
     if (dist <= _cfg.withinDist) {
       auto b = getPoint(cur.id, cur.type, cur.large ? -1 : t);
       writeDist(t, a->id, a->subId, b->id, b->subId, dist);
     }
-  } else if ((cur.type == POLYGON || cur.type == SIMPLE_POLYGON) &&
-             isPoint(sv.type)) {
+  } else if (isArea(cur.type) && isPoint(sv.type)) {
     auto p = sv.point;
 
-    const Area* a;
-    std::shared_ptr<Area> asp;
-    Area al;
+    std::shared_ptr<Area> a = getArea(cur, cur.large ? -1 : t);
 
-    if (cur.type == SIMPLE_POLYGON) {
-      auto p = _simpleAreaCache.get(cur.id, cur.large ? -1 : t);
-      al = areaFromSimpleArea(p.get());
-      a = &al;
-    } else {
-      asp = _areaCache.get(cur.id, cur.large ? -1 : t);
-      a = asp.get();
-    }
-
-    double dist = distCheck(p, a, t);
+    double dist = distCheck(p, a.get(), t);
 
     if (dist <= _cfg.withinDist) {
       auto b = getPoint(sv.id, sv.type, sv.large ? -1 : t);
@@ -2716,116 +2593,47 @@ void Sweeper::doDistCheck(const JobVal cur, const JobVal sv, size_t t) {
       auto b = getSimpleLine(cur, cur.large ? -1 : t);
       writeDist(t, a->id, a->subId, b->id, 0, dist);
     }
-  } else if ((sv.type == SIMPLE_POLYGON || sv.type == POLYGON) &&
-             (cur.type == SIMPLE_POLYGON || cur.type == POLYGON)) {
-    const Area* a;
-    std::shared_ptr<Area> asp;
-    Area al;
+  } else if (isArea(sv.type) && isArea(cur.type)) {
+    std::shared_ptr<Area> a = getArea(sv, sv.large ? -1 : t);
+    std::shared_ptr<Area> b = getArea(cur, cur.large ? -1 : t);
 
-    if (sv.type == SIMPLE_POLYGON) {
-      auto p = _simpleAreaCache.get(sv.id, sv.large ? -1 : t);
-      al = areaFromSimpleArea(p.get());
-      a = &al;
-    } else {
-      asp = _areaCache.get(sv.id, sv.large ? -1 : t);
-      a = asp.get();
-    }
-
-    const Area* b;
-    std::shared_ptr<Area> bsp;
-    Area bl;
-
-    if (cur.type == SIMPLE_POLYGON) {
-      auto p = _simpleAreaCache.get(cur.id, cur.large ? -1 : t);
-      bl = areaFromSimpleArea(p.get());
-      b = &bl;
-    } else {
-      bsp = _areaCache.get(cur.id, cur.large ? -1 : t);
-      b = bsp.get();
-    }
-
-    auto dist = distCheck(a, b, t);
+    auto dist = distCheck(a.get(), b.get(), t);
 
     if (dist <= _cfg.withinDist) {
       writeDist(t, a->id, a->subId, b->id, b->subId, dist);
     }
-  } else if (sv.type == LINE &&
-             (cur.type == SIMPLE_POLYGON || cur.type == POLYGON)) {
+  } else if (sv.type == LINE && isArea(cur.type)) {
     auto a = _lineCache.get(sv.id, sv.large ? -1 : t);
 
-    const Area* b;
-    std::shared_ptr<Area> bsp;
-    Area bl;
+    std::shared_ptr<Area> b = getArea(cur, cur.large ? -1 : t);
 
-    if (cur.type == SIMPLE_POLYGON) {
-      auto p = _simpleAreaCache.get(cur.id, cur.large ? -1 : t);
-      bl = areaFromSimpleArea(p.get());
-      b = &bl;
-    } else {
-      bsp = _areaCache.get(cur.id, cur.large ? -1 : t);
-      b = bsp.get();
-    }
-
-    auto dist = distCheck(a.get(), b, t);
+    auto dist = distCheck(a.get(), b.get(), t);
 
     if (dist <= _cfg.withinDist) {
       writeDist(t, a->id, a->subId, b->id, b->subId, dist);
     }
-  } else if ((sv.type == SIMPLE_POLYGON || sv.type == POLYGON) &&
-             cur.type == LINE) {
-    const Area* a;
-    std::shared_ptr<Area> asp;
-    Area al;
+  } else if (isArea(sv.type) && cur.type == LINE) {
+    std::shared_ptr<Area> a = getArea(sv, sv.large ? -1 : t);
 
-    if (sv.type == SIMPLE_POLYGON) {
-      auto p = _simpleAreaCache.get(sv.id, sv.large ? -1 : t);
-      al = areaFromSimpleArea(p.get());
-      a = &al;
-    } else {
-      asp = _areaCache.get(sv.id, sv.large ? -1 : t);
-      a = asp.get();
-    }
     auto b = _lineCache.get(cur.id, cur.large ? -1 : t);
-    auto dist = distCheck(b.get(), a, t);
+    auto dist = distCheck(b.get(), a.get(), t);
 
     if (dist <= _cfg.withinDist) {
       writeDist(t, a->id, a->subId, b->id, b->subId, dist);
     }
-  } else if (isSimpleLine(sv.type) &&
-             (cur.type == SIMPLE_POLYGON || cur.type == POLYGON)) {
-    const Area* b;
-    std::shared_ptr<Area> bsp;
-    Area bl;
+  } else if (isSimpleLine(sv.type) && isArea(cur.type)) {
+    std::shared_ptr<Area> b = getArea(cur, cur.large ? -1 : t);
 
-    if (cur.type == SIMPLE_POLYGON) {
-      auto p = _simpleAreaCache.get(cur.id, cur.large ? -1 : t);
-      bl = areaFromSimpleArea(p.get());
-      b = &bl;
-    } else {
-      bsp = _areaCache.get(cur.id, cur.large ? -1 : t);
-      b = bsp.get();
-    }
-    auto dist = distCheck({sv.point, sv.point2}, b, t);
+    auto dist = distCheck({sv.point, sv.point2}, b.get(), t);
 
     if (dist <= _cfg.withinDist) {
       auto a = getSimpleLine(sv, sv.large ? -1 : t);
       writeDist(t, a->id, 0, b->id, b->subId, dist);
     }
-  } else if ((sv.type == SIMPLE_POLYGON || sv.type == POLYGON) &&
-             isSimpleLine(cur.type)) {
-    const Area* a;
-    std::shared_ptr<Area> asp;
-    Area al;
+  } else if (isArea(sv.type) && isSimpleLine(cur.type)) {
+    std::shared_ptr<Area> a = getArea(sv, sv.large ? -1 : t);
 
-    if (sv.type == SIMPLE_POLYGON) {
-      auto p = _simpleAreaCache.get(sv.id, sv.large ? -1 : t);
-      al = areaFromSimpleArea(p.get());
-      a = &al;
-    } else {
-      asp = _areaCache.get(sv.id, sv.large ? -1 : t);
-      a = asp.get();
-    }
-    auto dist = distCheck({cur.point, cur.point2}, a, t);
+    auto dist = distCheck({cur.point, cur.point2}, a.get(), t);
 
     if (dist <= _cfg.withinDist) {
       auto b = getSimpleLine(cur, cur.large ? -1 : t);
@@ -2844,37 +2652,9 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
   // every 10000 checks, update our position
   if (_checks[t] % 10000 == 0) _atomicCurX[t] = _curX[t];
 
-  if ((cur.type == SIMPLE_POLYGON || cur.type == POLYGON) &&
-      (sv.type == SIMPLE_POLYGON || sv.type == POLYGON)) {
-    auto ts = TIME();
-
-    const Area* a;
-    const Area* b;
-
-    std::shared_ptr<Area> asp;
-    std::shared_ptr<Area> bsp;
-
-    Area al, bl;
-
-    if (cur.type == SIMPLE_POLYGON) {
-      auto p = _simpleAreaCache.get(cur.id, cur.large ? -1 : t);
-      al = areaFromSimpleArea(p.get());
-      a = &al;
-    } else {
-      asp = _areaCache.get(cur.id, cur.large ? -1 : t);
-      a = asp.get();
-    }
-
-    if (sv.type == SIMPLE_POLYGON) {
-      bl = areaFromSimpleArea(
-          _simpleAreaCache.get(sv.id, sv.large ? -1 : t).get());
-      b = &bl;
-    } else {
-      bsp = _areaCache.get(sv.id, sv.large ? -1 : t);
-      b = bsp.get();
-    }
-
-    _stats[t].timeGeoCacheRetrievalArea += TOOK(ts);
+  if (isArea(cur.type) && isArea(sv.type)) {
+    std::shared_ptr<Area> a = getArea(cur, cur.large ? -1 : t);
+    std::shared_ptr<Area> b = getArea(sv, sv.large ? -1 : t);
 
     if (a->id == b->id) return;  // no self-checks in multigeometries
 
@@ -2886,7 +2666,7 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
     _stats[t].totalComps++;
     auto totTime = TIME();
 
-    auto res = check(a, b, t);
+    auto res = check(a.get(), b.get(), t);
 
     _stats[t].timeHisto(std::max(a->geom.getOuter().rawRing().size(),
                                  b->geom.getOuter().rawRing().size()),
@@ -2936,25 +2716,12 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
       _relStats[t].overlaps++;
       writeRel(t, b->id, a->id, _cfg.sepOverlaps);
     }
-  } else if (cur.type == LINE &&
-             (sv.type == SIMPLE_POLYGON || sv.type == POLYGON)) {
-    const Area* b;
-    std::shared_ptr<Area> bsp;
-    Area bl;
+  } else if (cur.type == LINE && isArea(sv.type)) {
+    std::shared_ptr<Area> b = getArea(sv, sv.large ? -1 : t);
 
     auto ts = TIME();
     auto a = _lineCache.get(cur.id, cur.large ? -1 : t);
     _stats[t].timeGeoCacheRetrievalLine += TOOK(ts);
-    ts = TIME();
-    if (sv.type == SIMPLE_POLYGON) {
-      bl = areaFromSimpleArea(
-          _simpleAreaCache.get(sv.id, sv.large ? -1 : t).get());
-      b = &bl;
-    } else {
-      bsp = _areaCache.get(sv.id, sv.large ? -1 : t);
-      b = bsp.get();
-    }
-    _stats[t].timeGeoCacheRetrievalArea += TOOK(ts);
 
     if (a->id == b->id) return;  // no self-checks in multigeometries
 
@@ -2969,7 +2736,7 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
     _stats[t].totalComps++;
     auto totTime = TIME();
 
-    auto res = check(a.get(), b, t);
+    auto res = check(a.get(), b.get(), t);
 
     _stats[t].timeHisto(
         std::max(a->geom.rawLine().size(), b->geom.getOuter().rawRing().size()),
@@ -3006,29 +2773,16 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
       _relStats[t].crosses++;
       writeRel(t, a->id, b->id, _cfg.sepCrosses);
     }
-  } else if (isSimpleLine(cur.type) &&
-             (sv.type == SIMPLE_POLYGON || sv.type == POLYGON)) {
-    const Area* b;
-    std::shared_ptr<Area> bsp;
-    Area bl;
+  } else if (isSimpleLine(cur.type) && isArea(sv.type)) {
+    std::shared_ptr<Area> b = getArea(sv, sv.large ? -1 : t);
 
     auto ts = TIME();
     auto a = getSimpleLine(cur, cur.large ? -1 : t);
     _stats[t].timeGeoCacheRetrievalSimpleLine += TOOK(ts);
-    ts = TIME();
-    if (sv.type == SIMPLE_POLYGON) {
-      bl = areaFromSimpleArea(
-          _simpleAreaCache.get(sv.id, sv.large ? -1 : t).get());
-      b = &bl;
-    } else {
-      bsp = _areaCache.get(sv.id, sv.large ? -1 : t);
-      b = bsp.get();
-    }
-    _stats[t].timeGeoCacheRetrievalArea += TOOK(ts);
 
     if (a->id == b->id)
       return;  // no self-checks in multigeometries
-               //
+
     _stats[t].areaCmps++;
     _stats[t].areaSizeSum += b->area;
 
@@ -3040,7 +2794,7 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
     _stats[t].totalComps++;
     auto totTime = TIME();
 
-    auto res = check({cur.point, cur.point2}, b, t);
+    auto res = check({cur.point, cur.point2}, b.get(), t);
 
     _stats[t].timeHisto(b->geom.getOuter().rawRing().size(), TOOK(totTime));
 
@@ -3073,29 +2827,16 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
       _relStats[t].crosses++;
       writeRel(t, a->id, b->id, _cfg.sepCrosses);
     }
-  } else if ((cur.type == SIMPLE_POLYGON || cur.type == POLYGON) &&
-             sv.type == LINE) {
-    const Area* a;
-    std::shared_ptr<Area> asp;
-    Area al;
+  } else if (isArea(cur.type) && sv.type == LINE) {
+    std::shared_ptr<Area> a = getArea(cur, cur.large ? -1 : t);
 
     auto ts = TIME();
-    if (cur.type == SIMPLE_POLYGON) {
-      al = areaFromSimpleArea(
-          _simpleAreaCache.get(cur.id, cur.large ? -1 : t).get());
-      a = &al;
-    } else {
-      asp = _areaCache.get(cur.id, cur.large ? -1 : t);
-      a = asp.get();
-    }
-    _stats[t].timeGeoCacheRetrievalArea += TOOK(ts);
-    ts = TIME();
-    auto b = _lineCache.get(sv.id, cur.large ? -1 : t);
+    auto b = _lineCache.get(sv.id, sv.large ? -1 : t);
     _stats[t].timeGeoCacheRetrievalLine += TOOK(ts);
 
     if (a->id == b->id)
       return;  // no self-checks in multigeometries
-               //
+
     _stats[t].areaCmps++;
     _stats[t].areaSizeSum += a->area;
 
@@ -3107,7 +2848,7 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
     _stats[t].totalComps++;
     auto totTime = TIME();
 
-    auto res = check(b.get(), a, t);
+    auto res = check(b.get(), a.get(), t);
 
     _stats[t].timeHisto(
         std::max(a->geom.getOuter().rawRing().size(), b->geom.rawLine().size()),
@@ -3144,23 +2885,10 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
       _relStats[t].crosses++;
       writeRel(t, b->id, a->id, _cfg.sepCrosses);
     }
-  } else if ((cur.type == SIMPLE_POLYGON || cur.type == POLYGON) &&
-             isSimpleLine(sv.type)) {
-    const Area* a;
-    std::shared_ptr<Area> asp;
-    Area al;
+  } else if (isArea(cur.type) && isSimpleLine(sv.type)) {
+    std::shared_ptr<Area> a = getArea(cur, cur.large ? -1 : t);
 
     auto ts = TIME();
-    if (cur.type == SIMPLE_POLYGON) {
-      al = areaFromSimpleArea(
-          _simpleAreaCache.get(cur.id, cur.large ? -1 : t).get());
-      a = &al;
-    } else {
-      asp = _areaCache.get(cur.id, cur.large ? -1 : t);
-      a = asp.get();
-    }
-    _stats[t].timeGeoCacheRetrievalArea += TOOK(ts);
-    ts = TIME();
     auto b = getSimpleLine(sv, sv.large ? -1 : t);
     _stats[t].timeGeoCacheRetrievalSimpleLine += TOOK(ts);
 
@@ -3175,7 +2903,7 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
     _stats[t].totalComps++;
     auto totTime = TIME();
 
-    auto res = check({sv.point, sv.point2}, a, t);
+    auto res = check({sv.point, sv.point2}, a.get(), t);
 
     _stats[t].timeHisto(a->geom.getOuter().rawRing().size(), TOOK(totTime));
 
@@ -3437,10 +3165,8 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
   } else if (isPoint(cur.type) && isPoint(sv.type)) {
     // point/point: trivial intersect & cover & contains
 
-    auto ts = TIME();
     auto a = getPoint(cur.id, cur.type, cur.large ? -1 : t);
     auto b = getPoint(sv.id, sv.type, sv.large ? -1 : t);
-    _stats[t].timeGeoCacheRetrievalPoint += TOOK(ts);
 
     _stats[t].anchorSum += 1;
 
@@ -3466,10 +3192,8 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
     _stats[t].anchorSum += 2;
 
     if (util::geo::contains(p, LineSegment<int32_t>(sv.point, sv.point2))) {
-      auto ts = TIME();
       auto a = getPoint(cur.id, cur.type, cur.large ? -1 : t);
-      _stats[t].timeGeoCacheRetrievalPoint += TOOK(ts);
-      ts = TIME();
+      auto ts = TIME();
       auto b = getSimpleLine(sv, sv.large ? -1 : t);
       _stats[t].timeGeoCacheRetrievalSimpleLine += TOOK(ts);
       writeIntersect(t, a->id, b->id);
@@ -3503,9 +3227,7 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
     _stats[t].timeHisto(b->geom.rawLine().size(), TOOK(totTime));
 
     if (std::get<0>(res)) {
-      auto ts = TIME();
       auto a = getPoint(cur.id, cur.type, cur.large ? -1 : t);
-      _stats[t].timeGeoCacheRetrievalPoint += TOOK(ts);
 
       if (a->id == b->id) return;  // no self-checks in multigeometries
 
@@ -3526,35 +3248,19 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
         writeCovers(t, a->id, b->id, b->subId);
       }
     }
-  } else if (isPoint(cur.type) &&
-             (sv.type == SIMPLE_POLYGON || sv.type == POLYGON)) {
-    const Area* b;
-    std::shared_ptr<Area> bsp;
-    Area bl;
-
+  } else if (isPoint(cur.type) && isArea(sv.type)) {
+    std::shared_ptr<Area> b = getArea(sv, sv.large ? -1 : t);
     auto a = cur.point;
-    auto ts = TIME();
-    if (sv.type == SIMPLE_POLYGON) {
-      bl = areaFromSimpleArea(
-          _simpleAreaCache.get(sv.id, sv.large ? -1 : t).get());
-      b = &bl;
-    } else {
-      bsp = _areaCache.get(sv.id, sv.large ? -1 : t);
-      b = bsp.get();
-    }
-    _stats[t].timeGeoCacheRetrievalArea += TOOK(ts);
 
     _stats[t].totalComps++;
     auto totTime = TIME();
 
-    auto res = check(a, b, t);
+    auto res = check(a, b.get(), t);
 
     _stats[t].timeHisto(b->geom.getOuter().rawRing().size(), TOOK(totTime));
 
     if (res.second) {
-      auto ts = TIME();
       auto a = getPoint(cur.id, cur.type, cur.large ? -1 : t);
-      _stats[t].timeGeoCacheRetrievalPoint += TOOK(ts);
 
       writeCovers(t, b->id, a->id, a->subId);
       writeIntersect(t, a->id, b->id);
@@ -4281,10 +3987,16 @@ double Sweeper::distCheck(const Area* a, const Area* b, size_t t) const {
 // _____________________________________________________________________________
 std::shared_ptr<sj::Point> Sweeper::getPoint(size_t id, GeomType gt,
                                              size_t t) const {
-  if (gt == sj::FOLDED_POINT)
-    return std::make_shared<sj::Point>(sj::Point{unfoldString(id), 0});
+  std::shared_ptr<sj::Point> ret;
+  auto ts = TIME();
+  if (gt == sj::FOLDED_POINT) {
+    ret = std::make_shared<sj::Point>(sj::Point{unfoldString(id), 0});
+  } else {
+    ret = _pointCache.get(id, t);
+  }
+  _stats[t].timeGeoCacheRetrievalPoint += TOOK(ts);
 
-  return _pointCache.get(id, t);
+  return ret;
 }
 
 // _____________________________________________________________________________
@@ -4295,6 +4007,22 @@ std::shared_ptr<sj::SimpleLine> Sweeper::getSimpleLine(const JobVal& cur,
         sj::SimpleLine{unfoldString(cur.id)});
   }
 
-  std::cerr << "B " << _simpleLineCache.get(cur.id, t)->id << std::endl;
   return _simpleLineCache.get(cur.id, t);
+}
+
+// _____________________________________________________________________________
+std::shared_ptr<sj::Area> Sweeper::getArea(const JobVal& sv, size_t t) const {
+  auto ts = TIME();
+  std::shared_ptr<Area> asp;
+
+  if (sv.type == SIMPLE_POLYGON) {
+    auto p = _simpleAreaCache.get(sv.id, sv.large ? -1 : t);
+    asp = std::make_shared<sj::Area>(sj::Area(areaFromSimpleArea(p.get())));
+  } else {
+    asp = _areaCache.get(sv.id, sv.large ? -1 : t);
+  }
+
+  _stats[t].timeGeoCacheRetrievalArea += TOOK(ts);
+
+  return asp;
 }
