@@ -214,39 +214,32 @@ I32Box Sweeper::add(const I32Polygon& poly, const std::string& gidR,
   cur.subid = subid;
   cur.gid = gid;
 
-  if (false && poly.getInners().size() == 0 && subid == 0 &&
+  if (poly.getInners().size() == 0 && subid == 0 && gid.size() < 8 &&
       (!_cfg.useBoxIds || boxIds.front().first == 1) &&
       area(rawBox) == areaSize) {
-    std::stringstream str;
-    _simpleAreaCache.writeTo({poly.getOuter(), gid}, str);
-    cur.raw = str.str();
-
-    size_t estimatedSize =
-        poly.getOuter().size() * sizeof(util::geo::XSortedTuple<int32_t>);
-
     cur.boxvalIn = {0,  // placeholder, will be overwritten later on
                     box.getLowerLeft().getY(),
                     box.getUpperRight().getY(),
                     box.getLowerLeft().getX(),
                     false,
-                    BOX_POLYGON,
+                    FOLDED_BOX_POLYGON,
                     areaSize,
-                    {},
+                    box.getUpperRight(),
                     box45,
                     side,
-                    estimatedSize > GEOM_LARGENESS_THRESHOLD};
+                    false};
     cur.boxvalOut = {0,  // placeholder, will be overwritten later on
                      box.getLowerLeft().getY(),
                      box.getUpperRight().getY(),
                      box.getUpperRight().getX(),
                      true,
-                     BOX_POLYGON,
+                     FOLDED_BOX_POLYGON,
                      areaSize,
-                     {},
+                     box.getLowerLeft(),
                      box45,
                      side,
-                     estimatedSize > GEOM_LARGENESS_THRESHOLD};
-    batch.boxAreas.emplace_back(cur);
+                     false};
+    batch.foldedBoxAreas.emplace_back(cur);
   } else if (poly.getInners().size() == 0 && poly.getOuter().size() < 10 &&
              subid == 0 && (!_cfg.useBoxIds || boxIds.front().first == 1)) {
     std::stringstream str;
@@ -605,6 +598,14 @@ void Sweeper::addBatch(WriteBatch& cands) {
   }
 
   {
+    for (auto& cand : cands.foldedBoxAreas) {
+      if (cand.boxvalIn.side) _numSides = 2;
+      cand.boxvalIn.id = foldString(cand.gid);
+      cand.boxvalOut.id = cand.boxvalIn.id;
+    }
+  }
+
+  {
     std::unique_lock<std::mutex> lock(_simpleAreaGeomCacheWriteMtx);
     for (auto& cand : cands.simpleAreas) {
       if (cand.boxvalIn.side) _numSides = 2;
@@ -685,6 +686,12 @@ void Sweeper::addBatch(WriteBatch& cands) {
         log("@ " + std::to_string(_curSweepId / 2));
     }
     for (const auto& cand : cands.foldedSimpleLines) {
+      diskAdd(cand.boxvalIn);
+      diskAdd(cand.boxvalOut);
+      if (_curSweepId / 2 % 1000000 == 0)
+        log("@ " + std::to_string(_curSweepId / 2));
+    }
+    for (const auto& cand : cands.foldedBoxAreas) {
       diskAdd(cand.boxvalIn);
       diskAdd(cand.boxvalOut);
       if (_curSweepId / 2 % 1000000 == 0)
@@ -2224,18 +2231,12 @@ void Sweeper::selfCheck(const JobVal cur, size_t t) {
     writeIntersect(t, a->id, a->id);
     writeEquals(t, a->id, 0, a->id, 0);
     writeCovers(t, a->id, a->id, 0);
-  } else if (cur.type == POLYGON) {
-    auto a = _areaCache.get(cur.id, cur.large ? -1 : t);
+  } else if (isArea(cur.type)) {
+    auto a = getArea(cur, cur.large ? -1 : t);
 
     writeIntersect(t, a->id, a->id);
     writeEquals(t, a->id, a->subId, a->id, a->subId);
     writeCovers(t, a->id, a->id, a->subId);
-  } else if (cur.type == SIMPLE_POLYGON) {
-    auto a = _simpleAreaCache.get(cur.id, cur.large ? -1 : t);
-
-    writeIntersect(t, a->id, a->id);
-    writeEquals(t, a->id, 0, a->id, 0);
-    writeCovers(t, a->id, a->id, 0);
   }
 }
 
@@ -2780,8 +2781,7 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
     auto a = getSimpleLine(cur, cur.large ? -1 : t);
     _stats[t].timeGeoCacheRetrievalSimpleLine += TOOK(ts);
 
-    if (a->id == b->id)
-      return;  // no self-checks in multigeometries
+    if (a->id == b->id) return;  // no self-checks in multigeometries
 
     _stats[t].areaCmps++;
     _stats[t].areaSizeSum += b->area;
@@ -2834,8 +2834,7 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
     auto b = _lineCache.get(sv.id, sv.large ? -1 : t);
     _stats[t].timeGeoCacheRetrievalLine += TOOK(ts);
 
-    if (a->id == b->id)
-      return;  // no self-checks in multigeometries
+    if (a->id == b->id) return;  // no self-checks in multigeometries
 
     _stats[t].areaCmps++;
     _stats[t].areaSizeSum += a->area;
@@ -4018,6 +4017,13 @@ std::shared_ptr<sj::Area> Sweeper::getArea(const JobVal& sv, size_t t) const {
   if (sv.type == SIMPLE_POLYGON) {
     auto p = _simpleAreaCache.get(sv.id, sv.large ? -1 : t);
     asp = std::make_shared<sj::Area>(sj::Area(areaFromSimpleArea(p.get())));
+  } else if (sv.type == FOLDED_BOX_POLYGON) {
+    SimpleArea sa;
+    sa.id = unfoldString(sv.id);
+    sa.geom = util::geo::Polygon<int32_t>(
+                  getBoundingBox(util::geo::Line<int32_t>{sv.point, sv.point2}))
+                  .getOuter();
+    asp = std::make_shared<sj::Area>(sj::Area(areaFromSimpleArea(&sa)));
   } else {
     asp = _areaCache.get(sv.id, sv.large ? -1 : t);
   }

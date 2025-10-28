@@ -40,7 +40,7 @@ enum GeomType : uint8_t {
   FOLDED_POINT = 5,
   // currently not used
   FOLDED_SIMPLE_LINE = 6,
-  BOX_POLYGON = 7,
+  FOLDED_BOX_POLYGON = 7,
 };
 
 struct BoxVal {
@@ -72,7 +72,7 @@ struct WriteBatch {
   std::vector<WriteCand> foldedSimpleLines;
   std::vector<WriteCand> lines;
   std::vector<WriteCand> simpleAreas;
-  std::vector<WriteCand> boxAreas;
+  std::vector<WriteCand> foldedBoxAreas;
   std::vector<WriteCand> areas;
   std::vector<WriteCand> refs;
 
@@ -562,7 +562,7 @@ class Sweeper {
   static bool isPoint(GeomType gt) { return gt == POINT || gt == FOLDED_POINT; }
 
   static bool isArea(GeomType gt) {
-    return gt == POLYGON || gt == SIMPLE_POLYGON || gt == BOX_POLYGON;
+    return gt == POLYGON || gt == SIMPLE_POLYGON || gt == FOLDED_BOX_POLYGON;
   }
 
   std::shared_ptr<sj::Area> getArea(const JobVal& j, size_t) const;
