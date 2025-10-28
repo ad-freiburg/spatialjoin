@@ -38,7 +38,6 @@ enum GeomType : uint8_t {
   SIMPLE_LINE = 3,
   SIMPLE_POLYGON = 4,
   FOLDED_POINT = 5,
-  // currently not used
   FOLDED_SIMPLE_LINE = 6,
   FOLDED_BOX_POLYGON = 7,
 };
