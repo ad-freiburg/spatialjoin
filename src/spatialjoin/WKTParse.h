@@ -112,7 +112,7 @@ class WKTParserBase {
 
  protected:
   void parseLine(const char *c, size_t len, size_t gid, size_t t,
-                 sj::WriteBatch &batch, bool side) {
+                 sj::WriteBatch &batch, bool side, bool useIdEnhance) {
     using namespace util::geo;
 
     const char *lastC = c + len;
@@ -130,7 +130,7 @@ class WKTParserBase {
       id = std::to_string(gid);
     }
 
-    id = idEnhance(id);
+    if (useIdEnhance) id = idEnhance(id);
 
     // search for next tab occurance
     idp = strchr(c, '\t');

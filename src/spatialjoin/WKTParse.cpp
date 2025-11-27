@@ -28,7 +28,8 @@ void WKTParser::processQueue(size_t t) {
       if (_cancelled) break;
 
       if (job.str.size()) {
-        parseLine(job.str.c_str(), job.str.size(), job.line, t, w, job.side);
+        parseLine(job.str.c_str(), job.str.size(), job.line, t, w, job.side,
+                  true);
       } else {
         // parse point directly
         auto mercPoint = latLngToWebMerc(job.point);
