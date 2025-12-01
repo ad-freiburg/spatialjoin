@@ -38,9 +38,8 @@ enum GeomType : uint8_t {
   SIMPLE_LINE = 3,
   SIMPLE_POLYGON = 4,
   FOLDED_POINT = 5,
-  // currently not used
-  FOLDED_SIMPLE_LINE_UP = 6,
-  FOLDED_SIMPLE_LINE_DOWN = 7
+  FOLDED_SIMPLE_LINE = 6,
+  FOLDED_BOX_POLYGON = 7,
 };
 
 struct BoxVal {
@@ -69,14 +68,17 @@ struct WriteBatch {
   std::vector<WriteCand> points;
   std::vector<WriteCand> foldedPoints;
   std::vector<WriteCand> simpleLines;
+  std::vector<WriteCand> foldedSimpleLines;
   std::vector<WriteCand> lines;
   std::vector<WriteCand> simpleAreas;
+  std::vector<WriteCand> foldedBoxAreas;
   std::vector<WriteCand> areas;
   std::vector<WriteCand> refs;
 
   size_t size() const {
-    return points.size() + foldedPoints.size() + simpleLines.size() +
-           lines.size() + simpleAreas.size() + areas.size() + refs.size();
+    return points.size() + foldedSimpleLines.size() + foldedPoints.size() +
+           simpleLines.size() + lines.size() + simpleAreas.size() +
+           areas.size() + refs.size();
   }
 };
 
@@ -88,16 +90,51 @@ struct SweepVal {
   SweepVal(size_t id, GeomType type)
       : id(id), type(type), side(false), large(false) {}
   SweepVal(size_t id, GeomType type, util::geo::I32Box b45,
-           util::geo::I32Point point, bool side, bool large)
-      : id(id), type(type), b45(b45), point(point), side(side), large(large) {}
+           util::geo::I32Point point, util::geo::I32Point point2, bool side,
+           bool large)
+      : id(id),
+        type(type),
+        b45(b45),
+        point(point),
+        point2(point2),
+        side(side),
+        large(large) {}
   SweepVal() : id(0), type(POLYGON) {}
   size_t id;
   GeomType type : 3;
   util::geo::I32Box b45;
-  util::geo::I32Point point;
+  util::geo::I32Point point, point2;
   bool side;
   bool large;
 };
+
+struct JobVal {
+  size_t id;
+  GeomType type : 3;
+  util::geo::I32Point point, point2;
+  bool large;
+  int32_t val;
+
+  JobVal() : id(0), type(POLYGON) {}
+  JobVal(const BoxVal& bv)
+      : id(bv.id),
+        type(bv.type),
+        point(bv.point),
+        point2(bv.val, bv.point.getY() == bv.loY ? bv.upY : bv.loY),
+        large(bv.large),
+        val(bv.val){};
+  JobVal(const SweepVal& sv)
+      : id(sv.id),
+        type(sv.type),
+        point(sv.point),
+        point2(sv.point2),
+        large(sv.large),
+        val(0){};
+};
+
+inline bool operator==(const JobVal& a, const JobVal& b) {
+  return a.id == b.id && a.type == b.type;
+}
 
 inline bool operator==(const SweepVal& a, const SweepVal& b) {
   return a.id == b.id && a.type == b.type;
@@ -108,8 +145,7 @@ inline bool operator<(const SweepVal& a, const SweepVal& b) {
 }
 
 struct Job {
-  BoxVal boxVal;
-  SweepVal sweepVal;
+  JobVal boxVal, sweepVal;
   std::string multiOut;
 };
 
@@ -421,11 +457,15 @@ class Sweeper {
 
   GeomCheckRes check(const Area* a, const Area* b, size_t t) const;
   GeomCheckRes check(const Line* a, const Area* b, size_t t) const;
-  GeomCheckRes check(const SimpleLine* a, const Area* b, size_t t) const;
+  GeomCheckRes check(const util::geo::LineSegment<int32_t>& a, const Area* b,
+                     size_t t) const;
   GeomCheckRes check(const Line* a, const Line* b, size_t t) const;
-  GeomCheckRes check(const Line* a, const SimpleLine* b, size_t t) const;
-  GeomCheckRes check(const SimpleLine* a, const SimpleLine* b, size_t t) const;
-  GeomCheckRes check(const SimpleLine* a, const Line* b, size_t t) const;
+  GeomCheckRes check(const Line* a, const util::geo::LineSegment<int32_t>& b,
+                     size_t t) const;
+  GeomCheckRes check(const util::geo::LineSegment<int32_t>& a,
+                     const util::geo::LineSegment<int32_t>& b, size_t t) const;
+  GeomCheckRes check(const util::geo::LineSegment<int32_t>& a, const Line* b,
+                     size_t t) const;
   std::pair<bool, bool> check(const util::geo::I32Point& a, const Area* b,
                               size_t t) const;
   std::tuple<bool, bool> check(const util::geo::I32Point& a, const Line* b,
@@ -433,11 +473,14 @@ class Sweeper {
 
   double distCheck(const util::geo::I32Point& a, const Area* b, size_t t) const;
   double distCheck(const util::geo::I32Point& a, const Line* b, size_t t) const;
-  double distCheck(const util::geo::I32Point& a, const SimpleLine* b,
+  double distCheck(const util::geo::I32Point& a,
+                   const util::geo::LineSegment<int32_t>& b, size_t t) const;
+  double distCheck(const util::geo::LineSegment<int32_t>& a,
+                   const util::geo::LineSegment<int32_t>& b, size_t t) const;
+  double distCheck(const util::geo::LineSegment<int32_t>& a, const Line* b,
                    size_t t) const;
-  double distCheck(const SimpleLine* a, const SimpleLine* b, size_t t) const;
-  double distCheck(const SimpleLine* a, const Line* b, size_t t) const;
-  double distCheck(const SimpleLine* a, const Area* b, size_t t) const;
+  double distCheck(const util::geo::LineSegment<int32_t>& a, const Area* b,
+                   size_t t) const;
   double distCheck(const Line* a, const Line* b, size_t t) const;
   double distCheck(const Area* a, const Area* b, size_t t) const;
   double distCheck(const Line* a, const Area* b, size_t t) const;
@@ -447,13 +490,15 @@ class Sweeper {
   util::geo::DE9IMatrix DE9IMCheck(const util::geo::I32Point& a, const Line* b,
                                    size_t t) const;
   util::geo::DE9IMatrix DE9IMCheck(const util::geo::I32Point& a,
-                                   const SimpleLine* b, size_t t) const;
-  util::geo::DE9IMatrix DE9IMCheck(const SimpleLine* a, const SimpleLine* b,
+                                   const util::geo::LineSegment<int32_t>& b,
                                    size_t t) const;
-  util::geo::DE9IMatrix DE9IMCheck(const SimpleLine* a, const Line* b,
+  util::geo::DE9IMatrix DE9IMCheck(const util::geo::LineSegment<int32_t>& a,
+                                   const util::geo::LineSegment<int32_t>& b,
                                    size_t t) const;
-  util::geo::DE9IMatrix DE9IMCheck(const SimpleLine* a, const Area* b,
-                                   size_t t) const;
+  util::geo::DE9IMatrix DE9IMCheck(const util::geo::LineSegment<int32_t>& a,
+                                   const Line* b, size_t t) const;
+  util::geo::DE9IMatrix DE9IMCheck(const util::geo::LineSegment<int32_t>& a,
+                                   const Area* b, size_t t) const;
   util::geo::DE9IMatrix DE9IMCheck(const Line* a, const Line* b,
                                    size_t t) const;
   util::geo::DE9IMatrix DE9IMCheck(const Area* a, const Area* b,
@@ -502,11 +547,10 @@ class Sweeper {
   void writeNotCrosses(size_t t, const std::string& a, size_t aSub,
                        const std::string& b, size_t bSub);
 
-  void doCheck(BoxVal cur, SweepVal sv, size_t t);
-  void doDistCheck(BoxVal cur, SweepVal sv, size_t t);
-  void doDE9IMCheck(BoxVal cur, SweepVal sv, size_t t);
-  void selfCheck(BoxVal cur, size_t t);
-
+  void doCheck(JobVal cur, JobVal sv, size_t t);
+  void doDistCheck(JobVal cur, JobVal sv, size_t t);
+  void doDE9IMCheck(JobVal cur, JobVal sv, size_t t);
+  void selfCheck(JobVal cur, size_t t);
   void processQueue(size_t t);
 
   bool notOverlaps(const std::string& a, const std::string& b);
@@ -516,16 +560,20 @@ class Sweeper {
   std::shared_ptr<sj::Point> getPoint(size_t id, GeomType gt, size_t t) const;
   static bool isPoint(GeomType gt) { return gt == POINT || gt == FOLDED_POINT; }
 
-  std::shared_ptr<sj::SimpleLine> getSimpleLine(size_t id, GeomType gt,
+  static bool isArea(GeomType gt) {
+    return gt == POLYGON || gt == SIMPLE_POLYGON || gt == FOLDED_BOX_POLYGON;
+  }
+
+  std::shared_ptr<sj::Area> getArea(const JobVal& j, size_t) const;
+
+  std::shared_ptr<sj::SimpleLine> getSimpleLine(const JobVal& cur,
                                                 size_t t) const;
   static bool isLine(GeomType gt) {
-    return gt == LINE || gt == SIMPLE_LINE || gt == FOLDED_SIMPLE_LINE_UP ||
-           gt == FOLDED_SIMPLE_LINE_DOWN;
+    return gt == LINE || gt == SIMPLE_LINE || gt == FOLDED_SIMPLE_LINE;
   }
 
   static bool isSimpleLine(GeomType gt) {
-    return gt == SIMPLE_LINE || gt == FOLDED_SIMPLE_LINE_UP ||
-           gt == FOLDED_SIMPLE_LINE_DOWN;
+    return gt == SIMPLE_LINE || gt == FOLDED_SIMPLE_LINE;
   }
 
   static double meterDist(const util::geo::I32Point& p1,
@@ -554,10 +602,12 @@ class Sweeper {
 
     // points before lines
     if ((boxa->type == POINT || boxa->type == FOLDED_POINT) &&
-        (boxb->type == SIMPLE_LINE || boxb->type == LINE))
+        (boxb->type == SIMPLE_LINE || boxb->type == LINE ||
+         boxb->type == FOLDED_SIMPLE_LINE))
       return -1;
     if ((boxb->type == POINT || boxb->type == FOLDED_POINT) &&
-        (boxa->type == SIMPLE_LINE || boxa->type == LINE))
+        (boxa->type == SIMPLE_LINE || boxa->type == LINE ||
+         boxa->type == FOLDED_SIMPLE_LINE))
       return 1;
 
     // smaller polygons before larger
@@ -571,12 +621,16 @@ class Sweeper {
       return 1;
 
     // shorter lines before longer
-    if ((boxa->type == LINE || boxa->type == SIMPLE_LINE) &&
-        (boxb->type == LINE || boxb->type == SIMPLE_LINE) &&
+    if ((boxa->type == LINE || boxa->type == SIMPLE_LINE ||
+         boxa->type == FOLDED_SIMPLE_LINE) &&
+        (boxb->type == LINE || boxb->type == SIMPLE_LINE ||
+         boxb->type == FOLDED_SIMPLE_LINE) &&
         boxa->areaOrLen < boxb->areaOrLen)
       return -1;
-    if ((boxa->type == LINE || boxa->type == SIMPLE_LINE) == LINE &&
-        (boxb->type == LINE || boxb->type == SIMPLE_LINE) &&
+    if ((boxa->type == LINE || boxa->type == SIMPLE_LINE ||
+         boxa->type == FOLDED_SIMPLE_LINE) &&
+        (boxb->type == LINE || boxb->type == SIMPLE_LINE ||
+         boxb->type == FOLDED_SIMPLE_LINE) &&
         boxa->areaOrLen > boxb->areaOrLen)
       return 1;
 

@@ -70,10 +70,6 @@ struct Area {
 };
 
 struct SimpleLine {
-  // line
-  util::geo::I32Point a;
-  util::geo::I32Point b;
-
   // id
   std::string id;
 };

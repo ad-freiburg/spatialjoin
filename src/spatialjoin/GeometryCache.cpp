@@ -86,10 +86,6 @@ std::pair<size_t, sj::SimpleLine> sj::GeometryCache<sj::SimpleLine>::getFrom(
 
   str.seekg(off);
 
-  // geom
-  str.read(reinterpret_cast<char*>(&ret.a), sizeof(util::geo::I32Point));
-  str.read(reinterpret_cast<char*>(&ret.b), sizeof(util::geo::I32Point));
-
   // id
   uint16_t len;
   str.read(reinterpret_cast<char*>(&len), sizeof(uint16_t));
@@ -99,7 +95,7 @@ std::pair<size_t, sj::SimpleLine> sj::GeometryCache<sj::SimpleLine>::getFrom(
     str.read(reinterpret_cast<char*>(&ret.id[0]), len * sizeof(char));
   }
 
-  return {sizeof(util::geo::I32Point) * 2 + sizeof(char) * len, ret};
+  return {sizeof(char) * len, ret};
 }
 
 // ____________________________________________________________________________
@@ -373,11 +369,6 @@ template <>
 size_t sj::GeometryCache<sj::SimpleLine>::writeTo(const sj::SimpleLine& val,
                                                   std::ostream& str) const {
   size_t ret = 0;
-
-  // geoms
-  str.write(reinterpret_cast<const char*>(&val.a), sizeof(util::geo::I32Point));
-  str.write(reinterpret_cast<const char*>(&val.b), sizeof(util::geo::I32Point));
-  ret += sizeof(util::geo::I32Point) * 2;
 
   // id
   uint16_t s = val.id.size();
