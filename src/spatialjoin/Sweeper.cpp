@@ -1742,26 +1742,6 @@ util::geo::DE9IMatrix Sweeper::DE9IMCheck(const I32Point& a, const Line* b,
   return res;
 }
 
-// _____________________________________________________________________________
-std::tuple<bool, bool> Sweeper::check(const I32Point& a, const Line* b,
-                                      size_t t) const {
-  if (_cfg.useBoxIds) {
-    auto ts = TIME();
-    auto r = boxIdIsect({{1, 0}, {getBoxId(a), 0}}, b->boxIds);
-    _stats[t].timeBoxIdIsectLinePoint += TOOK(ts);
-
-    // no box shared, we cannot contain or intersect
-    if (r.first + r.second == 0) return {0, 0};
-  }
-
-  auto ts = TIME();
-  auto res = util::geo::intersectsContains(a, b->geom);
-  _stats[t].timeFullGeoCheckLinePoint += TOOK(ts);
-  _stats[t].fullGeoChecksLinePoint++;
-
-  return res;
-}
-
 // ____________________________________________________________________________
 void Sweeper::writeRel(size_t t, const std::string& a, const std::string& b,
                        const std::string& pred) {
@@ -2895,11 +2875,11 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
     _stats[t].totalComps++;
     auto totTime = TIME();
 
-    auto res = check(a, b.get(), t);
+    auto res = DE9IMCheck(a, b.get(), t);
 
     _stats[t].timeHisto(b->geom.rawLine().size(), TOOK(totTime));
 
-    if (std::get<0>(res)) {
+    if (res.intersects()) {
       auto a = getPoint(cur.id, cur.type, cur.large ? -1 : t);
 
       if (a->id == b->id) return;  // no self-checks in multigeometries
@@ -2908,7 +2888,7 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
 
       writeCovers(t, b->id, a->id, a->subId);
 
-      if (std::get<1>(res)) {
+      if (res.within()) {
         writeContains(t, b->id, a->id, a->subId);
         writeNotTouches(t, a->id, a->subId, b->id, b->subId);
       } else {
