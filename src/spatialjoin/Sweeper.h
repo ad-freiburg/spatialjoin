@@ -458,13 +458,6 @@ class Sweeper {
 
   GeomCheckRes check(const util::geo::LineSegment<int32_t>& a, const Area* b,
                      size_t t) const;
-  GeomCheckRes check(const Line* a, const Line* b, size_t t) const;
-  GeomCheckRes check(const Line* a, const util::geo::LineSegment<int32_t>& b,
-                     size_t t) const;
-  GeomCheckRes check(const util::geo::LineSegment<int32_t>& a,
-                     const util::geo::LineSegment<int32_t>& b, size_t t) const;
-  GeomCheckRes check(const util::geo::LineSegment<int32_t>& a, const Line* b,
-                     size_t t) const;
   std::pair<bool, bool> check(const util::geo::I32Point& a, const Area* b,
                               size_t t) const;
   std::tuple<bool, bool> check(const util::geo::I32Point& a, const Line* b,

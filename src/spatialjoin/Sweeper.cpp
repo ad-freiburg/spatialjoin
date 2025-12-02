@@ -1585,40 +1585,6 @@ util::geo::DE9IMatrix Sweeper::DE9IMCheck(const Line* a, const Line* b,
 }
 
 // _____________________________________________________________________________
-GeomCheckRes Sweeper::check(const Line* a, const Line* b, size_t t) const {
-  // cheap equivalence check
-  if (a->box == b->box && a->geom == b->geom) {
-    // equivalent!
-    return {1, 1, 0, 0, 0};
-  }
-
-  if (_cfg.useBoxIds) {
-    auto ts = TIME();
-    auto r = boxIdIsect(a->boxIds, b->boxIds);
-    _stats[t].timeBoxIdIsectLineLine += TOOK(ts);
-
-    // no box shared, we cannot contain or intersect
-    if (r.first + r.second == 0) return {0, 0, 0, 0, 0};
-  }
-
-  if (_cfg.useOBB) {
-    if (!a->obb.empty() && !b->obb.empty()) {
-      auto ts = TIME();
-      auto r = util::geo::intersectsContainsCovers(a->obb, b->obb);
-      _stats[t].timeOBBIsectLineLine += TOOK(ts);
-      if (!std::get<0>(r)) return {0, 0, 0, 0, 0};
-    }
-  }
-
-  auto ts = TIME();
-  auto res = intersectsCovers(a->geom, b->geom, a->box, b->box);
-  _stats[t].timeFullGeoCheckLineLine += TOOK(ts);
-  _stats[t].fullGeoChecksLineLine++;
-
-  return res;
-}
-
-// _____________________________________________________________________________
 util::geo::DE9IMatrix Sweeper::DE9IMCheck(const LineSegment<int32_t>& a,
                                           const Area* b, size_t t) const {
   _stats[t].totalComps++;
@@ -1730,74 +1696,51 @@ util::geo::DE9IMatrix Sweeper::DE9IMCheck(const LineSegment<int32_t>& a,
       a, 32767, true, 32767, true, b, 32767, true, 32767, true);
 
   const bool weakIntersect = r;
+
   const bool strictIntersect = (r >> 0) & 1;
   const bool overlaps = (r >> 1) & 1;
-  const bool aFirstInB = (r >> 6) & 1;
-  const bool aSecondInB = (r >> 7) & 1;
   const bool crosses = (r >> 4) & 1;
   const bool strictIntersect2 = (r >> 5) & 1;
   const bool bFirstInA = (r >> 2) & 1;
-  const bool bSecondInA = (r >> 3) & 1;
+  const bool bLastInA = (r >> 3) & 1;
+  const bool aFirstInB = (r >> 6) & 1;
+  const bool aLastInB = (r >> 7) & 1;
 
   const bool aInB = !crosses && !strictIntersect && weakIntersect;
   const bool bInA = !crosses && !strictIntersect2 && weakIntersect;
 
-  char ii = overlaps ? '1' : (crosses ? '0' : 'F');
-  char ib = ((bFirstInA && b.first != a.first && b.first != a.second) ||
-             (bSecondInA && b.second != a.first && b.second != a.second))
-                ? '0'
-                : 'F';
-  char ie = aInB ? 'F' : '1';
-  char bi = ((aFirstInB && a.first != b.first && a.first != b.second) ||
-             (aSecondInB && a.second != b.first && a.second != b.second))
-                ? '0'
-                : 'F';
-  char bb = (a.first == b.first || a.second == b.first ||
-             a.second == b.second || a.first == b.second)
-                ? '0'
-                : 'F';
-  char be = !(aFirstInB && aSecondInB) ? '0' : 'F';
-  char ei = bInA ? 'F' : '1';
-  char eb = !(bFirstInA && bSecondInA) ? '0' : 'F';
-  char ee = '2';
+  bool aFirstOnBoundary = a.first == b.first || a.first == b.second;
+  bool aLastOnBoundary = a.second == b.first || a.second == b.second;
 
+  bool bFirstOnBoundary = b.first == a.first || b.first == a.second;
+  bool bLastOnBoundary = b.second == a.first || b.second == a.second;
+
+  uint16_t ii =
+      overlaps ? util::geo::D1 : (crosses ? util::geo::D0 : util::geo::F);
+  uint16_t ib = (bFirstInA || bLastInA) ? util::geo::D0 : util::geo::F;
+  uint16_t ie = aInB ? util::geo::F : util::geo::D1;
+  uint16_t bi =
+      ((aFirstInB && !aFirstOnBoundary) || (aLastInB && !aLastOnBoundary))
+          ? util::geo::D0
+          : util::geo::F;
+  uint16_t bb = (a.first == b.first || a.second == b.first ||
+                 a.second == b.second || a.first == b.second)
+                    ? util::geo::D0
+                    : util::geo::F;
+  uint16_t be =
+      ((aFirstInB || aFirstOnBoundary) && (aLastInB || aLastOnBoundary))
+          ? util::geo::F
+          : util::geo::D0;
+  uint16_t ei = bInA ? util::geo::F : util::geo::D1;
+  uint16_t eb =
+      ((bFirstInA || bFirstOnBoundary) && (bLastInA || bLastOnBoundary))
+          ? util::geo::F
+          : util::geo::D0;
   _stats[t].timeFullGeoCheckLineLine += TOOK(ts);
   _stats[t].fullGeoChecksLineLine++;
 
-  return std::string{ii, ib, ie, bi, bb, be, ei, eb, ee};
-}
-
-// _____________________________________________________________________________
-GeomCheckRes Sweeper::check(const LineSegment<int32_t>& a,
-                            const LineSegment<int32_t>& b, size_t t) const {
-  auto ts = TIME();
-
-  // no need to do a full sweep for two simple lines with all the required
-  // datastructures, just unroll the individual checks here
-
-  auto r = util::geo::IntersectorLine<int32_t>::check(
-      a, 32767, true, 32767, true, b, 32767, true, 32767, true);
-
-  bool weakIntersect = r;
-  bool strictIntersect = (r >> 0) & 1;
-  bool overlaps = (r >> 1) & 1;
-  const bool bFirstInA = (r >> 2) & 1;
-  const bool bSecondInA = (r >> 3) & 1;
-  const bool aFirstInB = (r >> 6) & 1;
-  const bool aSecondInB = (r >> 7) & 1;
-  bool touches = bFirstInA || bSecondInA || aFirstInB || aSecondInB;
-
-  if (strictIntersect && !touches && !overlaps) {
-    _stats[t].timeFullGeoCheckLineLine += TOOK(ts);
-    _stats[t].fullGeoChecksLineLine++;
-    return {1, 0, 0, 0, 1};
-  }
-
-  _stats[t].timeFullGeoCheckLineLine += TOOK(ts);
-  _stats[t].fullGeoChecksLineLine++;
-
-  return {weakIntersect, !strictIntersect && weakIntersect,
-          touches && !overlaps, overlaps && !touches, 0};
+  return (ii << 0) | (ib << 2) | (ie << 4) | (bi << 6) | (bb << 8) |
+         (be << 10) | (ei << 12) | (eb << 14);
 }
 
 // _____________________________________________________________________________
@@ -1822,60 +1765,6 @@ util::geo::DE9IMatrix Sweeper::DE9IMCheck(const LineSegment<int32_t>& a,
 
   auto ts = TIME();
   auto res = DE9IM(I32XSortedLine(a), b->geom, getBoundingBox(a), b->box);
-  _stats[t].timeFullGeoCheckLineLine += TOOK(ts);
-  _stats[t].fullGeoChecksLineLine++;
-  return res;
-}
-
-// _____________________________________________________________________________
-GeomCheckRes Sweeper::check(const LineSegment<int32_t>& a, const Line* b,
-                            size_t t) const {
-  if (_cfg.useBoxIds) {
-    auto ts = TIME();
-    auto r = boxIdIsect({{1, 0}, {getBoxId(a.first), 0}}, b->boxIds);
-    _stats[t].timeBoxIdIsectLineLine += TOOK(ts);
-
-    // no box shared, we cannot contain or intersect
-    if (r.first + r.second == 0) return {0, 0, 0, 0, 0};
-  }
-
-  if (_cfg.useOBB && !b->obb.empty()) {
-    auto ts = TIME();
-    auto r = intersectsContainsCovers(I32XSortedLine(a), b->obb);
-    _stats[t].timeOBBIsectLineLine += TOOK(ts);
-    if (!std::get<0>(r)) return {0, 0, 0, 0, 0};
-  }
-
-  auto ts = TIME();
-  auto res =
-      intersectsCovers(I32XSortedLine(a), b->geom, getBoundingBox(a), b->box);
-  _stats[t].timeFullGeoCheckLineLine += TOOK(ts);
-  _stats[t].fullGeoChecksLineLine++;
-  return res;
-}
-
-// _____________________________________________________________________________
-GeomCheckRes Sweeper::check(const Line* a, const LineSegment<int32_t>& b,
-                            size_t t) const {
-  if (_cfg.useBoxIds) {
-    auto ts = TIME();
-    auto r = boxIdIsect(a->boxIds, {{1, 0}, {getBoxId(b.first), 0}});
-    _stats[t].timeBoxIdIsectLineLine += TOOK(ts);
-
-    // no box shared, we cannot contain or intersect
-    if (r.first + r.second == 0) return {0, 0, 0, 0, 0};
-  }
-
-  if (_cfg.useOBB && !a->obb.empty()) {
-    auto ts = TIME();
-    auto r = intersectsContainsCovers(I32XSortedLine(b), a->obb);
-    _stats[t].timeOBBIsectLineLine += TOOK(ts);
-    if (!std::get<0>(r)) return {0, 0, 0, 0, 0};
-  }
-
-  auto ts = TIME();
-  auto res =
-      intersectsCovers(a->geom, I32XSortedLine(b), a->box, getBoundingBox(b));
   _stats[t].timeFullGeoCheckLineLine += TOOK(ts);
   _stats[t].fullGeoChecksLineLine++;
   return res;
@@ -2831,19 +2720,19 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
     _stats[t].totalComps++;
     auto totTime = TIME();
 
-    auto res = check(a.get(), b.get(), t);
+    auto res = DE9IMCheck(a.get(), b.get(), t);
 
     _stats[t].timeHisto(
         std::max(a->geom.rawLine().size(), b->geom.rawLine().size()),
         TOOK(totTime));
 
     // intersects
-    if (std::get<0>(res)) {
+    if (res.intersects()) {
       writeIntersect(t, a->id, b->id);
     }
 
     // covers
-    if (std::get<1>(res)) {
+    if (res.coveredBy()) {
       writeNotCrosses(t, a->id, a->subId, b->id, b->subId);
 
       if (a->subId == 0) writeNotOverlaps(t, a->id, a->subId, b->id, b->subId);
@@ -2859,21 +2748,21 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
     }
 
     // touches
-    if (std::get<2>(res)) {
+    if (res.touches()) {
       writeTouches(t, a->id, a->subId, b->id, b->subId);
-    } else if (std::get<0>(res)) {
+    } else if (res.intersects()) {
       writeNotTouches(t, a->id, a->subId, b->id, b->subId);
     }
 
     // crosses
-    if (std::get<4>(res)) {
+    if (res.crosses1vs1()) {
       writeNotOverlaps(t, a->id, a->subId, b->id, b->subId);
       writeCrosses(t, a->id, a->subId, b->id, b->subId);
     }
 
     // overlaps
-    if (std::get<3>(res)) {
-      if (!std::get<1>(res))
+    if (res.overlaps1()) {
+      if (!res.coveredBy())
         writeNotCrosses(t, a->id, a->subId, b->id, b->subId);
       writeOverlaps(t, a->id, a->subId, b->id, b->subId);
     }
@@ -2892,17 +2781,17 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
     _stats[t].totalComps++;
     auto totTime = TIME();
 
-    auto res = check(a.get(), {sv.point, sv.point2}, t);
+    auto res = DE9IMCheck({sv.point, sv.point2}, a.get(), t).transpose();
 
     _stats[t].timeHisto(a->geom.rawLine().size(), TOOK(totTime));
 
     // intersects
-    if (std::get<0>(res)) {
+    if (res.intersects()) {
       writeIntersect(t, a->id, b->id);
     }
 
     // covers
-    if (std::get<1>(res)) {
+    if (res.coveredBy()) {
       writeNotCrosses(t, a->id, a->subId, b->id, 0);
 
       writeCovers(t, b->id, a->id, a->subId);
@@ -2917,21 +2806,21 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
     }
 
     // touches
-    if (std::get<2>(res)) {
+    if (res.touches()) {
       writeTouches(t, a->id, a->subId, b->id, 0);
-    } else if (std::get<0>(res)) {
+    } else if (res.intersects()) {
       writeNotTouches(t, a->id, a->subId, b->id, 0);
     }
 
     // crosses
-    if (std::get<4>(res)) {
+    if (res.crosses1vs1()) {
       writeNotOverlaps(t, a->id, a->subId, b->id, 0);
       writeCrosses(t, a->id, a->subId, b->id, 0);
     }
 
     // overlaps
-    if (std::get<3>(res)) {
-      if (!std::get<1>(res)) writeNotCrosses(t, a->id, a->subId, b->id, 0);
+    if (res.overlaps1()) {
+      if (!res.coveredBy()) writeNotCrosses(t, a->id, a->subId, b->id, 0);
       writeOverlaps(t, a->id, a->subId, b->id, 0);
     }
   } else if (isSimpleLine(cur.type) && sv.type == LINE) {
@@ -2951,17 +2840,17 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
     _stats[t].totalComps++;
     auto totTime = TIME();
 
-    auto res = check({cur.point, cur.point2}, b.get(), t);
+    auto res = DE9IMCheck({cur.point, cur.point2}, b.get(), t);
 
     _stats[t].timeHisto(b->geom.rawLine().size(), TOOK(totTime));
 
     // intersects
-    if (std::get<0>(res)) {
+    if (res.intersects()) {
       writeIntersect(t, a->id, b->id);
     }
 
     // covers
-    if (std::get<1>(res)) {
+    if (res.coveredBy()) {
       writeNotCrosses(t, a->id, 0, b->id, b->subId);
       writeCovers(t, b->id, a->id, 0);
 
@@ -2976,21 +2865,21 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
     }
 
     // touches
-    if (std::get<2>(res)) {
+    if (res.touches()) {
       writeTouches(t, a->id, 0, b->id, b->subId);
-    } else if (std::get<0>(res)) {
+    } else if (res.intersects()) {
       writeNotTouches(t, a->id, 0, b->id, b->subId);
     }
 
     // crosses
-    if (std::get<4>(res)) {
+    if (res.crosses1vs1()) {
       writeNotOverlaps(t, a->id, 0, b->id, b->subId);
       writeCrosses(t, a->id, 0, b->id, b->subId);
     }
 
     // overlaps
-    if (std::get<3>(res)) {
-      if (!std::get<1>(res)) writeNotCrosses(t, a->id, 0, b->id, b->subId);
+    if (res.overlaps1()) {
+      if (!res.coveredBy()) writeNotCrosses(t, a->id, 0, b->id, b->subId);
       writeOverlaps(t, a->id, 0, b->id, b->subId);
     }
   } else if (isSimpleLine(cur.type) && isSimpleLine(sv.type)) {
@@ -3008,15 +2897,15 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
     _stats[t].totalComps++;
     auto totTime = TIME();
 
-    auto res = check({cur.point, cur.point2}, {sv.point, sv.point2}, t);
+    auto res = DE9IMCheck({cur.point, cur.point2}, {sv.point, sv.point2}, t);
 
     _stats[t].timeHisto(2, TOOK(totTime));
 
-    if (std::get<0>(res)) {
+    if (res.intersects()) {
       writeIntersect(t, a->id, b->id);
     }
 
-    if (std::get<1>(res)) {
+    if (res.coveredBy()) {
       writeCovers(t, b->id, a->id, 0);
 
       if (fabs(util::geo::len(LineSegment<int32_t>(cur.point, cur.point2)) -
@@ -3028,17 +2917,17 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
     }
 
     // touches
-    if (std::get<2>(res)) {
+    if (res.touches()) {
       writeTouches(t, a->id, 0, b->id, 0);
     }
 
     // crosses
-    if (std::get<4>(res)) {
+    if (res.crosses1vs1()) {
       writeCrosses(t, a->id, 0, b->id, 0);
     }
 
     // overlaps
-    if (std::get<3>(res)) {
+    if (res.overlaps1()) {
       writeOverlaps(t, a->id, 0, b->id, 0);
     }
   } else if (isPoint(cur.type) && isPoint(sv.type)) {
