@@ -1722,52 +1722,6 @@ util::geo::DE9IMatrix Sweeper::DE9IMCheck(const LineSegment<int32_t>& a,
 }
 
 // _____________________________________________________________________________
-std::pair<bool, bool> Sweeper::check(const I32Point& a, const Area* b,
-                                     size_t t) const {
-  if (_cfg.useBoxIds) {
-    auto ts = TIME();
-    auto r = boxIdIsect({{1, 0}, {getBoxId(a), 0}}, b->boxIds);
-    _stats[t].timeBoxIdIsectAreaPoint += TOOK(ts);
-
-    // all boxes of a are fully contained in b, we are contained
-    if (r.first) return {1, 1};
-
-    // no box shared, we cannot contain or intersect
-    if (r.first + r.second == 0) return {0, 0};
-  }
-
-  if (_cfg.useOBB && b->obb.getOuter().rawRing().size()) {
-    auto ts = TIME();
-    auto r = containsCovers(a, b->obb);
-    _stats[t].timeOBBIsectAreaPoint += TOOK(ts);
-    if (!std::get<1>(r)) return {0, 0};
-  }
-
-  if (_cfg.useInnerOuter && !b->outer.empty()) {
-    auto ts = TIME();
-    auto r = containsCovers(a, b->outer);
-    _stats[t].timeInnerOuterCheckAreaPoint += TOOK(ts);
-    _stats[t].innerOuterChecksAreaPoint++;
-    if (!std::get<1>(r)) return {0, 0};
-  }
-
-  if (_cfg.useInnerOuter && !b->inner.empty()) {
-    auto ts = TIME();
-    auto r = containsCovers(a, b->inner);
-    _stats[t].timeInnerOuterCheckAreaPoint += TOOK(ts);
-    _stats[t].innerOuterChecksAreaPoint++;
-    if (std::get<1>(r)) return {1, 1};
-  }
-
-  auto ts = TIME();
-  auto res = containsCovers(a, b->geom);
-  _stats[t].timeFullGeoCheckAreaPoint += TOOK(ts);
-  _stats[t].fullGeoChecksAreaPoint++;
-
-  return res;
-}
-
-// _____________________________________________________________________________
 util::geo::DE9IMatrix Sweeper::DE9IMCheck(const I32Point& a, const Line* b,
                                           size_t t) const {
   _stats[t].totalComps++;
@@ -2974,17 +2928,17 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
     _stats[t].totalComps++;
     auto totTime = TIME();
 
-    auto res = check(a, b.get(), t);
+    auto res = DE9IMCheck(a, b.get(), t);
 
     _stats[t].timeHisto(b->geom.getOuter().rawRing().size(), TOOK(totTime));
 
-    if (res.second) {
+    if (res.coveredBy()) {
       auto a = getPoint(cur.id, cur.type, cur.large ? -1 : t);
 
       writeCovers(t, b->id, a->id, a->subId);
       writeIntersect(t, a->id, b->id);
 
-      if (res.first) {
+      if (res.within()) {
         writeContains(t, b->id, a->id, a->subId);
 
         if (_refs.count(a->id) || a->subId != 0) {

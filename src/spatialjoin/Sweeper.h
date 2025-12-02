@@ -456,8 +456,6 @@ class Sweeper {
   Area areaFromSimpleArea(const SimpleArea* sa) const;
   Line lineFromSimpleLine(const SimpleLine* sl) const;
 
-  std::pair<bool, bool> check(const util::geo::I32Point& a, const Area* b,
-                              size_t t) const;
   std::tuple<bool, bool> check(const util::geo::I32Point& a, const Line* b,
                                size_t t) const;
 
