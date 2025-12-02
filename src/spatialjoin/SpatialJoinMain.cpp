@@ -21,6 +21,7 @@ using util::geo::I32MultiLine;
 using util::geo::I32MultiPolygon;
 using util::geo::I32Point;
 using util::geo::I32Polygon;
+using util::geo::DE9IMFilter;
 using util::LogLevel::DEBUG;
 using util::LogLevel::ERROR;
 using util::LogLevel::INFO;
@@ -163,6 +164,7 @@ int main(int argc, char** argv) {
   size_t numCaches = NUM_THREADS;
   size_t geomCacheMaxSizeBytes = DEFAULT_CACHE_SIZE;
   size_t geomCacheMaxNumElements = DEFAULT_CACHE_NUM_ELEMENTS;
+  DE9IMFilter de9imFilter;
 
   std::vector<std::string> inputFiles;
 
@@ -206,6 +208,8 @@ int main(int argc, char** argv) {
           state = 15;
         } else if (cur == "--cache-max-elements") {
           state = 16;
+        } else if (cur == "--de9im-filter") {
+          state = 17;
         } else if (cur == "--de9im") {
           computeDE9IM = true;
         } else if (cur == "--no-box-ids") {
@@ -294,6 +298,12 @@ int main(int argc, char** argv) {
         std::stringstream(cur) >> geomCacheMaxNumElements;
         state = 0;
         break;
+      case 17:
+        if (cur.size() < 9) cur.insert(cur.size(), 9 - cur.size(), '*');
+        std::cout << cur << std::endl;
+        de9imFilter = cur.c_str();
+        state = 0;
+        break;
     }
   }
 
@@ -333,6 +343,7 @@ int main(int argc, char** argv) {
                             noGeometryChecks,
                             withinDist,
                             computeDE9IM,
+                            de9imFilter,
                             writeRelCb,
                             {},
                             {},

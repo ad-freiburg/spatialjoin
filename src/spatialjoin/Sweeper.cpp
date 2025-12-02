@@ -1411,6 +1411,21 @@ util::geo::DE9IMatrix Sweeper::DE9IMCheck(const Area* a, const Area* b,
 
     // no box shared, we cannot have any spatial relation
     if (r.first + r.second == 0) return util::geo::MFF2FF1212;
+
+    if (_dontNeedFullDE9IM) {
+      // at least one box is fully contained, so we intersect
+      // but the number of fully and partially contained boxes is smaller
+      // than the number of boxes of A, so we cannot possible be contained
+      if (r.first + r.second < a->boxIds.front().first && r.first > 0) {
+        // we surely overlap if the area of b is greater than the area of a
+        // or if the bounding box of b is not in a
+        // otherwise, we cannot be sure
+        if (b->area > a->area || !util::geo::contains(b->box, a->box))
+          // this is an incomplete matrix by design, specified to return true
+          // for only intersects() and overlaps02()
+          return util::geo::MTFTFFFTFF;
+      }
+    }
   }
 
   if (_cfg.useOBB) {
@@ -1463,97 +1478,7 @@ util::geo::DE9IMatrix Sweeper::DE9IMCheck(const Area* a, const Area* b,
   }
 
   auto ts = TIME();
-  auto res = DE9IM(b->geom, b->box, b->outerArea, a->geom, a->box, a->outerArea)
-                 .transpose();
-  _stats[t].timeFullGeoCheckAreaArea += TOOK(ts);
-  _stats[t].fullGeoChecksAreaArea++;
-  return res;
-}
-
-// _____________________________________________________________________________
-GeomCheckRes Sweeper::check(const Area* a, const Area* b, size_t t) const {
-  // cheap equivalence check
-  if (a->box == b->box && a->area == b->area && a->geom == b->geom) {
-    // equivalent!
-    return {1, 1, 1, 0, 0};
-  }
-
-  if (_cfg.useBoxIds) {
-    auto ts = TIME();
-    auto r = boxIdIsect(a->boxIds, b->boxIds);
-    _stats[t].timeBoxIdIsectAreaArea += TOOK(ts);
-
-    // all boxes of a are fully contained in b, we intersect and we are
-    // contained and we do not touch or overlap
-    if (r.first == a->boxIds.front().first) return {1, 1, 1, 0, 0};
-
-    // no box shared, we cannot have any spatial relation
-    if (r.first + r.second == 0) return {0, 0, 0, 0, 0};
-
-    // at least one box is fully contained, so we intersect
-    // but the number of fully and partially contained boxes is smaller
-    // than the number of boxes of A, so we cannot possible be contained
-    if (r.first + r.second < a->boxIds.front().first && r.first > 0) {
-      // we surely overlap if the area of b is greater than the area of a
-      // or if the bounding box of b is not in a
-      // otherwise, we cannot be sure
-      if (b->area > a->area || !util::geo::contains(b->box, a->box))
-        return {1, 0, 0, 0, 1};
-    }
-  }
-
-  if (_cfg.useOBB) {
-    if (!a->obb.empty() && !b->obb.empty()) {
-      auto ts = TIME();
-      auto r = util::geo::intersectsContainsCovers(a->obb, b->obb);
-      _stats[t].timeOBBIsectAreaArea += TOOK(ts);
-      if (!std::get<0>(r)) return {0, 0, 0, 0, 0};
-    }
-  }
-
-  if (_cfg.useInnerOuter && !a->outer.empty() && !b->outer.empty()) {
-    auto ts = TIME();
-    auto r = util::geo::intersectsContainsCovers(
-        a->outer, a->outerBox, a->outerOuterArea, b->outer, b->outerBox,
-        b->outerOuterArea);
-    _stats[t].timeInnerOuterCheckAreaArea += TOOK(ts);
-    _stats[t].innerOuterChecksAreaArea++;
-    if (!std::get<0>(r)) return {0, 0, 0, 0, 0};
-  }
-
-  if (_cfg.useInnerOuter && !a->outer.empty() && !b->inner.empty()) {
-    auto ts = TIME();
-    auto r = util::geo::intersectsContainsCovers(
-        a->outer, a->outerBox, a->outerOuterArea, b->inner, b->innerBox,
-        b->innerOuterArea);
-    _stats[t].timeInnerOuterCheckAreaArea += TOOK(ts);
-    _stats[t].innerOuterChecksAreaArea++;
-    if (std::get<1>(r)) return {1, 1, 1, 0, 0};
-  }
-
-  if (_cfg.useInnerOuter && a->outer.empty() && !b->outer.empty()) {
-    auto ts = TIME();
-    auto r = util::geo::intersectsContainsCovers(a->geom, a->box, a->outerArea,
-                                                 b->outer, b->outerBox,
-                                                 b->outerOuterArea);
-    _stats[t].timeInnerOuterCheckAreaArea += TOOK(ts);
-    _stats[t].innerOuterChecksAreaArea++;
-    if (!std::get<0>(r)) return {0, 0, 0, 0, 0};
-  }
-
-  if (_cfg.useInnerOuter && a->outer.empty() && !b->inner.empty()) {
-    auto ts = TIME();
-    auto r = util::geo::intersectsContainsCovers(a->geom, a->box, a->outerArea,
-                                                 b->inner, b->innerBox,
-                                                 b->innerOuterArea);
-    _stats[t].timeInnerOuterCheckAreaArea += TOOK(ts);
-    _stats[t].innerOuterChecksAreaArea++;
-    if (std::get<1>(r)) return {1, 1, 1, 0, 0};
-  }
-
-  auto ts = TIME();
-  auto res = intersectsContainsCovers(a->geom, a->box, a->outerArea, b->geom,
-                                      b->box, b->outerArea);
+  auto res = DE9IM(a->geom, a->box, a->outerArea, b->geom, b->box, b->outerArea);
   _stats[t].timeFullGeoCheckAreaArea += TOOK(ts);
   _stats[t].fullGeoChecksAreaArea++;
   return res;
@@ -2667,24 +2592,24 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
     _stats[t].totalComps++;
     auto totTime = TIME();
 
-    auto res = check(a.get(), b.get(), t);
+    auto res = DE9IMCheck(a.get(), b.get(), t);
 
     _stats[t].timeHisto(std::max(a->geom.getOuter().rawRing().size(),
                                  b->geom.getOuter().rawRing().size()),
                         TOOK(totTime));
 
     // intersects
-    if (std::get<0>(res)) {
+    if (res.intersects()) {
       writeIntersect(t, a->id, b->id);
     }
 
     // contained
-    if (std::get<1>(res)) {
+    if (res.within()) {
       writeContains(t, b->id, a->id, a->subId);
     }
 
     // covered
-    if (std::get<2>(res)) {
+    if (res.coveredBy()) {
       writeCovers(t, b->id, a->id, a->subId);
 
       if (fabs(a->area - b->area) < util::geo::EPSILON) {
@@ -2700,18 +2625,18 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
     }
 
     // touches
-    if (std::get<3>(res)) {
+    if (res.touches()) {
       writeTouches(t, a->id, a->subId, b->id, b->subId);
-    } else if (std::get<0>(res)) {
+    } else if (res.intersects()) {
       // if a is not a multi-geom, and is completey covered, we wont
       // be finding a touch as we assume non-self-intersecting geoms
-      if (_refs.count(a->id) || !(a->subId == 0 && std::get<2>(res))) {
+      if (_refs.count(a->id) || !(a->subId == 0 && res.coveredBy())) {
         writeNotTouches(t, a->id, a->subId, b->id, b->subId);
       }
     }
 
     // overlaps
-    if (std::get<4>(res)) {
+    if (res.overlaps02()) {
       _relStats[t].overlaps++;
       writeRel(t, a->id, b->id, _cfg.sepOverlaps);
       _relStats[t].overlaps++;
