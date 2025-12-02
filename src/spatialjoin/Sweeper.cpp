@@ -1634,55 +1634,6 @@ util::geo::DE9IMatrix Sweeper::DE9IMCheck(const LineSegment<int32_t>& a,
 }
 
 // _____________________________________________________________________________
-GeomCheckRes Sweeper::check(const LineSegment<int32_t>& a, const Area* b,
-                            size_t t) const {
-  if (_cfg.useBoxIds) {
-    auto ts = TIME();
-    auto r = boxIdIsect({{1, 0}, {getBoxId(a.first), 0}}, b->boxIds);
-    _stats[t].timeBoxIdIsectAreaLine += TOOK(ts);
-
-    // all boxes of a are fully contained in b, we intersect and we are
-    // contained
-    if (r.first == 1) return {1, 1, 1, 0, 0};
-
-    // no box shared, we cannot contain or intersect
-    if (r.first + r.second == 0) return {0, 0, 0, 0, 0};
-  }
-
-  if (_cfg.useOBB && !b->obb.empty()) {
-    auto ts = TIME();
-    auto r = intersectsContainsCovers(I32XSortedLine(a), b->obb);
-    _stats[t].timeOBBIsectAreaLine += TOOK(ts);
-    if (!std::get<0>(r)) return {0, 0, 0, 0, 0};
-  }
-
-  if (_cfg.useInnerOuter && !b->outer.empty()) {
-    auto ts = TIME();
-    auto r = util::geo::intersectsContainsCovers(
-        I32XSortedLine(a), getBoundingBox(a), b->outer, b->outerBox);
-    _stats[t].timeInnerOuterCheckAreaLine += TOOK(ts);
-    _stats[t].innerOuterChecksAreaLine++;
-    if (!std::get<0>(r)) return {0, 0, 0, 0, 0};
-  }
-
-  if (_cfg.useInnerOuter && !b->inner.empty()) {
-    auto ts = TIME();
-    auto r = util::geo::intersectsContainsCovers(
-        I32XSortedLine(a), getBoundingBox(a), b->inner, b->box);
-    _stats[t].timeInnerOuterCheckAreaLine += TOOK(ts);
-    _stats[t].innerOuterChecksAreaLine++;
-    if (std::get<1>(r)) return {1, 1, 1, 0, 0};
-  }
-
-  auto ts = TIME();
-  auto res = intersectsContainsCovers(I32XSortedLine(a), getBoundingBox(a),
-                                      b->geom, b->box);
-  _stats[t].timeFullGeoCheckAreaLine += TOOK(ts);
-  _stats[t].fullGeoChecksAreaLine++;
-  return res;
-}
-
-// _____________________________________________________________________________
 util::geo::DE9IMatrix Sweeper::DE9IMCheck(const LineSegment<int32_t>& a,
                                           const LineSegment<int32_t>& b,
                                           size_t t) const {
@@ -2563,36 +2514,36 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
     _stats[t].totalComps++;
     auto totTime = TIME();
 
-    auto res = check({cur.point, cur.point2}, b.get(), t);
+    auto res = DE9IMCheck({cur.point, cur.point2}, b.get(), t);
 
     _stats[t].timeHisto(b->geom.getOuter().rawRing().size(), TOOK(totTime));
 
     // intersects
-    if (std::get<0>(res)) {
+    if (res.intersects()) {
       writeIntersect(t, a->id, b->id);
     }
 
     // contains
-    if (std::get<1>(res)) {
+    if (res.within()) {
       writeContains(t, b->id, a->id, 0);
     }
 
     // covers
-    if (std::get<2>(res)) {
+    if (res.coveredBy()) {
       writeCovers(t, b->id, a->id, 0);
     }
 
     // touches
-    if (std::get<3>(res)) {
+    if (res.touches()) {
       writeTouches(t, a->id, 0, b->id, b->subId);
-    } else if (std::get<0>(res)) {
-      if (_refs.count(a->id) || !(std::get<2>(res))) {
+    } else if (res.intersects()) {
+      if (_refs.count(a->id) || !(res.coveredBy())) {
         writeNotTouches(t, a->id, 0, b->id, b->subId);
       }
     }
 
     // crosses
-    if (std::get<4>(res)) {
+    if (res.crosses1vs2()) {
       _relStats[t].crosses++;
       writeRel(t, a->id, b->id, _cfg.sepCrosses);
     }
@@ -2671,36 +2622,36 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
     _stats[t].totalComps++;
     auto totTime = TIME();
 
-    auto res = check({sv.point, sv.point2}, a.get(), t);
+    auto res = DE9IMCheck({sv.point, sv.point2}, a.get(), t);
 
     _stats[t].timeHisto(a->geom.getOuter().rawRing().size(), TOOK(totTime));
 
     // intersects
-    if (std::get<0>(res)) {
+    if (res.intersects()) {
       writeIntersect(t, a->id, b->id);
     }
 
     // contains
-    if (std::get<1>(res)) {
+    if (res.within()) {
       writeContains(t, a->id, b->id, 0);
     }
 
     // covers
-    if (std::get<2>(res)) {
+    if (res.coveredBy()) {
       writeCovers(t, a->id, b->id, 0);
     }
 
     // touches
-    if (std::get<3>(res)) {
+    if (res.touches()) {
       writeTouches(t, a->id, a->subId, b->id, 0);
-    } else if (std::get<0>(res)) {
-      if (_refs.count(a->id) || !std::get<2>(res)) {
+    } else if (res.intersects()) {
+      if (_refs.count(a->id) || !res.coveredBy()) {
         writeNotTouches(t, a->id, a->subId, b->id, 0);
       }
     }
 
     // crosses
-    if (std::get<4>(res)) {
+    if (res.crosses1vs2()) {
       _relStats[t].crosses++;
       writeRel(t, b->id, a->id, _cfg.sepCrosses);
     }
