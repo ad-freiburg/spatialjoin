@@ -456,7 +456,6 @@ class Sweeper {
   Area areaFromSimpleArea(const SimpleArea* sa) const;
   Line lineFromSimpleLine(const SimpleLine* sl) const;
 
-  GeomCheckRes check(const Line* a, const Area* b, size_t t) const;
   GeomCheckRes check(const util::geo::LineSegment<int32_t>& a, const Area* b,
                      size_t t) const;
   GeomCheckRes check(const Line* a, const Line* b, size_t t) const;
