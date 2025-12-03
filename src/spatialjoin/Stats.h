@@ -46,8 +46,6 @@ struct Stats {
 
   size_t totalComps = 0;
 
-  uint64_t timeSums[7] = {0, 0, 0, 0, 0, 0, 0};
-
   double areaSizeSum = 0;
   size_t areaCmps = 0;
 
@@ -57,7 +55,6 @@ struct Stats {
   size_t anchorSum = 0;
 
   std::string toString();
-  void timeHisto(size_t numPoints, uint64_t time);
 };
 
 inline std::string Stats::toString() {
@@ -172,44 +169,6 @@ inline std::string Stats::toString() {
   ss << "time for output writing: " << t << " s (" << ((t / sum) * 100.0)
      << "%)\n";
 
-  double histoSum = ((timeSums[0] + timeSums[1] + timeSums[2] + timeSums[3] +
-                      timeSums[4] + timeSums[5] + timeSums[6]) *
-                     1.0) /
-                    1000000000.0;
-
-  t = (timeSums[6] * 1.0) / 1000000000.0;
-  ss << "\n";
-  ss << "comparisons inv. > 1000000 points on one side: " << t << " s ("
-     << ((t / histoSum) * 100.0) << "%)\n";
-
-  t = (timeSums[5] * 1.0) / 1000000000.0;
-  ss << "comparisons inv. > 100000 points on one side: " << t << " s ("
-     << ((t / histoSum) * 100.0) << "%)\n";
-
-  t = (timeSums[4] * 1.0) / 1000000000.0;
-  ss << "comparisons inv. > 10000 points on one side: " << t << " s ("
-     << ((t / histoSum) * 100.0) << "%)\n";
-
-  t = (timeSums[3] * 1.0) / 1000000000.0;
-  ss << "comparisons inv. > 1000 points on one side: " << t << " s ("
-     << ((t / histoSum) * 100.0) << "%)\n";
-
-  t = (timeSums[2] * 1.0) / 1000000000.0;
-  ss << "comparisons inv. > 100 points on one side: " << t << " s ("
-     << ((t / histoSum) * 100.0) << "%)\n";
-
-  t = (timeSums[1] * 1.0) / 1000000000.0;
-  ss << "comparisons inv. > 10 points on one side: " << t << " s ("
-     << ((t / histoSum) * 100.0) << "%)\n";
-
-  t = (timeSums[0] * 1.0) / 1000000000.0;
-  ss << "comparisons inv. > 1 points on one side: " << t << " s ("
-     << ((t / histoSum) * 100.0) << "%)\n";
-
-  t = (timeSums[0] * 1.0) / 1000000000.0;
-  ss << "comparisons inv. > 1 points on one side: " << t << " s ("
-     << ((t / histoSum) * 100.0) << "%)\n";
-
   ss << "\n";
 
   ss << "    Avg. max surface area between cmps: " << std::fixed
@@ -223,36 +182,6 @@ inline std::string Stats::toString() {
   ss << "\n    SUM: " << sum << " s\n";
   ss << "    TOTAL COMPARISONS (after bbox / diag box filter): " << totalComps;
   return ss.str();
-}
-
-inline void Stats::timeHisto(size_t numPoints, uint64_t time) {
-  if (numPoints > 1000000) {
-    timeSums[6] += time;
-    return;
-  }
-  if (numPoints > 100000) {
-    timeSums[5] += time;
-    return;
-  }
-  if (numPoints > 10000) {
-    timeSums[4] += time;
-    return;
-  }
-  if (numPoints > 1000) {
-    timeSums[3] += time;
-    return;
-  }
-  if (numPoints > 100) {
-    timeSums[2] += time;
-    return;
-  }
-  if (numPoints > 10) {
-    timeSums[1] += time;
-    return;
-  }
-
-  timeSums[0] += time;
-  return;
 }
 
 inline Stats operator+(const Stats& a, const Stats& b) {
@@ -288,10 +217,6 @@ inline Stats operator+(const Stats& a, const Stats& b) {
       a.innerOuterChecksAreaLine + b.innerOuterChecksAreaLine,
       a.innerOuterChecksAreaPoint + b.innerOuterChecksAreaPoint,
       a.totalComps + b.totalComps,
-      {a.timeSums[0] + b.timeSums[0], a.timeSums[1] + b.timeSums[1],
-       a.timeSums[2] + b.timeSums[2], a.timeSums[3] + b.timeSums[3],
-       a.timeSums[4] + b.timeSums[4], a.timeSums[5] + b.timeSums[5],
-       a.timeSums[6] + b.timeSums[6]},
       a.areaSizeSum + b.areaSizeSum,
       a.areaCmps + b.areaCmps,
       a.lineLenSum + b.lineLenSum,

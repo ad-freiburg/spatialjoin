@@ -226,6 +226,7 @@ class Sweeper {
                          cache, tmpPrefix),
         _cache(cache),
         _jobs(100),
+        _numSides(1),
         _dontNeedFullDE9IM(!_cfg.computeDE9IM &&
                            _cfg.de9imFilter == util::geo::FANY) {
     // OUTFACTOR 1
@@ -299,6 +300,8 @@ class Sweeper {
   void refDuplicates();
 
   size_t numElements() const { return _curSweepId / 2; }
+
+  void setNumSides(uint8_t numSides) { _numSides = numSides; }
 
   void setFilterBox(const util::geo::I32Box& filterBox) {
     _filterBox = filterBox;
@@ -439,7 +442,7 @@ class Sweeper {
 
   util::JobQueue<JobBatch> _jobs;
 
-  uint8_t _numSides = 1;
+  std::atomic<uint8_t> _numSides;
 
   std::vector<std::mutex> _mutsEquals;
   std::vector<std::mutex> _mutsCovers;

@@ -14,6 +14,7 @@
 
 using sj::ParseBatch;
 using sj::Sweeper;
+using util::geo::DE9IMFilter;
 using util::geo::DLine;
 using util::geo::DPoint;
 using util::geo::I32Line;
@@ -21,7 +22,6 @@ using util::geo::I32MultiLine;
 using util::geo::I32MultiPolygon;
 using util::geo::I32Point;
 using util::geo::I32Polygon;
-using util::geo::DE9IMFilter;
 using util::LogLevel::DEBUG;
 using util::LogLevel::ERROR;
 using util::LogLevel::INFO;
@@ -108,12 +108,14 @@ void printHelp(int argc, char** argv) {
       << "  --cache-max-size (default: " + std::to_string(DEFAULT_CACHE_SIZE) +
              ")"
       << "maximum approx. size in bytes of cache per type and\n"
-      << std::setw(42) << " " << "thread, 0 = unlimited\n"
+      << std::setw(42) << " "
+      << "thread, 0 = unlimited\n"
       << std::setw(42)
       << "  --cache-max-elements (default: " +
              std::to_string(DEFAULT_CACHE_NUM_ELEMENTS) + ")"
       << "maximum number of elements per cache, type and thread,\n"
-      << std::setw(42) << " " << "0 = unlimited\n"
+      << std::setw(42) << " "
+      << "0 = unlimited\n"
       << std::setw(42) << "  --no-geometry-checks"
       << "do not compute geometric relations, only report number of\n"
       << std::setw(42) << " "
@@ -127,9 +129,6 @@ void printHelp(int argc, char** argv) {
 
 // _____________________________________________________________________________
 int main(int argc, char** argv) {
-  // disable output buffering for standard output
-  setbuf(stdout, NULL);
-
   // initialize randomness
   srand(time(NULL) + rand());  // NOLINT
 
@@ -307,6 +306,13 @@ int main(int argc, char** argv) {
     }
   }
 
+  if (de9imFilter.maxExteriorDim() < 2) {
+    if (verbose)
+      LOGTO(INFO, std::cerr) << "Skipping all comparisons because of DE-9IM "
+                                "filter with EE required to be 1, 0 or F";
+    return 0;
+  }
+
   const static size_t CACHE_SIZE = 1024 * 1024;
   unsigned char* buf = new unsigned char[CACHE_SIZE];
   size_t len;
@@ -360,6 +366,7 @@ int main(int argc, char** argv) {
 
   Sweeper sweeper(sweeperCfg, cache);
 
+
   sweeper.log("Parsing input geometries...");
   auto ts = TIME();
 
@@ -372,6 +379,10 @@ int main(int argc, char** argv) {
                 << std::endl;
       exit(1);
     }
+
+    // already set number of sides to 2, if we have two files
+    sweeper.setNumSides(inputFiles.size());
+
     for (size_t i = 0; i < inputFiles.size(); i++) {
       if (util::endsWith(inputFiles[i], ".bz2")) {
 #ifndef SPATIALJOIN_NO_BZIP2
@@ -459,4 +470,6 @@ int main(int argc, char** argv) {
   sweeper.log("done (" + std::to_string(TOOK(ts) / 1000000000.0) + "s).");
 
   delete[] buf;
+
+  return 0;
 }

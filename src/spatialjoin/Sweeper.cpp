@@ -368,6 +368,20 @@ I32Box Sweeper::add(const I32Line& line, const std::string& gidR, size_t subid,
                     bool side, WriteBatch& batch) const {
   if (line.size() < 2) return {};
 
+  if (subid == 0 && _cfg.de9imFilter != util::geo::FANY) {
+    // drop certain geometries if we can be sure that they will never match
+    // the given DE-9IM filter
+    if (_cfg.de9imFilter.minInteriorDim() > 1) return {};
+    if (_cfg.de9imFilter.minBoundaryDim() > 0) return {};
+    if (side && _cfg.de9imFilter.minRightInteriorDim() > 1) return {};
+    if (side && _cfg.de9imFilter.minRightBoundaryDim() > 0) return {};
+    if (_numSides > 1 && !side && _cfg.de9imFilter.minLeftInteriorDim() > 1)
+      return {};
+    if (_numSides > 1 && !side && _cfg.de9imFilter.minLeftBoundaryDim() > 0)
+      return {};
+  }
+  if (_cfg.de9imFilter.maxExteriorDim() < 2) return {};
+
   std::string gid = (side ? ("B" + gidR) : ("A" + gidR));
 
   WriteCand cur;
@@ -497,6 +511,21 @@ I32Box Sweeper::add(const I32Point& point, const std::string& gid, bool side,
 // _____________________________________________________________________________
 I32Box Sweeper::add(const I32Point& point, const std::string& gidR,
                     size_t subid, bool side, WriteBatch& batch) const {
+  if (subid == 0 && _cfg.de9imFilter != util::geo::FANY) {
+    // drop certain geometries if we can be sure that they will never match
+    // the given DE-9IM filter
+    if (_cfg.de9imFilter.minInteriorDim() > 0) return {};
+    if (_cfg.de9imFilter.minBoundaryDim() >= 0) return {};
+    if (side && _cfg.de9imFilter.minRightInteriorDim() > 0) return {};
+    if (side && _cfg.de9imFilter.minRightBoundaryDim() >= 0) return {};
+    if (_numSides > 1 && !side && _cfg.de9imFilter.minLeftInteriorDim() > 0)
+      return {};
+    if (_numSides > 1 && !side && _cfg.de9imFilter.minLeftBoundaryDim() >= 0)
+      return {};
+  }
+
+  if (_cfg.de9imFilter.maxExteriorDim() < 2) return {};
+
   std::string gid = (side ? ("B" + gidR) : ("A" + gidR));
 
   WriteCand cur;
@@ -838,11 +867,15 @@ void Sweeper::multiOut(size_t tOut, const std::string& gidA) {
     }
 
     for (const auto& a : subDE9IM) {
-      writeRel(tOut, gidA, a.first, "\t" + a.second.toString() + "\t");
-      _relStats[tOut].de9im++;
-      writeRel(tOut, a.first, gidA,
-               "\t" + a.second.transpose().toString() + "\t");
-      _relStats[tOut].de9im++;
+      if (_cfg.de9imFilter.matches(a.second)) {
+        writeRel(tOut, gidA, a.first, "\t" + a.second.toString() + "\t");
+        _relStats[tOut].de9im++;
+      }
+      if (_cfg.de9imFilter.matches(a.second.transpose())) {
+        writeRel(tOut, a.first, gidA,
+                 "\t" + a.second.transpose().toString() + "\t");
+        _relStats[tOut].de9im++;
+      }
     }
     return;
   }
@@ -1765,17 +1798,25 @@ void Sweeper::writeDE9IM(size_t t, const std::string& a, size_t aSub,
     if (aSub > 0 && bSub == 0 && de9im.covers()) {
       // no need to lock and track the multigeometry here, we can directly
       // write that a contains b
-      writeRel(t, a, b, "\t" + de9im.toString() + "\t");
-      _relStats[t].de9im++;
-      writeRel(t, b, a, "\t" + de9im.transpose().toString() + "\t");
-      _relStats[t].de9im++;
+      if (_cfg.de9imFilter.matches(de9im)) {
+        _relStats[t].de9im++;
+        writeRel(t, a, b, "\t" + de9im.toString() + "\t");
+      }
+      if (_cfg.de9imFilter.matches(de9im.transpose())) {
+        _relStats[t].de9im++;
+        writeRel(t, b, a, "\t" + de9im.transpose().toString() + "\t");
+      }
     } else if (bSub > 0 && aSub == 0 && de9im.transpose().covers()) {
       // no need to lock and track the multigeometry here, we can directly
       // write that b contains a
-      writeRel(t, a, b, "\t" + de9im.toString() + "\t");
-      _relStats[t].de9im++;
-      writeRel(t, b, a, "\t" + de9im.transpose().toString() + "\t");
-      _relStats[t].de9im++;
+      if (_cfg.de9imFilter.matches(de9im)) {
+        _relStats[t].de9im++;
+        writeRel(t, a, b, "\t" + de9im.toString() + "\t");
+      }
+      if (_cfg.de9imFilter.matches(de9im.transpose())) {
+        _relStats[t].de9im++;
+        writeRel(t, b, a, "\t" + de9im.transpose().toString() + "\t");
+      }
     } else if ((bSub > 0 || aSub > 0)) {
       std::unique_lock<std::mutex> lock(_mutsDE9IM[t]);
       if (bSub > 0) {
@@ -1793,10 +1834,14 @@ void Sweeper::writeDE9IM(size_t t, const std::string& a, size_t aSub,
         }
       }
     } else {
-      _relStats[t].de9im++;
-      _relStats[t].de9im++;
-      writeRel(t, a, b, "\t" + de9im.toString() + "\t");
-      writeRel(t, b, a, "\t" + de9im.transpose().toString() + "\t");
+      if (_cfg.de9imFilter.matches(de9im)) {
+        _relStats[t].de9im++;
+        writeRel(t, a, b, "\t" + de9im.toString() + "\t");
+      }
+      if (_cfg.de9imFilter.matches(de9im.transpose())) {
+        _relStats[t].de9im++;
+        writeRel(t, b, a, "\t" + de9im.transpose().toString() + "\t");
+      }
     }
   }
 
@@ -2319,13 +2364,8 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
     _stats[t].anchorSum += std::max(a->geom.size() / 2, b->geom.size() / 2);
 
     _stats[t].totalComps++;
-    auto totTime = TIME();
 
     auto res = DE9IMCheck(a.get(), b.get(), t);
-
-    _stats[t].timeHisto(std::max(a->geom.getOuter().rawRing().size(),
-                                 b->geom.getOuter().rawRing().size()),
-                        TOOK(totTime));
 
     // intersects
     if (res.intersects()) {
@@ -2389,13 +2429,8 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
     _stats[t].anchorSum += std::max(a->geom.size() / 2, b->geom.size() / 2);
 
     _stats[t].totalComps++;
-    auto totTime = TIME();
 
     auto res = DE9IMCheck(a.get(), b.get(), t);
-
-    _stats[t].timeHisto(
-        std::max(a->geom.rawLine().size(), b->geom.getOuter().rawRing().size()),
-        TOOK(totTime));
 
     // intersects
     if (res.intersects()) {
@@ -2446,11 +2481,8 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
     _stats[t].anchorSum += std::max((size_t)2, b->geom.size() / 2);
 
     _stats[t].totalComps++;
-    auto totTime = TIME();
 
     auto res = DE9IMCheck({cur.point, cur.point2}, b.get(), t);
-
-    _stats[t].timeHisto(b->geom.getOuter().rawRing().size(), TOOK(totTime));
 
     // intersects
     if (res.intersects()) {
@@ -2499,13 +2531,8 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
     _stats[t].anchorSum += std::max(a->geom.size() / 2, b->geom.size() / 2);
 
     _stats[t].totalComps++;
-    auto totTime = TIME();
 
     auto res = DE9IMCheck(b.get(), a.get(), t);
-
-    _stats[t].timeHisto(
-        std::max(a->geom.getOuter().rawRing().size(), b->geom.rawLine().size()),
-        TOOK(totTime));
 
     // intersects
     if (res.intersects()) {
@@ -2554,11 +2581,8 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
     _stats[t].anchorSum += std::max(a->geom.size() / 2, (size_t)2);
 
     _stats[t].totalComps++;
-    auto totTime = TIME();
 
     auto res = DE9IMCheck({sv.point, sv.point2}, a.get(), t);
-
-    _stats[t].timeHisto(a->geom.getOuter().rawRing().size(), TOOK(totTime));
 
     // intersects
     if (res.intersects()) {
@@ -2603,13 +2627,8 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
     _stats[t].anchorSum += std::max(a->geom.size() / 2, b->geom.size() / 2);
 
     _stats[t].totalComps++;
-    auto totTime = TIME();
 
     auto res = DE9IMCheck(a.get(), b.get(), t);
-
-    _stats[t].timeHisto(
-        std::max(a->geom.rawLine().size(), b->geom.rawLine().size()),
-        TOOK(totTime));
 
     // intersects
     if (res.intersects()) {
@@ -2664,11 +2683,8 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
     _stats[t].anchorSum += std::max(a->geom.size() / 2, (size_t)2);
 
     _stats[t].totalComps++;
-    auto totTime = TIME();
 
     auto res = DE9IMCheck({sv.point, sv.point2}, a.get(), t).transpose();
-
-    _stats[t].timeHisto(a->geom.rawLine().size(), TOOK(totTime));
 
     // intersects
     if (res.intersects()) {
@@ -2723,11 +2739,8 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
     _stats[t].anchorSum += std::max(b->geom.size() / 2, (size_t)2);
 
     _stats[t].totalComps++;
-    auto totTime = TIME();
 
     auto res = DE9IMCheck({cur.point, cur.point2}, b.get(), t);
-
-    _stats[t].timeHisto(b->geom.rawLine().size(), TOOK(totTime));
 
     // intersects
     if (res.intersects()) {
@@ -2780,11 +2793,8 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
     _stats[t].anchorSum += 2;
 
     _stats[t].totalComps++;
-    auto totTime = TIME();
 
     auto res = DE9IMCheck({cur.point, cur.point2}, {sv.point, sv.point2}, t);
-
-    _stats[t].timeHisto(2, TOOK(totTime));
 
     if (res.intersects()) {
       writeIntersect(t, a->id, b->id);
@@ -2873,11 +2883,8 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
     _stats[t].anchorSum += b->geom.size() / 2;
 
     _stats[t].totalComps++;
-    auto totTime = TIME();
 
     auto res = DE9IMCheck(a, b.get(), t);
-
-    _stats[t].timeHisto(b->geom.rawLine().size(), TOOK(totTime));
 
     if (res.intersects()) {
       auto a = getPoint(cur.id, cur.type, cur.large ? -1 : t);
@@ -2906,11 +2913,8 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
     auto a = cur.point;
 
     _stats[t].totalComps++;
-    auto totTime = TIME();
 
     auto res = DE9IMCheck(a, b.get(), t);
-
-    _stats[t].timeHisto(b->geom.getOuter().rawRing().size(), TOOK(totTime));
 
     if (res.coveredBy()) {
       auto a = getPoint(cur.id, cur.type, cur.large ? -1 : t);
