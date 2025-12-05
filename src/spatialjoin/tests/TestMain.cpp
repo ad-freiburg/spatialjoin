@@ -97,6 +97,7 @@ int main(int, char**) {
       {},
       {},
       {},
+      {},
       {}};
 
   sj::SweeperCfg all{
@@ -120,6 +121,7 @@ int main(int, char**) {
       false,
       -1,
       false,
+      {},
       {},
       {},
       {},
@@ -151,6 +153,7 @@ int main(int, char**) {
       {},
       {},
       {},
+      {},
       {}};
 
   sj::SweeperCfg noBoxIds{
@@ -174,6 +177,7 @@ int main(int, char**) {
       false,
       -1,
       false,
+      {},
       {},
       {},
       {},
@@ -205,6 +209,7 @@ int main(int, char**) {
       {},
       {},
       {},
+      {},
       {}};
 
   sj::SweeperCfg noDiagBox{
@@ -228,6 +233,7 @@ int main(int, char**) {
       false,
       -1,
       false,
+      {},
       {},
       {},
       {},
@@ -259,6 +265,7 @@ int main(int, char**) {
       {},
       {},
       {},
+      {},
       {}};
 
   sj::SweeperCfg noInnerOuter{
@@ -266,7 +273,7 @@ int main(int, char**) {
       " contains ", " covers ",  " touches ", " equals ", " overlaps ",
       " crosses ",  true,        true,        true,       true,
       true,         false,       false,       -1,         false,
-      {},           {},          {},          {},         {}};
+      {}, {},           {},          {},          {},         {}};
 
   std::vector<sj::SweeperCfg> cfgs{baseline,    all,         noSurfaceArea,
                                    noBoxIds,    noObb,       noDiagBox,

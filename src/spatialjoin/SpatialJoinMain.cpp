@@ -14,6 +14,7 @@
 
 using sj::ParseBatch;
 using sj::Sweeper;
+using util::geo::DE9IMFilter;
 using util::geo::DLine;
 using util::geo::DPoint;
 using util::geo::I32Line;
@@ -107,12 +108,14 @@ void printHelp(int argc, char** argv) {
       << "  --cache-max-size (default: " + std::to_string(DEFAULT_CACHE_SIZE) +
              ")"
       << "maximum approx. size in bytes of cache per type and\n"
-      << std::setw(42) << " " << "thread, 0 = unlimited\n"
+      << std::setw(42) << " "
+      << "thread, 0 = unlimited\n"
       << std::setw(42)
       << "  --cache-max-elements (default: " +
              std::to_string(DEFAULT_CACHE_NUM_ELEMENTS) + ")"
       << "maximum number of elements per cache, type and thread,\n"
-      << std::setw(42) << " " << "0 = unlimited\n"
+      << std::setw(42) << " "
+      << "0 = unlimited\n"
       << std::setw(42) << "  --no-geometry-checks"
       << "do not compute geometric relations, only report number of\n"
       << std::setw(42) << " "
@@ -126,9 +129,6 @@ void printHelp(int argc, char** argv) {
 
 // _____________________________________________________________________________
 int main(int argc, char** argv) {
-  // disable output buffering for standard output
-  setbuf(stdout, NULL);
-
   // initialize randomness
   srand(time(NULL) + rand());  // NOLINT
 
@@ -163,6 +163,7 @@ int main(int argc, char** argv) {
   size_t numCaches = NUM_THREADS;
   size_t geomCacheMaxSizeBytes = DEFAULT_CACHE_SIZE;
   size_t geomCacheMaxNumElements = DEFAULT_CACHE_NUM_ELEMENTS;
+  DE9IMFilter de9imFilter;
 
   std::vector<std::string> inputFiles;
 
@@ -206,6 +207,8 @@ int main(int argc, char** argv) {
           state = 15;
         } else if (cur == "--cache-max-elements") {
           state = 16;
+        } else if (cur == "--de9im-filter") {
+          state = 17;
         } else if (cur == "--de9im") {
           computeDE9IM = true;
         } else if (cur == "--no-box-ids") {
@@ -294,7 +297,54 @@ int main(int argc, char** argv) {
         std::stringstream(cur) >> geomCacheMaxNumElements;
         state = 0;
         break;
+      case 17:
+        if (cur.size() < 9) cur.insert(cur.size(), 9 - cur.size(), '*');
+        std::cout << cur << std::endl;
+        de9imFilter = cur.c_str();
+        state = 0;
+        break;
     }
+  }
+
+  if (de9imFilter.maxExteriorDim() < 2) {
+    if (verbose) {
+      LOGTO(INFO, std::cerr) << "Skipping all comparisons because of DE-9IM "
+                                "filter which will not match any pairs...";
+      LOGTO(INFO, std::cerr)
+          << " (max exterior dim=" << (int)de9imFilter.maxExteriorDim() << ")";
+    }
+    return 0;
+  }
+
+  if (de9imFilter.minLeftBoundaryDim() > 1) {
+    if (verbose) {
+      LOGTO(INFO, std::cerr) << "Skipping all comparisons because of DE-9IM "
+                                "filter which will not match any pairs...";
+      LOGTO(INFO, std::cerr)
+          << " (min left boundary dim=" << (int)de9imFilter.minLeftBoundaryDim()
+          << ")";
+    }
+    return 0;
+  }
+
+  if (de9imFilter.minRightBoundaryDim() > 1) {
+    if (verbose) {
+      LOGTO(INFO, std::cerr) << "Skipping all comparisons because of DE-9IM "
+                                "filter which will not match any pairs...";
+      LOGTO(INFO, std::cerr) << " (min right boundary dim="
+                             << (int)de9imFilter.minRightBoundaryDim() << ")";
+    }
+    return 0;
+  }
+
+  if (de9imFilter.maxInteriorDim() < 0) {
+    if (verbose) {
+      LOGTO(INFO, std::cerr) << "Skipping all comparisons because of DE-9IM "
+                                "filter which will not match any pairs...";
+      LOGTO(INFO, std::cerr)
+          << " (max interior dim=" << (int)de9imFilter.maxInteriorDim() << ")";
+    }
+    return 0;
   }
 
   const static size_t CACHE_SIZE = 1024 * 1024;
@@ -333,6 +383,7 @@ int main(int argc, char** argv) {
                             noGeometryChecks,
                             withinDist,
                             computeDE9IM,
+                            de9imFilter,
                             writeRelCb,
                             {},
                             {},
@@ -361,6 +412,10 @@ int main(int argc, char** argv) {
                 << std::endl;
       exit(1);
     }
+
+    // already set number of sides to 2, if we have two files
+    sweeper.setNumSides(inputFiles.size());
+
     for (size_t i = 0; i < inputFiles.size(); i++) {
       if (util::endsWith(inputFiles[i], ".bz2")) {
 #ifndef SPATIALJOIN_NO_BZIP2
@@ -448,4 +503,6 @@ int main(int argc, char** argv) {
   sweeper.log("done (" + std::to_string(TOOK(ts) / 1000000000.0) + "s).");
 
   delete[] buf;
+
+  return 0;
 }
