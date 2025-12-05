@@ -307,9 +307,43 @@ int main(int argc, char** argv) {
   }
 
   if (de9imFilter.maxExteriorDim() < 2) {
-    if (verbose)
+    if (verbose) {
       LOGTO(INFO, std::cerr) << "Skipping all comparisons because of DE-9IM "
-                                "filter with EE required to be 1, 0 or F";
+                                "filter which will not match any pairs...";
+      LOGTO(INFO, std::cerr)
+          << " (max exterior dim=" << (int)de9imFilter.maxExteriorDim() << ")";
+    }
+    return 0;
+  }
+
+  if (de9imFilter.minLeftBoundaryDim() > 1) {
+    if (verbose) {
+      LOGTO(INFO, std::cerr) << "Skipping all comparisons because of DE-9IM "
+                                "filter which will not match any pairs...";
+      LOGTO(INFO, std::cerr)
+          << " (min left boundary dim=" << (int)de9imFilter.minLeftBoundaryDim()
+          << ")";
+    }
+    return 0;
+  }
+
+  if (de9imFilter.minRightBoundaryDim() > 1) {
+    if (verbose) {
+      LOGTO(INFO, std::cerr) << "Skipping all comparisons because of DE-9IM "
+                                "filter which will not match any pairs...";
+      LOGTO(INFO, std::cerr) << " (min right boundary dim="
+                             << (int)de9imFilter.minRightBoundaryDim() << ")";
+    }
+    return 0;
+  }
+
+  if (de9imFilter.maxInteriorDim() < 0) {
+    if (verbose) {
+      LOGTO(INFO, std::cerr) << "Skipping all comparisons because of DE-9IM "
+                                "filter which will not match any pairs...";
+      LOGTO(INFO, std::cerr)
+          << " (max interior dim=" << (int)de9imFilter.maxInteriorDim() << ")";
+    }
     return 0;
   }
 
@@ -365,7 +399,6 @@ int main(int argc, char** argv) {
     };
 
   Sweeper sweeper(sweeperCfg, cache);
-
 
   sweeper.log("Parsing input geometries...");
   auto ts = TIME();

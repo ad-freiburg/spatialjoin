@@ -187,6 +187,19 @@ I32Box Sweeper::add(const I32Polygon& poly, const std::string& gid, bool side,
 // _____________________________________________________________________________
 I32Box Sweeper::add(const I32Polygon& poly, const std::string& gidR,
                     size_t subid, bool side, WriteBatch& batch) const {
+  if (subid == 0 && _cfg.de9imFilter != util::geo::FANY) {
+    // drop certain geometries if we can be sure that they will never match
+    // the given DE-9IM filter
+    if (_cfg.de9imFilter.minBoundaryDim() > 1) return {};
+    if (_cfg.de9imFilter.maxInteriorDim() < 2) return {};
+    if (side && _cfg.de9imFilter.maxRightInteriorDim() < 2) return {};
+    if (side && _cfg.de9imFilter.minRightBoundaryDim() > 1) return {};
+    if (_numSides > 1 && !side && _cfg.de9imFilter.maxLeftInteriorDim() < 2)
+      return {};
+    if (_numSides > 1 && !side && _cfg.de9imFilter.minLeftBoundaryDim() > 1)
+      return {};
+  }
+
   std::string gid = (side ? ("B" + gidR) : ("A" + gidR));
 
   WriteCand cur;
@@ -373,9 +386,13 @@ I32Box Sweeper::add(const I32Line& line, const std::string& gidR, size_t subid,
     // the given DE-9IM filter
     if (_cfg.de9imFilter.minInteriorDim() > 1) return {};
     if (_cfg.de9imFilter.minBoundaryDim() > 0) return {};
+    if (_cfg.de9imFilter.maxInteriorDim() < 1) return {};
     if (side && _cfg.de9imFilter.minRightInteriorDim() > 1) return {};
     if (side && _cfg.de9imFilter.minRightBoundaryDim() > 0) return {};
+    if (side && _cfg.de9imFilter.maxRightInteriorDim() < 1) return {};
     if (_numSides > 1 && !side && _cfg.de9imFilter.minLeftInteriorDim() > 1)
+      return {};
+    if (_numSides > 1 && !side && _cfg.de9imFilter.maxLeftInteriorDim() < 1)
       return {};
     if (_numSides > 1 && !side && _cfg.de9imFilter.minLeftBoundaryDim() > 0)
       return {};
@@ -516,9 +533,13 @@ I32Box Sweeper::add(const I32Point& point, const std::string& gidR,
     // the given DE-9IM filter
     if (_cfg.de9imFilter.minInteriorDim() > 0) return {};
     if (_cfg.de9imFilter.minBoundaryDim() >= 0) return {};
+    if (_cfg.de9imFilter.maxInteriorDim() < 0) return {};
     if (side && _cfg.de9imFilter.minRightInteriorDim() > 0) return {};
+    if (side && _cfg.de9imFilter.maxRightInteriorDim() < 0) return {};
     if (side && _cfg.de9imFilter.minRightBoundaryDim() >= 0) return {};
     if (_numSides > 1 && !side && _cfg.de9imFilter.minLeftInteriorDim() > 0)
+      return {};
+    if (_numSides > 1 && !side && _cfg.de9imFilter.maxLeftInteriorDim() < 0)
       return {};
     if (_numSides > 1 && !side && _cfg.de9imFilter.minLeftBoundaryDim() >= 0)
       return {};
