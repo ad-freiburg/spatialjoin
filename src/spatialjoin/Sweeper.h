@@ -156,6 +156,7 @@ inline bool operator==(const Job& a, const Job& b) {
 
 typedef std::vector<Job> JobBatch;
 
+// intersects, contains, covers, touches, crosses / overlaps
 typedef std::tuple<bool, bool, bool, bool, bool> GeomCheckRes;
 
 struct SweeperCfg {
@@ -179,6 +180,7 @@ struct SweeperCfg {
   bool noGeometryChecks;
   double withinDist;
   bool computeDE9IM;
+  util::geo::DE9IMFilter de9imFilter;
   std::function<void(size_t t, const char* a, size_t an, const char* b,
                      size_t bn, const char* pred, size_t predn)>
       writeRelCb;
@@ -223,10 +225,10 @@ class Sweeper {
                          SIMPLE_LINE_CACHE_MAX_ELEMENTS, cfg.numCacheThreads,
                          cache, tmpPrefix),
         _cache(cache),
-        _jobs(100) {
-    if (!_cfg.writeRelCb) {
-    }
-
+        _jobs(100),
+        _numSides(1),
+        _dontNeedFullDE9IM(!_cfg.computeDE9IM &&
+                           _cfg.de9imFilter == util::geo::FANY) {
     // OUTFACTOR 1
     _fname = util::getTmpFName(_cache, tmpPrefix, "events");
     _file = open(_fname.c_str(), O_RDWR | O_CREAT | O_TRUNC, 0666);
@@ -298,6 +300,8 @@ class Sweeper {
   void refDuplicates();
 
   size_t numElements() const { return _curSweepId / 2; }
+
+  void setNumSides(uint8_t numSides) { _numSides = numSides; }
 
   void setFilterBox(const util::geo::I32Box& filterBox) {
     _filterBox = filterBox;
@@ -438,7 +442,7 @@ class Sweeper {
 
   util::JobQueue<JobBatch> _jobs;
 
-  uint8_t _numSides = 1;
+  std::atomic<uint8_t> _numSides;
 
   std::vector<std::mutex> _mutsEquals;
   std::vector<std::mutex> _mutsCovers;
@@ -454,22 +458,6 @@ class Sweeper {
 
   Area areaFromSimpleArea(const SimpleArea* sa) const;
   Line lineFromSimpleLine(const SimpleLine* sl) const;
-
-  GeomCheckRes check(const Area* a, const Area* b, size_t t) const;
-  GeomCheckRes check(const Line* a, const Area* b, size_t t) const;
-  GeomCheckRes check(const util::geo::LineSegment<int32_t>& a, const Area* b,
-                     size_t t) const;
-  GeomCheckRes check(const Line* a, const Line* b, size_t t) const;
-  GeomCheckRes check(const Line* a, const util::geo::LineSegment<int32_t>& b,
-                     size_t t) const;
-  GeomCheckRes check(const util::geo::LineSegment<int32_t>& a,
-                     const util::geo::LineSegment<int32_t>& b, size_t t) const;
-  GeomCheckRes check(const util::geo::LineSegment<int32_t>& a, const Line* b,
-                     size_t t) const;
-  std::pair<bool, bool> check(const util::geo::I32Point& a, const Area* b,
-                              size_t t) const;
-  std::tuple<bool, bool> check(const util::geo::I32Point& a, const Line* b,
-                               size_t t) const;
 
   double distCheck(const util::geo::I32Point& a, const Area* b, size_t t) const;
   double distCheck(const util::geo::I32Point& a, const Line* b, size_t t) const;
@@ -652,6 +640,7 @@ class Sweeper {
                                    std::numeric_limits<int32_t>::lowest()},
                                   {std::numeric_limits<int32_t>::max(),
                                    std::numeric_limits<int32_t>::max()}};
+  bool _dontNeedFullDE9IM;
 };
 }  // namespace sj
 

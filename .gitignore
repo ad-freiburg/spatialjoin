@@ -1,5 +1,3 @@
-*.swp
-*.swo
-*.swn
+*.sw?
 *.ttl
 *.bz2
