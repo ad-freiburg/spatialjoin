@@ -55,8 +55,8 @@ jobs:
         run: cd build && make
       - name: tests
         run: cd build && ctest --output-on-failure
-  macos-13-build:
-    runs-on: macOS-13
+  macos-14-build:
+    runs-on: macOS-14
     steps:
       - name: Checkout repository code
         uses: actions/checkout@v2
