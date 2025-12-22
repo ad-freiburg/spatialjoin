@@ -217,7 +217,7 @@ class GeometryCache {
   std::string _dir, _tmpPrefix;
   std::string _fName;
 
-  std::map<size_t, W> _memStore;
+  std::unordered_map<size_t, std::shared_ptr<W>> _memStore;
   bool _inMemory = true;
 
   char* _writeBuffer = 0;

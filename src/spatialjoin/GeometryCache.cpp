@@ -10,7 +10,7 @@
 
 #include "util/geo/Geo.h"
 
-const static size_t MAX_MEM_CACHE_SIZE = 1 * 1024 * 1024 * 20l;
+const static size_t MAX_MEM_CACHE_SIZE = 3 * 1024 * 1024 * 20l;
 
 // ____________________________________________________________________________
 template <typename W>
@@ -19,7 +19,7 @@ std::shared_ptr<W> sj::GeometryCache<W>::get(size_t off, ssize_t desTid) const {
 
   if (_inMemory) {
     // completely circumvent cache system
-    return std::make_shared<W>(_memStore.at(off));
+    return _memStore.at(off);
   } else if (desTid == -1) {
     // special cache for large geometries
     tid = _numThreads;
@@ -314,13 +314,13 @@ size_t sj::GeometryCache<W>::add(const std::string& raw) {
     // cache for later use
     std::istringstream ss(raw);
     const auto& val = getFrom(0, ss);
-    _memStore[ret] = std::move(val.second);
+    _memStore[ret] = std::make_shared<W>(std::move(val.second));
 
     if (_geomsOffset > MAX_MEM_CACHE_SIZE) {
       _inMemory = false;
 
       for (const auto& val : _memStore) {
-        writeTo(val.second, _geomsF);
+        writeTo(*val.second.get(), _geomsF);
       }
 
       // clear mem store
