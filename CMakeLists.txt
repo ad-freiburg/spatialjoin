@@ -26,15 +26,11 @@ find_package(BZip2)
 find_package(ZLIB)
 
 if (NOT BZIP2_FOUND)
-	add_definitions( -DSPATIALJOIN_NO_BZIP2=True )
-else()
-	add_definitions( -DPBUTIL_BZIP2_FOUND=True )
+	add_definitions( -DSPATIALJOIN_NO_BZIP2=1 )
 endif()
 
 if (NOT ZLIB_FOUND)
-	add_definitions( -DSPATIALJOIN_NO_ZLIB=True )
-else()
-	add_definitions( -DPBUTIL_ZLIB_FOUND=True )
+	add_definitions( -DSPATIALJOIN_NO_ZLIB=1 )
 endif()
 
 # export compile commands to tools like clang

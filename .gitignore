@@ -1,5 +1,6 @@
-*.swp
-*.swo
-*.swn
+*.sw*
 *.ttl
 *.bz2
+*.tsv
+*.csv
+build/

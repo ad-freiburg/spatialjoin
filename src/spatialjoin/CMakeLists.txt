@@ -17,18 +17,19 @@ target_include_directories(spatialjoin-dev PUBLIC
 	$<BUILD_INTERFACE:${SPATIALJOIN_INCLUDE_DIR}>
 )
 
-target_link_libraries(spatialjoin spatialjoin-dev pb_util pb_util_geo -lpthread)
+target_link_libraries(spatialjoin-dev PRIVATE pb_util pb_util_geo -lpthread)
+target_link_libraries(spatialjoin PRIVATE spatialjoin-dev pb_util pb_util_geo -lpthread)
 
 if (BZIP2_FOUND)
 	target_include_directories(spatialjoin PUBLIC ${BZIP2_INCLUDE_DIR} )
 	target_include_directories(spatialjoin-dev PUBLIC ${BZIP2_INCLUDE_DIR} )
-	target_link_libraries(spatialjoin ${BZIP2_LIBRARIES} )
+	target_link_libraries(spatialjoin PRIVATE ${BZIP2_LIBRARIES} )
 endif(BZIP2_FOUND)
 
 if (ZLIB_FOUND)
 	target_include_directories(spatialjoin INTERFACE ${ZLIB_INCLUDE_DIRS} )
 	target_include_directories(spatialjoin-dev INTERFACE ${ZLIB_INCLUDE_DIRS} )
-	target_link_libraries(spatialjoin ${ZLIB_LIBRARIES} )
+	target_link_libraries(spatialjoin PRIVATE ${ZLIB_LIBRARIES} )
 endif(ZLIB_FOUND)
 
 
