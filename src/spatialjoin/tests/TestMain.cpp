@@ -27,6 +27,7 @@ std::string fullRun(const std::string& file, sj::SweeperCfg cfg) {
       outWriter.writeRelCb(t, a, an, b, bn, pred, predn);
     };
     Sweeper sweeper(cfg, ".");
+    sweeper.DUPLICATE_REMOVAL_MIN_SIZE = 0;
 
     // small buffer size 1 here for test purposes to force buffer overflows
     // during parsing
@@ -817,6 +818,22 @@ int main(int, char**) {
       TEST(res.find("$<> equals RefJ$") != std::string::npos);
       TEST(res.find("$RefJ equals RefG$") != std::string::npos);
       TEST(res.find("$RefJ equals <>$") != std::string::npos);
+      TEST(res.find("$TestD1 equals TestD2$") != std::string::npos);
+      TEST(res.find("$TestD2 equals TestD1$") != std::string::npos);
+      TEST(res.find("$TestD1 intersects TestD2$") != std::string::npos);
+      TEST(res.find("$TestD2 intersects TestD1$") != std::string::npos);
+      TEST(res.find("$TestD1 covers TestD2$") != std::string::npos);
+      TEST(res.find("$TestD1 contains TestD2$") != std::string::npos);
+      TEST(res.find("$TestD2 covers TestD1$") != std::string::npos);
+      TEST(res.find("$TestD2 contains TestD1$") != std::string::npos);
+      TEST(res.find("$TestD3 covers TestD2$") != std::string::npos);
+      TEST(res.find("$TestD3 contains TestD2$") != std::string::npos);
+      TEST(res.find("$TestD3 covers TestD1$") != std::string::npos);
+      TEST(res.find("$TestD3 contains TestD1$") != std::string::npos);
+      TEST(res.find("$TestD1 intersects TestD3$") != std::string::npos);
+      TEST(res.find("$TestD2 intersects TestD3$") != std::string::npos);
+      TEST(res.find("$TestD3 intersects TestD1$") != std::string::npos);
+      TEST(res.find("$TestD3 intersects TestD2$") != std::string::npos);
     }
 
     {
