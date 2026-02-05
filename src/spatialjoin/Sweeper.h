@@ -289,10 +289,11 @@ class Sweeper {
   void add(const std::string& a, const util::geo::I32Box& box,
            const std::string& gid, bool side, WriteBatch& batch) const;
   void add(const std::string& a, const util::geo::I32Box& box,
-           const std::string& gid, size_t subid, bool side, WriteBatch& batch) const;
-  void add(const std::string& a, size_t parentSubId, const util::geo::I32Box& box,
            const std::string& gid, size_t subid, bool side,
            WriteBatch& batch) const;
+  void add(const std::string& a, size_t parentSubId,
+           const util::geo::I32Box& box, const std::string& gid, size_t subid,
+           bool side, WriteBatch& batch) const;
 
   void addBatch(WriteBatch& cands);
 
@@ -390,7 +391,8 @@ class Sweeper {
     return ret;
   };
 
-  double DUPLICATE_REMOVAL_MIN_SIZE = 0;
+  double DUPLICATE_REMOVAL_MIN_SIZE = 500;
+
  private:
   const SweeperCfg _cfg;
   size_t _curSweepId = 0;
@@ -521,13 +523,14 @@ class Sweeper {
                 int32_t xRight);
   void clearMultis(bool force);
 
-  void writeIntersect(size_t t, const std::string& a, size_t aSub, const std::string& b, size_t bSub);
+  void writeIntersect(size_t t, const std::string& a, size_t aSub,
+                      const std::string& b, size_t bSub);
   void writeRel(size_t t, const std::string& a, const std::string& b,
                 const std::string& pred);
-  void writeContains(size_t t, const std::string& a, size_t aSub, const std::string& b,
-                     size_t bSub);
-  void writeCovers(size_t t, const std::string& a, size_t aSub, const std::string& b,
-                   size_t bSub);
+  void writeContains(size_t t, const std::string& a, size_t aSub,
+                     const std::string& b, size_t bSub);
+  void writeCovers(size_t t, const std::string& a, size_t aSub,
+                   const std::string& b, size_t bSub);
   void writeEquals(size_t t, const std::string& a, size_t aSub,
                    const std::string& b, size_t bSub);
   void writeDE9IM(size_t t, const std::string& a, size_t aSub,
@@ -650,10 +653,9 @@ class Sweeper {
   mutable std::mutex _areaGeomCacheWriteMtx;
   mutable std::mutex _simpleAreaGeomCacheWriteMtx;
 
-  mutable std::mutex _duplicateRemovalMtx;
-  mutable std::unordered_map<uint64_t, std::pair<std::pair<std::string, size_t>, util::geo::I32Polygon>> _duplicatePolys;
-
-  std::unordered_map<std::string, std::unordered_map<size_t, std::unordered_map<std::string, size_t>>>
+  std::unordered_map<
+      std::string,
+      std::unordered_map<size_t, std::unordered_map<std::string, size_t>>>
       _refs;
 
   util::geo::I32Box _filterBox = {{std::numeric_limits<int32_t>::lowest(),
