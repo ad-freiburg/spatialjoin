@@ -511,8 +511,6 @@ class Sweeper {
   util::geo::DE9IMatrix DE9IMCheck(const Line* a, const Area* b,
                                    size_t t) const;
 
-  bool refRelated(const std::string& a, const std::string& b) const;
-
   double getMaxScaleFactor(const util::geo::I32Box& geom) const;
   double getMaxScaleFactor(const util::geo::I32Point& geom) const;
 

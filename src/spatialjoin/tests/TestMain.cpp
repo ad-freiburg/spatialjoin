@@ -834,6 +834,42 @@ int main(int, char**) {
       TEST(res.find("$TestD2 intersects TestD3$") != std::string::npos);
       TEST(res.find("$TestD3 intersects TestD1$") != std::string::npos);
       TEST(res.find("$TestD3 intersects TestD2$") != std::string::npos);
+
+      TEST(res.find("$TestP1 touches TestD1$") != std::string::npos);
+      TEST(res.find("$TestP1 touches TestD2$") != std::string::npos);
+      TEST(res.find("$TestP1 touches TestD3$") != std::string::npos);
+      TEST(res.find("$TestP1 touches TestD4$") != std::string::npos);
+      TEST(res.find("$TestD1 touches TestP1$") != std::string::npos);
+      TEST(res.find("$TestD2 touches TestP1$") != std::string::npos);
+      TEST(res.find("$TestD3 touches TestP1$") != std::string::npos);
+      TEST(res.find("$TestD4 touches TestP1$") != std::string::npos);
+
+      TEST(res.find("$TestP2 touches TestD1$") != std::string::npos);
+      TEST(res.find("$TestP2 touches TestD2$") != std::string::npos);
+      TEST(res.find("$TestP2 touches TestD3$") != std::string::npos);
+      TEST(res.find("$TestP2 touches TestD4$") != std::string::npos);
+      TEST(res.find("$TestD1 touches TestP2$") != std::string::npos);
+      TEST(res.find("$TestD2 touches TestP2$") != std::string::npos);
+      TEST(res.find("$TestD3 touches TestP2$") != std::string::npos);
+      TEST(res.find("$TestD4 touches TestP2$") != std::string::npos);
+
+      TEST(res.find("$TestP1 intersects TestD1$") != std::string::npos);
+      TEST(res.find("$TestP1 intersects TestD2$") != std::string::npos);
+      TEST(res.find("$TestP1 intersects TestD3$") != std::string::npos);
+      TEST(res.find("$TestP1 intersects TestD4$") != std::string::npos);
+      TEST(res.find("$TestD1 intersects TestP1$") != std::string::npos);
+      TEST(res.find("$TestD2 intersects TestP1$") != std::string::npos);
+      TEST(res.find("$TestD3 intersects TestP1$") != std::string::npos);
+      TEST(res.find("$TestD4 intersects TestP1$") != std::string::npos);
+
+      TEST(res.find("$TestP2 intersects TestD1$") != std::string::npos);
+      TEST(res.find("$TestP2 intersects TestD2$") != std::string::npos);
+      TEST(res.find("$TestP2 intersects TestD3$") != std::string::npos);
+      TEST(res.find("$TestP2 intersects TestD4$") != std::string::npos);
+      TEST(res.find("$TestD1 intersects TestP2$") != std::string::npos);
+      TEST(res.find("$TestD2 intersects TestP2$") != std::string::npos);
+      TEST(res.find("$TestD3 intersects TestP2$") != std::string::npos);
+      TEST(res.find("$TestD4 intersects TestP2$") != std::string::npos);
     }
 
     {

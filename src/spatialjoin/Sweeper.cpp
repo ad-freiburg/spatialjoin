@@ -69,175 +69,468 @@ const static double cos45 = 1.0 / sqrt(2);
 
 // _____________________________________________________________________________
 I32Box Sweeper::add(const I32MultiPolygon& a, const std::string& gid, bool side,
-                  WriteBatch& batch) const {
-uint16_t subid = 0;  // a subid of 0 means "single polygon"
-if (a.size() > 1) subid = 1;
+                    WriteBatch& batch) const {
+  uint16_t subid = 0;  // a subid of 0 means "single polygon"
+  if (a.size() > 1) subid = 1;
 
-return add(a, gid, subid, side, batch);
+  return add(a, gid, subid, side, batch);
 }
 
 // _____________________________________________________________________________
 I32Box Sweeper::add(const I32MultiLine& a, const std::string& gid, bool side,
-                  WriteBatch& batch) const {
-uint16_t subid = 0;  // a subid of 0 means "single line"
-if (a.size() > 1) subid = 1;
+                    WriteBatch& batch) const {
+  uint16_t subid = 0;  // a subid of 0 means "single line"
+  if (a.size() > 1) subid = 1;
 
-return add(a, gid, subid, side, batch);
+  return add(a, gid, subid, side, batch);
 }
 
 // _____________________________________________________________________________
 I32Box Sweeper::add(const I32MultiPoint& a, const std::string& gid, bool side,
-                  WriteBatch& batch) const {
-uint16_t subid = 0;  // a subid of 0 means "single point"
-if (a.size() > 1) subid = 1;
+                    WriteBatch& batch) const {
+  uint16_t subid = 0;  // a subid of 0 means "single point"
+  if (a.size() > 1) subid = 1;
 
-return add(a, gid, subid, side, batch);
+  return add(a, gid, subid, side, batch);
 }
 
 // _____________________________________________________________________________
 I32Box Sweeper::add(const I32MultiPolygon& a, const std::string& gid,
-                  size_t subId, bool side, WriteBatch& batch) const {
-I32Box ret;
-for (const auto& poly : a) {
-  if (poly.getOuter().size() < 2) continue;
-  auto box = add(poly, gid, subId, side, batch);
-  if (box.isNull()) continue;
-  ret = util::geo::extendBox(box, ret);
-  subId++;
-}
+                    size_t subId, bool side, WriteBatch& batch) const {
+  I32Box ret;
+  for (const auto& poly : a) {
+    if (poly.getOuter().size() < 2) continue;
+    auto box = add(poly, gid, subId, side, batch);
+    if (box.isNull()) continue;
+    ret = util::geo::extendBox(box, ret);
+    subId++;
+  }
 
-return ret;
+  return ret;
 }
 
 // _____________________________________________________________________________
 I32Box Sweeper::add(const I32MultiLine& a, const std::string& gid, size_t subId,
-                  bool side, WriteBatch& batch) const {
-I32Box ret;
-for (const auto& line : a) {
-  if (line.size() < 2) continue;
-  auto box = add(line, gid, subId, side, batch);
-  if (box.isNull()) continue;
-  ret = util::geo::extendBox(box, ret);
-  subId++;
-}
+                    bool side, WriteBatch& batch) const {
+  I32Box ret;
+  for (const auto& line : a) {
+    if (line.size() < 2) continue;
+    auto box = add(line, gid, subId, side, batch);
+    if (box.isNull()) continue;
+    ret = util::geo::extendBox(box, ret);
+    subId++;
+  }
 
-return ret;
+  return ret;
 }
 
 // _____________________________________________________________________________
 I32Box Sweeper::add(const I32MultiPoint& a, const std::string& gid,
-                  size_t subid, bool side, WriteBatch& batch) const {
-I32Box ret;
-size_t newId = subid;
-for (const auto& point : a) {
-  auto box = add(point, gid, newId, side, batch);
-  if (box.isNull()) continue;
-  ret = util::geo::extendBox(box, ret);
-  newId++;
-}
+                    size_t subid, bool side, WriteBatch& batch) const {
+  I32Box ret;
+  size_t newId = subid;
+  for (const auto& point : a) {
+    auto box = add(point, gid, newId, side, batch);
+    if (box.isNull()) continue;
+    ret = util::geo::extendBox(box, ret);
+    newId++;
+  }
 
-return ret;
+  return ret;
 }
 
 // _____________________________________________________________________________
 void Sweeper::multiAdd(const std::string& gid, bool side, int32_t xLeft,
-                     int32_t xRight) {
-auto i = _multiGidToId[side].find(gid);
+                       int32_t xRight) {
+  auto i = _multiGidToId[side].find(gid);
 
-if (i == _multiGidToId[side].end()) {
-  _multiIds[side].push_back(gid);
-  _multiRightX[side].push_back(xRight);
-  _multiLeftX[side].push_back(xLeft);
-  _multiGidToId[side][gid] = _multiIds[side].size() - 1;
-  _subSizes[gid] = 1;
-} else {
-  size_t id = _multiGidToId[side][gid];
-  if (xRight > _multiRightX[side][id]) _multiRightX[side][id] = xRight;
-  if (xLeft < _multiLeftX[side][id]) _multiLeftX[side][id] = xLeft;
-  _subSizes[gid] = _subSizes[gid] + 1;
-}
-}
-
-// _____________________________________________________________________________
-void Sweeper::add(const std::string& parent, const util::geo::I32Box& box,
-                const std::string& gid, bool side, WriteBatch& batch) const {
-add(parent, 0, box, gid, 0, side, batch);
+  if (i == _multiGidToId[side].end()) {
+    _multiIds[side].push_back(gid);
+    _multiRightX[side].push_back(xRight);
+    _multiLeftX[side].push_back(xLeft);
+    _multiGidToId[side][gid] = _multiIds[side].size() - 1;
+    _subSizes[gid] = 1;
+  } else {
+    size_t id = _multiGidToId[side][gid];
+    if (xRight > _multiRightX[side][id]) _multiRightX[side][id] = xRight;
+    if (xLeft < _multiLeftX[side][id]) _multiLeftX[side][id] = xLeft;
+    _subSizes[gid] = _subSizes[gid] + 1;
+  }
 }
 
 // _____________________________________________________________________________
 void Sweeper::add(const std::string& parent, const util::geo::I32Box& box,
-                const std::string& gid, size_t subid, bool side,
-                WriteBatch& batch) const {
-add(parent, 0, box, gid, subid, side, batch);
+                  const std::string& gid, bool side, WriteBatch& batch) const {
+  add(parent, 0, box, gid, 0, side, batch);
+}
+
+// _____________________________________________________________________________
+void Sweeper::add(const std::string& parent, const util::geo::I32Box& box,
+                  const std::string& gid, size_t subid, bool side,
+                  WriteBatch& batch) const {
+  add(parent, 0, box, gid, subid, side, batch);
 }
 
 // _____________________________________________________________________________
 void Sweeper::add(const std::string& parentR, size_t parentSubId,
-                const util::geo::I32Box& box, const std::string& gidR,
-                size_t subid, bool side, WriteBatch& batch) const {
-std::string gid = (side ? ("B" + gidR) : ("A" + gidR));
-std::string parent = (side ? ("B" + parentR) : ("A" + parentR));
+                  const util::geo::I32Box& box, const std::string& gidR,
+                  size_t subid, bool side, WriteBatch& batch) const {
+  std::string gid = (side ? ("B" + gidR) : ("A" + gidR));
+  std::string parent = (side ? ("B" + parentR) : ("A" + parentR));
 
-BoxVal boxl, boxr;
-boxl.side = side;
-boxr.side = side;
+  BoxVal boxl, boxr;
+  boxl.side = side;
+  boxr.side = side;
 
-boxl.val = box.getLowerLeft().getX();
-boxr.val = box.getUpperRight().getX();
+  boxl.val = box.getLowerLeft().getX();
+  boxr.val = box.getUpperRight().getX();
 
-batch.refs.push_back({parent, gid, boxl, boxr, subid, parentSubId});
+  batch.refs.push_back({parent, gid, boxl, boxr, subid, parentSubId});
 }
 
 // _____________________________________________________________________________
 I32Box Sweeper::add(const I32Polygon& poly, const std::string& gid, bool side,
-                  WriteBatch& batch) const {
-return add(poly, gid, 0, side, batch);
+                    WriteBatch& batch) const {
+  return add(poly, gid, 0, side, batch);
 }
 
 // _____________________________________________________________________________
 I32Box Sweeper::add(const I32Polygon& poly, const std::string& gidR,
-                  size_t subid, bool side, WriteBatch& batch) const {
-std::string gid = (side ? ("B" + gidR) : ("A" + gidR));
+                    size_t subid, bool side, WriteBatch& batch) const {
+  std::string gid = (side ? ("B" + gidR) : ("A" + gidR));
 
-WriteCand cur;
-const auto& rawBox = getBoundingBox(poly);
-const auto& box = getPaddedBoundingBox(rawBox);
-if (!util::geo::intersects(box, _filterBox)) return {};
-I32XSortedPolygon spoly(poly);
+  WriteCand cur;
+  const auto& rawBox = getBoundingBox(poly);
+  const auto& box = getPaddedBoundingBox(rawBox);
+  if (!util::geo::intersects(box, _filterBox)) return {};
+  I32XSortedPolygon spoly(poly);
 
-if (spoly.empty()) return box;
+  if (spoly.empty()) return box;
 
-size_t polySize = poly.getSize();
-double areaSize = area(poly);
+  size_t polySize = poly.getSize();
+  double areaSize = area(poly);
 
-double outerAreaSize = outerArea(poly);
-BoxIdList boxIds;
+  double outerAreaSize = outerArea(poly);
+  BoxIdList boxIds;
 
-if (_cfg.useBoxIds) {
-  boxIds = packBoxIds(getBoxIds(spoly, rawBox, outerAreaSize));
+  if (_cfg.useBoxIds) {
+    boxIds = packBoxIds(getBoxIds(spoly, rawBox, outerAreaSize));
+  }
+
+  I32Box box45;
+  if (_cfg.useDiagBox) {
+    auto polyR = util::geo::rotateSinCos(poly, sin45, cos45, I32Point(0, 0));
+    box45 = getPaddedBoundingBox(polyR, rawBox);
+  }
+
+  cur.subid = subid;
+  cur.gid = gid;
+
+  if (poly.getInners().size() == 0 && subid == 0 && gid.size() < 8 &&
+      (!_cfg.useBoxIds || boxIds.front().first == 1) &&
+      area(rawBox) == areaSize) {
+    cur.boxvalIn = {0,  // placeholder, will be overwritten later on
+                    box.getLowerLeft().getY(),
+                    box.getUpperRight().getY(),
+                    box.getLowerLeft().getX(),
+                    false,
+                    FOLDED_BOX_POLYGON,
+                    areaSize,
+                    box.getUpperRight(),
+                    box45,
+                    side,
+                    false};
+    cur.boxvalOut = {0,  // placeholder, will be overwritten later on
+                     box.getLowerLeft().getY(),
+                     box.getUpperRight().getY(),
+                     box.getUpperRight().getX(),
+                     true,
+                     FOLDED_BOX_POLYGON,
+                     areaSize,
+                     box.getLowerLeft(),
+                     box45,
+                     side,
+                     false};
+    batch.foldedBoxAreas.emplace_back(cur);
+  } else if (poly.getInners().size() == 0 && poly.getOuter().size() < 10 &&
+             subid == 0 && (!_cfg.useBoxIds || boxIds.front().first == 1)) {
+    std::stringstream str;
+    _simpleAreaCache.writeTo({poly.getOuter(), gid}, str);
+    cur.raw = str.str();
+
+    size_t estimatedSize =
+        poly.getOuter().size() * sizeof(util::geo::XSortedTuple<int32_t>);
+
+    cur.boxvalIn = {0,  // placeholder, will be overwritten later on
+                    box.getLowerLeft().getY(),
+                    box.getUpperRight().getY(),
+                    box.getLowerLeft().getX(),
+                    false,
+                    SIMPLE_POLYGON,
+                    areaSize,
+                    {},
+                    box45,
+                    side,
+                    estimatedSize > GEOM_LARGENESS_THRESHOLD};
+    cur.boxvalOut = {0,  // placeholder, will be overwritten later on
+                     box.getLowerLeft().getY(),
+                     box.getUpperRight().getY(),
+                     box.getUpperRight().getX(),
+                     true,
+                     SIMPLE_POLYGON,
+                     areaSize,
+                     {},
+                     box45,
+                     side,
+                     estimatedSize > GEOM_LARGENESS_THRESHOLD};
+    batch.simpleAreas.emplace_back(cur);
+  } else {
+    if (!_cfg.useFastSweepSkip) {
+      spoly.setInnerMaxSegLen(std::numeric_limits<int32_t>::max());
+      spoly.getOuter().setMaxSegLen(std::numeric_limits<int32_t>::max());
+      for (auto& inner : spoly.getInners()) {
+        inner.setMaxSegLen(std::numeric_limits<int32_t>::max());
+      }
+    }
+
+    I32XSortedPolygon inner, outer;
+    I32Box innerBox, outerBox;
+    double outerOuterAreaSize = 0;
+    double innerOuterAreaSize = 0;
+
+    if (_cfg.useInnerOuter) {
+      const auto& innerPoly =
+          sj::innerouter::simplifiedPoly<Mode::INNER>(poly, 1 / (3.14 * 20));
+      const auto& outerPoly =
+          sj::innerouter::simplifiedPoly<Mode::OUTER>(poly, 1 / (3.14 * 20));
+
+      innerBox = getBoundingBox(innerPoly);
+      outerBox = getBoundingBox(outerPoly);
+
+      innerOuterAreaSize = outerArea(innerPoly);
+      outerOuterAreaSize = outerArea(outerPoly);
+
+      inner = innerPoly;
+      outer = outerPoly;
+    }
+
+    util::geo::I32Polygon obb;
+
+    if (_cfg.useOBB && poly.getOuter().size() >= OBB_MIN_SIZE) {
+      obb = util::geo::convexHull(
+          util::geo::pad(util::geo::getOrientedEnvelope(poly), 10));
+
+      // drop redundant oriented bbox
+      if (obb.getOuter().size() >= poly.getOuter().size()) obb = {};
+    }
+
+    std::stringstream str;
+    _areaCache.writeTo(
+        {std::move(spoly), box, gid, subid, areaSize,
+         _cfg.useArea ? outerAreaSize : 0, boxIds, obb, inner, innerBox,
+         innerOuterAreaSize, outer, outerBox, outerOuterAreaSize},
+        str);
+    ;
+
+    size_t estimatedSize = spoly.getOuter().rawRing().size() *
+                           sizeof(util::geo::XSortedTuple<int32_t>);
+    for (const auto& p : spoly.getInners()) {
+      estimatedSize +=
+          p.rawRing().size() * sizeof(util::geo::XSortedTuple<int32_t>);
+    }
+
+    cur.raw = str.str();
+
+    cur.boxvalIn = {0,  // placeholder, will be overwritten later on
+                    box.getLowerLeft().getY(),
+                    box.getUpperRight().getY(),
+                    box.getLowerLeft().getX(),
+                    false,
+                    POLYGON,
+                    areaSize,
+                    {polySize, 0},
+                    box45,
+                    side,
+                    estimatedSize > GEOM_LARGENESS_THRESHOLD};
+    cur.boxvalOut = {0,  // placeholder, will be overwritten later on
+                     box.getLowerLeft().getY(),
+                     box.getUpperRight().getY(),
+                     box.getUpperRight().getX(),
+                     true,
+                     POLYGON,
+                     areaSize,
+                     {polySize, 0},
+                     box45,
+                     side,
+                     estimatedSize > GEOM_LARGENESS_THRESHOLD};
+    batch.areas.emplace_back(cur);
+  }
+
+  return box;
 }
 
-I32Box box45;
-if (_cfg.useDiagBox) {
-  auto polyR = util::geo::rotateSinCos(poly, sin45, cos45, I32Point(0, 0));
-  box45 = getPaddedBoundingBox(polyR, rawBox);
+// _____________________________________________________________________________
+I32Box Sweeper::add(const I32Line& line, const std::string& gid, bool side,
+                    WriteBatch& batch) const {
+  return add(line, gid, 0, side, batch);
 }
 
-cur.subid = subid;
-cur.gid = gid;
+// _____________________________________________________________________________
+I32Box Sweeper::add(const I32Line& line, const std::string& gidR, size_t subid,
+                    bool side, WriteBatch& batch) const {
+  if (line.size() < 2) return {};
 
-if (poly.getInners().size() == 0 && subid == 0 && gid.size() < 8 &&
-    (!_cfg.useBoxIds || boxIds.front().first == 1) &&
-    area(rawBox) == areaSize) {
+  std::string gid = (side ? ("B" + gidR) : ("A" + gidR));
+
+  WriteCand cur;
+
+  const auto& rawBox = getBoundingBox(line);
+  const auto& box = getPaddedBoundingBox(rawBox);
+  if (!util::geo::intersects(box, _filterBox)) return {};
+  BoxIdList boxIds;
+
+  if (_cfg.useBoxIds) {
+    boxIds = packBoxIds(getBoxIds(line, rawBox));
+  }
+
+  const double len = util::geo::len(line);
+  size_t lineSize = line.size();
+
+  I32Box box45;
+  if (_cfg.useDiagBox) {
+    auto lineR = util::geo::rotateSinCos(line, sin45, cos45, I32Point(0, 0));
+    box45 = getPaddedBoundingBox(lineR, rawBox);
+  }
+
+  cur.subid = subid;
+  cur.gid = gid;
+
+  if (line.size() == 2 && (!_cfg.useBoxIds || boxIds.front().first == 1) &&
+      subid == 0) {
+    // simple line
+
+    cur.boxvalIn = {
+        0,  // placeholder, will be overwritten later on
+        box.getLowerLeft().getY(),
+        box.getUpperRight().getY(),
+        box.getLowerLeft().getX(),
+        false,
+        SIMPLE_LINE,
+        len,
+        line.front().getX() < line.back().getX() ? line.back() : line.front(),
+        box45,
+        side,
+        false};
+    cur.boxvalOut = {
+        0,  // placeholder, will be overwritten later on,
+        box.getLowerLeft().getY(),
+        box.getUpperRight().getY(),
+        box.getUpperRight().getX(),
+        true,
+        SIMPLE_LINE,
+        len,
+        line.front().getX() < line.back().getX() ? line.front() : line.back(),
+        box45,
+        side,
+        false};
+
+    // check if we can fold the gid into the offset id, because the gid is all
+    // we store in the cache for points
+    if (subid == 0 && gid.size() < 8) {
+      cur.boxvalIn.type = FOLDED_SIMPLE_LINE;
+      cur.boxvalOut.type = FOLDED_SIMPLE_LINE;
+      batch.foldedSimpleLines.emplace_back(cur);
+    } else {
+      std::stringstream str;
+      _simpleLineCache.writeTo({gid}, str);
+
+      cur.raw = str.str();
+
+      batch.simpleLines.emplace_back(cur);
+    }
+  } else {
+    // normal line
+    I32XSortedLine sline(line);
+    if (line.empty()) return {};
+    util::geo::I32Polygon obb;
+    if (_cfg.useOBB && line.size() >= OBB_MIN_SIZE) {
+      obb = util::geo::convexHull(
+          util::geo::pad(util::geo::getOrientedEnvelope(line), 10));
+
+      // drop redundant oriented bbox
+      if (obb.getOuter().size() >= line.size()) obb = {};
+    }
+
+    if (!_cfg.useFastSweepSkip) {
+      sline.setMaxSegLen(std::numeric_limits<int32_t>::max());
+    }
+
+    std::stringstream str;
+    _lineCache.writeTo({std::move(sline), box, gid, subid, len, boxIds, obb},
+                       str);
+    cur.raw = str.str();
+
+    size_t estimatedSize =
+        line.size() * sizeof(util::geo::XSortedTuple<int32_t>);
+
+    cur.boxvalIn = {0,  // placeholder, will be overwritten later on
+                    box.getLowerLeft().getY(),
+                    box.getUpperRight().getY(),
+                    box.getLowerLeft().getX(),
+                    false,
+                    LINE,
+                    len,
+                    {lineSize, 0},
+                    box45,
+                    side,
+                    estimatedSize > GEOM_LARGENESS_THRESHOLD};
+    cur.boxvalOut = {0,  // placeholder, will be overwritten later on
+                     box.getLowerLeft().getY(),
+                     box.getUpperRight().getY(),
+                     box.getUpperRight().getX(),
+                     true,
+                     LINE,
+                     len,
+                     {lineSize, 0},
+                     box45,
+                     side,
+                     estimatedSize > GEOM_LARGENESS_THRESHOLD};
+    batch.lines.emplace_back(cur);
+  }
+
+  return box;
+}
+
+// _____________________________________________________________________________
+I32Box Sweeper::add(const I32Point& point, const std::string& gid, bool side,
+                    WriteBatch& batch) const {
+  return add(point, gid, 0, side, batch);
+}
+
+// _____________________________________________________________________________
+I32Box Sweeper::add(const I32Point& point, const std::string& gidR,
+                    size_t subid, bool side, WriteBatch& batch) const {
+  std::string gid = (side ? ("B" + gidR) : ("A" + gidR));
+
+  WriteCand cur;
+
+  const auto& rawBox = getBoundingBox(point);
+  const auto& box = getPaddedBoundingBox(rawBox);
+
+  cur.subid = subid;
+
+  if (!util::geo::intersects(box, _filterBox)) return {};
+
+  auto pointR = util::geo::rotateSinCos(point, sin45, cos45, I32Point(0, 0));
   cur.boxvalIn = {0,  // placeholder, will be overwritten later on
                   box.getLowerLeft().getY(),
                   box.getUpperRight().getY(),
                   box.getLowerLeft().getX(),
                   false,
-                  FOLDED_BOX_POLYGON,
-                  areaSize,
-                  box.getUpperRight(),
-                  box45,
+                  POINT,
+                  0,
+                  point,
+                  getPaddedBoundingBox(pointR, rawBox),
                   side,
                   false};
   cur.boxvalOut = {0,  // placeholder, will be overwritten later on
@@ -245,615 +538,322 @@ if (poly.getInners().size() == 0 && subid == 0 && gid.size() < 8 &&
                    box.getUpperRight().getY(),
                    box.getUpperRight().getX(),
                    true,
-                   FOLDED_BOX_POLYGON,
-                   areaSize,
-                   box.getLowerLeft(),
-                   box45,
+                   POINT,
+                   0,
+                   point,
+                   getPaddedBoundingBox(pointR, rawBox),
                    side,
                    false};
-  batch.foldedBoxAreas.emplace_back(cur);
-} else if (poly.getInners().size() == 0 && poly.getOuter().size() < 10 &&
-           subid == 0 && (!_cfg.useBoxIds || boxIds.front().first == 1)) {
-  std::stringstream str;
-  _simpleAreaCache.writeTo({poly.getOuter(), gid}, str);
-  cur.raw = str.str();
 
-  size_t estimatedSize =
-      poly.getOuter().size() * sizeof(util::geo::XSortedTuple<int32_t>);
-
-  cur.boxvalIn = {0,  // placeholder, will be overwritten later on
-                  box.getLowerLeft().getY(),
-                  box.getUpperRight().getY(),
-                  box.getLowerLeft().getX(),
-                  false,
-                  SIMPLE_POLYGON,
-                  areaSize,
-                  {},
-                  box45,
-                  side,
-                  estimatedSize > GEOM_LARGENESS_THRESHOLD};
-  cur.boxvalOut = {0,  // placeholder, will be overwritten later on
-                   box.getLowerLeft().getY(),
-                   box.getUpperRight().getY(),
-                   box.getUpperRight().getX(),
-                   true,
-                   SIMPLE_POLYGON,
-                   areaSize,
-                   {},
-                   box45,
-                   side,
-                   estimatedSize > GEOM_LARGENESS_THRESHOLD};
-  batch.simpleAreas.emplace_back(cur);
-} else {
-  if (!_cfg.useFastSweepSkip) {
-    spoly.setInnerMaxSegLen(std::numeric_limits<int32_t>::max());
-    spoly.getOuter().setMaxSegLen(std::numeric_limits<int32_t>::max());
-    for (auto& inner : spoly.getInners()) {
-      inner.setMaxSegLen(std::numeric_limits<int32_t>::max());
-    }
-  }
-
-  I32XSortedPolygon inner, outer;
-  I32Box innerBox, outerBox;
-  double outerOuterAreaSize = 0;
-  double innerOuterAreaSize = 0;
-
-  if (_cfg.useInnerOuter) {
-    const auto& innerPoly =
-        sj::innerouter::simplifiedPoly<Mode::INNER>(poly, 1 / (3.14 * 20));
-    const auto& outerPoly =
-        sj::innerouter::simplifiedPoly<Mode::OUTER>(poly, 1 / (3.14 * 20));
-
-    innerBox = getBoundingBox(innerPoly);
-    outerBox = getBoundingBox(outerPoly);
-
-    innerOuterAreaSize = outerArea(innerPoly);
-    outerOuterAreaSize = outerArea(outerPoly);
-
-    inner = innerPoly;
-    outer = outerPoly;
-  }
-
-  util::geo::I32Polygon obb;
-
-  if (_cfg.useOBB && poly.getOuter().size() >= OBB_MIN_SIZE) {
-    obb = util::geo::convexHull(
-        util::geo::pad(util::geo::getOrientedEnvelope(poly), 10));
-
-    // drop redundant oriented bbox
-    if (obb.getOuter().size() >= poly.getOuter().size()) obb = {};
-  }
-
-  std::stringstream str;
-  _areaCache.writeTo(
-      {std::move(spoly), box, gid, subid, areaSize,
-       _cfg.useArea ? outerAreaSize : 0, boxIds, obb, inner, innerBox,
-       innerOuterAreaSize, outer, outerBox, outerOuterAreaSize},
-      str);
-  ;
-
-  size_t estimatedSize = spoly.getOuter().rawRing().size() *
-                         sizeof(util::geo::XSortedTuple<int32_t>);
-  for (const auto& p : spoly.getInners()) {
-    estimatedSize +=
-        p.rawRing().size() * sizeof(util::geo::XSortedTuple<int32_t>);
-  }
-
-  cur.raw = str.str();
-
-  cur.boxvalIn = {0,  // placeholder, will be overwritten later on
-                  box.getLowerLeft().getY(),
-                  box.getUpperRight().getY(),
-                  box.getLowerLeft().getX(),
-                  false,
-                  POLYGON,
-                  areaSize,
-                  {polySize, 0},
-                  box45,
-                  side,
-                  estimatedSize > GEOM_LARGENESS_THRESHOLD};
-  cur.boxvalOut = {0,  // placeholder, will be overwritten later on
-                   box.getLowerLeft().getY(),
-                   box.getUpperRight().getY(),
-                   box.getUpperRight().getX(),
-                   true,
-                   POLYGON,
-                   areaSize,
-                   {polySize, 0},
-                   box45,
-                   side,
-                   estimatedSize > GEOM_LARGENESS_THRESHOLD};
-  batch.areas.emplace_back(cur);
-}
-
-return box;
-}
-
-// _____________________________________________________________________________
-I32Box Sweeper::add(const I32Line& line, const std::string& gid, bool side,
-                  WriteBatch& batch) const {
-return add(line, gid, 0, side, batch);
-}
-
-// _____________________________________________________________________________
-I32Box Sweeper::add(const I32Line& line, const std::string& gidR, size_t subid,
-                  bool side, WriteBatch& batch) const {
-if (line.size() < 2) return {};
-
-std::string gid = (side ? ("B" + gidR) : ("A" + gidR));
-
-WriteCand cur;
-
-const auto& rawBox = getBoundingBox(line);
-const auto& box = getPaddedBoundingBox(rawBox);
-if (!util::geo::intersects(box, _filterBox)) return {};
-BoxIdList boxIds;
-
-if (_cfg.useBoxIds) {
-  boxIds = packBoxIds(getBoxIds(line, rawBox));
-}
-
-const double len = util::geo::len(line);
-size_t lineSize = line.size();
-
-I32Box box45;
-if (_cfg.useDiagBox) {
-  auto lineR = util::geo::rotateSinCos(line, sin45, cos45, I32Point(0, 0));
-  box45 = getPaddedBoundingBox(lineR, rawBox);
-}
-
-cur.subid = subid;
-cur.gid = gid;
-
-if (line.size() == 2 && (!_cfg.useBoxIds || boxIds.front().first == 1) &&
-    subid == 0) {
-  // simple line
-
-  cur.boxvalIn = {
-      0,  // placeholder, will be overwritten later on
-      box.getLowerLeft().getY(),
-      box.getUpperRight().getY(),
-      box.getLowerLeft().getX(),
-      false,
-      SIMPLE_LINE,
-      len,
-      line.front().getX() < line.back().getX() ? line.back() : line.front(),
-      box45,
-      side,
-      false};
-  cur.boxvalOut = {
-      0,  // placeholder, will be overwritten later on,
-      box.getLowerLeft().getY(),
-      box.getUpperRight().getY(),
-      box.getUpperRight().getX(),
-      true,
-      SIMPLE_LINE,
-      len,
-      line.front().getX() < line.back().getX() ? line.front() : line.back(),
-      box45,
-      side,
-      false};
+  cur.gid = gid;
 
   // check if we can fold the gid into the offset id, because the gid is all
   // we store in the cache for points
   if (subid == 0 && gid.size() < 8) {
-    cur.boxvalIn.type = FOLDED_SIMPLE_LINE;
-    cur.boxvalOut.type = FOLDED_SIMPLE_LINE;
-    batch.foldedSimpleLines.emplace_back(cur);
+    cur.boxvalIn.type = FOLDED_POINT;
+    cur.boxvalOut.type = FOLDED_POINT;
+    batch.foldedPoints.emplace_back(cur);
   } else {
     std::stringstream str;
-    _simpleLineCache.writeTo({gid}, str);
+    _pointCache.writeTo({gid, subid}, str);
 
     cur.raw = str.str();
 
-    batch.simpleLines.emplace_back(cur);
-  }
-} else {
-  // normal line
-  I32XSortedLine sline(line);
-  if (line.empty()) return {};
-  util::geo::I32Polygon obb;
-  if (_cfg.useOBB && line.size() >= OBB_MIN_SIZE) {
-    obb = util::geo::convexHull(
-        util::geo::pad(util::geo::getOrientedEnvelope(line), 10));
-
-    // drop redundant oriented bbox
-    if (obb.getOuter().size() >= line.size()) obb = {};
+    batch.points.emplace_back(cur);
   }
 
-  if (!_cfg.useFastSweepSkip) {
-    sline.setMaxSegLen(std::numeric_limits<int32_t>::max());
-  }
-
-  std::stringstream str;
-  _lineCache.writeTo({std::move(sline), box, gid, subid, len, boxIds, obb},
-                     str);
-  cur.raw = str.str();
-
-  size_t estimatedSize =
-      line.size() * sizeof(util::geo::XSortedTuple<int32_t>);
-
-  cur.boxvalIn = {0,  // placeholder, will be overwritten later on
-                  box.getLowerLeft().getY(),
-                  box.getUpperRight().getY(),
-                  box.getLowerLeft().getX(),
-                  false,
-                  LINE,
-                  len,
-                  {lineSize, 0},
-                  box45,
-                  side,
-                  estimatedSize > GEOM_LARGENESS_THRESHOLD};
-  cur.boxvalOut = {0,  // placeholder, will be overwritten later on
-                   box.getLowerLeft().getY(),
-                   box.getUpperRight().getY(),
-                   box.getUpperRight().getX(),
-                   true,
-                   LINE,
-                   len,
-                   {lineSize, 0},
-                   box45,
-                   side,
-                   estimatedSize > GEOM_LARGENESS_THRESHOLD};
-  batch.lines.emplace_back(cur);
-}
-
-return box;
-}
-
-// _____________________________________________________________________________
-I32Box Sweeper::add(const I32Point& point, const std::string& gid, bool side,
-                  WriteBatch& batch) const {
-return add(point, gid, 0, side, batch);
-}
-
-// _____________________________________________________________________________
-I32Box Sweeper::add(const I32Point& point, const std::string& gidR,
-                  size_t subid, bool side, WriteBatch& batch) const {
-std::string gid = (side ? ("B" + gidR) : ("A" + gidR));
-
-WriteCand cur;
-
-const auto& rawBox = getBoundingBox(point);
-const auto& box = getPaddedBoundingBox(rawBox);
-
-cur.subid = subid;
-
-if (!util::geo::intersects(box, _filterBox)) return {};
-
-auto pointR = util::geo::rotateSinCos(point, sin45, cos45, I32Point(0, 0));
-cur.boxvalIn = {0,  // placeholder, will be overwritten later on
-                box.getLowerLeft().getY(),
-                box.getUpperRight().getY(),
-                box.getLowerLeft().getX(),
-                false,
-                POINT,
-                0,
-                point,
-                getPaddedBoundingBox(pointR, rawBox),
-                side,
-                false};
-cur.boxvalOut = {0,  // placeholder, will be overwritten later on
-                 box.getLowerLeft().getY(),
-                 box.getUpperRight().getY(),
-                 box.getUpperRight().getX(),
-                 true,
-                 POINT,
-                 0,
-                 point,
-                 getPaddedBoundingBox(pointR, rawBox),
-                 side,
-                 false};
-
-cur.gid = gid;
-
-// check if we can fold the gid into the offset id, because the gid is all
-// we store in the cache for points
-if (subid == 0 && gid.size() < 8) {
-  cur.boxvalIn.type = FOLDED_POINT;
-  cur.boxvalOut.type = FOLDED_POINT;
-  batch.foldedPoints.emplace_back(cur);
-} else {
-  std::stringstream str;
-  _pointCache.writeTo({gid, subid}, str);
-
-  cur.raw = str.str();
-
-  batch.points.emplace_back(cur);
-}
-
-return box;
+  return box;
 }
 
 // _____________________________________________________________________________
 void Sweeper::addBatch(WriteBatch& cands) {
-{
-  for (auto& cand : cands.foldedPoints) {
-    if (cand.boxvalIn.side) _numSides = 2;
-    cand.boxvalIn.id = foldString(cand.gid);
-    cand.boxvalOut.id = cand.boxvalIn.id;
+  {
+    for (auto& cand : cands.foldedPoints) {
+      if (cand.boxvalIn.side) _numSides = 2;
+      cand.boxvalIn.id = foldString(cand.gid);
+      cand.boxvalOut.id = cand.boxvalIn.id;
+    }
   }
-}
 
-{
-  std::unique_lock<std::mutex> lock(_pointGeomCacheWriteMtx);
-  for (auto& cand : cands.points) {
-    if (cand.boxvalIn.side) _numSides = 2;
-    cand.boxvalIn.id = _pointCache.add(cand.raw);
-    cand.boxvalOut.id = cand.boxvalIn.id;
+  {
+    std::unique_lock<std::mutex> lock(_pointGeomCacheWriteMtx);
+    for (auto& cand : cands.points) {
+      if (cand.boxvalIn.side) _numSides = 2;
+      cand.boxvalIn.id = _pointCache.add(cand.raw);
+      cand.boxvalOut.id = cand.boxvalIn.id;
+    }
   }
-}
 
-{
-  std::unique_lock<std::mutex> lock(_lineGeomCacheWriteMtx);
-  for (auto& cand : cands.lines) {
-    if (cand.boxvalIn.side) _numSides = 2;
-    cand.boxvalIn.id = _lineCache.add(cand.raw);
-    cand.boxvalOut.id = cand.boxvalIn.id;
+  {
+    std::unique_lock<std::mutex> lock(_lineGeomCacheWriteMtx);
+    for (auto& cand : cands.lines) {
+      if (cand.boxvalIn.side) _numSides = 2;
+      cand.boxvalIn.id = _lineCache.add(cand.raw);
+      cand.boxvalOut.id = cand.boxvalIn.id;
+    }
   }
-}
 
-{
-  std::unique_lock<std::mutex> lock(_simpleLineGeomCacheWriteMtx);
-  for (auto& cand : cands.simpleLines) {
-    if (cand.boxvalIn.side) _numSides = 2;
-    cand.boxvalIn.id = _simpleLineCache.add(cand.raw);
-    cand.boxvalOut.id = cand.boxvalIn.id;
+  {
+    std::unique_lock<std::mutex> lock(_simpleLineGeomCacheWriteMtx);
+    for (auto& cand : cands.simpleLines) {
+      if (cand.boxvalIn.side) _numSides = 2;
+      cand.boxvalIn.id = _simpleLineCache.add(cand.raw);
+      cand.boxvalOut.id = cand.boxvalIn.id;
+    }
   }
-}
 
-{
-  for (auto& cand : cands.foldedSimpleLines) {
-    if (cand.boxvalIn.side) _numSides = 2;
-    cand.boxvalIn.id = foldString(cand.gid);
-    cand.boxvalOut.id = cand.boxvalIn.id;
+  {
+    for (auto& cand : cands.foldedSimpleLines) {
+      if (cand.boxvalIn.side) _numSides = 2;
+      cand.boxvalIn.id = foldString(cand.gid);
+      cand.boxvalOut.id = cand.boxvalIn.id;
+    }
   }
-}
 
-{
-  for (auto& cand : cands.foldedBoxAreas) {
-    if (cand.boxvalIn.side) _numSides = 2;
-    cand.boxvalIn.id = foldString(cand.gid);
-    cand.boxvalOut.id = cand.boxvalIn.id;
+  {
+    for (auto& cand : cands.foldedBoxAreas) {
+      if (cand.boxvalIn.side) _numSides = 2;
+      cand.boxvalIn.id = foldString(cand.gid);
+      cand.boxvalOut.id = cand.boxvalIn.id;
+    }
   }
-}
 
-{
-  std::unique_lock<std::mutex> lock(_simpleAreaGeomCacheWriteMtx);
-  for (auto& cand : cands.simpleAreas) {
-    if (cand.boxvalIn.side) _numSides = 2;
-    cand.boxvalIn.id = _simpleAreaCache.add(cand.raw);
-    cand.boxvalOut.id = cand.boxvalIn.id;
+  {
+    std::unique_lock<std::mutex> lock(_simpleAreaGeomCacheWriteMtx);
+    for (auto& cand : cands.simpleAreas) {
+      if (cand.boxvalIn.side) _numSides = 2;
+      cand.boxvalIn.id = _simpleAreaCache.add(cand.raw);
+      cand.boxvalOut.id = cand.boxvalIn.id;
+    }
   }
-}
 
-{
-  std::unique_lock<std::mutex> lock(_areaGeomCacheWriteMtx);
-  for (auto& cand : cands.areas) {
-    if (cand.boxvalIn.side) _numSides = 2;
-    cand.boxvalIn.id = _areaCache.add(cand.raw);
-    cand.boxvalOut.id = cand.boxvalIn.id;
+  {
+    std::unique_lock<std::mutex> lock(_areaGeomCacheWriteMtx);
+    for (auto& cand : cands.areas) {
+      if (cand.boxvalIn.side) _numSides = 2;
+      cand.boxvalIn.id = _areaCache.add(cand.raw);
+      cand.boxvalOut.id = cand.boxvalIn.id;
+    }
   }
-}
 
-for (const auto& cand : cands.points) {
-  if (cand.subid > 0) {
-    std::unique_lock<std::mutex> lock(_multiAddMtx);
-    multiAdd(cand.gid, cand.boxvalIn.side, cand.boxvalIn.val,
-             cand.boxvalOut.val);
-  }
-}
-
-for (const auto& cand : cands.simpleLines) {
-  if (cand.subid > 0) {
-    std::unique_lock<std::mutex> lock(_multiAddMtx);
-    multiAdd(cand.gid, cand.boxvalIn.side, cand.boxvalIn.val,
-             cand.boxvalOut.val);
-  }
-}
-
-for (const auto& cand : cands.lines) {
-  if (cand.subid > 0) {
-    std::unique_lock<std::mutex> lock(_multiAddMtx);
-    multiAdd(cand.gid, cand.boxvalIn.side, cand.boxvalIn.val,
-             cand.boxvalOut.val);
-  }
-}
-
-for (const auto& cand : cands.simpleAreas) {
-  if (cand.subid > 0) {
-    std::unique_lock<std::mutex> lock(_multiAddMtx);
-    multiAdd(cand.gid, cand.boxvalIn.side, cand.boxvalIn.val,
-             cand.boxvalOut.val);
-  }
-}
-
-for (const auto& cand : cands.areas) {
-  if (cand.subid > 0) {
-    std::unique_lock<std::mutex> lock(_multiAddMtx);
-    multiAdd(cand.gid, cand.boxvalIn.side, cand.boxvalIn.val,
-             cand.boxvalOut.val);
-  }
-}
-
-for (const auto& cand : cands.refs) {
-  if (cand.subid > 0) {
-    std::unique_lock<std::mutex> lock(_multiAddMtx);
-    multiAdd(cand.gid, cand.boxvalIn.side, cand.boxvalIn.val,
-             cand.boxvalOut.val);
-  }
-}
-
-{
-  std::unique_lock<std::mutex> lock(_sweepEventWriteMtx);
-  for (const auto& cand : cands.foldedPoints) {
-    diskAdd(cand.boxvalIn);
-    diskAdd(cand.boxvalOut);
-    if (_curSweepId / 2 % 1000000 == 0)
-      log("@ " + std::to_string(_curSweepId / 2));
-  }
   for (const auto& cand : cands.points) {
-    diskAdd(cand.boxvalIn);
-    diskAdd(cand.boxvalOut);
-    if (_curSweepId / 2 % 1000000 == 0)
-      log("@ " + std::to_string(_curSweepId / 2));
+    if (cand.subid > 0) {
+      std::unique_lock<std::mutex> lock(_multiAddMtx);
+      multiAdd(cand.gid, cand.boxvalIn.side, cand.boxvalIn.val,
+               cand.boxvalOut.val);
+    }
   }
-  for (const auto& cand : cands.foldedSimpleLines) {
-    diskAdd(cand.boxvalIn);
-    diskAdd(cand.boxvalOut);
-    if (_curSweepId / 2 % 1000000 == 0)
-      log("@ " + std::to_string(_curSweepId / 2));
-  }
-  for (const auto& cand : cands.foldedBoxAreas) {
-    diskAdd(cand.boxvalIn);
-    diskAdd(cand.boxvalOut);
-    if (_curSweepId / 2 % 1000000 == 0)
-      log("@ " + std::to_string(_curSweepId / 2));
-  }
+
   for (const auto& cand : cands.simpleLines) {
-    diskAdd(cand.boxvalIn);
-    diskAdd(cand.boxvalOut);
-    if (_curSweepId / 2 % 1000000 == 0)
-      log("@ " + std::to_string(_curSweepId / 2));
+    if (cand.subid > 0) {
+      std::unique_lock<std::mutex> lock(_multiAddMtx);
+      multiAdd(cand.gid, cand.boxvalIn.side, cand.boxvalIn.val,
+               cand.boxvalOut.val);
+    }
   }
+
   for (const auto& cand : cands.lines) {
-    diskAdd(cand.boxvalIn);
-    diskAdd(cand.boxvalOut);
-    if (_curSweepId / 2 % 1000000 == 0)
-      log("@ " + std::to_string(_curSweepId / 2));
+    if (cand.subid > 0) {
+      std::unique_lock<std::mutex> lock(_multiAddMtx);
+      multiAdd(cand.gid, cand.boxvalIn.side, cand.boxvalIn.val,
+               cand.boxvalOut.val);
+    }
   }
+
   for (const auto& cand : cands.simpleAreas) {
-    diskAdd(cand.boxvalIn);
-    diskAdd(cand.boxvalOut);
-    if (_curSweepId / 2 % 1000000 == 0)
-      log("@ " + std::to_string(_curSweepId / 2));
+    if (cand.subid > 0) {
+      std::unique_lock<std::mutex> lock(_multiAddMtx);
+      multiAdd(cand.gid, cand.boxvalIn.side, cand.boxvalIn.val,
+               cand.boxvalOut.val);
+    }
   }
+
   for (const auto& cand : cands.areas) {
-    diskAdd(cand.boxvalIn);
-    diskAdd(cand.boxvalOut);
-    if (_curSweepId / 2 % 1000000 == 0)
-      log("@ " + std::to_string(_curSweepId / 2));
+    if (cand.subid > 0) {
+      std::unique_lock<std::mutex> lock(_multiAddMtx);
+      multiAdd(cand.gid, cand.boxvalIn.side, cand.boxvalIn.val,
+               cand.boxvalOut.val);
+    }
   }
+
   for (const auto& cand : cands.refs) {
-    _refs[cand.raw][cand.parentSubId][cand.gid] = cand.subid;
-    if (_curSweepId / 2 % 1000000 == 0)
-      log("@ " + std::to_string(_curSweepId / 2));
+    if (cand.subid > 0) {
+      std::unique_lock<std::mutex> lock(_multiAddMtx);
+      multiAdd(cand.gid, cand.boxvalIn.side, cand.boxvalIn.val,
+               cand.boxvalOut.val);
+    }
   }
-}
+
+  {
+    std::unique_lock<std::mutex> lock(_sweepEventWriteMtx);
+    for (const auto& cand : cands.foldedPoints) {
+      diskAdd(cand.boxvalIn);
+      diskAdd(cand.boxvalOut);
+      if (_curSweepId / 2 % 1000000 == 0)
+        log("@ " + std::to_string(_curSweepId / 2));
+    }
+    for (const auto& cand : cands.points) {
+      diskAdd(cand.boxvalIn);
+      diskAdd(cand.boxvalOut);
+      if (_curSweepId / 2 % 1000000 == 0)
+        log("@ " + std::to_string(_curSweepId / 2));
+    }
+    for (const auto& cand : cands.foldedSimpleLines) {
+      diskAdd(cand.boxvalIn);
+      diskAdd(cand.boxvalOut);
+      if (_curSweepId / 2 % 1000000 == 0)
+        log("@ " + std::to_string(_curSweepId / 2));
+    }
+    for (const auto& cand : cands.foldedBoxAreas) {
+      diskAdd(cand.boxvalIn);
+      diskAdd(cand.boxvalOut);
+      if (_curSweepId / 2 % 1000000 == 0)
+        log("@ " + std::to_string(_curSweepId / 2));
+    }
+    for (const auto& cand : cands.simpleLines) {
+      diskAdd(cand.boxvalIn);
+      diskAdd(cand.boxvalOut);
+      if (_curSweepId / 2 % 1000000 == 0)
+        log("@ " + std::to_string(_curSweepId / 2));
+    }
+    for (const auto& cand : cands.lines) {
+      diskAdd(cand.boxvalIn);
+      diskAdd(cand.boxvalOut);
+      if (_curSweepId / 2 % 1000000 == 0)
+        log("@ " + std::to_string(_curSweepId / 2));
+    }
+    for (const auto& cand : cands.simpleAreas) {
+      diskAdd(cand.boxvalIn);
+      diskAdd(cand.boxvalOut);
+      if (_curSweepId / 2 % 1000000 == 0)
+        log("@ " + std::to_string(_curSweepId / 2));
+    }
+    for (const auto& cand : cands.areas) {
+      diskAdd(cand.boxvalIn);
+      diskAdd(cand.boxvalOut);
+      if (_curSweepId / 2 % 1000000 == 0)
+        log("@ " + std::to_string(_curSweepId / 2));
+    }
+    for (const auto& cand : cands.refs) {
+      _refs[cand.raw][cand.parentSubId][cand.gid] = cand.subid;
+      if (_curSweepId / 2 % 1000000 == 0)
+        log("@ " + std::to_string(_curSweepId / 2));
+    }
+  }
 }
 
 // _____________________________________________________________________________
 void Sweeper::clearMultis(bool force) {
-JobBatch curBatch;
-size_t batchSize = 1000;
-int32_t curMinThreadX = std::numeric_limits<int32_t>::max();
+  JobBatch curBatch;
+  size_t batchSize = 1000;
+  int32_t curMinThreadX = std::numeric_limits<int32_t>::max();
 
-for (size_t i = 0; i < _cfg.numThreads; i++) {
-  if (_atomicCurX[i] < curMinThreadX) curMinThreadX = _atomicCurX[i];
-}
+  for (size_t i = 0; i < _cfg.numThreads; i++) {
+    if (_atomicCurX[i] < curMinThreadX) curMinThreadX = _atomicCurX[i];
+  }
 
-for (size_t i = 0; i < 2; i++) {
-  for (auto a = _activeMultis[i].begin(); a != _activeMultis[i].end();) {
-    size_t mid = *a;
-    if (mid >= _multiIds[i].size()) {
-      LOG(WARN) << "Invalid multi ID " << mid << " detected!";
-      a++;
-      continue;
-    }
-    const std::string& gid = _multiIds[i][mid];
-    int32_t rightX = _multiRightX[i][mid];
-    if (force || rightX < curMinThreadX) {
-      curBatch.push_back({{}, {}, gid});
-      a = _activeMultis[i].erase(a);
-    } else {
-      a++;
-    }
+  for (size_t i = 0; i < 2; i++) {
+    for (auto a = _activeMultis[i].begin(); a != _activeMultis[i].end();) {
+      size_t mid = *a;
+      if (mid >= _multiIds[i].size()) {
+        LOG(WARN) << "Invalid multi ID " << mid << " detected!";
+        a++;
+        continue;
+      }
+      const std::string& gid = _multiIds[i][mid];
+      int32_t rightX = _multiRightX[i][mid];
+      if (force || rightX < curMinThreadX) {
+        curBatch.push_back({{}, {}, gid});
+        a = _activeMultis[i].erase(a);
+      } else {
+        a++;
+      }
 
-    if (curBatch.size() > batchSize) {
-      _jobs.add(std::move(curBatch));
-      curBatch.clear();  // std doesnt guarantee that after move
-      curBatch.reserve(batchSize);
+      if (curBatch.size() > batchSize) {
+        _jobs.add(std::move(curBatch));
+        curBatch.clear();  // std doesnt guarantee that after move
+        curBatch.reserve(batchSize);
+      }
     }
   }
-}
 
-if (curBatch.size()) _jobs.add(std::move(curBatch));
+  if (curBatch.size()) _jobs.add(std::move(curBatch));
 }
 
 // _____________________________________________________________________________
 void Sweeper::multiOut(size_t tOut, const std::string& gidA) {
-// collect dist, if requested
-if (_cfg.withinDist >= 0) {
-  std::map<std::string, double> subDistance;
-  for (size_t t = 0; t < _cfg.numThreads + 1; t++) {
-    std::unique_lock<std::mutex> lock(_mutsDistance[t]);
-    auto i = _subDistance[t].find(gidA);
-    if (i != _subDistance[t].end()) {
-      for (const auto& a : i->second) {
-        if (subDistance.find(a.first) == subDistance.end())
-          subDistance[a.first] = a.second;
-        else if (subDistance[a.first] > a.second)
-          subDistance[a.first] = a.second;
-      }
-      _subDistance[t].erase(i);
-    }
-  }
-
-  for (const auto& a : subDistance) {
-    writeRel(tOut, gidA, a.first, "\t" + std::to_string(a.second) + "\t");
-    writeRel(tOut, a.first, gidA, "\t" + std::to_string(a.second) + "\t");
-
+  // collect dist, if requested
+  if (_cfg.withinDist >= 0) {
+    std::map<std::string, double> subDistance;
     for (size_t t = 0; t < _cfg.numThreads + 1; t++) {
-      auto j = _subDistance[t].find(a.first);
-      if (j != _subDistance[t].end()) {
-        auto k = j->second.find(gidA);
-        if (k != j->second.end()) {
-          j->second.erase(gidA);
+      std::unique_lock<std::mutex> lock(_mutsDistance[t]);
+      auto i = _subDistance[t].find(gidA);
+      if (i != _subDistance[t].end()) {
+        for (const auto& a : i->second) {
+          if (subDistance.find(a.first) == subDistance.end())
+            subDistance[a.first] = a.second;
+          else if (subDistance[a.first] > a.second)
+            subDistance[a.first] = a.second;
         }
+        _subDistance[t].erase(i);
       }
     }
-  }
-  return;
-}
 
-// collect DE9IM, if requested
-if (_cfg.computeDE9IM) {
-  std::map<std::string, util::geo::DE9IMatrix> subDE9IM;
+    for (const auto& a : subDistance) {
+      writeRel(tOut, gidA, a.first, "\t" + std::to_string(a.second) + "\t");
+      writeRel(tOut, a.first, gidA, "\t" + std::to_string(a.second) + "\t");
 
-  for (size_t t = 0; t < _cfg.numThreads + 1; t++) {
-    std::unique_lock<std::mutex> lock(_mutsDE9IM[t]);
-    auto i = _subDE9IM[t].find(gidA);
-    if (i != _subDE9IM[t].end()) {
-      for (const auto& a : i->second) {
-        subDE9IM[a.first] += a.second;
-
-        for (size_t t = 0; t < _cfg.numThreads + 1; t++) {
-          auto j = _subDE9IM[t].find(a.first);
-          if (j != _subDE9IM[t].end()) {
-            auto k = j->second.find(gidA);
-            if (k != j->second.end()) {
-              j->second.erase(gidA);
-            }
+      for (size_t t = 0; t < _cfg.numThreads + 1; t++) {
+        auto j = _subDistance[t].find(a.first);
+        if (j != _subDistance[t].end()) {
+          auto k = j->second.find(gidA);
+          if (k != j->second.end()) {
+            j->second.erase(gidA);
           }
         }
       }
-      _subDE9IM[t].erase(i);
     }
+    return;
   }
 
-  for (const auto& a : subDE9IM) {
-    writeRel(tOut, gidA, a.first, "\t" + a.second.toString() + "\t");
-    _relStats[tOut].de9im++;
-    writeRel(tOut, a.first, gidA,
-             "\t" + a.second.transpose().toString() + "\t");
-    _relStats[tOut].de9im++;
+  // collect DE9IM, if requested
+  if (_cfg.computeDE9IM) {
+    std::map<std::string, util::geo::DE9IMatrix> subDE9IM;
+
+    for (size_t t = 0; t < _cfg.numThreads + 1; t++) {
+      std::unique_lock<std::mutex> lock(_mutsDE9IM[t]);
+      auto i = _subDE9IM[t].find(gidA);
+      if (i != _subDE9IM[t].end()) {
+        for (const auto& a : i->second) {
+          subDE9IM[a.first] += a.second;
+
+          for (size_t t = 0; t < _cfg.numThreads + 1; t++) {
+            auto j = _subDE9IM[t].find(a.first);
+            if (j != _subDE9IM[t].end()) {
+              auto k = j->second.find(gidA);
+              if (k != j->second.end()) {
+                j->second.erase(gidA);
+              }
+            }
+          }
+        }
+        _subDE9IM[t].erase(i);
+      }
+    }
+
+    for (const auto& a : subDE9IM) {
+      writeRel(tOut, gidA, a.first, "\t" + a.second.toString() + "\t");
+      _relStats[tOut].de9im++;
+      writeRel(tOut, a.first, gidA,
+               "\t" + a.second.transpose().toString() + "\t");
+      _relStats[tOut].de9im++;
+    }
+    return;
   }
-  return;
-}
 
-std::unordered_map<std::string, size_t> subContains, subCovered;
+  std::unordered_map<std::string, size_t> subContains, subCovered;
 
-std::unordered_map<std::string, std::unordered_map<std::string, size_t>>
+  std::unordered_map<std::string, std::unordered_map<std::string, size_t>>
       subEquals;
 
   // collect equals
@@ -1151,8 +1151,8 @@ void Sweeper::duplicatesToReferences() {
 
   int32_t curX = 0;
 
-  std::unordered_map<uint64_t, std::pair<size_t, bool>> duplicatePolys;
-  std::unordered_map<uint64_t, std::pair<size_t, bool>> duplicateLines;
+  std::unordered_map<uint64_t, std::pair<size_t, bool>> duplicatePolys,
+      duplicateLines;
 
   size_t pos = 0;
 
@@ -3109,8 +3109,6 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
 
     // covers
     if (std::get<1>(res)) {
-      writeNotCrosses(t, a->id, a->subId, b->id, b->subId);
-
       if (a->subId == 0) writeNotOverlaps(t, a->id, a->subId, b->id, b->subId);
 
       writeCovers(t, b->id, b->subId, a->id, a->subId);
@@ -3168,8 +3166,6 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
 
     // covers
     if (std::get<1>(res)) {
-      writeNotCrosses(t, a->id, a->subId, b->id, 0);
-
       writeCovers(t, b->id, 0, a->id, a->subId);
 
       if (fabs(a->length - util::geo::len(LineSegment<int32_t>(
@@ -3227,7 +3223,6 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
 
     // covers
     if (std::get<1>(res)) {
-      writeNotCrosses(t, a->id, 0, b->id, b->subId);
       writeCovers(t, b->id, b->subId, a->id, 0);
 
       writeNotOverlaps(t, a->id, 0, b->id, b->subId);
@@ -3529,7 +3524,6 @@ void Sweeper::writeNotOverlaps(size_t t, const std::string& a, size_t aSub,
                                const std::string& b, size_t bSub) {
   if (a == b) return;
 
-  // if ((aSub != 0 || bSub != 0) && !refRelated(a, b)) {
   if ((aSub != 0 || bSub != 0)) {
     std::unique_lock<std::mutex> lock(_mutsNotOverlaps[t]);
 
@@ -3613,7 +3607,6 @@ void Sweeper::writeCrosses(size_t t, const std::string& a, size_t aSub,
 void Sweeper::writeNotCrosses(size_t t, const std::string& a, size_t aSub,
                               const std::string& b, size_t bSub) {
   if (a == b) return;
-  // if ((aSub != 0 || bSub != 0) && !refRelated(a, b)) {
   if ((aSub != 0 || bSub != 0)) {
     std::unique_lock<std::mutex> lock(_mutsNotCrosses[t]);
 
@@ -3701,7 +3694,6 @@ void Sweeper::writeNotTouches(size_t t, const std::string& a, size_t aSub,
                               const std::string& b, size_t bSub) {
   if (a == b) return;
 
-  // if ((aSub != 0 || bSub != 0) && !refRelated(a, b)) {
   if ((aSub != 0 || bSub != 0)) {
     std::unique_lock<std::mutex> lock(_mutsNotTouches[t]);
 
@@ -3791,6 +3783,7 @@ void Sweeper::writeEquals(size_t t, const std::string& a, size_t aSub,
 void Sweeper::writeCovers(size_t t, const std::string& a, size_t aSub,
                           const std::string& b, size_t bSub) {
   if (a != b) {
+    writeNotCrosses(t, a, aSub, b, bSub);
     if (bSub > 0) {
       std::unique_lock<std::mutex> lock(_mutsCovers[t]);
       _subCovered[t][b][a].insert(bSub);
@@ -3867,8 +3860,6 @@ void Sweeper::writeContains(size_t t, const std::string& a, size_t aSub,
 
 // _____________________________________________________________________________
 bool Sweeper::notCrosses(const std::string& a, const std::string& b) {
-  if (refRelated(a, b)) return true;
-
   for (size_t t = 0; t < _cfg.numThreads + 1; t++) {
     std::unique_lock<std::mutex> lock(_mutsNotCrosses[t]);
     auto i = _subNotCrosses[t].find(a);
@@ -3880,8 +3871,6 @@ bool Sweeper::notCrosses(const std::string& a, const std::string& b) {
 
 // _____________________________________________________________________________
 bool Sweeper::notTouches(const std::string& a, const std::string& b) {
-  if (refRelated(a, b)) return true;
-
   for (size_t t = 0; t < _cfg.numThreads + 1; t++) {
     std::unique_lock<std::mutex> lock(_mutsNotTouches[t]);
     auto i = _subNotTouches[t].find(a);
@@ -3893,8 +3882,6 @@ bool Sweeper::notTouches(const std::string& a, const std::string& b) {
 
 // _____________________________________________________________________________
 bool Sweeper::notOverlaps(const std::string& a, const std::string& b) {
-  // if (refRelated(a, b)) return true;
-
   for (size_t t = 0; t < _cfg.numThreads + 1; t++) {
     std::unique_lock<std::mutex> lock(_mutsNotOverlaps[t]);
     auto i = _subNotOverlaps[t].find(a);
@@ -3908,25 +3895,6 @@ bool Sweeper::notOverlaps(const std::string& a, const std::string& b) {
 // _____________________________________________________________________________
 void Sweeper::log(const std::string& msg) {
   if (_cfg.logCb) _cfg.logCb(msg);
-}
-
-// _____________________________________________________________________________
-bool Sweeper::refRelated(const std::string& a, const std::string& b) const {
-  auto i = _refs.find(a);
-  if (i != _refs.end()) {
-    for (const auto& subs : i->second) {
-      if (subs.second.find(b) != subs.second.end()) return true;
-    }
-  }
-
-  auto j = _refs.find(b);
-  if (j != _refs.end()) {
-    for (const auto& subs : j->second) {
-      if (subs.second.find(a) != subs.second.end()) return true;
-    }
-  }
-
-  return false;
 }
 
 // _____________________________________________________________________________
