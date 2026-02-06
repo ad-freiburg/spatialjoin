@@ -40,7 +40,8 @@ enum GeomType : uint8_t {
   FOLDED_POINT = 5,
   FOLDED_SIMPLE_LINE = 6,
   FOLDED_BOX_POLYGON = 7,
-  DELETED = 8
+  DELETED = 8,
+  SELF_CHECK = 9
 };
 
 struct BoxVal {
@@ -63,7 +64,6 @@ struct WriteCand {
   BoxVal boxvalIn;
   BoxVal boxvalOut;
   size_t subid;
-  size_t parentSubId;
 };
 
 struct WriteBatch {
@@ -286,8 +286,6 @@ class Sweeper {
                         const std::string& gid, bool side,
                         WriteBatch& batch) const;
 
-  void add(const std::string& a, const util::geo::I32Box& box,
-           const std::string& gid, bool side, WriteBatch& batch) const;
   void add(const std::string& a, const util::geo::I32Box& box,
            const std::string& gid, size_t subid, bool side,
            WriteBatch& batch) const;
@@ -556,7 +554,7 @@ class Sweeper {
   void doCheck(JobVal cur, JobVal sv, size_t t);
   void doDistCheck(JobVal cur, JobVal sv, size_t t);
   void doDE9IMCheck(JobVal cur, JobVal sv, size_t t);
-  void selfCheck(JobVal cur, size_t t);
+  void selfCheck(const std::string& a, size_t subId, size_t t);
   void processQueue(size_t t);
 
   bool notOverlaps(const std::string& a, const std::string& b);
@@ -653,10 +651,14 @@ class Sweeper {
   mutable std::mutex _areaGeomCacheWriteMtx;
   mutable std::mutex _simpleAreaGeomCacheWriteMtx;
 
+  std::unordered_map<std::string, util::geo::I32Box> _selfCheckBounds;
+
   std::unordered_map<
       std::string,
       std::unordered_map<size_t, std::unordered_map<std::string, size_t>>>
       _refs;
+
+  std::vector<std::pair<std::string, size_t>> _selfChecks;
 
   util::geo::I32Box _filterBox = {{std::numeric_limits<int32_t>::lowest(),
                                    std::numeric_limits<int32_t>::lowest()},

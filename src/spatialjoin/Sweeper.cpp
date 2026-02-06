@@ -159,22 +159,12 @@ void Sweeper::multiAdd(const std::string& gid, bool side, int32_t xLeft,
 }
 
 // _____________________________________________________________________________
-void Sweeper::add(const std::string& parent, const util::geo::I32Box& box,
-                  const std::string& gid, bool side, WriteBatch& batch) const {
-  add(parent, 0, box, gid, 0, side, batch);
-}
-
-// _____________________________________________________________________________
-void Sweeper::add(const std::string& parent, const util::geo::I32Box& box,
-                  const std::string& gid, size_t subid, bool side,
+void Sweeper::add(const std::string& parentR, const util::geo::I32Box& box,
+                  const std::string& gidR, size_t subid, bool side,
                   WriteBatch& batch) const {
-  add(parent, 0, box, gid, subid, side, batch);
-}
-
-// _____________________________________________________________________________
-void Sweeper::add(const std::string& parentR, size_t parentSubId,
-                  const util::geo::I32Box& box, const std::string& gidR,
-                  size_t subid, bool side, WriteBatch& batch) const {
+  // NOTE: referencing atm *only* works if the referenced geometry is a non-
+  // multi geometry. If a multi geometry is referenced, the behavior is
+  // undefined.
   std::string gid = (side ? ("B" + gidR) : ("A" + gidR));
   std::string parent = (side ? ("B" + parentR) : ("A" + parentR));
 
@@ -185,7 +175,7 @@ void Sweeper::add(const std::string& parentR, size_t parentSubId,
   boxl.val = box.getLowerLeft().getX();
   boxr.val = box.getUpperRight().getX();
 
-  batch.refs.push_back({parent, gid, boxl, boxr, subid, parentSubId});
+  batch.refs.push_back({parent, gid, boxl, boxr, subid});
 }
 
 // _____________________________________________________________________________
@@ -735,7 +725,9 @@ void Sweeper::addBatch(WriteBatch& cands) {
         log("@ " + std::to_string(_curSweepId / 2));
     }
     for (const auto& cand : cands.refs) {
-      _refs[cand.raw][cand.parentSubId][cand.gid] = cand.subid;
+      _refs[cand.raw][0][cand.gid] = cand.subid;
+      _selfCheckBounds[cand.gid] = util::geo::getBoundingBox(
+          I32Point{cand.boxvalIn.val, cand.boxvalIn.loY});
       if (_curSweepId / 2 % 1000000 == 0)
         log("@ " + std::to_string(_curSweepId / 2));
     }
@@ -1061,6 +1053,24 @@ void Sweeper::flush() {
   log(std::to_string(_multiIds[0].size() + _multiIds[1].size()) +
       " multi geometries");
 
+  for (const auto& ref : _refs) {
+    for (const auto& sub : ref.second) {
+      _selfChecks.push_back({ref.first, sub.first});
+
+      diskAdd({_selfChecks.size() - 1,
+               1,
+               0,
+               _selfCheckBounds[ref.first].getLowerLeft().getX(),
+               false,
+               SELF_CHECK,
+               0.0,
+               {},
+               {},
+               false,
+               false});
+    }
+  }
+
   for (size_t side = 0; side < 2; side++) {
     for (size_t i = 0; i < _multiIds[side].size(); i++) {
       diskAdd({i,
@@ -1132,6 +1142,8 @@ void Sweeper::flush() {
   log("...done");
 
   duplicatesToReferences();
+
+  log(std::to_string(_refs.size()) + " reference geometries");
 }
 
 // _____________________________________________________________________________
@@ -1143,6 +1155,7 @@ void Sweeper::duplicatesToReferences() {
   unsigned char* buf = new unsigned char[sizeof(BoxVal) * RBUF_SIZE];
 
   std::unordered_set<size_t> deleted;
+  std::unordered_set<size_t> referenced;
 
   log("Removing duplicates...");
 
@@ -1185,14 +1198,15 @@ void Sweeper::duplicatesToReferences() {
             deleted.erase(cur->id);
             updated = true;
           }
+          referenced.erase(cur->id);
           continue;
         }
 
         if (curX != cur->val) {
+          // new equal-X block
           duplicatePolys.clear();
           duplicateLines.clear();
           curX = cur->val;
-          continue;
         }
 
         double ts = DUPLICATE_REMOVAL_MIN_SIZE;
@@ -1211,8 +1225,17 @@ void Sweeper::duplicatesToReferences() {
 
             if (a->box == b->box && a->area == b->area &&
                 a->boxIds == b->boxIds && a->geom == b->geom) {
-              cur->type = DELETED;
               deleted.insert(cur->id);
+              if (referenced.insert(existing->second.first).second) {
+                // for the first element referencing this, modify this
+                // event to the self check of the referenced geom
+                cur->type = SELF_CHECK;
+                _selfChecks.push_back({b->id, b->subId});
+                cur->id = _selfChecks.size() - 1;
+              } else {
+                cur->type = DELETED;
+              }
+
               updated = true;
               _refs[b->id][b->subId][a->id] = a->subId;
             }
@@ -1235,8 +1258,16 @@ void Sweeper::duplicatesToReferences() {
 
             if (a->box == b->box && a->length == b->length &&
                 a->boxIds == b->boxIds && a->geom == b->geom) {
-              cur->type = DELETED;
               deleted.insert(cur->id);
+              if (referenced.insert(existing->second.first).second) {
+                // for the first element referencing this, modify this
+                // event to the self check of the referenced geom
+                cur->type = SELF_CHECK;
+                _selfChecks.push_back({b->id, b->subId});
+                cur->id = _selfChecks.size() - 1;
+              } else {
+                cur->type = DELETED;
+              }
               updated = true;
               _refs[b->id][b->subId][a->id] = a->subId;
             }
@@ -1356,7 +1387,13 @@ RelStats Sweeper::sweep() {
 
         jj++;
 
-        if (!cur->out && cur->loY == 1 && cur->upY == 0 && cur->type == POINT) {
+        if (cur->type == DELETED) {
+          continue;
+        } else if (cur->type == SELF_CHECK) {
+          // self checks, required if we have reference geoms
+          curBatch.push_back({*cur, *cur, ""});
+        } else if (!cur->out && cur->loY == 1 && cur->upY == 0 &&
+                   cur->type == POINT) {
           // special multi-IN
           _activeMultis[cur->side].insert(cur->id);
         } else if (!cur->out) {
@@ -1419,9 +1456,6 @@ RelStats Sweeper::sweep() {
         } else {
           // OUT event
           actives[cur->side].erase({cur->loY, cur->upY}, {cur->id, cur->type});
-
-          // optional self checks, required if we have reference geoms
-          if (_refs.size()) curBatch.push_back({*cur, *cur, ""});
 
           counts++;
 
@@ -2349,43 +2383,11 @@ void Sweeper::writeIntersect(size_t t, const std::string& a, size_t aSub,
 }
 
 // ____________________________________________________________________________
-void Sweeper::selfCheck(const JobVal cur, size_t t) {
-  if (cur.type == FOLDED_POINT) {
-    auto ts = TIME();
-    auto gid = unfoldString(cur.id);
-    _stats[t].timeGeoCacheRetrievalPoint += TOOK(ts);
-
-    writeIntersect(t, gid, 0, gid, 0);
-    writeEquals(t, gid, 0, gid, 0);
-    writeCovers(t, gid, 0, gid, 0);
-  } else if (cur.type == POINT) {
-    auto ts = TIME();
-    auto a = _pointCache.get(cur.id, cur.large ? -1 : t);
-    _stats[t].timeGeoCacheRetrievalPoint += TOOK(ts);
-
-    writeIntersect(t, a->id, a->subId, a->id, a->subId);
-    writeEquals(t, a->id, a->subId, a->id, a->subId);
-    writeCovers(t, a->id, a->subId, a->id, a->subId);
-  } else if (cur.type == LINE) {
-    auto a = _lineCache.get(cur.id, cur.large ? -1 : t);
-
-    writeIntersect(t, a->id, a->subId, a->id, a->subId);
-    writeEquals(t, a->id, a->subId, a->id, a->subId);
-    writeCovers(t, a->id, a->subId, a->id, a->subId);
-  } else if (isSimpleLine(cur.type)) {
-    auto a = getSimpleLine(cur, cur.large ? -1 : t);
-
-    writeIntersect(t, a->id, 0, a->id, 0);
-    writeEquals(t, a->id, 0, a->id, 0);
-    writeCovers(t, a->id, 0, a->id, 0);
-  } else if (isArea(cur.type)) {
-    auto a = getArea(cur, cur.large ? -1 : t);
-
-    writeIntersect(t, a->id, a->subId, a->id, a->subId);
-    writeEquals(t, a->id, a->subId, a->id, a->subId);
-    writeCovers(t, a->id, a->subId, a->id, a->subId);
-    writeContains(t, a->id, a->subId, a->id, a->subId);
-  }
+void Sweeper::selfCheck(const std::string& a, size_t subId, size_t t) {
+  writeIntersect(t, a, subId, a, subId);
+  writeEquals(t, a, subId, a, subId);
+  writeCovers(t, a, subId, a, subId);
+  writeContains(t, a, subId, a, subId);
 }
 
 // ____________________________________________________________________________
@@ -2796,7 +2798,8 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
   _checks[t]++;
   _curX[t] = cur.val;
 
-  if (cur.type == sv.type && cur.id == sv.id) return selfCheck(cur, t);
+  if (cur.type == SELF_CHECK)
+    return selfCheck(_selfChecks[cur.id].first, _selfChecks[cur.id].second, t);
 
   // every 10000 checks, update our position
   if (_checks[t] % 10000 == 0) _atomicCurX[t] = _curX[t];

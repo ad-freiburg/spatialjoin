@@ -167,6 +167,7 @@ class WKTParserBase {
                                 {std::numeric_limits<int32_t>::max(),
                                  std::numeric_limits<int32_t>::max()}),
               id, subId, side, batch);
+          subId++;
         }
         c = end + 1;
       } while (c < lastC && ((end = strchr(c, ',')) || (end = strchr(c, '>'))));

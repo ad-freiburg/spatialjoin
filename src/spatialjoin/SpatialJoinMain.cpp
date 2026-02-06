@@ -434,13 +434,7 @@ int main(int argc, char** argv) {
 
   sweeper.log("Done parsing (" + std::to_string(TOOK(ts) / 1000000000.0) +
               "s).");
-  ts = TIME();
-
-  sweeper.log("Sorting sweep events...");
-
   sweeper.flush();
-
-  sweeper.log("done (" + std::to_string(TOOK(ts) / 1000000000.0) + "s).");
 
   sweeper.log("Sweeping...");
   ts = TIME();
