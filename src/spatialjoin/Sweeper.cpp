@@ -726,7 +726,7 @@ void Sweeper::addBatch(WriteBatch& cands) {
     }
     for (const auto& cand : cands.refs) {
       _refs[cand.raw][0][cand.gid] = cand.subid;
-      _selfCheckBounds[cand.gid] = util::geo::getBoundingBox(
+      _selfCheckBounds[cand.raw] = util::geo::getBoundingBox(
           I32Point{cand.boxvalIn.val, cand.boxvalIn.loY});
       if (_curSweepId / 2 % 1000000 == 0)
         log("@ " + std::to_string(_curSweepId / 2));
@@ -1387,6 +1387,8 @@ RelStats Sweeper::sweep() {
 
         jj++;
 
+        if (jj % 200000 == 0) clearMultis(false);
+
         if (cur->type == DELETED) {
           continue;
         } else if (cur->type == SELF_CHECK) {
@@ -1451,8 +1453,6 @@ RelStats Sweeper::sweep() {
 
           if ((jj % 100 == 0) && _cfg.sweepProgressCb)
             _cfg.sweepProgressCb(jj / 2);
-
-          if (jj % 200000 == 0) clearMultis(false);
         } else {
           // OUT event
           actives[cur->side].erase({cur->loY, cur->upY}, {cur->id, cur->type});
@@ -2388,6 +2388,8 @@ void Sweeper::selfCheck(const std::string& a, size_t subId, size_t t) {
   writeEquals(t, a, subId, a, subId);
   writeCovers(t, a, subId, a, subId);
   writeContains(t, a, subId, a, subId);
+
+  writeNotCrosses(t, a, subId, a, subId);
 }
 
 // ____________________________________________________________________________
@@ -3112,6 +3114,7 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
 
     // covers
     if (std::get<1>(res)) {
+      writeNotCrosses(t, a->id, a->subId, b->id, b->subId);
       if (a->subId == 0) writeNotOverlaps(t, a->id, a->subId, b->id, b->subId);
 
       writeCovers(t, b->id, b->subId, a->id, a->subId);
@@ -3170,6 +3173,7 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
     // covers
     if (std::get<1>(res)) {
       writeCovers(t, b->id, 0, a->id, a->subId);
+      writeNotCrosses(t, a->id, a->subId, b->id, 0);
 
       if (fabs(a->length - util::geo::len(LineSegment<int32_t>(
                                sv.point, sv.point2))) < util::geo::EPSILON) {
@@ -3226,6 +3230,7 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
 
     // covers
     if (std::get<1>(res)) {
+      writeNotCrosses(t, a->id, 0, b->id, b->subId);
       writeCovers(t, b->id, b->subId, a->id, 0);
 
       writeNotOverlaps(t, a->id, 0, b->id, b->subId);
@@ -3525,9 +3530,7 @@ void Sweeper::writeOverlaps(size_t t, const std::string& a, size_t aSub,
 // _____________________________________________________________________________
 void Sweeper::writeNotOverlaps(size_t t, const std::string& a, size_t aSub,
                                const std::string& b, size_t bSub) {
-  if (a == b) return;
-
-  if ((aSub != 0 || bSub != 0)) {
+  if (a != b && (aSub != 0 || bSub != 0)) {
     std::unique_lock<std::mutex> lock(_mutsNotOverlaps[t]);
 
     if (bSub != 0) _subNotOverlaps[t][b].insert(a);
@@ -3609,8 +3612,7 @@ void Sweeper::writeCrosses(size_t t, const std::string& a, size_t aSub,
 // _____________________________________________________________________________
 void Sweeper::writeNotCrosses(size_t t, const std::string& a, size_t aSub,
                               const std::string& b, size_t bSub) {
-  if (a == b) return;
-  if ((aSub != 0 || bSub != 0)) {
+  if (a != b && (aSub != 0 || bSub != 0)) {
     std::unique_lock<std::mutex> lock(_mutsNotCrosses[t]);
 
     if (bSub != 0) _subNotCrosses[t][b].insert(a);
@@ -3695,9 +3697,7 @@ void Sweeper::writeTouches(size_t t, const std::string& a, size_t aSub,
 // _____________________________________________________________________________
 void Sweeper::writeNotTouches(size_t t, const std::string& a, size_t aSub,
                               const std::string& b, size_t bSub) {
-  if (a == b) return;
-
-  if ((aSub != 0 || bSub != 0)) {
+  if (a != b && (aSub != 0 || bSub != 0)) {
     std::unique_lock<std::mutex> lock(_mutsNotTouches[t]);
 
     if (bSub != 0) _subNotTouches[t][b].insert(a);
@@ -3786,7 +3786,6 @@ void Sweeper::writeEquals(size_t t, const std::string& a, size_t aSub,
 void Sweeper::writeCovers(size_t t, const std::string& a, size_t aSub,
                           const std::string& b, size_t bSub) {
   if (a != b) {
-    writeNotCrosses(t, a, aSub, b, bSub);
     if (bSub > 0) {
       std::unique_lock<std::mutex> lock(_mutsCovers[t]);
       _subCovered[t][b][a].insert(bSub);
