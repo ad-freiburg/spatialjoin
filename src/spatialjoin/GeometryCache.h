@@ -29,20 +29,11 @@ struct Area {
   // polygons
   util::geo::I32XSortedPolygon geom;
 
-  // envelope
-  util::geo::I32Box box;
-
   // id
   std::string id;
 
   // sub id (for multipolygons)
   uint16_t subId;
-
-  // area
-  double area;
-
-  // outer area
-  double outerArea;
 
   // box ids
   std::vector<sj::boxids::BoxId> boxIds;
@@ -53,20 +44,8 @@ struct Area {
   // inner geom
   util::geo::I32XSortedPolygon inner;
 
-  // inner polygon envelope
-  util::geo::I32Box innerBox;
-
-  // outer area for inner polygon
-  double innerOuterArea;
-
   // outer geom
   util::geo::I32XSortedPolygon outer;
-
-  // outer polygon envelope
-  util::geo::I32Box outerBox;
-
-  // outer area for outer polygon
-  double outerOuterArea;
 };
 
 struct SimpleLine {
@@ -78,17 +57,11 @@ struct Line {
   // line
   util::geo::I32XSortedLine geom;
 
-  // envelope
-  util::geo::I32Box box;
-
   // id
   std::string id;
 
   // sub id (for multilines)
   uint16_t subId;
-
-  // length
-  double length;
 
   // box ids
   std::vector<sj::boxids::BoxId> boxIds;
@@ -217,7 +190,8 @@ class GeometryCache {
   std::string _dir, _tmpPrefix;
   std::string _fName;
 
-  std::unordered_map<size_t, std::shared_ptr<W>> _memStore;
+  // must be ordered map to ensure correct writing order when flushing to disk!
+  std::map<size_t, std::shared_ptr<W>> _memStore;
   bool _inMemory = true;
 
   char* _writeBuffer = 0;

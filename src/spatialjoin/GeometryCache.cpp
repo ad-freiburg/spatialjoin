@@ -1,13 +1,12 @@
 // Copyright 2023, University of Freiburg
 // Authors: Patrick Brosi <brosi@cs.uni-freiburg.de>
 
-#include "GeometryCache.h"
-
 #include <fstream>
 #include <iostream>
 #include <mutex>
 #include <vector>
 
+#include "GeometryCache.h"
 #include "util/geo/Geo.h"
 
 const static size_t MAX_MEM_CACHE_SIZE = 3 * 1024 * 1024 * 20l;
@@ -165,10 +164,6 @@ std::pair<size_t, sj::Line> sj::GeometryCache<sj::Line>::getFrom(
   // geom
   estSize += readLine(str, ret.geom);
 
-  // envelope
-  str.read(reinterpret_cast<char*>(&ret.box), sizeof(util::geo::I32Box));
-  estSize += sizeof(util::geo::I32Box);
-
   // id
   uint16_t len;
   str.read(reinterpret_cast<char*>(&len), sizeof(uint16_t));
@@ -182,10 +177,6 @@ std::pair<size_t, sj::Line> sj::GeometryCache<sj::Line>::getFrom(
   // sub id
   str.read(reinterpret_cast<char*>(&ret.subId), sizeof(uint16_t));
   estSize += sizeof(uint16_t);
-
-  // length
-  str.read(reinterpret_cast<char*>(&ret.length), sizeof(double));
-  estSize += sizeof(double);
 
   // boxIds
   uint32_t numBoxIds;
@@ -217,10 +208,6 @@ std::pair<size_t, sj::Area> sj::GeometryCache<sj::Area>::getFrom(
   // geom
   estSize += readPoly(str, ret.geom);
 
-  // envelope
-  str.read(reinterpret_cast<char*>(&ret.box), sizeof(util::geo::I32Box));
-  estSize += sizeof(util::geo::I32Box);
-
   // id
   uint16_t len;
   str.read(reinterpret_cast<char*>(&len), sizeof(uint16_t));
@@ -234,14 +221,6 @@ std::pair<size_t, sj::Area> sj::GeometryCache<sj::Area>::getFrom(
   // sub id
   str.read(reinterpret_cast<char*>(&ret.subId), sizeof(uint16_t));
   estSize += sizeof(uint16_t);
-
-  // area
-  str.read(reinterpret_cast<char*>(&ret.area), sizeof(double));
-  estSize += sizeof(double);
-
-  // outer area
-  str.read(reinterpret_cast<char*>(&ret.outerArea), sizeof(double));
-  estSize += sizeof(double);
 
   // boxIds
   uint32_t numBoxIds;
@@ -262,22 +241,8 @@ std::pair<size_t, sj::Area> sj::GeometryCache<sj::Area>::getFrom(
     // simplified inner
     estSize += readPoly(str, ret.inner);
 
-    if (!ret.inner.empty()) {
-      str.read(reinterpret_cast<char*>(&ret.innerBox),
-               sizeof(util::geo::I32Box));
-      str.read(reinterpret_cast<char*>(&ret.innerOuterArea), sizeof(double));
-      estSize += sizeof(double) + sizeof(util::geo::I32Box);
-    }
-
     // simplified outer
     estSize += readPoly(str, ret.outer);
-
-    if (!ret.outer.empty()) {
-      str.read(reinterpret_cast<char*>(&ret.outerBox),
-               sizeof(util::geo::I32Box));
-      str.read(reinterpret_cast<char*>(&ret.outerOuterArea), sizeof(double));
-      estSize += sizeof(double) + sizeof(util::geo::I32Box);
-    }
   }
 
   return {estSize, ret};
@@ -390,10 +355,6 @@ size_t sj::GeometryCache<sj::Line>::writeTo(const sj::Line& val,
   // geoms
   ret += writeLine(val.geom, str);
 
-  // envelopes
-  str.write(reinterpret_cast<const char*>(&val.box), sizeof(util::geo::I32Box));
-  ret += sizeof(util::geo::I32Box);
-
   // id
   uint16_t s = val.id.size();
   str.write(reinterpret_cast<const char*>(&s), sizeof(uint16_t));
@@ -405,10 +366,6 @@ size_t sj::GeometryCache<sj::Line>::writeTo(const sj::Line& val,
   // sub id
   str.write(reinterpret_cast<const char*>(&val.subId), sizeof(uint16_t));
   ret += sizeof(uint16_t);
-
-  // length
-  str.write(reinterpret_cast<const char*>(&val.length), sizeof(double));
-  ret += sizeof(double);
 
   // boxIds
   uint32_t size = val.boxIds.size();
@@ -437,14 +394,11 @@ size_t sj::GeometryCache<sj::Area>::writeTo(const sj::Area& val,
   // geoms
   ret += writePoly(val.geom, str);
 
-  // envelope
-  str.write(reinterpret_cast<const char*>(&val.box), sizeof(util::geo::I32Box));
-  ret += sizeof(util::geo::I32Box);
-
   // id
   uint16_t s = val.id.size();
   str.write(reinterpret_cast<const char*>(&s), sizeof(uint16_t));
   ret += sizeof(uint16_t);
+
   str.write(reinterpret_cast<const char*>(val.id.c_str()),
             val.id.size() * sizeof(char));
   ret += sizeof(char) * val.id.size();
@@ -452,14 +406,6 @@ size_t sj::GeometryCache<sj::Area>::writeTo(const sj::Area& val,
   // sub id
   str.write(reinterpret_cast<const char*>(&val.subId), sizeof(uint16_t));
   ret += sizeof(uint16_t);
-
-  // area
-  str.write(reinterpret_cast<const char*>(&val.area), sizeof(double));
-  ret += sizeof(double);
-
-  // outer area
-  str.write(reinterpret_cast<const char*>(&val.outerArea), sizeof(double));
-  ret += sizeof(double);
 
   // boxIds
   uint32_t size = val.boxIds.size();
@@ -480,30 +426,8 @@ size_t sj::GeometryCache<sj::Area>::writeTo(const sj::Area& val,
     // innerGeom
     ret += writePoly(val.inner, str);
 
-    if (!val.inner.empty()) {
-      str.write(reinterpret_cast<const char*>(&val.innerBox),
-                sizeof(util::geo::I32Box));
-      ret += sizeof(util::geo::I32Box);
-
-      // inner area
-      str.write(reinterpret_cast<const char*>(&val.innerOuterArea),
-                sizeof(double));
-      ret += sizeof(double);
-    }
-
     // outerGeom
     ret += writePoly(val.outer, str);
-
-    if (!val.outer.empty()) {
-      str.write(reinterpret_cast<const char*>(&val.outerBox),
-                sizeof(util::geo::I32Box));
-      ret += sizeof(util::geo::I32Box);
-
-      // outer area
-      str.write(reinterpret_cast<const char*>(&val.outerOuterArea),
-                sizeof(double));
-      ret += sizeof(double);
-    }
   }
 
   return ret;
@@ -523,10 +447,21 @@ template <typename W>
 size_t sj::GeometryCache<W>::readPoly(std::istream& str,
                                       util::geo::I32XSortedPolygon& ret) const {
   size_t estSize = 0;
+
+  util::geo::I32Box box;
+  str.read(reinterpret_cast<char*>(&box), sizeof(util::geo::I32Box));
+  estSize += sizeof(util::geo::I32Box);
+
   double maxSegLen;
   str.read(reinterpret_cast<char*>(&maxSegLen), sizeof(double));
   estSize += sizeof(double);
   ret.getOuter().setMaxSegLen(maxSegLen);
+
+  // outer area
+  double area;
+  str.read(reinterpret_cast<char*>(&area), sizeof(double));
+  estSize += sizeof(double);
+  ret.getOuter().setArea(area);
 
   uint32_t sizeOuter;
   str.read(reinterpret_cast<char*>(&sizeOuter), sizeof(uint32_t));
@@ -538,6 +473,8 @@ size_t sj::GeometryCache<W>::readPoly(std::istream& str,
     str.read(reinterpret_cast<char*>(&ret.getOuter().rawRing()[0]),
              sizeof(util::geo::XSortedTuple<int32_t>) * sizeOuter);
     estSize += sizeof(util::geo::XSortedTuple<int32_t>) * sizeOuter;
+
+    ret.getOuter().setBoundingBox(box);
   }
 
   uint32_t numInners;
@@ -585,6 +522,8 @@ size_t sj::GeometryCache<W>::readPoly(std::istream& str,
       str.read(reinterpret_cast<char*>(&ret.getInners()[j].rawRing()[0]),
                sizeof(util::geo::XSortedTuple<int32_t>) * sizeInner);
       estSize += sizeof(util::geo::XSortedTuple<int32_t>) * sizeInner;
+      ret.getInners()[j].setBoundingBox(ret.getInnerBoxes()[j]);
+      ret.getInners()[j].setArea(ret.getInnerAreas()[j]);
     }
   }
 
@@ -597,9 +536,19 @@ size_t sj::GeometryCache<W>::writePoly(const util::geo::I32XSortedPolygon& geom,
                                        std::ostream& str) {
   size_t ret = 0;
 
-  // geom, outer
+  // outer envelope
+  const auto box = geom.boundingBox();
+  str.write(reinterpret_cast<const char*>(&box), sizeof(util::geo::I32Box));
+  ret += sizeof(util::geo::I32Box);
+
+  // max seg len
   double maxSegLen = geom.getOuter().getMaxSegLen();
   str.write(reinterpret_cast<const char*>(&maxSegLen), sizeof(double));
+  ret += sizeof(double);
+
+  // outer area
+  double area = geom.getOuter().area();
+  str.write(reinterpret_cast<const char*>(&area), sizeof(double));
   ret += sizeof(double);
 
   uint32_t locSize = geom.getOuter().rawRing().size();
@@ -661,6 +610,18 @@ template <typename W>
 size_t sj::GeometryCache<W>::readLine(std::istream& str,
                                       util::geo::I32XSortedLine& ret) const {
   size_t estSize = 0;
+
+  util::geo::I32Box box;
+  str.read(reinterpret_cast<char*>(&box), sizeof(util::geo::I32Box));
+  estSize += sizeof(util::geo::I32Box);
+  ret.setBoundingBox(box);
+
+  // length
+  double length;
+  str.read(reinterpret_cast<char*>(&length), sizeof(double));
+  estSize += sizeof(double);
+  ret.setLength(length);
+
   double maxSegLen;
   str.read(reinterpret_cast<char*>(&maxSegLen), sizeof(double));
   estSize += sizeof(double);
@@ -696,6 +657,16 @@ template <typename W>
 size_t sj::GeometryCache<W>::writeLine(const util::geo::I32XSortedLine& geom,
                                        std::ostream& str) {
   size_t ret = 0;
+
+  // outer envelope
+  const auto box = geom.boundingBox();
+  str.write(reinterpret_cast<const char*>(&box), sizeof(util::geo::I32Box));
+  ret += sizeof(util::geo::I32Box);
+
+  // length
+  double length = geom.length();
+  str.write(reinterpret_cast<const char*>(&length), sizeof(double));
+  ret += sizeof(double);
 
   double maxSegLen = geom.getMaxSegLen();
   str.write(reinterpret_cast<const char*>(&maxSegLen), sizeof(double));

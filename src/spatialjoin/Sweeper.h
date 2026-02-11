@@ -473,8 +473,10 @@ class Sweeper {
   std::tuple<bool, bool> check(const util::geo::I32Point& a, const Line* b,
                                size_t t) const;
 
-  double distCheck(const util::geo::I32Point& a, const Point* aMeta, const Area* b, size_t t);
-  double distCheck(const util::geo::I32Point& a, const Point* aMeta, const Line* b, size_t t);
+  double distCheck(const util::geo::I32Point& a, const Point* aMeta,
+                   const Area* b, size_t t);
+  double distCheck(const util::geo::I32Point& a, const Point* aMeta,
+                   const Line* b, size_t t);
   double distCheck(const util::geo::I32Point& a,
                    const util::geo::LineSegment<int32_t>& b, size_t t);
   double distCheck(const util::geo::LineSegment<int32_t>& a,
@@ -487,8 +489,10 @@ class Sweeper {
   double distCheck(const Area* a, const Area* b, size_t t);
   double distCheck(const Line* a, const Area* b, size_t t);
 
-  double getMinMultiDist(const std::string& idA, size_t aSub,const util::geo::I32Point& leftAPoint,
-                         const std::string& idB, size_t bSub, const util::geo::I32Point& leftBPoint, size_t t);
+  double getMaxMultiDist(const std::string& idA, size_t aSub,
+                         const util::geo::I32Point& leftAPoint,
+                         const std::string& idB, size_t bSub,
+                         const util::geo::I32Point& leftBPoint, size_t t);
 
   util::geo::DE9IMatrix DE9IMCheck(const util::geo::I32Point& a, const Area* b,
                                    size_t t) const;
@@ -514,8 +518,9 @@ class Sweeper {
   bool refRelated(const std::string& a, const std::string& b) const;
 
   double getMaxScaleFactor(const util::geo::I32Box& geom) const;
-  std::pair<double, double> getMinMaxLocalScaleFactors(
-      const util::geo::I32Box& geom) const;
+  static std::pair<double, double> getMinMaxLocalScaleFactors(
+      const util::geo::I32Box& boxA, const util::geo::I32Box& boxB,
+      double distanceUpperBound);
   double getMaxScaleFactor(const util::geo::I32Point& geom) const;
 
   void diskAdd(const BoxVal& bv);
@@ -584,7 +589,12 @@ class Sweeper {
   }
 
   static double meterDist(const util::geo::I32Point& p1,
-                          const util::geo::I32Point& p2);
+                          const util::geo::I32Point& p2, double maxDist);
+
+  static double localSearchPadding(double euclideanDistanceUpperBound,
+                                   double distanceUpperBound,
+                                   const util::geo::I32Box& aBox,
+                                   const util::geo::I32Box& bBox);
 
   void fillBatch(JobBatch* batch,
                  const util::geo::IntervalIdx<int32_t, SweepVal>* actives,
