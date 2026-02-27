@@ -314,7 +314,7 @@ I32Box Sweeper::add(const I32Polygon& poly, const std::string& gidR,
 
     std::stringstream str;
     _areaCache.writeTo(
-        {std::move(spoly), box, gid, subid, areaSize,
+        {std::move(spoly), box, gid, static_cast<uint16_t>(subid), areaSize,
          _cfg.useArea ? outerAreaSize : 0, boxIds, obb, inner, innerBox,
          innerOuterAreaSize, outer, outerBox, outerOuterAreaSize},
         str);
@@ -453,7 +453,7 @@ I32Box Sweeper::add(const I32Line& line, const std::string& gidR, size_t subid,
     }
 
     std::stringstream str;
-    _lineCache.writeTo({std::move(sline), box, gid, subid, len, boxIds, obb},
+    _lineCache.writeTo({std::move(sline), box, gid, static_cast<uint16_t>(subid), len, boxIds, obb},
                        str);
     cur.raw = str.str();
 
@@ -542,7 +542,7 @@ I32Box Sweeper::add(const I32Point& point, const std::string& gidR,
     batch.foldedPoints.emplace_back(cur);
   } else {
     std::stringstream str;
-    _pointCache.writeTo({gid, subid}, str);
+    _pointCache.writeTo({gid, static_cast<uint16_t>(subid)}, str);
 
     cur.raw = str.str();
 
@@ -1068,7 +1068,7 @@ void Sweeper::flush() {
                0.0,
                {},
                {},
-               side,
+               static_cast<bool>(side),
                false});
     }
   }
@@ -3721,10 +3721,10 @@ double Sweeper::getMaxScaleFactor(const I32Point& p) const {
 
 // _____________________________________________________________________________
 double Sweeper::meterDist(const I32Point& p1, const I32Point& p2) {
-  return util::geo::webMercMeterDist(FPoint{(p1.getX() * 1.0) / (PREC * 1.0),
-                                            (p1.getY() * 1.0) / (PREC * 1.0)},
-                                     FPoint{(p2.getX() * 1.0) / (PREC * 1.0),
-                                            (p2.getY() * 1.0) / (PREC * 1.0)});
+  return util::geo::webMercMeterDist(FPoint{static_cast<float>((p1.getX() * 1.0) / (PREC * 1.0)),
+                                            static_cast<float>((p1.getY() * 1.0) / (PREC * 1.0))},
+                                     FPoint{static_cast<float>((p2.getX() * 1.0) / (PREC * 1.0)),
+                                            static_cast<float>((p2.getY() * 1.0) / (PREC * 1.0))});
 }
 
 // _____________________________________________________________________________
