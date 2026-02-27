@@ -3868,7 +3868,7 @@ double Sweeper::distCheck(const I32Point& a, const Point* aMeta, const Area* b,
   double maxEuclideanDist = maxD / scale.first * PREC;
 
   auto dist = util::geo::withinDist<int32_t>(
-      a, b->geom, _cfg.withinDist, &Sweeper::localSearchPadding,
+      a, b->geom, maxD, &Sweeper::localSearchPadding,
       maxEuclideanDist, &Sweeper::meterDist);
   _stats[t].timeFullGeoCheckAreaPoint += TOOK(ts);
   _stats[t].fullGeoChecksAreaPoint++;
@@ -3939,7 +3939,7 @@ double Sweeper::distCheck(const I32Point& a, const Point* aMeta, const Line* b,
   double maxEuclideanDist = maxD / scale.first * PREC;
 
   auto dist = util::geo::withinDist<int32_t>(
-      a, b->geom, _cfg.withinDist, &Sweeper::localSearchPadding,
+      a, b->geom, maxD, &Sweeper::localSearchPadding,
       maxEuclideanDist, &Sweeper::meterDist);
 
   _stats[t].timeFullGeoCheckLinePoint += TOOK(ts);
@@ -4025,7 +4025,7 @@ double Sweeper::distCheck(const Line* a, const Line* b, size_t t) {
   double maxEuclideanDist = maxD / scale.first * PREC;
 
   auto dist = util::geo::withinDist<int32_t>(
-      a->geom, b->geom, _cfg.withinDist, &Sweeper::localSearchPadding,
+      a->geom, b->geom, maxD, &Sweeper::localSearchPadding,
       maxEuclideanDist, &Sweeper::meterDist);
 
   _stats[t].timeFullGeoCheckLineLine += TOOK(ts);
@@ -4089,7 +4089,7 @@ double Sweeper::distCheck(const Line* a, const Area* b, size_t t) {
   double maxEuclideanDist = maxD / scale.first * PREC;
 
   auto dist = util::geo::withinDist<int32_t>(
-      a->geom, b->geom, _cfg.withinDist, &Sweeper::localSearchPadding,
+      a->geom, b->geom, maxD, &Sweeper::localSearchPadding,
       maxEuclideanDist, &Sweeper::meterDist);
 
   _stats[t].timeFullGeoCheckAreaLine += TOOK(ts);
