@@ -1,13 +1,12 @@
 // Copyright 2023, University of Freiburg
 // Authors: Patrick Brosi <brosi@cs.uni-freiburg.de>
 
-#include "GeometryCache.h"
-
 #include <fstream>
 #include <iostream>
 #include <mutex>
 #include <vector>
 
+#include "GeometryCache.h"
 #include "util/geo/Geo.h"
 
 const static size_t MAX_MEM_CACHE_SIZE = 1 * 1024 * 1024 * 20l;
@@ -116,9 +115,9 @@ std::pair<size_t, sj::Point> sj::GeometryCache<sj::Point>::getFrom(
   }
 
   // sub id
-  str.read(reinterpret_cast<char*>(&ret.subId), sizeof(uint16_t));
+  str.read(reinterpret_cast<char*>(&ret.subId), sizeof(size_t));
 
-  return {len * sizeof(char) + sizeof(uint16_t), ret};
+  return {len * sizeof(char) + sizeof(size_t), ret};
 }
 
 // ____________________________________________________________________________
@@ -180,8 +179,8 @@ std::pair<size_t, sj::Line> sj::GeometryCache<sj::Line>::getFrom(
   }
 
   // sub id
-  str.read(reinterpret_cast<char*>(&ret.subId), sizeof(uint16_t));
-  estSize += sizeof(uint16_t);
+  str.read(reinterpret_cast<char*>(&ret.subId), sizeof(size_t));
+  estSize += sizeof(size_t);
 
   // length
   str.read(reinterpret_cast<char*>(&ret.length), sizeof(double));
@@ -232,8 +231,8 @@ std::pair<size_t, sj::Area> sj::GeometryCache<sj::Area>::getFrom(
   }
 
   // sub id
-  str.read(reinterpret_cast<char*>(&ret.subId), sizeof(uint16_t));
-  estSize += sizeof(uint16_t);
+  str.read(reinterpret_cast<char*>(&ret.subId), sizeof(size_t));
+  estSize += sizeof(size_t);
 
   // area
   str.read(reinterpret_cast<char*>(&ret.area), sizeof(double));
@@ -290,6 +289,11 @@ size_t sj::GeometryCache<sj::Point>::writeTo(const sj::Point& val,
   size_t ret = 0;
 
   // id
+  if (val.id.size() > std::numeric_limits<uint16_t>::max()) {
+    throw std::out_of_range(
+        "Geometry ID is longer than " +
+        std::to_string(std::numeric_limits<uint16_t>::max()));
+  }
   uint16_t s = val.id.size();
   str.write(reinterpret_cast<const char*>(&s), sizeof(uint16_t));
   ret += sizeof(uint16_t);
@@ -298,8 +302,8 @@ size_t sj::GeometryCache<sj::Point>::writeTo(const sj::Point& val,
   ret += sizeof(char) * val.id.size();
 
   // sub id
-  str.write(reinterpret_cast<const char*>(&val.subId), sizeof(uint16_t));
-  ret += sizeof(uint16_t);
+  str.write(reinterpret_cast<const char*>(&val.subId), sizeof(size_t));
+  ret += sizeof(size_t);
 
   return ret;
 }
@@ -353,6 +357,11 @@ size_t sj::GeometryCache<sj::SimpleArea>::writeTo(const sj::SimpleArea& val,
   }
 
   // id
+  if (val.id.size() > std::numeric_limits<uint16_t>::max()) {
+    throw std::out_of_range(
+        "Geometry ID is longer than " +
+        std::to_string(std::numeric_limits<uint16_t>::max()));
+  }
   uint16_t s = val.id.size();
   str.write(reinterpret_cast<const char*>(&s), sizeof(uint16_t));
   ret += sizeof(uint16_t);
@@ -371,6 +380,11 @@ size_t sj::GeometryCache<sj::SimpleLine>::writeTo(const sj::SimpleLine& val,
   size_t ret = 0;
 
   // id
+  if (val.id.size() > std::numeric_limits<uint16_t>::max()) {
+    throw std::out_of_range(
+        "Geometry ID is longer than " +
+        std::to_string(std::numeric_limits<uint16_t>::max()));
+  }
   uint16_t s = val.id.size();
   str.write(reinterpret_cast<const char*>(&s), sizeof(uint16_t));
   ret += sizeof(uint16_t);
@@ -395,6 +409,11 @@ size_t sj::GeometryCache<sj::Line>::writeTo(const sj::Line& val,
   ret += sizeof(util::geo::I32Box);
 
   // id
+  if (val.id.size() > std::numeric_limits<uint16_t>::max()) {
+    throw std::out_of_range(
+        "Geometry ID is longer than " +
+        std::to_string(std::numeric_limits<uint16_t>::max()));
+  }
   uint16_t s = val.id.size();
   str.write(reinterpret_cast<const char*>(&s), sizeof(uint16_t));
   ret += sizeof(uint16_t);
@@ -403,8 +422,8 @@ size_t sj::GeometryCache<sj::Line>::writeTo(const sj::Line& val,
   ret += sizeof(char) * val.id.size();
 
   // sub id
-  str.write(reinterpret_cast<const char*>(&val.subId), sizeof(uint16_t));
-  ret += sizeof(uint16_t);
+  str.write(reinterpret_cast<const char*>(&val.subId), sizeof(size_t));
+  ret += sizeof(size_t);
 
   // length
   str.write(reinterpret_cast<const char*>(&val.length), sizeof(double));
@@ -442,6 +461,11 @@ size_t sj::GeometryCache<sj::Area>::writeTo(const sj::Area& val,
   ret += sizeof(util::geo::I32Box);
 
   // id
+  if (val.id.size() > std::numeric_limits<uint16_t>::max()) {
+    throw std::out_of_range(
+        "Geometry ID is longer than " +
+        std::to_string(std::numeric_limits<uint16_t>::max()));
+  }
   uint16_t s = val.id.size();
   str.write(reinterpret_cast<const char*>(&s), sizeof(uint16_t));
   ret += sizeof(uint16_t);
@@ -450,8 +474,8 @@ size_t sj::GeometryCache<sj::Area>::writeTo(const sj::Area& val,
   ret += sizeof(char) * val.id.size();
 
   // sub id
-  str.write(reinterpret_cast<const char*>(&val.subId), sizeof(uint16_t));
-  ret += sizeof(uint16_t);
+  str.write(reinterpret_cast<const char*>(&val.subId), sizeof(size_t));
+  ret += sizeof(size_t);
 
   // area
   str.write(reinterpret_cast<const char*>(&val.area), sizeof(double));

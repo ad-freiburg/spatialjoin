@@ -67,7 +67,7 @@ const static double cos45 = 1.0 / sqrt(2);
 // _____________________________________________________________________________
 I32Box Sweeper::add(const I32MultiPolygon& a, const std::string& gid, bool side,
                     WriteBatch& batch) const {
-  uint16_t subid = 0;  // a subid of 0 means "single polygon"
+  size_t subid = 0;  // a subid of 0 means "single polygon"
   if (a.size() > 1) subid = 1;
 
   return add(a, gid, subid, side, batch);
@@ -76,7 +76,7 @@ I32Box Sweeper::add(const I32MultiPolygon& a, const std::string& gid, bool side,
 // _____________________________________________________________________________
 I32Box Sweeper::add(const I32MultiLine& a, const std::string& gid, bool side,
                     WriteBatch& batch) const {
-  uint16_t subid = 0;  // a subid of 0 means "single line"
+  size_t subid = 0;  // a subid of 0 means "single line"
   if (a.size() > 1) subid = 1;
 
   return add(a, gid, subid, side, batch);
@@ -85,7 +85,7 @@ I32Box Sweeper::add(const I32MultiLine& a, const std::string& gid, bool side,
 // _____________________________________________________________________________
 I32Box Sweeper::add(const I32MultiPoint& a, const std::string& gid, bool side,
                     WriteBatch& batch) const {
-  uint16_t subid = 0;  // a subid of 0 means "single point"
+  size_t subid = 0;  // a subid of 0 means "single point"
   if (a.size() > 1) subid = 1;
 
   return add(a, gid, subid, side, batch);
@@ -1068,7 +1068,7 @@ void Sweeper::flush() {
                0.0,
                {},
                {},
-               side,
+               static_cast<bool>(side),
                false});
     }
   }
@@ -3721,10 +3721,11 @@ double Sweeper::getMaxScaleFactor(const I32Point& p) const {
 
 // _____________________________________________________________________________
 double Sweeper::meterDist(const I32Point& p1, const I32Point& p2) {
-  return util::geo::webMercMeterDist(FPoint{(p1.getX() * 1.0) / (PREC * 1.0),
-                                            (p1.getY() * 1.0) / (PREC * 1.0)},
-                                     FPoint{(p2.getX() * 1.0) / (PREC * 1.0),
-                                            (p2.getY() * 1.0) / (PREC * 1.0)});
+  return util::geo::webMercMeterDist(
+      FPoint{static_cast<float>((p1.getX() * 1.0) / (PREC * 1.0)),
+             static_cast<float>((p1.getY() * 1.0) / (PREC * 1.0))},
+      FPoint{static_cast<float>((p2.getX() * 1.0) / (PREC * 1.0)),
+             static_cast<float>((p2.getY() * 1.0) / (PREC * 1.0))});
 }
 
 // _____________________________________________________________________________
