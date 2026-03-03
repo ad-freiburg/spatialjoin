@@ -33,7 +33,7 @@ struct Area {
   std::string id;
 
   // sub id (for multipolygons)
-  uint16_t subId;
+  size_t subId;
 
   // box ids
   std::vector<sj::boxids::BoxId> boxIds;
@@ -61,7 +61,7 @@ struct Line {
   std::string id;
 
   // sub id (for multilines)
-  uint16_t subId;
+  size_t subId;
 
   // box ids
   std::vector<sj::boxids::BoxId> boxIds;
@@ -75,7 +75,7 @@ struct Point {
   std::string id;
 
   // sub id (for multipoints)
-  uint16_t subId;
+  size_t subId;
 };
 
 template <typename W>
