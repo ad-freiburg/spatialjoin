@@ -278,6 +278,7 @@ int main(int, char**) {
       auto res = fullRun("../src/spatialjoin/tests/datasets/freiburg", cfg);
 
       TEST(res.find("$freiburg1 covers freiburg2$") != std::string::npos);
+      TEST(res.find("$freiburg1 covers freiburg2$") != std::string::npos);
       TEST(res.find("$freiburg2 covers freiburg1$") != std::string::npos);
       TEST(res.find("$freiburg1 equals freiburg2$") != std::string::npos);
       TEST(res.find("$freiburg2 equals freiburg1$") != std::string::npos);
@@ -894,6 +895,41 @@ int main(int, char**) {
 
       TEST(res.find("$Umkirch\tFF2F11212\tfreiburg1$") != std::string::npos);
       TEST(res.find("$freiburg1\t212FF1FF2\tAltstadt$") != std::string::npos);
+    }
+    {
+      auto res = fullRun("../src/spatialjoin/tests/datasets/references", cfg);
+      TEST(res.find("$TestB\t0F1FF0102\tTestA$") != std::string::npos);
+      TEST(res.find("$TestA\t0F1FF0102\tTestB$") != std::string::npos);
+      TEST(res.find("$TestB\t0F1FF0102\tRefB$") != std::string::npos);
+      TEST(res.find("$RefB\t0F1FF0102\tTestB$") != std::string::npos);
+    }
+  }
+
+  // distance
+  for (auto cfg : cfgs) {
+    cfg.withinDist = 1;
+    {
+      auto res = fullRun("../src/spatialjoin/tests/datasets/references", cfg);
+      TEST(res.find("$TestB\t0\tTestA$") != std::string::npos);
+      TEST(res.find("$TestA\t0\tTestB$") != std::string::npos);
+      TEST(res.find("$TestB\t0\tRefB$") != std::string::npos);
+      TEST(res.find("$RefB\t0\tTestB$") != std::string::npos);
+      TEST(res.find("$TestA\t0\tRefB$") != std::string::npos);
+      TEST(res.find("$RefB\t0\tTestA$") != std::string::npos);
+    }
+
+    {
+      auto res = fullRun("../src/spatialjoin/tests/datasets/freiburg", cfg);
+      TEST(res.find("$freiburg1\t0\tfreiburg2$") != std::string::npos);
+      TEST(res.find("$freiburg2\t0\tfreiburg1$") != std::string::npos);
+      TEST(res.find("$freiburg1\t0\tfreiburg2$") != std::string::npos);
+      TEST(res.find("$freiburg2\t0\tfreiburg1$") != std::string::npos);
+
+      TEST(res.find("$freiburg1\t0\tgrenzpart$") != std::string::npos);
+      TEST(res.find("$grenzpart\t0\tfreiburg1$") != std::string::npos);
+
+      TEST(res.find("$Umkirch\t0\tfreiburg1$") != std::string::npos);
+      TEST(res.find("$freiburg1\t0\tAltstadt$") != std::string::npos);
     }
   }
 }

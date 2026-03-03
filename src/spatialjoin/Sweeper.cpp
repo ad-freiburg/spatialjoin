@@ -1241,7 +1241,7 @@ void Sweeper::duplicatesToReferences() {
               if (referenced.insert(existing->second.first).second) {
                 // for the first element referencing this, modify this
                 // event to the self check of the referenced geom
-                cur->type = SELF_CHECK;
+                cur->type = SELF_CHECK_AREA;
                 _selfChecks.push_back({b->id, b->subId});
                 cur->id = _selfChecks.size() - 1;
               } else {
@@ -1274,7 +1274,7 @@ void Sweeper::duplicatesToReferences() {
               if (referenced.insert(existing->second.first).second) {
                 // for the first element referencing this, modify this
                 // event to the self check of the referenced geom
-                cur->type = SELF_CHECK;
+                cur->type = SELF_CHECK_LINE;
                 _selfChecks.push_back({b->id, b->subId});
                 cur->id = _selfChecks.size() - 1;
               } else {
@@ -1403,7 +1403,9 @@ RelStats Sweeper::sweep() {
 
         if (cur->type == DELETED) {
           continue;
-        } else if (cur->type == SELF_CHECK) {
+        } else if (cur->type == SELF_CHECK || cur->type == SELF_CHECK_AREA ||
+                   cur->type == SELF_CHECK_LINE ||
+                   cur->type == SELF_CHECK_POINT) {
           // self checks, required if we have reference geoms
           curBatch.push_back({*cur, *cur, ""});
         } else if (!cur->out && cur->loY == 1 && cur->upY == 0 &&
@@ -2330,7 +2332,30 @@ void Sweeper::writeDE9IM(size_t t, const std::string& a, size_t aSub,
     }
   }
 
-  // TODO: handle references!
+  // handle references
+
+  if (_refs.size() == 0) return;
+
+  auto referersA = _refs.find(a);
+  auto referersB = _refs.find(b);
+
+  if (referersB != _refs.end()) {
+    const auto& subs = referersB->second.find(bSub);
+    if (subs != referersB->second.end()) {
+      for (const auto& idB : subs->second) {
+        writeDE9IM(t, a, aSub, idB.first, idB.second, de9im);
+      }
+    }
+  }
+
+  if (referersA != _refs.end()) {
+    const auto& subs = referersA->second.find(aSub);
+    if (subs != referersA->second.end()) {
+      for (const auto& idA : subs->second) {
+        writeDE9IM(t, idA.first, idA.second, b, bSub, de9im);
+      }
+    }
+  }
 }
 
 // ____________________________________________________________________________
@@ -2352,7 +2377,33 @@ void Sweeper::writeDist(size_t t, const std::string& a, size_t aSub,
     }
   }
 
-  // TODO: handle references
+  // handle references
+
+  if (_refs.size() == 0) return;
+
+  auto referersA = _refs.find(a);
+  auto referersB = _refs.find(b);
+
+  if (referersB != _refs.end()) {
+    const auto& subs = referersB->second.find(bSub);
+    if (subs != referersB->second.end()) {
+      for (const auto& idB : subs->second) {
+        writeDist(t, a, aSub, idB.first, idB.second, dist);
+      }
+    }
+  }
+
+  // no need to check exactly the same direction again
+  if (a != b || aSub != bSub) {
+    if (referersA != _refs.end()) {
+      const auto& subs = referersA->second.find(aSub);
+      if (subs != referersA->second.end()) {
+        for (const auto& idA : subs->second) {
+          writeDist(t, idA.first, idA.second, b, bSub, 0);
+        }
+      }
+    }
+  }
 }
 
 // ____________________________________________________________________________
@@ -2395,13 +2446,28 @@ void Sweeper::writeIntersect(size_t t, const std::string& a, size_t aSub,
 }
 
 // ____________________________________________________________________________
-void Sweeper::selfCheck(const std::string& a, size_t subId, size_t t) {
-  writeIntersect(t, a, subId, a, subId);
-  writeEquals(t, a, subId, a, subId);
-  writeCovers(t, a, subId, a, subId);
-  writeContains(t, a, subId, a, subId);
-
-  writeNotCrosses(t, a, subId, a, subId);
+void Sweeper::selfCheck(const std::string& a, size_t subId, GeomType type,
+                        size_t t) {
+  if (_cfg.computeDE9IM) {
+    if (type == SELF_CHECK_LINE)
+      writeDE9IM(t, a, subId, a, subId, util::geo::M10FF0FFF2);
+    else if (type == SELF_CHECK_AREA)
+      writeDE9IM(t, a, subId, a, subId, util::geo::M2FFF1FFF2);
+    else if (type == SELF_CHECK_POINT)
+      writeDE9IM(t, a, subId, a, subId, util::geo::M0FFFFFFF2);
+    else {
+      // LOG(WARN)
+      // << "Input reference geometries not supported with DE-9IM computation";
+    }
+  } else if (_cfg.withinDist >= 0) {
+    writeDist(t, a, subId, a, subId, 0);
+  } else {
+    writeIntersect(t, a, subId, a, subId);
+    writeEquals(t, a, subId, a, subId);
+    writeCovers(t, a, subId, a, subId);
+    writeContains(t, a, subId, a, subId);
+    writeNotCrosses(t, a, subId, a, subId);
+  }
 }
 
 // ____________________________________________________________________________
@@ -2411,6 +2477,11 @@ void Sweeper::doDE9IMCheck(const JobVal cur, const JobVal sv, size_t t) {
 
   // every 10000 checks, update our position
   if (_checks[t] % 10000 == 0) _atomicCurX[t] = _curX[t];
+
+  if (cur.type == SELF_CHECK || cur.type == SELF_CHECK_AREA ||
+      cur.type == SELF_CHECK_LINE || cur.type == SELF_CHECK_POINT)
+    return selfCheck(_selfChecks[cur.id].first, _selfChecks[cur.id].second,
+                     cur.type, t);
 
   if (isPoint(cur.type) && isPoint(sv.type)) {
     auto p1 = cur.point;
@@ -2648,6 +2719,11 @@ void Sweeper::doDistCheck(const JobVal cur, const JobVal sv, size_t t) {
   // every 10000 checks, update our position
   if (_checks[t] % 10000 == 0) _atomicCurX[t] = _curX[t];
 
+  if (cur.type == SELF_CHECK || cur.type == SELF_CHECK_AREA ||
+      cur.type == SELF_CHECK_LINE || cur.type == SELF_CHECK_POINT)
+    return selfCheck(_selfChecks[cur.id].first, _selfChecks[cur.id].second,
+                     cur.type, t);
+
   if (isPoint(cur.type) && isPoint(sv.type)) {
     auto p1 = cur.point;
     auto p2 = sv.point;
@@ -2812,11 +2888,13 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
   _checks[t]++;
   _curX[t] = cur.val;
 
-  if (cur.type == SELF_CHECK)
-    return selfCheck(_selfChecks[cur.id].first, _selfChecks[cur.id].second, t);
-
   // every 10000 checks, update our position
   if (_checks[t] % 10000 == 0) _atomicCurX[t] = _curX[t];
+
+  if (cur.type == SELF_CHECK || cur.type == SELF_CHECK_AREA ||
+      cur.type == SELF_CHECK_LINE || cur.type == SELF_CHECK_POINT)
+    return selfCheck(_selfChecks[cur.id].first, _selfChecks[cur.id].second,
+                     cur.type, t);
 
   if (isArea(cur.type) && isArea(sv.type)) {
     std::shared_ptr<Area> a = getArea(cur, cur.large ? -1 : t);

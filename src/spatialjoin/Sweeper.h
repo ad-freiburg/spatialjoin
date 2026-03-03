@@ -41,7 +41,10 @@ enum GeomType : uint8_t {
   FOLDED_SIMPLE_LINE = 6,
   FOLDED_BOX_POLYGON = 7,
   DELETED = 8,
-  SELF_CHECK = 9
+  SELF_CHECK = 9,
+  SELF_CHECK_AREA = 10,
+  SELF_CHECK_LINE = 11,
+  SELF_CHECK_POINT = 12
 };
 
 struct BoxVal {
@@ -554,7 +557,7 @@ class Sweeper {
   void doCheck(JobVal cur, JobVal sv, size_t t);
   void doDistCheck(JobVal cur, JobVal sv, size_t t);
   void doDE9IMCheck(JobVal cur, JobVal sv, size_t t);
-  void selfCheck(const std::string& a, size_t subId, size_t t);
+  void selfCheck(const std::string& a, size_t subId, GeomType type, size_t t);
   void processQueue(size_t t);
 
   bool notOverlaps(const std::string& a, const std::string& b);
