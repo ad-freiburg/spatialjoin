@@ -2257,19 +2257,25 @@ util::geo::DE9IMatrix Sweeper::DE9IMCheck(const I32Point& a, const Line* b,
 // _____________________________________________________________________________
 std::tuple<bool, bool> Sweeper::check(const I32Point& a, const Line* b,
                                       size_t t) const {
+  std::cerr << b->id << " vs " << util::geo::getWKT(a) << std::endl;
   if (_cfg.useBoxIds) {
     auto ts = TIME();
     auto r = boxIdIsect({{1, 0}, {getBoxId(a), 0}}, b->boxIds);
     _stats[t].timeBoxIdIsectLinePoint += TOOK(ts);
 
     // no box shared, we cannot contain or intersect
-    if (r.first + r.second == 0) return {0, 0};
+    if (r.first + r.second == 0) {
+      std::cerr << "A" << std::endl;
+      return {0, 0};
+    }
   }
 
   auto ts = TIME();
   auto res = util::geo::intersectsContains(a, b->geom);
   _stats[t].timeFullGeoCheckLinePoint += TOOK(ts);
   _stats[t].fullGeoChecksLinePoint++;
+
+   std::cerr << "ret: " << std::get<0>(res) << ", " << std::get<1>(res) << std::endl;
 
   return res;
 }
