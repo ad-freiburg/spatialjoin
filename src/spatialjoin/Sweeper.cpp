@@ -2257,7 +2257,8 @@ util::geo::DE9IMatrix Sweeper::DE9IMCheck(const I32Point& a, const Line* b,
 // _____________________________________________________________________________
 std::tuple<bool, bool> Sweeper::check(const I32Point& a, const Line* b,
                                       size_t t) const {
-  std::cerr << b->id << " vs " << util::geo::getWKT(a) << std::endl;
+  if (b->id == "AsBrandenburg-Way")
+    std::cerr << b->id << " vs " << util::geo::getWKT(a) << std::endl;
   if (_cfg.useBoxIds) {
     auto ts = TIME();
     auto r = boxIdIsect({{1, 0}, {getBoxId(a), 0}}, b->boxIds);
@@ -2275,6 +2276,7 @@ std::tuple<bool, bool> Sweeper::check(const I32Point& a, const Line* b,
   _stats[t].timeFullGeoCheckLinePoint += TOOK(ts);
   _stats[t].fullGeoChecksLinePoint++;
 
+  if (b->id == "AsBrandenburg-Way")
    std::cerr << "ret: " << std::get<0>(res) << ", " << std::get<1>(res) << std::endl;
 
   return res;
