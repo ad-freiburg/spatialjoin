@@ -471,6 +471,12 @@ int main(int, char**) {
     }
 
     {
+      auto res = fullRun("../src/spatialjoin/tests/datasets/brandenburg_test", cfg);
+      TEST(res.find("$Brandenburg-Point intersects Brandenburg-Way$") !=
+           std::string::npos);
+    }
+
+    {
       auto res = fullRun("../src/spatialjoin/tests/datasets/brandenburg", cfg);
       TEST(res.find("$Brandenburg covers Brandenburg2$") != std::string::npos);
       TEST(res.find("$Brandenburg intersects Brandenburg-Way$") !=

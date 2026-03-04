@@ -54,7 +54,7 @@ jobs:
       - name: make
         run: cd build && make
       - name: tests
-        run: cd build && ctest -VV
+        run: cd build && ctest --output-on-failure
   macos-14-build:
     runs-on: macOS-14
     steps:
@@ -69,4 +69,4 @@ jobs:
       - name: make
         run: cd build && make
       - name: tests
-        run: cd build && ctest -VV
+        run: cd build && ctest --output-on-failure

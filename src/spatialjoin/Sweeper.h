@@ -603,10 +603,14 @@ class Sweeper {
 
     // everything before a polygon
     if (boxa->type != POLYGON && boxa->type != SIMPLE_POLYGON &&
-        (boxb->type == POLYGON || boxb->type == SIMPLE_POLYGON))
+        boxa->type != FOLDED_BOX_POLYGON &&
+        (boxb->type == POLYGON || boxb->type == SIMPLE_POLYGON ||
+         boxb->type == FOLDED_BOX_POLYGON))
       return -1;
-    if ((boxa->type == POLYGON || boxa->type == SIMPLE_POLYGON) &&
-        boxb->type != POLYGON && boxb->type != SIMPLE_POLYGON)
+    if ((boxa->type == POLYGON || boxa->type == SIMPLE_POLYGON ||
+         boxa->type == FOLDED_BOX_POLYGON) &&
+        boxb->type != POLYGON && boxb->type != SIMPLE_POLYGON &&
+        boxb->type != FOLDED_BOX_POLYGON)
       return 1;
 
     // points before lines
@@ -620,12 +624,16 @@ class Sweeper {
       return 1;
 
     // smaller polygons before larger
-    if ((boxa->type == POLYGON || boxa->type == SIMPLE_POLYGON) &&
-        (boxb->type == POLYGON || boxb->type == SIMPLE_POLYGON) &&
+    if ((boxa->type == POLYGON || boxa->type == SIMPLE_POLYGON ||
+         boxa->type == FOLDED_BOX_POLYGON) &&
+        (boxb->type == POLYGON || boxb->type == SIMPLE_POLYGON ||
+         boxb->type == FOLDED_BOX_POLYGON) &&
         boxa->areaOrLen < boxb->areaOrLen)
       return -1;
-    if ((boxa->type == POLYGON || boxa->type == SIMPLE_POLYGON) &&
-        (boxb->type == POLYGON || boxb->type == SIMPLE_POLYGON) &&
+    if ((boxa->type == POLYGON || boxa->type == SIMPLE_POLYGON ||
+         boxa->type == FOLDED_BOX_POLYGON) &&
+        (boxb->type == POLYGON || boxb->type == SIMPLE_POLYGON ||
+         boxb->type == FOLDED_BOX_POLYGON) &&
         boxa->areaOrLen > boxb->areaOrLen)
       return 1;
 
