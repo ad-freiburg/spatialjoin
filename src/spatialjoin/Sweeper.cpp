@@ -2399,7 +2399,7 @@ void Sweeper::writeDist(size_t t, const std::string& a, size_t aSub,
       const auto& subs = referersA->second.find(aSub);
       if (subs != referersA->second.end()) {
         for (const auto& idA : subs->second) {
-          writeDist(t, idA.first, idA.second, b, bSub, 0);
+          writeDist(t, idA.first, idA.second, b, bSub, dist);
         }
       }
     }

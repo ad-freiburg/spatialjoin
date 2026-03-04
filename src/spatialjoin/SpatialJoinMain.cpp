@@ -58,7 +58,7 @@ void printHelp(int argc, char** argv) {
       << "cache directory for intermediate files\n"
       << std::setw(42) << "  --de9im"
       << "output DE-9IM relationships\n"
-      << std::setw(42) << "  --within-distance (default: '-1')"
+      << std::setw(42) << "  --within-distance (or --within-dist, default: -1)"
       << "if set to non-negative value, only compute for each object\n"
       << std::setw(42) << " "
       << "the objects within the given distance\n\n"
@@ -203,6 +203,8 @@ int main(int argc, char** argv) {
         } else if (cur == "--cache-max-size") {
           state = 14;
         } else if (cur == "--within-distance") {
+          state = 15;
+        } else if (cur == "--within-dist") {
           state = 15;
         } else if (cur == "--cache-max-elements") {
           state = 16;
