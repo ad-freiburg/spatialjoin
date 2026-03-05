@@ -1340,6 +1340,27 @@ RelStats Sweeper::sweep() {
   const size_t RBUF_SIZE = 100000;
   unsigned char* buf = new unsigned char[sizeof(BoxVal) * RBUF_SIZE];
 
+  ssize_t len;
+
+  while ((len = readAll(_file, buf, sizeof(BoxVal) * RBUF_SIZE)) != 0) {
+    if (len < 0) {
+      std::stringstream ss;
+      ss << "Could not read from events file '" << _fname << "'\n";
+      ss << strerror(errno) << std::endl;
+      throw std::runtime_error(ss.str());
+    }
+
+    std::stringstream a;
+
+    for (ssize_t i = 0; i < len; i += sizeof(BoxVal)) {
+      auto cur = reinterpret_cast<const BoxVal*>(buf + i);
+      a << toString(*cur) << ", ";
+    }
+    std::cerr << a.str();
+  }
+
+  lseek(_file, 0, SEEK_SET);
+
   util::geo::IntervalIdx<int32_t, SweepVal> actives[2];
 
   _stats.resize(_cfg.numThreads + 1);
@@ -1378,8 +1399,6 @@ RelStats Sweeper::sweep() {
   std::vector<std::thread> thrds(_cfg.numThreads);
   for (size_t i = 0; i < thrds.size(); i++)
     thrds[i] = std::thread(&Sweeper::processQueue, this, i);
-
-  ssize_t len;
 
   try {
     while ((len = readAll(_file, buf, sizeof(BoxVal) * RBUF_SIZE)) != 0) {
@@ -2257,8 +2276,6 @@ util::geo::DE9IMatrix Sweeper::DE9IMCheck(const I32Point& a, const Line* b,
 // _____________________________________________________________________________
 std::tuple<bool, bool> Sweeper::check(const I32Point& a, const Line* b,
                                       size_t t) const {
-  if (b->id == "AsBrandenburg-Way")
-    std::cerr << b->id << " vs " << util::geo::getWKT(a) << std::endl;
   if (_cfg.useBoxIds) {
     auto ts = TIME();
     auto r = boxIdIsect({{1, 0}, {getBoxId(a), 0}}, b->boxIds);
@@ -2266,7 +2283,6 @@ std::tuple<bool, bool> Sweeper::check(const I32Point& a, const Line* b,
 
     // no box shared, we cannot contain or intersect
     if (r.first + r.second == 0) {
-      std::cerr << "A" << std::endl;
       return {0, 0};
     }
   }
@@ -2275,9 +2291,6 @@ std::tuple<bool, bool> Sweeper::check(const I32Point& a, const Line* b,
   auto res = util::geo::intersectsContains(a, b->geom);
   _stats[t].timeFullGeoCheckLinePoint += TOOK(ts);
   _stats[t].fullGeoChecksLinePoint++;
-
-  if (b->id == "AsBrandenburg-Way")
-   std::cerr << "ret: " << std::get<0>(res) << ", " << std::get<1>(res) << std::endl;
 
   return res;
 }
@@ -3562,7 +3575,7 @@ void Sweeper::fillBatch(
 
   for (const auto& p : overlaps) {
     // check if diagonal boxes intersect, if not, ignore this pair
-    // if (_cfg.useDiagBox && !util::geo::intersects(p.v.b45, cur->b45)) continue;
+    if (_cfg.useDiagBox && !util::geo::intersects(p.v.b45, cur->b45)) continue;
 
     JobVal a(*cur);
     JobVal b(p.v);

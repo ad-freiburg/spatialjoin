@@ -61,6 +61,24 @@ struct BoxVal {
   bool large;
 };
 
+inline std::string toString(const BoxVal& bv) {
+  std::stringstream ret;
+
+  ret << "(id=" << bv.id;
+  ret << " loY=" << bv.loY;
+  ret << " upY=" << bv.upY;
+  ret << " val=" << bv.val;
+  ret << " out=" << bv.out;
+  ret << " type=" << bv.type;
+  ret << " point=" << util::geo::getWKT(bv.point);
+  ret << " b45=" << util::geo::getWKT(bv.b45);
+  ret << " side=" << bv.side;
+  ret << " large=" << bv.large;
+  ret << ")";
+
+  return ret.str();
+}
+
 struct WriteCand {
   std::string raw;
   std::string gid;
