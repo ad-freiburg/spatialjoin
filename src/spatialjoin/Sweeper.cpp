@@ -1339,6 +1339,8 @@ RelStats Sweeper::sweep() {
 
   ssize_t len;
 
+  size_t aa = 0;
+
   while ((len = readAll(_file, buf, sizeof(BoxVal) * RBUF_SIZE)) != 0) {
     if (len < 0) {
       std::stringstream ss;
@@ -1349,6 +1351,8 @@ RelStats Sweeper::sweep() {
 
     if (len % sizeof(BoxVal)) throw std::runtime_error("Corrupted events file");
 
+    aa += len;
+
     std::stringstream a;
 
     for (ssize_t i = 0; i < len; i += sizeof(BoxVal)) {
@@ -1358,7 +1362,7 @@ RelStats Sweeper::sweep() {
     std::cerr << a.str();
   }
 
-  std::cerr << "read " << len << std::endl;
+  std::cerr << "read " << aa << std::endl;
 
   lseek(_file, 0, SEEK_SET);
 
