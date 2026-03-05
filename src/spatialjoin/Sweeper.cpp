@@ -1192,7 +1192,8 @@ void Sweeper::duplicatesToReferences() {
         throw std::runtime_error(ss.str());
       }
 
-      if (len % sizeof(BoxVal)) throw std::runtime_error("Corrupted events file");
+      if (len % sizeof(BoxVal))
+        throw std::runtime_error("Corrupted events file");
 
       bool updated = false;
 
@@ -1206,7 +1207,8 @@ void Sweeper::duplicatesToReferences() {
         jj++;
 
         if (cur->out) {
-          if (deleted.erase(cur->id)) {
+          if ((cur->type == POLYGON || cur->type == LINE) &&
+              deleted.erase(cur->id)) {
             // erase it if present, to avoid unnecessary memory consumption
             cur->type = DELETED;
             updated = true;
@@ -1414,7 +1416,8 @@ RelStats Sweeper::sweep() {
         throw std::runtime_error(ss.str());
       }
 
-      if (len % sizeof(BoxVal)) throw std::runtime_error("Corrupted events file");
+      if (len % sizeof(BoxVal))
+        throw std::runtime_error("Corrupted events file");
 
       for (ssize_t i = 0; i < len; i += sizeof(BoxVal)) {
         auto cur = reinterpret_cast<const BoxVal*>(buf + i);
