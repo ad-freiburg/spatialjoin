@@ -1341,33 +1341,6 @@ RelStats Sweeper::sweep() {
 
   ssize_t len;
 
-  size_t aa = 0;
-
-  while ((len = readAll(_file, buf, sizeof(BoxVal) * RBUF_SIZE)) != 0) {
-    if (len < 0) {
-      std::stringstream ss;
-      ss << "Could not read from events file '" << _fname << "'\n";
-      ss << strerror(errno) << std::endl;
-      throw std::runtime_error(ss.str());
-    }
-
-    if (len % sizeof(BoxVal)) throw std::runtime_error("Corrupted events file");
-
-    aa += len;
-
-    std::stringstream a;
-
-    for (ssize_t i = 0; i < len; i += sizeof(BoxVal)) {
-      auto cur = reinterpret_cast<const BoxVal*>(buf + i);
-      a << toString(*cur) << ", ";
-    }
-    std::cerr << a.str();
-  }
-
-  std::cerr << "read " << aa << std::endl;
-
-  lseek(_file, 0, SEEK_SET);
-
   util::geo::IntervalIdx<int32_t, SweepVal> actives[2];
 
   _stats.resize(_cfg.numThreads + 1);
