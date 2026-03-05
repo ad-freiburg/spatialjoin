@@ -1358,6 +1358,8 @@ RelStats Sweeper::sweep() {
     std::cerr << a.str();
   }
 
+  std::cerr << "read " << len << std::endl;
+
   lseek(_file, 0, SEEK_SET);
 
   util::geo::IntervalIdx<int32_t, SweepVal> actives[2];
