@@ -1192,6 +1192,8 @@ void Sweeper::duplicatesToReferences() {
         throw std::runtime_error(ss.str());
       }
 
+      if (len % sizeof(BoxVal)) throw std::runtime_error("Corrupted events file");
+
       bool updated = false;
 
       for (ssize_t i = 0; i < len; i += sizeof(BoxVal)) {
@@ -1204,10 +1206,9 @@ void Sweeper::duplicatesToReferences() {
         jj++;
 
         if (cur->out) {
-          if (deleted.count(cur->id)) {
+          if (deleted.erase(cur->id)) {
+            // erase it if present, to avoid unnecessary memory consumption
             cur->type = DELETED;
-            // erase it, to avoid unnecessary memory consumption
-            deleted.erase(cur->id);
             updated = true;
           }
           referenced.erase(cur->id);
@@ -1216,18 +1217,15 @@ void Sweeper::duplicatesToReferences() {
 
         if (curX != cur->val) {
           // new equal-X block
-          duplicatePolys.clear();
-          duplicateLines.clear();
+          duplicatePolys = {};
+          duplicateLines = {};
           curX = cur->val;
         }
-
-        double ts = DUPLICATE_REMOVAL_MIN_SIZE;
 
         if (cur->type == POLYGON &&
             cur->point.getX() >= DUPLICATE_REMOVAL_MIN_SIZE) {
           // for polygons, cur->point.getX() holds the number of anchor points
-          size_t h = std::min(std::numeric_limits<size_t>::max() * 1.0,
-                              cur->point.getX() / (ts / 100.0));
+          size_t h = cur->point.getX();
           const auto& existing = duplicatePolys.find(h);
 
           if (existing != duplicatePolys.end()) {
@@ -1259,8 +1257,7 @@ void Sweeper::duplicatesToReferences() {
         if (cur->type == LINE &&
             cur->point.getX() >= DUPLICATE_REMOVAL_MIN_SIZE) {
           // for polygons, cur->point.getX() holds the number of anchor points
-          size_t h = std::min(std::numeric_limits<size_t>::max() * 1.0,
-                              cur->point.getX() / (ts / 100.0));
+          size_t h = cur->point.getX();
           const auto& existing = duplicateLines.find(h);
 
           if (existing != duplicateLines.end()) {
@@ -1350,6 +1347,8 @@ RelStats Sweeper::sweep() {
       throw std::runtime_error(ss.str());
     }
 
+    if (len % sizeof(BoxVal)) throw std::runtime_error("Corrupted events file");
+
     std::stringstream a;
 
     for (ssize_t i = 0; i < len; i += sizeof(BoxVal)) {
@@ -1408,6 +1407,8 @@ RelStats Sweeper::sweep() {
         ss << strerror(errno) << std::endl;
         throw std::runtime_error(ss.str());
       }
+
+      if (len % sizeof(BoxVal)) throw std::runtime_error("Corrupted events file");
 
       for (ssize_t i = 0; i < len; i += sizeof(BoxVal)) {
         auto cur = reinterpret_cast<const BoxVal*>(buf + i);
