@@ -35,6 +35,9 @@ using sj::boxids::getBoxId;
 using sj::boxids::getBoxIds;
 using sj::boxids::packBoxIds;
 using sj::innerouter::Mode;
+using util::preadAll;
+using util::pwriteAll;
+using util::readAll;
 using util::writeAll;
 using util::geo::area;
 using util::geo::DE9IM;
@@ -156,15 +159,12 @@ void Sweeper::multiAdd(const std::string& gid, bool side, int32_t xLeft,
 }
 
 // _____________________________________________________________________________
-void Sweeper::add(const std::string& parent, const util::geo::I32Box& box,
-                  const std::string& gid, bool side, WriteBatch& batch) const {
-  add(parent, box, gid, 0, side, batch);
-}
-
-// _____________________________________________________________________________
 void Sweeper::add(const std::string& parentR, const util::geo::I32Box& box,
                   const std::string& gidR, size_t subid, bool side,
                   WriteBatch& batch) const {
+  // NOTE: referencing atm *only* works if the referenced geometry is a non-
+  // multi geometry. If a multi geometry is referenced, the behavior is
+  // undefined.
   std::string gid = (side ? ("B" + gidR) : ("A" + gidR));
   std::string parent = (side ? ("B" + parentR) : ("A" + parentR));
 
@@ -197,7 +197,9 @@ I32Box Sweeper::add(const I32Polygon& poly, const std::string& gidR,
 
   if (spoly.empty()) return box;
 
+  size_t polySize = poly.getSize();
   double areaSize = area(poly);
+
   double outerAreaSize = outerArea(poly);
   BoxIdList boxIds;
 
@@ -336,7 +338,10 @@ I32Box Sweeper::add(const I32Polygon& poly, const std::string& gidR,
                     false,
                     POLYGON,
                     areaSize,
-                    {},
+                    {polySize < std::numeric_limits<int32_t>::max()
+                         ? static_cast<int32_t>(polySize)
+                         : std::numeric_limits<int32_t>::max(),
+                     0},
                     box45,
                     side,
                     estimatedSize > GEOM_LARGENESS_THRESHOLD};
@@ -347,7 +352,10 @@ I32Box Sweeper::add(const I32Polygon& poly, const std::string& gidR,
                      true,
                      POLYGON,
                      areaSize,
-                     {},
+                     {polySize < std::numeric_limits<int32_t>::max()
+                          ? static_cast<int32_t>(polySize)
+                          : std::numeric_limits<int32_t>::max(),
+                      0},
                      box45,
                      side,
                      estimatedSize > GEOM_LARGENESS_THRESHOLD};
@@ -382,6 +390,7 @@ I32Box Sweeper::add(const I32Line& line, const std::string& gidR, size_t subid,
   }
 
   const double len = util::geo::len(line);
+  size_t lineSize = line.size();
 
   I32Box box45;
   if (_cfg.useDiagBox) {
@@ -467,7 +476,10 @@ I32Box Sweeper::add(const I32Line& line, const std::string& gidR, size_t subid,
                     false,
                     LINE,
                     len,
-                    {},
+                    {lineSize < std::numeric_limits<int32_t>::max()
+                         ? static_cast<int32_t>(lineSize)
+                         : std::numeric_limits<int32_t>::max(),
+                     0},
                     box45,
                     side,
                     estimatedSize > GEOM_LARGENESS_THRESHOLD};
@@ -478,7 +490,10 @@ I32Box Sweeper::add(const I32Line& line, const std::string& gidR, size_t subid,
                      true,
                      LINE,
                      len,
-                     {},
+                     {lineSize < std::numeric_limits<int32_t>::max()
+                          ? static_cast<int32_t>(lineSize)
+                          : std::numeric_limits<int32_t>::max(),
+                      0},
                      box45,
                      side,
                      estimatedSize > GEOM_LARGENESS_THRESHOLD};
@@ -722,7 +737,9 @@ void Sweeper::addBatch(WriteBatch& cands) {
         log("@ " + std::to_string(_curSweepId / 2));
     }
     for (const auto& cand : cands.refs) {
-      _refs[cand.raw][cand.gid] = cand.subid;
+      _refs[cand.raw][0][cand.gid] = cand.subid;
+      _selfCheckBounds[cand.raw] = util::geo::getBoundingBox(
+          I32Point{cand.boxvalIn.val, cand.boxvalIn.loY});
       if (_curSweepId / 2 % 1000000 == 0)
         log("@ " + std::to_string(_curSweepId / 2));
     }
@@ -751,15 +768,6 @@ void Sweeper::clearMultis(bool force) {
       int32_t rightX = _multiRightX[i][mid];
       if (force || rightX < curMinThreadX) {
         curBatch.push_back({{}, {}, gid});
-
-        if (_refs.size()) {
-          auto i = _refs.find(gid);
-          if (i != _refs.end()) {
-            for (const auto& ref : i->second) {
-              curBatch.push_back({{}, {}, ref.first});
-            }
-          }
-        }
         a = _activeMultis[i].erase(a);
       } else {
         a++;
@@ -1057,6 +1065,24 @@ void Sweeper::flush() {
   log(std::to_string(_multiIds[0].size() + _multiIds[1].size()) +
       " multi geometries");
 
+  for (const auto& ref : _refs) {
+    for (const auto& sub : ref.second) {
+      _selfChecks.push_back({ref.first, sub.first});
+
+      diskAdd({_selfChecks.size() - 1,
+               1,
+               0,
+               _selfCheckBounds[ref.first].getLowerLeft().getX(),
+               false,
+               SELF_CHECK,
+               0.0,
+               {},
+               {},
+               false,
+               false});
+    }
+  }
+
   for (size_t side = 0; side < 2; side++) {
     for (size_t i = 0; i < _multiIds[side].size(); i++) {
       diskAdd({i,
@@ -1126,6 +1152,160 @@ void Sweeper::flush() {
 #endif
 
   log("...done");
+
+  duplicatesToReferences();
+
+  log(std::to_string(_refs.size()) + " reference geometries");
+}
+
+// _____________________________________________________________________________
+void Sweeper::duplicatesToReferences() {
+  // start at beginning of _file
+  lseek(_file, 0, SEEK_SET);
+
+  const size_t RBUF_SIZE = 100000;
+  unsigned char* buf = new unsigned char[sizeof(BoxVal) * RBUF_SIZE];
+
+  std::unordered_set<size_t> deleted;
+  std::unordered_set<size_t> referenced;
+
+  log("Removing duplicates...");
+
+  ssize_t len;
+  size_t jj = 0;
+
+  int32_t curX = 0;
+
+  std::unordered_map<uint64_t, std::pair<size_t, bool>> duplicatePolys,
+      duplicateLines;
+
+  size_t pos = 0;
+
+  try {
+    while ((len = preadAll(_file, buf, sizeof(BoxVal) * RBUF_SIZE, pos)) != 0) {
+      size_t posOld = pos;
+      pos += len;
+      if (len < 0) {
+        std::stringstream ss;
+        ss << "Could not read from events file '" << _fname << "'\n";
+        ss << strerror(errno) << std::endl;
+        throw std::runtime_error(ss.str());
+      }
+
+      if (len % sizeof(BoxVal))
+        throw std::runtime_error("Corrupted events file");
+
+      bool updated = false;
+
+      for (ssize_t i = 0; i < len; i += sizeof(BoxVal)) {
+        auto cur = reinterpret_cast<BoxVal*>(buf + i);
+
+        if (_cfg.sweepCancellationCb && jj % 10000 == 0) {
+          _cfg.sweepCancellationCb();
+        }
+
+        jj++;
+
+        if (cur->out) {
+          if ((cur->type == POLYGON || cur->type == LINE) &&
+              deleted.erase(cur->id)) {
+            // erase it if present, to avoid unnecessary memory consumption
+            cur->type = DELETED;
+            updated = true;
+          }
+          referenced.erase(cur->id);
+          continue;
+        }
+
+        if (curX != cur->val) {
+          // new equal-X block
+          duplicatePolys = {};
+          duplicateLines = {};
+          curX = cur->val;
+        }
+
+        if (cur->type == POLYGON &&
+            cur->point.getX() >= DUPLICATE_REMOVAL_MIN_SIZE) {
+          // for polygons, cur->point.getX() holds the number of anchor points
+          size_t h = cur->point.getX();
+          const auto& existing = duplicatePolys.find(h);
+
+          if (existing != duplicatePolys.end()) {
+            auto a = _areaCache.get(cur->id, cur->large ? -1 : 0);
+            auto b = _areaCache.get(existing->second.first,
+                                    existing->second.second ? -1 : 0);
+
+            if (a->box == b->box && a->area == b->area &&
+                a->boxIds == b->boxIds && a->geom == b->geom) {
+              deleted.insert(cur->id);
+              if (referenced.insert(existing->second.first).second) {
+                // for the first element referencing this, modify this
+                // event to the self check of the referenced geom
+                cur->type = SELF_CHECK_AREA;
+                _selfChecks.push_back({b->id, b->subId});
+                cur->id = _selfChecks.size() - 1;
+              } else {
+                cur->type = DELETED;
+              }
+
+              updated = true;
+              _refs[b->id][b->subId][a->id] = a->subId;
+            }
+          } else {
+            duplicatePolys[h] = {(size_t)cur->id, cur->large};
+          }
+        }
+
+        if (cur->type == LINE &&
+            cur->point.getX() >= DUPLICATE_REMOVAL_MIN_SIZE) {
+          // for polygons, cur->point.getX() holds the number of anchor points
+          size_t h = cur->point.getX();
+          const auto& existing = duplicateLines.find(h);
+
+          if (existing != duplicateLines.end()) {
+            auto a = _lineCache.get(cur->id, cur->large ? -1 : 0);
+            auto b = _lineCache.get(existing->second.first,
+                                    existing->second.second ? -1 : 0);
+
+            if (a->box == b->box && a->length == b->length &&
+                a->boxIds == b->boxIds && a->geom == b->geom) {
+              deleted.insert(cur->id);
+              if (referenced.insert(existing->second.first).second) {
+                // for the first element referencing this, modify this
+                // event to the self check of the referenced geom
+                cur->type = SELF_CHECK_LINE;
+                _selfChecks.push_back({b->id, b->subId});
+                cur->id = _selfChecks.size() - 1;
+              } else {
+                cur->type = DELETED;
+              }
+              updated = true;
+              _refs[b->id][b->subId][a->id] = a->subId;
+            }
+          } else {
+            duplicateLines[h] = {(size_t)cur->id, cur->large};
+          }
+        }
+      }
+
+      // if we changed something in this buffer, write it back
+      if (updated) pwriteAll(_file, buf, len, posOld);
+    }
+  } catch (...) {
+    // graceful handling of an exception during sweep
+
+    delete[] buf;
+
+    // set the cancelled variable to true
+    _cancelled = true;
+
+    // rethrow exception
+    throw;
+  }
+
+  delete[] buf;
+
+  log("...done");
 }
 
 // _____________________________________________________________________________
@@ -1158,6 +1338,8 @@ RelStats Sweeper::sweep() {
 
   const size_t RBUF_SIZE = 100000;
   unsigned char* buf = new unsigned char[sizeof(BoxVal) * RBUF_SIZE];
+
+  ssize_t len;
 
   util::geo::IntervalIdx<int32_t, SweepVal> actives[2];
 
@@ -1198,16 +1380,17 @@ RelStats Sweeper::sweep() {
   for (size_t i = 0; i < thrds.size(); i++)
     thrds[i] = std::thread(&Sweeper::processQueue, this, i);
 
-  ssize_t len;
-
   try {
-    while ((len = util::readAll(_file, buf, sizeof(BoxVal) * RBUF_SIZE)) != 0) {
+    while ((len = readAll(_file, buf, sizeof(BoxVal) * RBUF_SIZE)) != 0) {
       if (len < 0) {
         std::stringstream ss;
         ss << "Could not read from events file '" << _fname << "'\n";
         ss << strerror(errno) << std::endl;
         throw std::runtime_error(ss.str());
       }
+
+      if (len % sizeof(BoxVal))
+        throw std::runtime_error("Corrupted events file");
 
       for (ssize_t i = 0; i < len; i += sizeof(BoxVal)) {
         auto cur = reinterpret_cast<const BoxVal*>(buf + i);
@@ -1218,7 +1401,17 @@ RelStats Sweeper::sweep() {
 
         jj++;
 
-        if (!cur->out && cur->loY == 1 && cur->upY == 0 && cur->type == POINT) {
+        if (jj % 200000 == 0) clearMultis(false);
+
+        if (cur->type == DELETED) {
+          continue;
+        } else if (cur->type == SELF_CHECK || cur->type == SELF_CHECK_AREA ||
+                   cur->type == SELF_CHECK_LINE ||
+                   cur->type == SELF_CHECK_POINT) {
+          // self checks, required if we have reference geoms
+          curBatch.push_back({*cur, *cur, ""});
+        } else if (!cur->out && cur->loY == 1 && cur->upY == 0 &&
+                   cur->type == POINT) {
           // special multi-IN
           _activeMultis[cur->side].insert(cur->id);
         } else if (!cur->out) {
@@ -1276,14 +1469,9 @@ RelStats Sweeper::sweep() {
 
           if ((jj % 100 == 0) && _cfg.sweepProgressCb)
             _cfg.sweepProgressCb(jj / 2);
-
-          if (jj % 200000 == 0) clearMultis(false);
         } else {
           // OUT event
           actives[cur->side].erase({cur->loY, cur->upY}, {cur->id, cur->type});
-
-          // optional self checks, required if we have reference geoms
-          if (_refs.size()) curBatch.push_back({*cur, *cur, ""});
 
           counts++;
 
@@ -2077,7 +2265,9 @@ std::tuple<bool, bool> Sweeper::check(const I32Point& a, const Line* b,
     _stats[t].timeBoxIdIsectLinePoint += TOOK(ts);
 
     // no box shared, we cannot contain or intersect
-    if (r.first + r.second == 0) return {0, 0};
+    if (r.first + r.second == 0) {
+      return {0, 0};
+    }
   }
 
   auto ts = TIME();
@@ -2146,7 +2336,30 @@ void Sweeper::writeDE9IM(size_t t, const std::string& a, size_t aSub,
     }
   }
 
-  // TODO: handle references!
+  // handle references
+
+  if (_refs.size() == 0) return;
+
+  auto referersA = _refs.find(a);
+  auto referersB = _refs.find(b);
+
+  if (referersB != _refs.end()) {
+    const auto& subs = referersB->second.find(bSub);
+    if (subs != referersB->second.end()) {
+      for (const auto& idB : subs->second) {
+        writeDE9IM(t, a, aSub, idB.first, idB.second, de9im);
+      }
+    }
+  }
+
+  if (referersA != _refs.end()) {
+    const auto& subs = referersA->second.find(aSub);
+    if (subs != referersA->second.end()) {
+      for (const auto& idA : subs->second) {
+        writeDE9IM(t, idA.first, idA.second, b, bSub, de9im);
+      }
+    }
+  }
 }
 
 // ____________________________________________________________________________
@@ -2168,12 +2381,38 @@ void Sweeper::writeDist(size_t t, const std::string& a, size_t aSub,
     }
   }
 
-  // TODO: handle references
+  // handle references
+
+  if (_refs.size() == 0) return;
+
+  auto referersA = _refs.find(a);
+  auto referersB = _refs.find(b);
+
+  if (referersB != _refs.end()) {
+    const auto& subs = referersB->second.find(bSub);
+    if (subs != referersB->second.end()) {
+      for (const auto& idB : subs->second) {
+        writeDist(t, a, aSub, idB.first, idB.second, dist);
+      }
+    }
+  }
+
+  // no need to check exactly the same direction again
+  if (a != b || aSub != bSub) {
+    if (referersA != _refs.end()) {
+      const auto& subs = referersA->second.find(aSub);
+      if (subs != referersA->second.end()) {
+        for (const auto& idA : subs->second) {
+          writeDist(t, idA.first, idA.second, b, bSub, dist);
+        }
+      }
+    }
+  }
 }
 
 // ____________________________________________________________________________
-void Sweeper::writeIntersect(size_t t, const std::string& a,
-                             const std::string& b) {
+void Sweeper::writeIntersect(size_t t, const std::string& a, size_t aSub,
+                             const std::string& b, size_t bSub) {
   if (a != b) {
     _relStats[t].intersects++;
     _relStats[t].intersects++;
@@ -2189,54 +2428,49 @@ void Sweeper::writeIntersect(size_t t, const std::string& a,
   auto referersB = _refs.find(b);
 
   if (referersB != _refs.end()) {
-    for (const auto& idB : referersB->second) {
-      writeIntersect(t, a, idB.first);
+    const auto& subs = referersB->second.find(bSub);
+    if (subs != referersB->second.end()) {
+      for (const auto& idB : subs->second) {
+        writeIntersect(t, a, aSub, idB.first, idB.second);
+      }
     }
   }
 
-  if (referersA != _refs.end()) {
-    for (const auto& idA : referersA->second) {
-      writeIntersect(t, idA.first, b);
+  // no need to check exactly the same direction again
+  if (a != b || aSub != bSub) {
+    if (referersA != _refs.end()) {
+      const auto& subs = referersA->second.find(aSub);
+      if (subs != referersA->second.end()) {
+        for (const auto& idA : subs->second) {
+          writeIntersect(t, idA.first, idA.second, b, bSub);
+        }
+      }
     }
   }
 }
 
 // ____________________________________________________________________________
-void Sweeper::selfCheck(const JobVal cur, size_t t) {
-  if (cur.type == FOLDED_POINT) {
-    auto ts = TIME();
-    auto gid = unfoldString(cur.id);
-    _stats[t].timeGeoCacheRetrievalPoint += TOOK(ts);
-
-    writeIntersect(t, gid, gid);
-    writeEquals(t, gid, 0, gid, 0);
-    writeCovers(t, gid, gid, 0);
-  } else if (cur.type == POINT) {
-    auto ts = TIME();
-    auto a = _pointCache.get(cur.id, cur.large ? -1 : t);
-    _stats[t].timeGeoCacheRetrievalPoint += TOOK(ts);
-
-    writeIntersect(t, a->id, a->id);
-    writeEquals(t, a->id, a->subId, a->id, a->subId);
-    writeCovers(t, a->id, a->id, a->subId);
-  } else if (cur.type == LINE) {
-    auto a = _lineCache.get(cur.id, cur.large ? -1 : t);
-
-    writeIntersect(t, a->id, a->id);
-    writeEquals(t, a->id, a->subId, a->id, a->subId);
-    writeCovers(t, a->id, a->id, a->subId);
-  } else if (isSimpleLine(cur.type)) {
-    auto a = getSimpleLine(cur, cur.large ? -1 : t);
-
-    writeIntersect(t, a->id, a->id);
-    writeEquals(t, a->id, 0, a->id, 0);
-    writeCovers(t, a->id, a->id, 0);
-  } else if (isArea(cur.type)) {
-    auto a = getArea(cur, cur.large ? -1 : t);
-
-    writeIntersect(t, a->id, a->id);
-    writeEquals(t, a->id, a->subId, a->id, a->subId);
-    writeCovers(t, a->id, a->id, a->subId);
+void Sweeper::selfCheck(const std::string& a, size_t subId, GeomType type,
+                        size_t t) {
+  if (_cfg.computeDE9IM) {
+    if (type == SELF_CHECK_LINE)
+      writeDE9IM(t, a, subId, a, subId, util::geo::M10FF0FFF2);
+    else if (type == SELF_CHECK_AREA)
+      writeDE9IM(t, a, subId, a, subId, util::geo::M2FFF1FFF2);
+    else if (type == SELF_CHECK_POINT)
+      writeDE9IM(t, a, subId, a, subId, util::geo::M0FFFFFFF2);
+    else {
+      // LOG(WARN)
+      // << "Input reference geometries not supported with DE-9IM computation";
+    }
+  } else if (_cfg.withinDist >= 0) {
+    writeDist(t, a, subId, a, subId, 0);
+  } else {
+    writeIntersect(t, a, subId, a, subId);
+    writeEquals(t, a, subId, a, subId);
+    writeCovers(t, a, subId, a, subId);
+    writeContains(t, a, subId, a, subId);
+    writeNotCrosses(t, a, subId, a, subId);
   }
 }
 
@@ -2247,6 +2481,11 @@ void Sweeper::doDE9IMCheck(const JobVal cur, const JobVal sv, size_t t) {
 
   // every 10000 checks, update our position
   if (_checks[t] % 10000 == 0) _atomicCurX[t] = _curX[t];
+
+  if (cur.type == SELF_CHECK || cur.type == SELF_CHECK_AREA ||
+      cur.type == SELF_CHECK_LINE || cur.type == SELF_CHECK_POINT)
+    return selfCheck(_selfChecks[cur.id].first, _selfChecks[cur.id].second,
+                     cur.type, t);
 
   if (isPoint(cur.type) && isPoint(sv.type)) {
     auto p1 = cur.point;
@@ -2484,6 +2723,11 @@ void Sweeper::doDistCheck(const JobVal cur, const JobVal sv, size_t t) {
   // every 10000 checks, update our position
   if (_checks[t] % 10000 == 0) _atomicCurX[t] = _curX[t];
 
+  if (cur.type == SELF_CHECK || cur.type == SELF_CHECK_AREA ||
+      cur.type == SELF_CHECK_LINE || cur.type == SELF_CHECK_POINT)
+    return selfCheck(_selfChecks[cur.id].first, _selfChecks[cur.id].second,
+                     cur.type, t);
+
   if (isPoint(cur.type) && isPoint(sv.type)) {
     auto p1 = cur.point;
     auto p2 = sv.point;
@@ -2648,10 +2892,13 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
   _checks[t]++;
   _curX[t] = cur.val;
 
-  if (cur.type == sv.type && cur.id == sv.id) return selfCheck(cur, t);
-
   // every 10000 checks, update our position
   if (_checks[t] % 10000 == 0) _atomicCurX[t] = _curX[t];
+
+  if (cur.type == SELF_CHECK || cur.type == SELF_CHECK_AREA ||
+      cur.type == SELF_CHECK_LINE || cur.type == SELF_CHECK_POINT)
+    return selfCheck(_selfChecks[cur.id].first, _selfChecks[cur.id].second,
+                     cur.type, t);
 
   if (isArea(cur.type) && isArea(sv.type)) {
     std::shared_ptr<Area> a = getArea(cur, cur.large ? -1 : t);
@@ -2675,27 +2922,27 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
 
     // intersects
     if (std::get<0>(res)) {
-      writeIntersect(t, a->id, b->id);
+      writeIntersect(t, a->id, a->subId, b->id, b->subId);
     }
 
     // contained
     if (std::get<1>(res)) {
-      writeContains(t, b->id, a->id, a->subId);
+      writeContains(t, b->id, b->subId, a->id, a->subId);
     }
 
     // covered
     if (std::get<2>(res)) {
-      writeCovers(t, b->id, a->id, a->subId);
+      writeCovers(t, b->id, b->subId, a->id, a->subId);
 
       if (fabs(a->area - b->area) < util::geo::EPSILON) {
         // both areas were equivalent
         writeEquals(t, a->id, a->subId, b->id, b->subId);
 
         // covers in other direction
-        writeCovers(t, a->id, b->id, b->subId);
+        writeCovers(t, a->id, a->subId, b->id, b->subId);
 
         // contains in other direction
-        writeContains(t, a->id, b->id, b->subId);
+        writeContains(t, a->id, a->subId, b->id, b->subId);
       }
     }
 
@@ -2712,10 +2959,7 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
 
     // overlaps
     if (std::get<4>(res)) {
-      _relStats[t].overlaps++;
-      writeRel(t, a->id, b->id, _cfg.sepOverlaps);
-      _relStats[t].overlaps++;
-      writeRel(t, b->id, a->id, _cfg.sepOverlaps);
+      writeOverlaps(t, a->id, a->subId, b->id, b->subId);
     }
   } else if (cur.type == LINE && isArea(sv.type)) {
     std::shared_ptr<Area> b = getArea(sv, sv.large ? -1 : t);
@@ -2745,17 +2989,17 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
 
     // intersects
     if (std::get<0>(res)) {
-      writeIntersect(t, a->id, b->id);
+      writeIntersect(t, b->id, b->subId, a->id, a->subId);
     }
 
     // contains
     if (std::get<1>(res)) {
-      writeContains(t, b->id, a->id, a->subId);
+      writeContains(t, b->id, b->subId, a->id, a->subId);
     }
 
     // covers
     if (std::get<2>(res)) {
-      writeCovers(t, b->id, a->id, a->subId);
+      writeCovers(t, b->id, b->subId, a->id, a->subId);
     }
 
     // touches
@@ -2800,17 +3044,17 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
 
     // intersects
     if (std::get<0>(res)) {
-      writeIntersect(t, a->id, b->id);
+      writeIntersect(t, a->id, 0, b->id, b->subId);
     }
 
     // contains
     if (std::get<1>(res)) {
-      writeContains(t, b->id, a->id, 0);
+      writeContains(t, b->id, b->subId, a->id, 0);
     }
 
     // covers
     if (std::get<2>(res)) {
-      writeCovers(t, b->id, a->id, 0);
+      writeCovers(t, b->id, 0, a->id, 0);
     }
 
     // touches
@@ -2855,17 +3099,17 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
 
     // intersects
     if (std::get<0>(res)) {
-      writeIntersect(t, a->id, b->id);
+      writeIntersect(t, a->id, a->subId, b->id, b->subId);
     }
 
     // contains
     if (std::get<1>(res)) {
-      writeContains(t, a->id, b->id, b->subId);
+      writeContains(t, a->id, a->subId, b->id, b->subId);
     }
 
     // covers
     if (std::get<2>(res)) {
-      writeCovers(t, a->id, b->id, b->subId);
+      writeCovers(t, a->id, a->subId, b->id, b->subId);
     }
 
     // touches
@@ -2908,17 +3152,17 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
 
     // intersects
     if (std::get<0>(res)) {
-      writeIntersect(t, a->id, b->id);
+      writeIntersect(t, a->id, a->subId, b->id, 0);
     }
 
     // contains
     if (std::get<1>(res)) {
-      writeContains(t, a->id, b->id, 0);
+      writeContains(t, a->id, a->subId, b->id, 0);
     }
 
     // covers
     if (std::get<2>(res)) {
-      writeCovers(t, a->id, b->id, 0);
+      writeCovers(t, a->id, a->subId, b->id, 0);
     }
 
     // touches
@@ -2959,22 +3203,21 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
 
     // intersects
     if (std::get<0>(res)) {
-      writeIntersect(t, a->id, b->id);
+      writeIntersect(t, a->id, a->subId, b->id, b->subId);
     }
 
     // covers
     if (std::get<1>(res)) {
       writeNotCrosses(t, a->id, a->subId, b->id, b->subId);
-
       if (a->subId == 0) writeNotOverlaps(t, a->id, a->subId, b->id, b->subId);
 
-      writeCovers(t, b->id, a->id, a->subId);
+      writeCovers(t, b->id, b->subId, a->id, a->subId);
 
       if (fabs(a->length - b->length) < util::geo::EPSILON) {
         // both lines were equivalent
         writeEquals(t, a->id, a->subId, b->id, b->subId);
 
-        writeCovers(t, a->id, b->id, b->subId);
+        writeCovers(t, a->id, a->subId, b->id, b->subId);
       }
     }
 
@@ -3018,19 +3261,18 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
 
     // intersects
     if (std::get<0>(res)) {
-      writeIntersect(t, a->id, b->id);
+      writeIntersect(t, a->id, a->subId, b->id, 0);
     }
 
     // covers
     if (std::get<1>(res)) {
+      writeCovers(t, b->id, 0, a->id, a->subId);
       writeNotCrosses(t, a->id, a->subId, b->id, 0);
-
-      writeCovers(t, b->id, a->id, a->subId);
 
       if (fabs(a->length - util::geo::len(LineSegment<int32_t>(
                                sv.point, sv.point2))) < util::geo::EPSILON) {
         // both lines were equivalent
-        writeCovers(t, a->id, b->id, 0);
+        writeCovers(t, a->id, a->subId, b->id, 0);
 
         writeEquals(t, a->id, a->subId, b->id, 0);
       }
@@ -3077,13 +3319,13 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
 
     // intersects
     if (std::get<0>(res)) {
-      writeIntersect(t, a->id, b->id);
+      writeIntersect(t, a->id, 0, b->id, b->subId);
     }
 
     // covers
     if (std::get<1>(res)) {
       writeNotCrosses(t, a->id, 0, b->id, b->subId);
-      writeCovers(t, b->id, a->id, 0);
+      writeCovers(t, b->id, b->subId, a->id, 0);
 
       writeNotOverlaps(t, a->id, 0, b->id, b->subId);
 
@@ -3091,7 +3333,7 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
                b->length) < util::geo::EPSILON) {
         writeEquals(t, a->id, 0, b->id, b->subId);
 
-        writeCovers(t, a->id, b->id, b->subId);
+        writeCovers(t, a->id, 0, b->id, b->subId);
       }
     }
 
@@ -3133,17 +3375,17 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
     _stats[t].timeHisto(2, TOOK(totTime));
 
     if (std::get<0>(res)) {
-      writeIntersect(t, a->id, b->id);
+      writeIntersect(t, a->id, 0, b->id, 0);
     }
 
     if (std::get<1>(res)) {
-      writeCovers(t, b->id, a->id, 0);
+      writeCovers(t, b->id, 0, a->id, 0);
 
       if (fabs(util::geo::len(LineSegment<int32_t>(cur.point, cur.point2)) -
                util::geo::len(LineSegment<int32_t>(sv.point, sv.point2))) <
           util::geo::EPSILON) {
         writeEquals(t, a->id, 0, b->id, 0);
-        writeCovers(t, a->id, b->id, 0);
+        writeCovers(t, a->id, 0, b->id, 0);
       }
     }
 
@@ -3174,14 +3416,14 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
                //
     _stats[t].totalComps++;
 
-    writeIntersect(t, a->id, b->id);
+    writeIntersect(t, a->id, a->subId, b->id, b->subId);
     writeEquals(t, a->id, a->subId, b->id, b->subId);
 
-    writeCovers(t, b->id, a->id, a->subId);
-    writeContains(t, b->id, a->id, a->subId);
+    writeCovers(t, b->id, b->subId, a->id, a->subId);
+    writeContains(t, b->id, b->subId, a->id, a->subId);
 
-    writeCovers(t, a->id, b->id, b->subId);
-    writeContains(t, a->id, b->id, b->subId);
+    writeCovers(t, a->id, a->subId, b->id, b->subId);
+    writeContains(t, a->id, a->subId, b->id, b->subId);
   } else if (isPoint(cur.type) && isSimpleLine(sv.type)) {
     auto p = cur.point;
 
@@ -3195,12 +3437,12 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
       auto ts = TIME();
       auto b = getSimpleLine(sv, sv.large ? -1 : t);
       _stats[t].timeGeoCacheRetrievalSimpleLine += TOOK(ts);
-      writeIntersect(t, a->id, b->id);
+      writeIntersect(t, a->id, a->subId, b->id, 0);
 
-      writeCovers(t, b->id, a->id, a->subId);
+      writeCovers(t, b->id, 0, a->id, a->subId);
 
       if (p != sv.point && p != sv.point2) {
-        writeContains(t, b->id, a->id, a->subId);
+        writeContains(t, b->id, 0, a->id, a->subId);
 
         writeNotTouches(t, a->id, a->subId, b->id, 0);
       } else {
@@ -3230,12 +3472,12 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
 
       if (a->id == b->id) return;  // no self-checks in multigeometries
 
-      writeIntersect(t, a->id, b->id);
+      writeIntersect(t, a->id, a->subId, b->id, b->subId);
 
-      writeCovers(t, b->id, a->id, a->subId);
+      writeCovers(t, b->id, b->subId, a->id, a->subId);
 
       if (std::get<1>(res)) {
-        writeContains(t, b->id, a->id, a->subId);
+        writeContains(t, b->id, b->subId, a->id, a->subId);
         writeNotTouches(t, a->id, a->subId, b->id, b->subId);
       } else {
         writeTouches(t, a->id, a->subId, b->id, b->subId);
@@ -3244,7 +3486,7 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
       if (b->length == 0) {
         // zero length line, point also covers line
 
-        writeCovers(t, a->id, b->id, b->subId);
+        writeCovers(t, a->id, a->subId, b->id, b->subId);
       }
     }
   } else if (isPoint(cur.type) && isArea(sv.type)) {
@@ -3261,11 +3503,11 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
     if (res.second) {
       auto a = getPoint(cur.id, cur.type, cur.large ? -1 : t);
 
-      writeCovers(t, b->id, a->id, a->subId);
-      writeIntersect(t, a->id, b->id);
+      writeCovers(t, b->id, b->subId, a->id, a->subId);
+      writeIntersect(t, a->id, a->subId, b->id, b->subId);
 
       if (res.first) {
-        writeContains(t, b->id, a->id, a->subId);
+        writeContains(t, b->id, b->subId, a->id, a->subId);
 
         if (_refs.count(a->id) || a->subId != 0) {
           writeNotTouches(t, a->id, a->subId, b->id, b->subId);
@@ -3358,14 +3600,23 @@ void Sweeper::writeOverlaps(size_t t, const std::string& a, size_t aSub,
   auto referersB = _refs.find(b);
 
   if (referersB != _refs.end()) {
-    for (const auto& idB : referersB->second) {
-      writeOverlaps(t, a, aSub, idB.first, idB.second);
+    const auto& subs = referersB->second.find(bSub);
+    if (subs != referersB->second.end()) {
+      for (const auto& idB : subs->second) {
+        writeOverlaps(t, a, aSub, idB.first, idB.second);
+      }
     }
   }
 
-  if (referersA != _refs.end()) {
-    for (const auto& idA : referersA->second) {
-      writeOverlaps(t, idA.first, idA.second, b, bSub);
+  // no need to check exactly the same direction again
+  if (a != b || aSub != bSub) {
+    if (referersA != _refs.end()) {
+      const auto& subs = referersA->second.find(aSub);
+      if (subs != referersA->second.end()) {
+        for (const auto& idA : subs->second) {
+          writeOverlaps(t, idA.first, idA.second, b, bSub);
+        }
+      }
     }
   }
 }
@@ -3373,9 +3624,7 @@ void Sweeper::writeOverlaps(size_t t, const std::string& a, size_t aSub,
 // _____________________________________________________________________________
 void Sweeper::writeNotOverlaps(size_t t, const std::string& a, size_t aSub,
                                const std::string& b, size_t bSub) {
-  if (a == b) return;
-
-  if ((aSub != 0 || bSub != 0) && !refRelated(a, b)) {
+  if (a != b && (aSub != 0 || bSub != 0)) {
     std::unique_lock<std::mutex> lock(_mutsNotOverlaps[t]);
 
     if (bSub != 0) _subNotOverlaps[t][b].insert(a);
@@ -3390,14 +3639,20 @@ void Sweeper::writeNotOverlaps(size_t t, const std::string& a, size_t aSub,
   auto referersB = _refs.find(b);
 
   if (referersB != _refs.end()) {
-    for (const auto& idB : referersB->second) {
-      writeNotOverlaps(t, a, aSub, idB.first, idB.second);
+    const auto& subs = referersB->second.find(bSub);
+    if (subs != referersB->second.end()) {
+      for (const auto& idB : subs->second) {
+        writeNotOverlaps(t, a, aSub, idB.first, idB.second);
+      }
     }
   }
 
   if (referersA != _refs.end()) {
-    for (const auto& idA : referersA->second) {
-      writeNotOverlaps(t, idA.first, idA.second, b, bSub);
+    const auto& subs = referersA->second.find(aSub);
+    if (subs != referersA->second.end()) {
+      for (const auto& idA : subs->second) {
+        writeNotOverlaps(t, idA.first, idA.second, b, bSub);
+      }
     }
   }
 }
@@ -3427,14 +3682,23 @@ void Sweeper::writeCrosses(size_t t, const std::string& a, size_t aSub,
   auto referersB = _refs.find(b);
 
   if (referersB != _refs.end()) {
-    for (const auto& idB : referersB->second) {
-      writeCrosses(t, a, aSub, idB.first, idB.second);
+    const auto& subs = referersB->second.find(bSub);
+    if (subs != referersB->second.end()) {
+      for (const auto& idB : subs->second) {
+        writeCrosses(t, a, aSub, idB.first, idB.second);
+      }
     }
   }
 
-  if (referersA != _refs.end()) {
-    for (const auto& idA : referersA->second) {
-      writeCrosses(t, idA.first, idA.second, b, bSub);
+  // no need to check exactly the same direction again
+  if (a != b || aSub != bSub) {
+    if (referersA != _refs.end()) {
+      const auto& subs = referersA->second.find(aSub);
+      if (subs != referersA->second.end()) {
+        for (const auto& idA : subs->second) {
+          writeCrosses(t, idA.first, idA.second, b, bSub);
+        }
+      }
     }
   }
 }
@@ -3442,8 +3706,7 @@ void Sweeper::writeCrosses(size_t t, const std::string& a, size_t aSub,
 // _____________________________________________________________________________
 void Sweeper::writeNotCrosses(size_t t, const std::string& a, size_t aSub,
                               const std::string& b, size_t bSub) {
-  if (a == b) return;
-  if ((aSub != 0 || bSub != 0) && !refRelated(a, b)) {
+  if (a != b && (aSub != 0 || bSub != 0)) {
     std::unique_lock<std::mutex> lock(_mutsNotCrosses[t]);
 
     if (bSub != 0) _subNotCrosses[t][b].insert(a);
@@ -3458,14 +3721,23 @@ void Sweeper::writeNotCrosses(size_t t, const std::string& a, size_t aSub,
   auto referersB = _refs.find(b);
 
   if (referersB != _refs.end()) {
-    for (const auto& idB : referersB->second) {
-      writeNotCrosses(t, a, aSub, idB.first, idB.second);
+    const auto& subs = referersB->second.find(bSub);
+    if (subs != referersB->second.end()) {
+      for (const auto& idB : subs->second) {
+        writeNotCrosses(t, a, aSub, idB.first, idB.second);
+      }
     }
   }
 
-  if (referersA != _refs.end()) {
-    for (const auto& idA : referersA->second) {
-      writeNotCrosses(t, idA.first, idA.second, b, bSub);
+  // no need to check exactly the same direction again
+  if (a != b || aSub != bSub) {
+    if (referersA != _refs.end()) {
+      const auto& subs = referersA->second.find(aSub);
+      if (subs != referersA->second.end()) {
+        for (const auto& idA : subs->second) {
+          writeNotCrosses(t, idA.first, idA.second, b, bSub);
+        }
+      }
     }
   }
 }
@@ -3495,14 +3767,23 @@ void Sweeper::writeTouches(size_t t, const std::string& a, size_t aSub,
   auto referersB = _refs.find(b);
 
   if (referersB != _refs.end()) {
-    for (const auto& idB : referersB->second) {
-      writeTouches(t, a, aSub, idB.first, idB.second);
+    const auto& subs = referersB->second.find(bSub);
+    if (subs != referersB->second.end()) {
+      for (const auto& idB : subs->second) {
+        writeTouches(t, a, aSub, idB.first, idB.second);
+      }
     }
   }
 
-  if (referersA != _refs.end()) {
-    for (const auto& idA : referersA->second) {
-      writeTouches(t, idA.first, idA.second, b, bSub);
+  // no need to check exactly the same direction again
+  if (a != b || aSub != bSub) {
+    if (referersA != _refs.end()) {
+      const auto& subs = referersA->second.find(aSub);
+      if (subs != referersA->second.end()) {
+        for (const auto& idA : subs->second) {
+          writeTouches(t, idA.first, idA.second, b, bSub);
+        }
+      }
     }
   }
 }
@@ -3510,9 +3791,7 @@ void Sweeper::writeTouches(size_t t, const std::string& a, size_t aSub,
 // _____________________________________________________________________________
 void Sweeper::writeNotTouches(size_t t, const std::string& a, size_t aSub,
                               const std::string& b, size_t bSub) {
-  if (a == b) return;
-
-  if ((aSub != 0 || bSub != 0) && !refRelated(a, b)) {
+  if (a != b && (aSub != 0 || bSub != 0)) {
     std::unique_lock<std::mutex> lock(_mutsNotTouches[t]);
 
     if (bSub != 0) _subNotTouches[t][b].insert(a);
@@ -3527,14 +3806,23 @@ void Sweeper::writeNotTouches(size_t t, const std::string& a, size_t aSub,
   auto referersB = _refs.find(b);
 
   if (referersB != _refs.end()) {
-    for (const auto& idB : referersB->second) {
-      writeNotTouches(t, a, aSub, idB.first, idB.second);
+    const auto& subs = referersB->second.find(bSub);
+    if (subs != referersB->second.end()) {
+      for (const auto& idB : subs->second) {
+        writeNotTouches(t, a, aSub, idB.first, idB.second);
+      }
     }
   }
 
-  if (referersA != _refs.end()) {
-    for (const auto& idA : referersA->second) {
-      writeNotTouches(t, idA.first, idA.second, b, bSub);
+  // no need to check exactly the same direction again
+  if (a != b || aSub != bSub) {
+    if (referersA != _refs.end()) {
+      const auto& subs = referersA->second.find(aSub);
+      if (subs != referersA->second.end()) {
+        for (const auto& idA : subs->second) {
+          writeNotTouches(t, idA.first, idA.second, b, bSub);
+        }
+      }
     }
   }
 }
@@ -3567,21 +3855,30 @@ void Sweeper::writeEquals(size_t t, const std::string& a, size_t aSub,
   auto referersB = _refs.find(b);
 
   if (referersB != _refs.end()) {
-    for (const auto& idB : referersB->second) {
-      writeEquals(t, a, aSub, idB.first, idB.second);
+    const auto& subs = referersB->second.find(bSub);
+    if (subs != referersB->second.end()) {
+      for (const auto& idB : subs->second) {
+        writeEquals(t, a, aSub, idB.first, idB.second);
+      }
     }
   }
 
-  if (referersA != _refs.end()) {
-    for (const auto& idA : referersA->second) {
-      writeEquals(t, idA.first, idA.second, b, bSub);
+  // no need to check exactly the same direction again
+  if (a != b || aSub != bSub) {
+    if (referersA != _refs.end()) {
+      const auto& subs = referersA->second.find(aSub);
+      if (subs != referersA->second.end()) {
+        for (const auto& idA : subs->second) {
+          writeEquals(t, idA.first, idA.second, b, bSub);
+        }
+      }
     }
   }
 }
 
 // _____________________________________________________________________________
-void Sweeper::writeCovers(size_t t, const std::string& a, const std::string& b,
-                          size_t bSub) {
+void Sweeper::writeCovers(size_t t, const std::string& a, size_t aSub,
+                          const std::string& b, size_t bSub) {
   if (a != b) {
     if (bSub > 0) {
       std::unique_lock<std::mutex> lock(_mutsCovers[t]);
@@ -3600,20 +3897,26 @@ void Sweeper::writeCovers(size_t t, const std::string& a, const std::string& b,
   auto referersB = _refs.find(b);
 
   if (referersB != _refs.end()) {
-    for (const auto& idB : referersB->second) {
-      writeCovers(t, a, idB.first, idB.second);
+    const auto& subs = referersB->second.find(bSub);
+    if (subs != referersB->second.end()) {
+      for (const auto& idB : subs->second) {
+        writeCovers(t, a, aSub, idB.first, idB.second);
+      }
     }
   }
 
   if (referersA != _refs.end()) {
-    for (const auto& idA : referersA->second) {
-      writeCovers(t, idA.first, b, bSub);
+    const auto& subs = referersA->second.find(aSub);
+    if (subs != referersA->second.end()) {
+      for (const auto& idA : subs->second) {
+        writeCovers(t, idA.first, idA.second, b, bSub);
+      }
     }
   }
 }
 
 // _____________________________________________________________________________
-void Sweeper::writeContains(size_t t, const std::string& a,
+void Sweeper::writeContains(size_t t, const std::string& a, size_t aSub,
                             const std::string& b, size_t bSub) {
   if (a != b) {
     if (bSub > 0) {
@@ -3633,22 +3936,26 @@ void Sweeper::writeContains(size_t t, const std::string& a,
   auto referersB = _refs.find(b);
 
   if (referersB != _refs.end()) {
-    for (const auto& idB : referersB->second) {
-      writeContains(t, a, idB.first, idB.second);
+    const auto& subs = referersB->second.find(bSub);
+    if (subs != referersB->second.end()) {
+      for (const auto& idB : subs->second) {
+        writeContains(t, a, aSub, idB.first, idB.second);
+      }
     }
   }
 
   if (referersA != _refs.end()) {
-    for (const auto& idA : referersA->second) {
-      writeContains(t, idA.first, b, bSub);
+    const auto& subs = referersA->second.find(aSub);
+    if (subs != referersA->second.end()) {
+      for (const auto& idA : subs->second) {
+        writeContains(t, idA.first, idA.second, b, bSub);
+      }
     }
   }
 }
 
 // _____________________________________________________________________________
 bool Sweeper::notCrosses(const std::string& a, const std::string& b) {
-  if (refRelated(a, b)) return true;
-
   for (size_t t = 0; t < _cfg.numThreads + 1; t++) {
     std::unique_lock<std::mutex> lock(_mutsNotCrosses[t]);
     auto i = _subNotCrosses[t].find(a);
@@ -3660,8 +3967,6 @@ bool Sweeper::notCrosses(const std::string& a, const std::string& b) {
 
 // _____________________________________________________________________________
 bool Sweeper::notTouches(const std::string& a, const std::string& b) {
-  if (refRelated(a, b)) return true;
-
   for (size_t t = 0; t < _cfg.numThreads + 1; t++) {
     std::unique_lock<std::mutex> lock(_mutsNotTouches[t]);
     auto i = _subNotTouches[t].find(a);
@@ -3673,8 +3978,6 @@ bool Sweeper::notTouches(const std::string& a, const std::string& b) {
 
 // _____________________________________________________________________________
 bool Sweeper::notOverlaps(const std::string& a, const std::string& b) {
-  if (refRelated(a, b)) return true;
-
   for (size_t t = 0; t < _cfg.numThreads + 1; t++) {
     std::unique_lock<std::mutex> lock(_mutsNotOverlaps[t]);
     auto i = _subNotOverlaps[t].find(a);
@@ -3688,17 +3991,6 @@ bool Sweeper::notOverlaps(const std::string& a, const std::string& b) {
 // _____________________________________________________________________________
 void Sweeper::log(const std::string& msg) {
   if (_cfg.logCb) _cfg.logCb(msg);
-}
-
-// _____________________________________________________________________________
-bool Sweeper::refRelated(const std::string& a, const std::string& b) const {
-  auto i = _refs.find(a);
-  if (i != _refs.end() && i->second.find(b) != i->second.end()) return true;
-
-  auto j = _refs.find(b);
-  if (j != _refs.end() && j->second.find(a) != j->second.end()) return true;
-
-  return false;
 }
 
 // _____________________________________________________________________________
@@ -4033,3 +4325,88 @@ std::shared_ptr<sj::Area> Sweeper::getArea(const JobVal& sv, size_t t) const {
 
   return asp;
 }
+
+// _____________________________________________________________________________
+template <template <typename> class G, typename T>
+util::geo::I32Box Sweeper::getPaddedBoundingBox(const G<T>& geom) const {
+  return getPaddedBoundingBox(geom, geom);
+}
+
+// _____________________________________________________________________________
+template <template <typename> class G1, template <typename> class G2,
+          typename T>
+util::geo::I32Box Sweeper::getPaddedBoundingBox(const G1<T>& geom,
+                                                const G2<T>& refGeom) const {
+  auto bbox = util::geo::getBoundingBox(geom);
+
+  if (_cfg.withinDist >= 0) {
+    double scaleFactor =
+        getMaxScaleFactor(reinterpret_cast<const void*>(&geom) ==
+                                  reinterpret_cast<const void*>(&refGeom)
+                              ? bbox
+                              : util::geo::getBoundingBox(refGeom));
+
+    double pad = (_cfg.withinDist / 2.0) * scaleFactor * PREC;
+
+    double llx = bbox.getLowerLeft().getX();
+    double lly = bbox.getLowerLeft().getY();
+    double urx = bbox.getUpperRight().getX();
+    double ury = bbox.getUpperRight().getY();
+
+    double m = sj::boxids::WORLD_W / 2.0;
+
+    T llxt = -m;
+    T llyt = -m;
+    T urxt = m;
+    T uryt = m;
+
+    if (llx - pad > -m) {
+      llxt = llx - pad;
+    }
+
+    if (lly - pad > -m) {
+      llyt = lly - pad;
+    }
+
+    if (urx + pad < m) {
+      urxt = urx + pad;
+    }
+
+    if (ury + pad < m) {
+      uryt = ury + pad;
+    }
+
+    return {{llxt, llyt}, {urxt, uryt}};
+  }
+
+  return bbox;
+}
+
+// _____________________________________________________________________________
+size_t Sweeper::foldString(const std::string& s) {
+  size_t ret = 0;
+  for (size_t i = 0; i < std::min((size_t)7, s.size()); i++) {
+    size_t tmp = static_cast<unsigned char>(s[i]);
+    ret |= tmp << (i * 8);
+  }
+
+  // highest byte stores the length
+  ret |= (s.size() << 56);
+
+  return ret;
+};
+
+// _____________________________________________________________________________
+std::string Sweeper::unfoldString(size_t folded) {
+  // shift by 7 bytes to get size
+  size_t n = folded >> 56;
+
+  std::string ret;
+  ret.reserve(n);
+
+  for (size_t i = 0; i < n; i++) {
+    ret.push_back(static_cast<char>(folded >> (i * 8)) & 0xFF);
+  }
+
+  return ret;
+};

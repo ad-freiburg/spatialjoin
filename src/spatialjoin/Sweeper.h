@@ -40,6 +40,11 @@ enum GeomType : uint8_t {
   FOLDED_POINT = 5,
   FOLDED_SIMPLE_LINE = 6,
   FOLDED_BOX_POLYGON = 7,
+  DELETED = 8,
+  SELF_CHECK = 9,
+  SELF_CHECK_AREA = 10,
+  SELF_CHECK_LINE = 11,
+  SELF_CHECK_POINT = 12
 };
 
 struct BoxVal {
@@ -48,13 +53,31 @@ struct BoxVal {
   int32_t upY;
   int32_t val;
   bool out : 1;
-  GeomType type : 3;
+  GeomType type : 4;
   double areaOrLen;
   util::geo::I32Point point;
   util::geo::I32Box b45;
   bool side;
   bool large;
 };
+
+inline std::string toString(const BoxVal& bv) {
+  std::stringstream ret;
+
+  ret << "(id=" << bv.id;
+  ret << " loY=" << bv.loY;
+  ret << " upY=" << bv.upY;
+  ret << " val=" << bv.val;
+  ret << " out=" << bv.out;
+  ret << " type=" << (int)bv.type;
+  ret << " point=" << util::geo::getWKT(bv.point);
+  // ret << " b45=" << util::geo::getWKT(bv.b45);
+  ret << " side=" << bv.side;
+  ret << " large=" << bv.large;
+  ret << ")";
+
+  return ret.str();
+}
 
 struct WriteCand {
   std::string raw;
@@ -101,7 +124,7 @@ struct SweepVal {
         large(large) {}
   SweepVal() : id(0), type(POLYGON) {}
   size_t id;
-  GeomType type : 3;
+  GeomType type : 4;
   util::geo::I32Box b45;
   util::geo::I32Point point, point2;
   bool side;
@@ -110,7 +133,7 @@ struct SweepVal {
 
 struct JobVal {
   size_t id;
-  GeomType type : 3;
+  GeomType type : 4;
   util::geo::I32Point point, point2;
   bool large;
   int32_t val;
@@ -285,106 +308,46 @@ class Sweeper {
                         WriteBatch& batch) const;
 
   void add(const std::string& a, const util::geo::I32Box& box,
-           const std::string& gid, bool side, WriteBatch& batch) const;
-  void add(const std::string& a, const util::geo::I32Box& box,
            const std::string& gid, size_t subid, bool side,
            WriteBatch& batch) const;
+  void add(const std::string& a, size_t parentSubId,
+           const util::geo::I32Box& box, const std::string& gid, size_t subid,
+           bool side, WriteBatch& batch) const;
 
   void addBatch(WriteBatch& cands);
 
   void flush();
 
   RelStats sweep();
-  void refDuplicates();
 
   size_t numElements() const { return _curSweepId / 2; }
+
+  size_t numReferences() const {
+    size_t ret = 0;
+    for (const auto& subs : _refs) {
+      for (const auto& refd : subs.second) {
+        ret += refd.second.size();
+      }
+    }
+    return ret;
+  }
 
   void setFilterBox(const util::geo::I32Box& filterBox) {
     _filterBox = filterBox;
   }
 
-  // _____________________________________________________________________________
   template <template <typename> class G, typename T>
-  util::geo::I32Box getPaddedBoundingBox(const G<T>& geom) const {
-    return getPaddedBoundingBox(geom, geom);
-  }
+  util::geo::I32Box getPaddedBoundingBox(const G<T>& geom) const;
 
-  // _____________________________________________________________________________
   template <template <typename> class G1, template <typename> class G2,
             typename T>
   util::geo::I32Box getPaddedBoundingBox(const G1<T>& geom,
-                                         const G2<T>& refGeom) const {
-    auto bbox = util::geo::getBoundingBox(geom);
+                                         const G2<T>& refGeom) const;
 
-    if (_cfg.withinDist >= 0) {
-      double scaleFactor =
-          getMaxScaleFactor(reinterpret_cast<const void*>(&geom) ==
-                                    reinterpret_cast<const void*>(&refGeom)
-                                ? bbox
-                                : util::geo::getBoundingBox(refGeom));
+  static size_t foldString(const std::string& s);
+  static std::string unfoldString(size_t folded);
 
-      double pad = (_cfg.withinDist / 2.0) * scaleFactor * PREC;
-
-      double llx = bbox.getLowerLeft().getX();
-      double lly = bbox.getLowerLeft().getY();
-      double urx = bbox.getUpperRight().getX();
-      double ury = bbox.getUpperRight().getY();
-
-      double m = sj::boxids::WORLD_W / 2.0;
-
-      T llxt = -m;
-      T llyt = -m;
-      T urxt = m;
-      T uryt = m;
-
-      if (llx - pad > -m) {
-        llxt = llx - pad;
-      }
-
-      if (lly - pad > -m) {
-        llyt = lly - pad;
-      }
-
-      if (urx + pad < m) {
-        urxt = urx + pad;
-      }
-
-      if (ury + pad < m) {
-        uryt = ury + pad;
-      }
-
-      return {{llxt, llyt}, {urxt, uryt}};
-    }
-
-    return bbox;
-  }
-
-  static size_t foldString(const std::string& s) {
-    size_t ret = 0;
-    for (size_t i = 0; i < std::min((size_t)7, s.size()); i++) {
-      size_t tmp = static_cast<unsigned char>(s[i]);
-      ret |= tmp << (i * 8);
-    }
-
-    // highest byte stores the length
-    ret |= (s.size() << 56);
-
-    return ret;
-  };
-
-  static std::string unfoldString(size_t folded) {
-    // shift by 7 bytes to get size
-    size_t n = folded >> 56;
-
-    std::string ret;
-    ret.reserve(n);
-
-    for (size_t i = 0; i < n; i++) {
-      ret.push_back(static_cast<char>(folded >> (i * 8)) & 0xFF);
-    }
-
-    return ret;
-  };
+  double DUPLICATE_REMOVAL_MIN_SIZE = 500;
 
  private:
   const SweeperCfg _cfg;
@@ -506,8 +469,6 @@ class Sweeper {
   util::geo::DE9IMatrix DE9IMCheck(const Line* a, const Area* b,
                                    size_t t) const;
 
-  bool refRelated(const std::string& a, const std::string& b) const;
-
   double getMaxScaleFactor(const util::geo::I32Box& geom) const;
   double getMaxScaleFactor(const util::geo::I32Point& geom) const;
 
@@ -518,13 +479,14 @@ class Sweeper {
                 int32_t xRight);
   void clearMultis(bool force);
 
-  void writeIntersect(size_t t, const std::string& a, const std::string& b);
+  void writeIntersect(size_t t, const std::string& a, size_t aSub,
+                      const std::string& b, size_t bSub);
   void writeRel(size_t t, const std::string& a, const std::string& b,
                 const std::string& pred);
-  void writeContains(size_t t, const std::string& a, const std::string& b,
-                     size_t bSub);
-  void writeCovers(size_t t, const std::string& a, const std::string& b,
-                   size_t bSub);
+  void writeContains(size_t t, const std::string& a, size_t aSub,
+                     const std::string& b, size_t bSub);
+  void writeCovers(size_t t, const std::string& a, size_t aSub,
+                   const std::string& b, size_t bSub);
   void writeEquals(size_t t, const std::string& a, size_t aSub,
                    const std::string& b, size_t bSub);
   void writeDE9IM(size_t t, const std::string& a, size_t aSub,
@@ -550,7 +512,7 @@ class Sweeper {
   void doCheck(JobVal cur, JobVal sv, size_t t);
   void doDistCheck(JobVal cur, JobVal sv, size_t t);
   void doDE9IMCheck(JobVal cur, JobVal sv, size_t t);
-  void selfCheck(JobVal cur, size_t t);
+  void selfCheck(const std::string& a, size_t subId, GeomType type, size_t t);
   void processQueue(size_t t);
 
   bool notOverlaps(const std::string& a, const std::string& b);
@@ -583,6 +545,8 @@ class Sweeper {
                  const util::geo::IntervalIdx<int32_t, SweepVal>* actives,
                  const BoxVal* cur) const;
 
+  void duplicatesToReferences();
+
   static int boxCmp(const void* a, const void* b) {
     const auto& boxa = static_cast<const BoxVal*>(a);
     const auto& boxb = static_cast<const BoxVal*>(b);
@@ -594,10 +558,14 @@ class Sweeper {
 
     // everything before a polygon
     if (boxa->type != POLYGON && boxa->type != SIMPLE_POLYGON &&
-        (boxb->type == POLYGON || boxb->type == SIMPLE_POLYGON))
+        boxa->type != FOLDED_BOX_POLYGON &&
+        (boxb->type == POLYGON || boxb->type == SIMPLE_POLYGON ||
+         boxb->type == FOLDED_BOX_POLYGON))
       return -1;
-    if ((boxa->type == POLYGON || boxa->type == SIMPLE_POLYGON) &&
-        boxb->type != POLYGON && boxb->type != SIMPLE_POLYGON)
+    if ((boxa->type == POLYGON || boxa->type == SIMPLE_POLYGON ||
+         boxa->type == FOLDED_BOX_POLYGON) &&
+        boxb->type != POLYGON && boxb->type != SIMPLE_POLYGON &&
+        boxb->type != FOLDED_BOX_POLYGON)
       return 1;
 
     // points before lines
@@ -611,12 +579,16 @@ class Sweeper {
       return 1;
 
     // smaller polygons before larger
-    if ((boxa->type == POLYGON || boxa->type == SIMPLE_POLYGON) &&
-        (boxb->type == POLYGON || boxb->type == SIMPLE_POLYGON) &&
+    if ((boxa->type == POLYGON || boxa->type == SIMPLE_POLYGON ||
+         boxa->type == FOLDED_BOX_POLYGON) &&
+        (boxb->type == POLYGON || boxb->type == SIMPLE_POLYGON ||
+         boxb->type == FOLDED_BOX_POLYGON) &&
         boxa->areaOrLen < boxb->areaOrLen)
       return -1;
-    if ((boxa->type == POLYGON || boxa->type == SIMPLE_POLYGON) &&
-        (boxb->type == POLYGON || boxb->type == SIMPLE_POLYGON) &&
+    if ((boxa->type == POLYGON || boxa->type == SIMPLE_POLYGON ||
+         boxa->type == FOLDED_BOX_POLYGON) &&
+        (boxb->type == POLYGON || boxb->type == SIMPLE_POLYGON ||
+         boxb->type == FOLDED_BOX_POLYGON) &&
         boxa->areaOrLen > boxb->areaOrLen)
       return 1;
 
@@ -645,8 +617,14 @@ class Sweeper {
   mutable std::mutex _areaGeomCacheWriteMtx;
   mutable std::mutex _simpleAreaGeomCacheWriteMtx;
 
-  std::unordered_map<std::string, std::unordered_map<std::string, size_t>>
+  std::unordered_map<std::string, util::geo::I32Box> _selfCheckBounds;
+
+  std::unordered_map<
+      std::string,
+      std::unordered_map<size_t, std::unordered_map<std::string, size_t>>>
       _refs;
+
+  std::vector<std::pair<std::string, size_t>> _selfChecks;
 
   util::geo::I32Box _filterBox = {{std::numeric_limits<int32_t>::lowest(),
                                    std::numeric_limits<int32_t>::lowest()},
