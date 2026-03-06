@@ -319,96 +319,33 @@ class Sweeper {
   void flush();
 
   RelStats sweep();
-  void refDuplicates();
 
   size_t numElements() const { return _curSweepId / 2; }
+
+  size_t numReferences() const {
+    size_t ret = 0;
+    for (const auto& subs : _refs) {
+      for (const auto& refd : subs.second) {
+        ret += refd.second.size();
+      }
+    }
+    return ret;
+  }
 
   void setFilterBox(const util::geo::I32Box& filterBox) {
     _filterBox = filterBox;
   }
 
-  // _____________________________________________________________________________
   template <template <typename> class G, typename T>
-  util::geo::I32Box getPaddedBoundingBox(const G<T>& geom) const {
-    return getPaddedBoundingBox(geom, geom);
-  }
+  util::geo::I32Box getPaddedBoundingBox(const G<T>& geom) const;
 
-  // _____________________________________________________________________________
   template <template <typename> class G1, template <typename> class G2,
             typename T>
   util::geo::I32Box getPaddedBoundingBox(const G1<T>& geom,
-                                         const G2<T>& refGeom) const {
-    auto bbox = util::geo::getBoundingBox(geom);
+                                         const G2<T>& refGeom) const;
 
-    if (_cfg.withinDist >= 0) {
-      double scaleFactor =
-          getMaxScaleFactor(reinterpret_cast<const void*>(&geom) ==
-                                    reinterpret_cast<const void*>(&refGeom)
-                                ? bbox
-                                : util::geo::getBoundingBox(refGeom));
-
-      double pad = (_cfg.withinDist / 2.0) * scaleFactor * PREC;
-
-      double llx = bbox.getLowerLeft().getX();
-      double lly = bbox.getLowerLeft().getY();
-      double urx = bbox.getUpperRight().getX();
-      double ury = bbox.getUpperRight().getY();
-
-      double m = sj::boxids::WORLD_W / 2.0;
-
-      T llxt = -m;
-      T llyt = -m;
-      T urxt = m;
-      T uryt = m;
-
-      if (llx - pad > -m) {
-        llxt = llx - pad;
-      }
-
-      if (lly - pad > -m) {
-        llyt = lly - pad;
-      }
-
-      if (urx + pad < m) {
-        urxt = urx + pad;
-      }
-
-      if (ury + pad < m) {
-        uryt = ury + pad;
-      }
-
-      return {{llxt, llyt}, {urxt, uryt}};
-    }
-
-    return bbox;
-  }
-
-  static size_t foldString(const std::string& s) {
-    size_t ret = 0;
-    for (size_t i = 0; i < std::min((size_t)7, s.size()); i++) {
-      size_t tmp = static_cast<unsigned char>(s[i]);
-      ret |= tmp << (i * 8);
-    }
-
-    // highest byte stores the length
-    ret |= (s.size() << 56);
-
-    return ret;
-  };
-
-  static std::string unfoldString(size_t folded) {
-    // shift by 7 bytes to get size
-    size_t n = folded >> 56;
-
-    std::string ret;
-    ret.reserve(n);
-
-    for (size_t i = 0; i < n; i++) {
-      ret.push_back(static_cast<char>(folded >> (i * 8)) & 0xFF);
-    }
-
-    return ret;
-  };
+  static size_t foldString(const std::string& s);
+  static std::string unfoldString(size_t folded);
 
   double DUPLICATE_REMOVAL_MIN_SIZE = 500;
 

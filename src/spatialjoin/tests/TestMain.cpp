@@ -2,8 +2,8 @@
 // Author: Patrick Brosi
 
 #include <iostream>
-#include <string>
 #include <regex>
+#include <string>
 
 #include "spatialjoin/BoxIds.h"
 #include "spatialjoin/OutputWriter.h"
@@ -18,8 +18,13 @@ using sj::Sweeper;
 
 size_t NUM_THREADS = 1;
 
+struct RunStats {
+  size_t numReferences;
+};
+
 // _____________________________________________________________________________
-std::string fullRun(const std::string& file, sj::SweeperCfg cfg) {
+std::string fullRun(const std::string& file, sj::SweeperCfg cfg,
+                    RunStats* stats) {
   {
     sj::OutputWriter outWriter(NUM_THREADS, "$", "$\n", ".resTmp", ".");
     cfg.writeRelCb = [&outWriter](size_t t, const char* a, size_t an,
@@ -30,7 +35,7 @@ std::string fullRun(const std::string& file, sj::SweeperCfg cfg) {
     Sweeper sweeper(cfg, ".");
     sweeper.DUPLICATE_REMOVAL_MIN_SIZE = 0;
 
-    // small buffer size 1 here for test purposes to force buffer overflows
+    // very small buffer size 1 here for test purposes to force buffer overflows
     // during parsing
     const static size_t BUFF_SIZE = 100;
     char* buf = new char[BUFF_SIZE];
@@ -53,6 +58,8 @@ std::string fullRun(const std::string& file, sj::SweeperCfg cfg) {
 
     sweeper.sweep();
 
+    stats->numReferences = sweeper.numReferences();
+
     close(f);
   }
 
@@ -70,198 +77,54 @@ std::string fullRun(const std::string& file, sj::SweeperCfg cfg) {
 
 // _____________________________________________________________________________
 int main(int, char**) {
-  for (uint64_t i = 0; i < 9999; i++) {
-    // TEST(i == Sweeper::base126ToInt(Sweeper::intToBase126(i)));
-  }
-
   sj::SweeperCfg baseline{
-      NUM_THREADS,
-      NUM_THREADS,
-      1000,
-      1000,
-      " intersects ",
-      " contains ",
-      " covers ",
-      " touches ",
-      " equals ",
-      " overlaps ",
-      " crosses ",
-      false,
-      false,
-      false,
-      false,
-      false,
-      false,
-      false,
-      -1,
-      false,
-      {},
-      {},
-      {},
-      {},
-      {}};
+      NUM_THREADS,  NUM_THREADS, 1000,        1000,       " intersects ",
+      " contains ", " covers ",  " touches ", " equals ", " overlaps ",
+      " crosses ",  false,       false,       false,      false,
+      false,        false,       false,       -1,         false,
+      {},           {},          {},          {},         {}};
 
   sj::SweeperCfg all{
-      NUM_THREADS,
-      NUM_THREADS,
-      1000,
-      1000,
-      " intersects ",
-      " contains ",
-      " covers ",
-      " touches ",
-      " equals ",
-      " overlaps ",
-      " crosses ",
-      true,
-      true,
-      true,
-      true,
-      true,
-      true,
-      false,
-      -1,
-      false,
-      {},
-      {},
-      {},
-      {},
-      {}};
+      NUM_THREADS,  NUM_THREADS, 1000,        1000,       " intersects ",
+      " contains ", " covers ",  " touches ", " equals ", " overlaps ",
+      " crosses ",  true,        true,        true,       true,
+      true,         true,        false,       -1,         false,
+      {},           {},          {},          {},         {}};
 
   sj::SweeperCfg noSurfaceArea{
-      NUM_THREADS,
-      NUM_THREADS,
-      1000,
-      1000,
-      " intersects ",
-      " contains ",
-      " covers ",
-      " touches ",
-      " equals ",
-      " overlaps ",
-      " crosses ",
-      true,
-      false,
-      true,
-      true,
-      true,
-      true,
-      false,
-      -1,
-      false,
-      {},
-      {},
-      {},
-      {},
-      {}};
+      NUM_THREADS,  NUM_THREADS, 1000,        1000,       " intersects ",
+      " contains ", " covers ",  " touches ", " equals ", " overlaps ",
+      " crosses ",  true,        false,       true,       true,
+      true,         true,        false,       -1,         false,
+      {},           {},          {},          {},         {}};
 
   sj::SweeperCfg noBoxIds{
-      NUM_THREADS,
-      NUM_THREADS,
-      1000,
-      1000,
-      " intersects ",
-      " contains ",
-      " covers ",
-      " touches ",
-      " equals ",
-      " overlaps ",
-      " crosses ",
-      false,
-      true,
-      true,
-      true,
-      true,
-      true,
-      false,
-      -1,
-      false,
-      {},
-      {},
-      {},
-      {},
-      {}};
+      NUM_THREADS,  NUM_THREADS, 1000,        1000,       " intersects ",
+      " contains ", " covers ",  " touches ", " equals ", " overlaps ",
+      " crosses ",  false,       true,        true,       true,
+      true,         true,        false,       -1,         false,
+      {},           {},          {},          {},         {}};
 
   sj::SweeperCfg noObb{
-      NUM_THREADS,
-      NUM_THREADS,
-      1000,
-      1000,
-      " intersects ",
-      " contains ",
-      " covers ",
-      " touches ",
-      " equals ",
-      " overlaps ",
-      " crosses ",
-      true,
-      true,
-      false,
-      true,
-      true,
-      true,
-      false,
-      -1,
-      false,
-      {},
-      {},
-      {},
-      {},
-      {}};
+      NUM_THREADS,  NUM_THREADS, 1000,        1000,       " intersects ",
+      " contains ", " covers ",  " touches ", " equals ", " overlaps ",
+      " crosses ",  true,        true,        false,      true,
+      true,         true,        false,       -1,         false,
+      {},           {},          {},          {},         {}};
 
   sj::SweeperCfg noDiagBox{
-      NUM_THREADS,
-      NUM_THREADS,
-      1000,
-      1000,
-      " intersects ",
-      " contains ",
-      " covers ",
-      " touches ",
-      " equals ",
-      " overlaps ",
-      " crosses ",
-      true,
-      true,
-      true,
-      false,
-      true,
-      true,
-      false,
-      -1,
-      false,
-      {},
-      {},
-      {},
-      {},
-      {}};
+      NUM_THREADS,  NUM_THREADS, 1000,        1000,       " intersects ",
+      " contains ", " covers ",  " touches ", " equals ", " overlaps ",
+      " crosses ",  true,        true,        true,       false,
+      true,         true,        false,       -1,         false,
+      {},           {},          {},          {},         {}};
 
   sj::SweeperCfg noFastSweep{
-      NUM_THREADS,
-      NUM_THREADS,
-      1000,
-      1000,
-      " intersects ",
-      " contains ",
-      " covers ",
-      " touches ",
-      " equals ",
-      " overlaps ",
-      " crosses ",
-      true,
-      true,
-      true,
-      true,
-      false,
-      true,
-      false,
-      -1,
-      false,
-      {},
-      {},
-      {},
-      {},
-      {}};
+      NUM_THREADS,  NUM_THREADS, 1000,        1000,       " intersects ",
+      " contains ", " covers ",  " touches ", " equals ", " overlaps ",
+      " crosses ",  true,        true,        true,       true,
+      false,        true,        false,       -1,         false,
+      {},           {},          {},          {},         {}};
 
   sj::SweeperCfg noInnerOuter{
       NUM_THREADS,  NUM_THREADS, 1000,        1000,       " intersects ",
@@ -276,7 +139,11 @@ int main(int, char**) {
 
   for (auto cfg : cfgs) {
     {
-      auto res = fullRun("../src/spatialjoin/tests/datasets/freiburg", cfg);
+      RunStats stats;
+      auto res =
+          fullRun("../src/spatialjoin/tests/datasets/freiburg", cfg, &stats);
+
+      TEST(stats.numReferences, ==, 3);
 
       TEST(res.find("$freiburg1 covers freiburg2$") != std::string::npos);
       TEST(res.find("$freiburg1 covers freiburg2$") != std::string::npos);
@@ -471,13 +338,19 @@ int main(int, char**) {
     }
 
     {
-      auto res = fullRun("../src/spatialjoin/tests/datasets/brandenburg_test", cfg);
+      RunStats stats;
+      auto res = fullRun("../src/spatialjoin/tests/datasets/brandenburg_test",
+                         cfg, &stats);
+      TEST(stats.numReferences, ==, 0);
       TEST(res.find("$Brandenburg-Point intersects Brandenburg-Way$") !=
            std::string::npos);
     }
 
     {
-      auto res = fullRun("../src/spatialjoin/tests/datasets/brandenburg", cfg);
+      RunStats stats;
+      auto res =
+          fullRun("../src/spatialjoin/tests/datasets/brandenburg", cfg, &stats);
+      TEST(stats.numReferences, ==, 7);
       TEST(res.find("$Brandenburg covers Brandenburg2$") != std::string::npos);
       TEST(res.find("$Brandenburg intersects Brandenburg-Way$") !=
            std::string::npos);
@@ -512,8 +385,10 @@ int main(int, char**) {
     }
 
     {
-      auto res =
-          fullRun("../src/spatialjoin/tests/datasets/brandenburg_nonself", cfg);
+      RunStats stats;
+      auto res = fullRun(
+          "../src/spatialjoin/tests/datasets/brandenburg_nonself", cfg, &stats);
+      TEST(stats.numReferences, ==, 7);
       TEST(res.find("$Brandenburg covers Brandenburg2$") == std::string::npos);
       TEST(res.find("$Brandenburg intersects Brandenburg-Way$") ==
            std::string::npos);
@@ -551,8 +426,15 @@ int main(int, char**) {
     }
 
     {
-      auto res =
-          fullRun("../src/spatialjoin/tests/datasets/collectiontests", cfg);
+      RunStats stats;
+      auto res = fullRun("../src/spatialjoin/tests/datasets/collectiontests",
+                         cfg, &stats);
+      // without box IDs, a polygon is converted into a box polygon
+      if (cfg.useBoxIds) {
+        TEST(stats.numReferences, ==, 11);
+      } else {
+        TEST(stats.numReferences, ==, 10);
+      }
 
       TEST(res.find("$28 covers 27$") != std::string::npos);
 
@@ -647,7 +529,16 @@ int main(int, char**) {
     }
 
     {
-      auto res = fullRun("../src/spatialjoin/tests/datasets/multitests", cfg);
+      RunStats stats;
+      auto res =
+          fullRun("../src/spatialjoin/tests/datasets/multitests", cfg, &stats);
+
+      // without box IDs, a polygon is converted into a box polygon
+      if (cfg.useBoxIds) {
+        TEST(stats.numReferences, ==, 7);
+      } else {
+        TEST(stats.numReferences, ==, 6);
+      }
 
       TEST(res.find("$28 covers 27$") != std::string::npos);
 
@@ -738,7 +629,10 @@ int main(int, char**) {
     }
 
     {
-      auto res = fullRun("../src/spatialjoin/tests/datasets/coverfail", cfg);
+      RunStats stats;
+      auto res =
+          fullRun("../src/spatialjoin/tests/datasets/coverfail", cfg, &stats);
+      TEST(stats.numReferences, ==, 0);
       TEST(res.find("$1 intersects 2$") != std::string::npos);
       TEST(res.find("$2 intersects 1$") != std::string::npos);
       TEST(res.find("$1 contains 2$") == std::string::npos);
@@ -750,7 +644,10 @@ int main(int, char**) {
     }
 
     {
-      auto res = fullRun("../src/spatialjoin/tests/datasets/touchfail", cfg);
+      RunStats stats;
+      auto res =
+          fullRun("../src/spatialjoin/tests/datasets/touchfail", cfg, &stats);
+      TEST(stats.numReferences, ==, 0);
       TEST(res.find("$1 intersects 2$") != std::string::npos);
       TEST(res.find("$2 intersects 1$") != std::string::npos);
       TEST(res.find("$1 overlaps 2$") != std::string::npos);
@@ -760,42 +657,59 @@ int main(int, char**) {
     }
 
     {
-      auto res = fullRun("../src/spatialjoin/tests/datasets/touchwayfail", cfg);
+      RunStats stats;
+      auto res = fullRun("../src/spatialjoin/tests/datasets/touchwayfail", cfg,
+                         &stats);
+      TEST(stats.numReferences, ==, 0);
       TEST(res.find("$1 touches 2$") != std::string::npos);
       TEST(res.find("$2 touches 1$") != std::string::npos);
     }
 
     {
-      auto res =
-          fullRun("../src/spatialjoin/tests/datasets/simpleareafail", cfg);
+      RunStats stats;
+      auto res = fullRun("../src/spatialjoin/tests/datasets/simpleareafail",
+                         cfg, &stats);
+      TEST(stats.numReferences, ==, 0);
       TEST(res.find("$1 intersects 2$") != std::string::npos);
       TEST(res.find("$2 intersects 1$") != std::string::npos);
       TEST(res.find("$2 crosses 1$") != std::string::npos);
     }
 
     {
-      auto res = fullRun("../src/spatialjoin/tests/datasets/touchfail2", cfg);
+      RunStats stats;
+      auto res =
+          fullRun("../src/spatialjoin/tests/datasets/touchfail2", cfg, &stats);
+      TEST(stats.numReferences, ==, 0);
       TEST(res.find("$1 covers 2$") != std::string::npos);
       TEST(res.find("$1 intersects 2$") != std::string::npos);
       TEST(res.find("$2 intersects 1$") != std::string::npos);
     }
 
     {
-      auto res = fullRun("../src/spatialjoin/tests/datasets/boxidfail", cfg);
+      RunStats stats;
+      auto res =
+          fullRun("../src/spatialjoin/tests/datasets/boxidfail", cfg, &stats);
+      TEST(stats.numReferences, ==, 0);
       TEST(res.find("$osmway:312944635 intersects osmway:312944634$") !=
            std::string::npos);
       TEST(res.find("$osmway:312944634 intersects osmway:312944635$") !=
            std::string::npos);
     }
     {
-      auto res = fullRun("../src/spatialjoin/tests/datasets/boxidfail2", cfg);
+      RunStats stats;
+      auto res =
+          fullRun("../src/spatialjoin/tests/datasets/boxidfail2", cfg, &stats);
+      TEST(stats.numReferences, ==, 0);
       TEST(res.find("$osmway:205756242 intersects osmway:50218266$") !=
            std::string::npos);
       TEST(res.find("$osmway:50218266 intersects osmway:205756242$") !=
            std::string::npos);
     }
     {
-      auto res = fullRun("../src/spatialjoin/tests/datasets/boxidfail3", cfg);
+      RunStats stats;
+      auto res =
+          fullRun("../src/spatialjoin/tests/datasets/boxidfail3", cfg, &stats);
+      TEST(stats.numReferences, ==, 0);
       TEST(res.find("$osmway:901094335 intersects osmnode:8370757906$") !=
            std::string::npos);
       TEST(res.find("$osmnode:8370757906 intersects osmway:901094335$") !=
@@ -803,7 +717,16 @@ int main(int, char**) {
     }
 
     {
-      auto res = fullRun("../src/spatialjoin/tests/datasets/references", cfg);
+      RunStats stats;
+      auto res =
+          fullRun("../src/spatialjoin/tests/datasets/references", cfg, &stats);
+      // without box IDs, two polygons are converted into box polygons
+      if (cfg.useBoxIds) {
+        TEST(stats.numReferences, ==, 16);
+      } else {
+        TEST(stats.numReferences, ==, 14);
+      }
+
       TEST(res.find("$RefA crosses TestC$") != std::string::npos);
       TEST(res.find("$TestC crosses RefA$") != std::string::npos);
       TEST(res.find("$TestA crosses RefA$") == std::string::npos);
@@ -881,7 +804,10 @@ int main(int, char**) {
     }
 
     {
-      auto res = fullRun("../src/spatialjoin/tests/datasets/bawue", cfg);
+      RunStats stats;
+      auto res =
+          fullRun("../src/spatialjoin/tests/datasets/bawue", cfg, &stats);
+      TEST(stats.numReferences, ==, 1);
       TEST(res.find("$germany covers bawue$") != std::string::npos);
       TEST(res.find("$germany contains bawue$") != std::string::npos);
     }
@@ -891,7 +817,10 @@ int main(int, char**) {
   for (auto cfg : cfgs) {
     cfg.computeDE9IM = true;
     {
-      auto res = fullRun("../src/spatialjoin/tests/datasets/freiburg", cfg);
+      RunStats stats;
+      auto res =
+          fullRun("../src/spatialjoin/tests/datasets/freiburg", cfg, &stats);
+      TEST(stats.numReferences, ==, 3);
       TEST(res.find("$freiburg1\t2FFF1FFF2\tfreiburg2$") != std::string::npos);
       TEST(res.find("$freiburg2\t2FFF1FFF2\tfreiburg1$") != std::string::npos);
       TEST(res.find("$freiburg1\t2FFF1FFF2\tfreiburg2$") != std::string::npos);
@@ -904,7 +833,14 @@ int main(int, char**) {
       TEST(res.find("$freiburg1\t212FF1FF2\tAltstadt$") != std::string::npos);
     }
     {
-      auto res = fullRun("../src/spatialjoin/tests/datasets/references", cfg);
+      RunStats stats;
+      auto res =
+          fullRun("../src/spatialjoin/tests/datasets/references", cfg, &stats);
+      if (cfg.useBoxIds) {
+        TEST(stats.numReferences, ==, 16);
+      } else {
+        TEST(stats.numReferences, ==, 14);
+      }
       TEST(res.find("$TestB\t0F1FF0102\tTestA$") != std::string::npos);
       TEST(res.find("$TestA\t0F1FF0102\tTestB$") != std::string::npos);
       TEST(res.find("$TestB\t0F1FF0102\tRefB$") != std::string::npos);
@@ -916,7 +852,14 @@ int main(int, char**) {
   for (auto cfg : cfgs) {
     cfg.withinDist = 1;
     {
-      auto res = fullRun("../src/spatialjoin/tests/datasets/references", cfg);
+      RunStats stats;
+      auto res =
+          fullRun("../src/spatialjoin/tests/datasets/references", cfg, &stats);
+      if (cfg.useBoxIds) {
+        TEST(stats.numReferences, ==, 16);
+      } else {
+        TEST(stats.numReferences, ==, 14);
+      }
       TEST(res.find("$TestB\t0\tTestA$") != std::string::npos);
       TEST(res.find("$TestA\t0\tTestB$") != std::string::npos);
       TEST(res.find("$TestB\t0\tRefB$") != std::string::npos);
@@ -927,7 +870,10 @@ int main(int, char**) {
 
     cfg.withinDist = 5000;
     {
-      auto res = fullRun("../src/spatialjoin/tests/datasets/freiburg", cfg);
+      RunStats stats;
+      auto res =
+          fullRun("../src/spatialjoin/tests/datasets/freiburg", cfg, &stats);
+      TEST(stats.numReferences, ==, 3);
       TEST(res.find("$freiburg1\t0\tfreiburg2$") != std::string::npos);
       TEST(res.find("$freiburg2\t0\tfreiburg1$") != std::string::npos);
       TEST(res.find("$freiburg1\t0\tfreiburg2$") != std::string::npos);

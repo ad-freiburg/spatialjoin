@@ -4325,3 +4325,88 @@ std::shared_ptr<sj::Area> Sweeper::getArea(const JobVal& sv, size_t t) const {
 
   return asp;
 }
+
+// _____________________________________________________________________________
+template <template <typename> class G, typename T>
+util::geo::I32Box Sweeper::getPaddedBoundingBox(const G<T>& geom) const {
+  return getPaddedBoundingBox(geom, geom);
+}
+
+// _____________________________________________________________________________
+template <template <typename> class G1, template <typename> class G2,
+          typename T>
+util::geo::I32Box Sweeper::getPaddedBoundingBox(const G1<T>& geom,
+                                                const G2<T>& refGeom) const {
+  auto bbox = util::geo::getBoundingBox(geom);
+
+  if (_cfg.withinDist >= 0) {
+    double scaleFactor =
+        getMaxScaleFactor(reinterpret_cast<const void*>(&geom) ==
+                                  reinterpret_cast<const void*>(&refGeom)
+                              ? bbox
+                              : util::geo::getBoundingBox(refGeom));
+
+    double pad = (_cfg.withinDist / 2.0) * scaleFactor * PREC;
+
+    double llx = bbox.getLowerLeft().getX();
+    double lly = bbox.getLowerLeft().getY();
+    double urx = bbox.getUpperRight().getX();
+    double ury = bbox.getUpperRight().getY();
+
+    double m = sj::boxids::WORLD_W / 2.0;
+
+    T llxt = -m;
+    T llyt = -m;
+    T urxt = m;
+    T uryt = m;
+
+    if (llx - pad > -m) {
+      llxt = llx - pad;
+    }
+
+    if (lly - pad > -m) {
+      llyt = lly - pad;
+    }
+
+    if (urx + pad < m) {
+      urxt = urx + pad;
+    }
+
+    if (ury + pad < m) {
+      uryt = ury + pad;
+    }
+
+    return {{llxt, llyt}, {urxt, uryt}};
+  }
+
+  return bbox;
+}
+
+// _____________________________________________________________________________
+size_t Sweeper::foldString(const std::string& s) {
+  size_t ret = 0;
+  for (size_t i = 0; i < std::min((size_t)7, s.size()); i++) {
+    size_t tmp = static_cast<unsigned char>(s[i]);
+    ret |= tmp << (i * 8);
+  }
+
+  // highest byte stores the length
+  ret |= (s.size() << 56);
+
+  return ret;
+};
+
+// _____________________________________________________________________________
+std::string Sweeper::unfoldString(size_t folded) {
+  // shift by 7 bytes to get size
+  size_t n = folded >> 56;
+
+  std::string ret;
+  ret.reserve(n);
+
+  for (size_t i = 0; i < n; i++) {
+    ret.push_back(static_cast<char>(folded >> (i * 8)) & 0xFF);
+  }
+
+  return ret;
+};
