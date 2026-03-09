@@ -56,6 +56,7 @@ struct BoxVal {
   GeomType type : 4;
   double areaOrLen;
   util::geo::I32Point point;
+  size_t numAnchors;
   util::geo::I32Box b45;
   bool side;
   bool large;
@@ -343,7 +344,6 @@ class Sweeper {
             typename T>
   util::geo::I32Box getPaddedBoundingBox(const G1<T>& geom,
                                          const G2<T>& refGeom) const;
-
   static size_t foldString(const std::string& s);
   static std::string unfoldString(size_t folded);
 
@@ -394,6 +394,7 @@ class Sweeper {
   std::set<size_t> _activeMultis[2];
   std::vector<std::string> _multiIds[2];
   std::vector<int32_t> _multiRightX[2];
+  std::map<std::string, util::geo::I32Point> _multiRightPoint;
   std::vector<int32_t> _multiLeftX[2];
   std::map<std::string, size_t> _multiGidToId[2];
 
@@ -434,19 +435,26 @@ class Sweeper {
   std::tuple<bool, bool> check(const util::geo::I32Point& a, const Line* b,
                                size_t t) const;
 
-  double distCheck(const util::geo::I32Point& a, const Area* b, size_t t) const;
-  double distCheck(const util::geo::I32Point& a, const Line* b, size_t t) const;
+  double distCheck(const util::geo::I32Point& a, const Point* aMeta,
+                   const Area* b, size_t t);
+  double distCheck(const util::geo::I32Point& a, const Point* aMeta,
+                   const Line* b, size_t t);
   double distCheck(const util::geo::I32Point& a,
-                   const util::geo::LineSegment<int32_t>& b, size_t t) const;
+                   const util::geo::LineSegment<int32_t>& b, size_t t);
   double distCheck(const util::geo::LineSegment<int32_t>& a,
-                   const util::geo::LineSegment<int32_t>& b, size_t t) const;
+                   const util::geo::LineSegment<int32_t>& b, size_t t);
   double distCheck(const util::geo::LineSegment<int32_t>& a, const Line* b,
-                   size_t t) const;
+                   size_t t);
   double distCheck(const util::geo::LineSegment<int32_t>& a, const Area* b,
-                   size_t t) const;
-  double distCheck(const Line* a, const Line* b, size_t t) const;
-  double distCheck(const Area* a, const Area* b, size_t t) const;
-  double distCheck(const Line* a, const Area* b, size_t t) const;
+                   size_t t);
+  double distCheck(const Line* a, const Line* b, size_t t);
+  double distCheck(const Area* a, const Area* b, size_t t);
+  double distCheck(const Line* a, const Area* b, size_t t);
+
+  double getMaxMultiDist(const std::string& idA, size_t aSub,
+                         const util::geo::I32Point& leftAPoint,
+                         const std::string& idB, size_t bSub,
+                         const util::geo::I32Point& leftBPoint, size_t t);
 
   util::geo::DE9IMatrix DE9IMCheck(const util::geo::I32Point& a, const Area* b,
                                    size_t t) const;
@@ -470,13 +478,16 @@ class Sweeper {
                                    size_t t) const;
 
   double getMaxScaleFactor(const util::geo::I32Box& geom) const;
+  static std::pair<double, double> getMinMaxLocalScaleFactors(
+      const util::geo::I32Box& boxA, const util::geo::I32Box& boxB,
+      double distanceUpperBound);
   double getMaxScaleFactor(const util::geo::I32Point& geom) const;
 
   void diskAdd(const BoxVal& bv);
 
   void multiOut(size_t t, const std::string& gid);
   void multiAdd(const std::string& gid, bool side, int32_t xLeft,
-                int32_t xRight);
+                int32_t xRight, const util::geo::I32Point& pointRight);
   void clearMultis(bool force);
 
   void writeIntersect(size_t t, const std::string& a, size_t aSub,
@@ -539,7 +550,12 @@ class Sweeper {
   }
 
   static double meterDist(const util::geo::I32Point& p1,
-                          const util::geo::I32Point& p2);
+                          const util::geo::I32Point& p2, double maxDist);
+
+  static double localSearchPadding(double euclideanDistanceUpperBound,
+                                   double distanceUpperBound,
+                                   const util::geo::I32Box& aBox,
+                                   const util::geo::I32Box& bBox);
 
   void fillBatch(JobBatch* batch,
                  const util::geo::IntervalIdx<int32_t, SweepVal>* actives,
