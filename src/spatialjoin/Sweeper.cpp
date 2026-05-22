@@ -284,7 +284,7 @@ I32Box Sweeper::add(const I32Polygon& poly, const std::string& gidR,
                      SIMPLE_POLYGON,
                      areaSize,
                      rightPoint,
-                      poly.getSize(),
+                     poly.getSize(),
                      box45,
                      side,
                      estimatedSize > GEOM_LARGENESS_THRESHOLD};
@@ -3260,8 +3260,9 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
       writeCovers(t, b->id, 0, a->id, a->subId);
       writeNotCrosses(t, a->id, a->subId, b->id, 0);
 
-      if (fabs(a->geom.length() - util::geo::len(LineSegment<int32_t>(
-                               sv.point, sv.point2))) < util::geo::EPSILON) {
+      if (fabs(a->geom.length() -
+               util::geo::len(LineSegment<int32_t>(sv.point, sv.point2))) <
+          util::geo::EPSILON) {
         // both lines were equivalent
         writeCovers(t, a->id, a->subId, b->id, 0);
 
@@ -3989,33 +3990,46 @@ std::pair<double, double> Sweeper::getMinMaxLocalScaleFactors(
     const I32Box& boxA, const I32Box& boxB, double distanceUpperBound) {
   auto withinBox = util::geo::extendBox(boxA, boxB);
 
-  double dY = distanceUpperBound / 6378137.0 * util::geo::IRAD;
+  // convert distanceUpperBound (meters) to maximum latitude padding (degrees)
+  // we have to "pad" each box by -dy and dy because the distance path could
+  // be within that padded box, and thus the distortions have to be computed
+  // based on that path
+  double dLat = distanceUpperBound / util::geo::MIN_METERS_PER_LAT_RAD * util::geo::IRAD;
 
+  // the lower extrema of the bounding boxes are padded by dLat
   auto withinLow = util::geo::webMercToLatLng<double>(
       0.0, withinBox.getLowerLeft().getY() * 1.0 / PREC);
   auto aLow = util::geo::webMercToLatLng<double>(
       0.0, boxA.getLowerLeft().getY() * 1.0 / PREC);
-  aLow.setY(aLow.getY() - dY);
+  aLow.setY(aLow.getY() - dLat);
   auto bLow = util::geo::webMercToLatLng<double>(
       0.0, boxB.getLowerLeft().getY() * 1.0 / PREC);
-  bLow.setY(bLow.getY() - dY);
+  bLow.setY(bLow.getY() - dLat);
 
+  // the upper extrema of the bounding boxes are padded by dLat
   auto withinUp = util::geo::webMercToLatLng<double>(
       0.0, withinBox.getUpperRight().getY() * 1.0 / PREC);
   auto aUp = util::geo::webMercToLatLng<double>(
       0.0, boxA.getUpperRight().getY() * 1.0 / PREC);
-  aUp.setY(aUp.getY() + dY);
+  aUp.setY(aUp.getY() + dLat);
   auto bUp = util::geo::webMercToLatLng<double>(
       0.0, boxB.getUpperRight().getY() * 1.0 / PREC);
-  bUp.setY(bUp.getY() + dY);
+  bUp.setY(bUp.getY() + dLat);
 
-  double yRangeMin =
-      std::max(withinLow.getY() * 1.0, std::max(aLow.getY(), bLow.getY()));
-  double yRangeMax =
-      std::min(withinUp.getY() * 1.0, std::min(aUp.getY(), bUp.getY()));
+  double yRangeMin = std::min(
+      90.0 - util::geo::EPSILON,
+      std::max(withinLow.getY() * 1.0, std::max(aLow.getY(), bLow.getY())));
+  double yRangeMax = std::max(
+      -90.0 - util::geo::EPSILON,
+      std::min(withinUp.getY() * 1.0, std::min(aUp.getY(), bUp.getY())));
 
   double a = cos(yRangeMin * util::geo::RAD);
   double b = cos(yRangeMax * util::geo::RAD);
+
+  // if we crossed the pole, we encountered a scale factor of 1!
+  if (withinLow.getY() < 0 && withinUp.getY() > 0) {
+    return {std::min(a, b), std::max(1.0, std::max(a, b))};
+  }
 
   return {std::min(a, b), std::max(a, b)};
 }
@@ -4164,8 +4178,8 @@ double Sweeper::distCheck(const I32Point& a, const Point* aMeta, const Area* b,
   double maxEuclideanDist = maxD / scale.first * PREC;
 
   auto dist = util::geo::withinDist<int32_t>(
-      a, b->geom, maxD, &Sweeper::localSearchPadding,
-      maxEuclideanDist, &Sweeper::meterDist);
+      a, b->geom, maxD, &Sweeper::localSearchPadding, maxEuclideanDist,
+      &Sweeper::meterDist);
   _stats[t].timeFullGeoCheckAreaPoint += TOOK(ts);
   _stats[t].fullGeoChecksAreaPoint++;
 
@@ -4235,8 +4249,8 @@ double Sweeper::distCheck(const I32Point& a, const Point* aMeta, const Line* b,
   double maxEuclideanDist = maxD / scale.first * PREC;
 
   auto dist = util::geo::withinDist<int32_t>(
-      a, b->geom, maxD, &Sweeper::localSearchPadding,
-      maxEuclideanDist, &Sweeper::meterDist);
+      a, b->geom, maxD, &Sweeper::localSearchPadding, maxEuclideanDist,
+      &Sweeper::meterDist);
 
   _stats[t].timeFullGeoCheckLinePoint += TOOK(ts);
   _stats[t].fullGeoChecksLinePoint++;
@@ -4321,8 +4335,8 @@ double Sweeper::distCheck(const Line* a, const Line* b, size_t t) {
   double maxEuclideanDist = maxD / scale.first * PREC;
 
   auto dist = util::geo::withinDist<int32_t>(
-      a->geom, b->geom, maxD, &Sweeper::localSearchPadding,
-      maxEuclideanDist, &Sweeper::meterDist);
+      a->geom, b->geom, maxD, &Sweeper::localSearchPadding, maxEuclideanDist,
+      &Sweeper::meterDist);
 
   _stats[t].timeFullGeoCheckLineLine += TOOK(ts);
   _stats[t].fullGeoChecksLineLine++;
@@ -4372,6 +4386,14 @@ double Sweeper::distCheck(const Line* a, const Area* b, size_t t) {
     if (r.first) return 0;
   }
 
+  if (_cfg.useInnerOuter && !b->inner.empty()) {
+    auto ts = TIME();
+    auto r = util::geo::intersectsContainsCovers(a->geom, b->inner);
+    _stats[t].timeInnerOuterCheckAreaLine += TOOK(ts);
+    _stats[t].innerOuterChecksAreaLine++;
+    if (std::get<0>(r)) return 0;
+  }
+
   double maxD = _cfg.withinDist;
 
   maxD = std::min(
@@ -4385,8 +4407,8 @@ double Sweeper::distCheck(const Line* a, const Area* b, size_t t) {
   double maxEuclideanDist = maxD / scale.first * PREC;
 
   auto dist = util::geo::withinDist<int32_t>(
-      a->geom, b->geom, maxD, &Sweeper::localSearchPadding,
-      maxEuclideanDist, &Sweeper::meterDist);
+      a->geom, b->geom, maxD, &Sweeper::localSearchPadding, maxEuclideanDist,
+      &Sweeper::meterDist);
 
   _stats[t].timeFullGeoCheckAreaLine += TOOK(ts);
   _stats[t].fullGeoChecksAreaLine++;
@@ -4411,6 +4433,14 @@ double Sweeper::distCheck(const Area* a, const Area* b, size_t t) {
     // all boxes of a are fully contained in b, we intersect and we are
     // contained and we do not touch or overlap
     if (r.first) return 0;
+  }
+
+  if (_cfg.useInnerOuter && a->inner.empty() && !b->inner.empty()) {
+    auto ts = TIME();
+    auto r = util::geo::intersectsContainsCovers(a->geom, b->inner);
+    _stats[t].timeInnerOuterCheckAreaArea += TOOK(ts);
+    _stats[t].innerOuterChecksAreaArea++;
+    if (std::get<0>(r)) return 0;
   }
 
   double maxD = _cfg.withinDist;
@@ -4526,14 +4556,30 @@ util::geo::I32Box Sweeper::getPaddedBoundingBox(const G1<T>& geom,
   auto bbox = util::geo::getBoundingBox(geom);
 
   if (_cfg.withinDist >= 0) {
-    double scaleFactor = getMaxScaleFactor(
-        util::geo::pad((reinterpret_cast<const void*>(&geom) ==
-                                reinterpret_cast<const void*>(&refGeom)
-                            ? bbox
-                            : util::geo::getBoundingBox(refGeom)),
-                       0, (_cfg.withinDist / 2.0) * PREC));
+    auto a = (reinterpret_cast<const void*>(&geom) ==
+                      reinterpret_cast<const void*>(&refGeom)
+                  ? bbox
+                  : util::geo::getBoundingBox(refGeom));
 
-    double pad = (_cfg.withinDist / 2.0) * scaleFactor * PREC;
+    // convert distanceUpperBound (meters) to maximum latitude padding (degrees)
+    // we have to "pad" the box by -dy and dy because the distance path could
+    // be within that padded box, and thus the distortions have to be computed
+    // based on that path
+    double dLat = _cfg.withinDist / util::geo::MIN_METERS_PER_LAT_RAD * util::geo::IRAD;
+    auto upper = util::geo::webMercToLatLng<double>(
+        0.0, a.getUpperRight().getY() * 1.0 / PREC);
+    auto lower = util::geo::webMercToLatLng<double>(
+        0.0, a.getLowerLeft().getY() * 1.0 / PREC);
+
+    double scaleLatUp =
+        cos(std::min(90.0 - util::geo::EPSILON, (upper.getY() + dLat)) *
+            util::geo::RAD);
+    double scaleLatLow =
+        cos(std::max(-90.0 + util::geo::EPSILON, (lower.getY() - dLat)) *
+            util::geo::RAD);
+    double scaleFactor = std::min(scaleLatUp, scaleLatLow);
+
+    double pad = (_cfg.withinDist / 2.0) / scaleFactor * PREC;
 
     double llx = bbox.getLowerLeft().getX();
     double lly = bbox.getLowerLeft().getY();
@@ -4542,6 +4588,7 @@ util::geo::I32Box Sweeper::getPaddedBoundingBox(const G1<T>& geom,
 
     double m = sj::boxids::WORLD_W / 2.0;
 
+    // restrict padding to world extent
     T llxt = -m;
     T llyt = -m;
     T urxt = m;
