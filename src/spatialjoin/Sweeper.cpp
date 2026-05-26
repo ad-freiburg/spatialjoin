@@ -844,6 +844,7 @@ void Sweeper::multiOut(size_t tOut, const std::string& gidA) {
       writeRel(tOut, a.first, gidA, "\t" + std::to_string(a.second) + "\t");
 
       for (size_t t = 0; t < _cfg.numThreads + 1; t++) {
+        std::unique_lock<std::mutex> lock(_mutsDistance[t]);
         auto j = _subDistance[t].find(a.first);
         if (j != _subDistance[t].end()) {
           auto k = j->second.find(gidA);
@@ -867,15 +868,6 @@ void Sweeper::multiOut(size_t tOut, const std::string& gidA) {
         for (const auto& a : i->second) {
           subDE9IM[a.first] += a.second;
 
-          for (size_t t = 0; t < _cfg.numThreads + 1; t++) {
-            auto j = _subDE9IM[t].find(a.first);
-            if (j != _subDE9IM[t].end()) {
-              auto k = j->second.find(gidA);
-              if (k != j->second.end()) {
-                j->second.erase(gidA);
-              }
-            }
-          }
         }
         _subDE9IM[t].erase(i);
       }
@@ -2101,9 +2093,10 @@ util::geo::DE9IMatrix Sweeper::DE9IMCheck(const LineSegment<int32_t>& a,
        (_useGeos && !b->outerGeosGeom.empty(_GEOScontextHandles[t])))) {
     if (_useGeos) {
       auto ts = TIME();
+      const auto& line = lineFromSimpleLine(a, t);
       auto intersects =
           GEOSIntersects_r(_GEOScontextHandles[t],
-                           lineFromSimpleLine(a, t).geosGeom, b->outerGeosGeom);
+                           line.geosGeom, b->outerGeosGeom);
       _stats[t].timeInnerOuterCheckAreaLine += TOOK(ts);
       _stats[t].innerOuterChecksAreaLine++;
       if (!intersects) return util::geo::MFF1FF0212;
@@ -2121,8 +2114,9 @@ util::geo::DE9IMatrix Sweeper::DE9IMCheck(const LineSegment<int32_t>& a,
        (_useGeos && !b->innerGeosGeom.empty(_GEOScontextHandles[t])))) {
     if (_useGeos) {
       auto ts = TIME();
+      const auto& line = lineFromSimpleLine(a, t);
       auto contains = GEOSContains_r(_GEOScontextHandles[t], b->innerGeosGeom,
-                                     lineFromSimpleLine(a, t).geosGeom);
+                                     line.geosGeom);
       _stats[t].timeInnerOuterCheckAreaLine += TOOK(ts);
       _stats[t].innerOuterChecksAreaLine++;
       if (!contains) return util::geo::M1FF0FF212;
@@ -2138,8 +2132,9 @@ util::geo::DE9IMatrix Sweeper::DE9IMCheck(const LineSegment<int32_t>& a,
   util::geo::DE9IMatrix res;
   auto ts = TIME();
   if (_useGeos) {
+    const auto& line = lineFromSimpleLine(a, t);
     res = sj::GEOSRelate_r(_GEOScontextHandles[t],
-                           lineFromSimpleLine(a, t).geosGeom, b->geosGeom);
+                           line.geosGeom, b->geosGeom);
   } else {
     res = DE9IM(I32XSortedLine(a), b->geom);
   }
@@ -2302,8 +2297,9 @@ util::geo::DE9IMatrix Sweeper::DE9IMCheck(const LineSegment<int32_t>& a,
   util::geo::DE9IMatrix res;
 
   if (_useGeos) {
+    const auto& line = lineFromSimpleLine(a, t);
     res = sj::GEOSRelate_r(_GEOScontextHandles[t],
-                           lineFromSimpleLine(a, t).geosGeom, b->geosGeom);
+                           line.geosGeom, b->geosGeom);
   } else {
     res = DE9IM(I32XSortedLine(a), b->geom);
   }
@@ -4600,8 +4596,8 @@ double Sweeper::distCheck(const LineSegment<int32_t>& a, const Line* b,
 
   if (_useGeos) {
     double maxEuclideanDist = maxD * PREC;
-    const auto& l = lineFromSimpleLine(a, t);
-    GEOSDistanceWithin_r(_GEOScontextHandles[t], l.geosGeom, b->geosGeom,
+    const auto& line = lineFromSimpleLine(a, t);
+    GEOSDistanceWithin_r(_GEOScontextHandles[t], line.geosGeom, b->geosGeom,
                          maxEuclideanDist, &dist);
     dist = dist / PREC;
   } else {
@@ -4684,8 +4680,9 @@ double Sweeper::distCheck(const LineSegment<int32_t>& a, const Area* b,
 
   if (_useGeos) {
     double maxEuclideanDist = maxD * PREC;
+    const auto& line = lineFromSimpleLine(a, t);
     GEOSDistanceWithin_r(_GEOScontextHandles[t], b->geosGeom,
-                         lineFromSimpleLine(a, t).geosGeom, maxEuclideanDist,
+                         line.geosGeom, maxEuclideanDist,
                          &dist);
     dist = dist / PREC;
   } else {

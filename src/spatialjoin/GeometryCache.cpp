@@ -316,7 +316,8 @@ size_t sj::GeometryCache<W>::readGEOSLine(std::istream& str, GEOSLineString& ret
     ret = std::move(
         GEOSLineString(GEOSGeom_createLineString_r(geosHndl, seq), geosHndl));
 
-		if (size > GEOS_PREP_THRESHOLD) ret.prepare(geosHndl);
+    if (_geosPreped && size > GEOS_PREP_THRESHOLD) ret.prepare(geosHndl);
+    ret.setSize(size);
   } else {
     ret = std::move(
         GEOSLineString(GEOSGeom_createEmptyLineString_r(geosHndl), geosHndl));
@@ -374,7 +375,8 @@ size_t sj::GeometryCache<W>::readGEOSPoly(std::istream& str, GEOSPolygon& ret,
                                  GEOSGeom_createLinearRing_r(geosHndl, seq),
                                  innerRings, numInners),
         geosHndl));
-		if (outerSize > GEOS_PREP_THRESHOLD) ret.prepare(geosHndl);
+    if (_geosPreped && outerSize > GEOS_PREP_THRESHOLD) ret.prepare(geosHndl);
+    ret.setSize(outerSize);
     delete[] innerRings;
   } else {
     ret = std::move(

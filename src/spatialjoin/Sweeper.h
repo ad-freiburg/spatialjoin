@@ -225,34 +225,37 @@ static const size_t POINT_CACHE_MAX_ELEMENTS = 10000;
 static const size_t SIMPLE_LINE_CACHE_MAX_ELEMENTS = 10000;
 
 // only use large geom cache for extreme geometries
-static const size_t GEOM_LARGENESS_THRESHOLD = 1024 * 1024 * 1024;
+//static const size_t GEOM_LARGENESS_THRESHOLD = 1024 * 1024 * 1024;
+static const size_t GEOM_LARGENESS_THRESHOLD = std::numeric_limits<size_t>::max();
 
 class Sweeper {
  public:
-  Sweeper(SweeperCfg cfg, const std::string& cache, bool useGEOS)
-      : Sweeper(cfg, cache, ".spatialjoin", useGEOS) {}
+  Sweeper(SweeperCfg cfg, const std::string& cache, bool useGEOS, bool useGEOSPrepared)
+      : Sweeper(cfg, cache, ".spatialjoin", useGEOS, useGEOSPrepared) {}
   Sweeper(SweeperCfg cfg, const std::string& cache,
-          const std::string& tmpPrefix, bool useGEOS)
+          const std::string& tmpPrefix, bool useGEOS, bool useGEOSPrepared)
       : _cfg(cfg),
         _obufpos(0),
         _pointCache({cfg.useOBB, cfg.useInnerOuter}, cfg.geomCacheMaxSize,
                     POINT_CACHE_MAX_ELEMENTS, cfg.numCacheThreads, cache,
-                    tmpPrefix),
+                    tmpPrefix, useGEOSPrepared),
         _areaCache({cfg.useOBB, cfg.useInnerOuter}, cfg.geomCacheMaxSize,
                    cfg.geomCacheMaxNumElements, cfg.numCacheThreads, cache,
-                   tmpPrefix),
+                   tmpPrefix, useGEOSPrepared),
         _simpleAreaCache({cfg.useOBB, cfg.useInnerOuter}, cfg.geomCacheMaxSize,
                          cfg.geomCacheMaxNumElements, cfg.numCacheThreads,
-                         cache, tmpPrefix),
+                         cache, tmpPrefix, useGEOSPrepared),
         _lineCache({cfg.useOBB, cfg.useInnerOuter}, cfg.geomCacheMaxSize,
                    cfg.geomCacheMaxNumElements, cfg.numCacheThreads, cache,
-                   tmpPrefix),
+                   tmpPrefix, useGEOSPrepared),
         _simpleLineCache({cfg.useOBB, cfg.useInnerOuter}, cfg.geomCacheMaxSize,
                          SIMPLE_LINE_CACHE_MAX_ELEMENTS, cfg.numCacheThreads,
-                         cache, tmpPrefix),
+                         cache, tmpPrefix, useGEOSPrepared),
         _cache(cache),
         _jobs(100),
-        _useGeos(useGEOS) {
+        _useGeos(useGEOS),
+        _useGeosPrepared(useGEOSPrepared) {
+    if (_useGeos && _cfg.numThreads != _cfg.numCacheThreads) throw std::runtime_error("--num-threads and --num-caches must be equivalent for use with --libgeos!");
     _GEOScontextHandles.resize(_cfg.numThreads);
 
     initGEOS(GEOSMsgHandler, GEOSMsgHandler);
@@ -678,6 +681,7 @@ class Sweeper {
                                    std::numeric_limits<int32_t>::max()}};
 
   bool _useGeos = false;
+  bool _useGeosPrepared = false;
 };
 }  // namespace sj
 

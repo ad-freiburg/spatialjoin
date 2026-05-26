@@ -121,8 +121,6 @@ inline GEOSGeometry* makeGeosPolygon(GEOSContextHandle_t geosHndl,
 
   for (size_t j = 0; j < poly.getInners().size(); j++) {
     if (poly.getInners()[j].size() == 0) continue;
-    realInners++;
-
     double* coordBuf = new double[(poly.getInners()[j].size() + 1) * 2];
     for (size_t i = 0; i < poly.getInners()[j].size(); i++) {
       coordBuf[i * 2] = poly.getInners()[j][i].getX();
@@ -135,7 +133,8 @@ inline GEOSGeometry* makeGeosPolygon(GEOSContextHandle_t geosHndl,
     auto seqInner = GEOSCoordSeq_copyFromBuffer_r(
         geosHndl, coordBuf, poly.getInners()[j].size() + 1, 0, 0);
     delete[] coordBuf;
-    innerRings[j] = GEOSGeom_createLinearRing_r(geosHndl, seqInner);
+    innerRings[realInners] = GEOSGeom_createLinearRing_r(geosHndl, seqInner);
+    realInners++;
   }
 
   auto geosPoly =
@@ -192,6 +191,7 @@ class GEOSLineString {
 
   GEOSGeometry* getGEOSGeom() const { return _geom; }
   size_t getSize() const { return _size; }
+  void setSize(size_t size) { _size = size; }
   const GEOSPreparedGeometry* getPrepGEOSGeom() const { return _prepGeom; }
 
  private:
@@ -242,6 +242,7 @@ class GEOSPolygon {
   }
 
   size_t getSize() const { return _size; }
+  void setSize(size_t size) { _size = size; }
   const GEOSPreparedGeometry* getPrepGEOSGeom() const { return _prepGeom; }
 
   GEOSPolygon& operator=(const GEOSPolygon& other) = delete;
@@ -251,6 +252,7 @@ class GEOSPolygon {
     _size = other._size;
     _geosHndlDestroy = other._geosHndlDestroy;
     other._geom = 0;
+    other._prepGeom = 0;
     other._size = 0;
     return *this;
   }
@@ -320,19 +322,16 @@ inline void GEOSDistanceWithin_r(GEOSContextHandle_t h,
   if ((a.getPrepGEOSGeom() && !b.getPrepGEOSGeom()) ||
       (a.getPrepGEOSGeom() && b.getPrepGEOSGeom() &&
        a.getSize() > b.getSize())) {
-    // GEOSPreparedDistance_r(h, a.getPrepGEOSGeom(), b.getGEOSGeom(), ret);
-    GEOSPreparedDistanceWithin_r(h, a.getPrepGEOSGeom(), b.getGEOSGeom(), max);
+    GEOSPreparedDistance_r(h, a.getPrepGEOSGeom(), b.getGEOSGeom(), ret);
 		return;
   } else if ((b.getPrepGEOSGeom() && !a.getPrepGEOSGeom()) ||
              (b.getPrepGEOSGeom() && a.getPrepGEOSGeom() &&
               a.getSize() < b.getSize())) {
-    // GEOSPreparedDistance_r(h, b.getPrepGEOSGeom(), a.getGEOSGeom(), ret);
-    GEOSPreparedDistanceWithin_r(h, b.getPrepGEOSGeom(), a.getGEOSGeom(), max);
+    GEOSPreparedDistance_r(h, b.getPrepGEOSGeom(), a.getGEOSGeom(), ret);
 		return;
   }
 
-  // GEOSDistance_r(h, b.getGEOSGeom(), a.getGEOSGeom(), ret);
-  GEOSDistanceWithin_r(h, b.getGEOSGeom(), a.getGEOSGeom(), max);
+  GEOSDistance_r(h, b.getGEOSGeom(), a.getGEOSGeom(), ret);
 }
 
 inline void GEOSDistanceWithin_r(GEOSContextHandle_t h,
@@ -341,19 +340,16 @@ inline void GEOSDistanceWithin_r(GEOSContextHandle_t h,
   if ((a.getPrepGEOSGeom() && !b.getPrepGEOSGeom()) ||
       (a.getPrepGEOSGeom() && b.getPrepGEOSGeom() &&
        a.getSize() > b.getSize())) {
-    // GEOSPreparedDistance_r(h, a.getPrepGEOSGeom(), b.getGEOSGeom(), ret);
-    GEOSPreparedDistanceWithin_r(h, a.getPrepGEOSGeom(), b.getGEOSGeom(), max);
+    GEOSPreparedDistance_r(h, a.getPrepGEOSGeom(), b.getGEOSGeom(), ret);
 		return;
   } else if ((b.getPrepGEOSGeom() && !a.getPrepGEOSGeom()) ||
              (b.getPrepGEOSGeom() && a.getPrepGEOSGeom() &&
               a.getSize() < b.getSize())) {
-    // GEOSPreparedDistance_r(h, b.getPrepGEOSGeom(), a.getGEOSGeom(), ret);
-    GEOSPreparedDistanceWithin_r(h, b.getPrepGEOSGeom(), a.getGEOSGeom(), max);
+    GEOSPreparedDistance_r(h, b.getPrepGEOSGeom(), a.getGEOSGeom(), ret);
 		return;
   }
 
-  // GEOSDistance_r(h, b.getGEOSGeom(), a.getGEOSGeom(), ret);
-  GEOSDistanceWithin_r(h, b.getGEOSGeom(), a.getGEOSGeom(), max);
+  GEOSDistance_r(h, b.getGEOSGeom(), a.getGEOSGeom(), ret);
 }
 
 inline void GEOSDistanceWithin_r(GEOSContextHandle_t h,
@@ -362,19 +358,16 @@ inline void GEOSDistanceWithin_r(GEOSContextHandle_t h,
   if ((a.getPrepGEOSGeom() && !b.getPrepGEOSGeom()) ||
       (a.getPrepGEOSGeom() && b.getPrepGEOSGeom() &&
        a.getSize() > b.getSize())) {
-    // GEOSPreparedDistance_r(h, a.getPrepGEOSGeom(), b.getGEOSGeom(), ret);
-    GEOSPreparedDistanceWithin_r(h, a.getPrepGEOSGeom(), b.getGEOSGeom(), max);
+    GEOSPreparedDistance_r(h, a.getPrepGEOSGeom(), b.getGEOSGeom(), ret);
 		return;
   } else if ((b.getPrepGEOSGeom() && !a.getPrepGEOSGeom()) ||
              (b.getPrepGEOSGeom() && a.getPrepGEOSGeom() &&
               a.getSize() < b.getSize())) {
-    // GEOSPreparedDistance_r(h, b.getPrepGEOSGeom(), a.getGEOSGeom(), ret);
-    GEOSPreparedDistanceWithin_r(h, b.getPrepGEOSGeom(), a.getGEOSGeom(), max);
+    GEOSPreparedDistance_r(h, b.getPrepGEOSGeom(), a.getGEOSGeom(), ret);
 		return;
   }
 
-  // GEOSDistance_r(h, b.getGEOSGeom(), a.getGEOSGeom(), ret);
-  GEOSDistanceWithin_r(h, b.getGEOSGeom(), a.getGEOSGeom(), max);
+  GEOSDistance_r(h, b.getGEOSGeom(), a.getGEOSGeom(), ret);
 }
 
 inline util::geo::DE9IMatrix GEOSRelate_r(GEOSContextHandle_t h,
@@ -550,9 +543,9 @@ inline void GEOSDistanceWithin_r(GEOSContextHandle_t h,
                                           const GEOSPolygon& b, double max, double* ret) {
   auto point = makeGeosPoint(h, p);
   if (b.getPrepGEOSGeom())
-    GEOSPreparedDistanceWithin_r(h, b.getPrepGEOSGeom(), point, max);
+    GEOSPreparedDistance_r(h, b.getPrepGEOSGeom(), point, ret);
   else
-    GEOSDistanceWithin_r(h, b.getGEOSGeom(), point, max);
+    GEOSDistance_r(h, b.getGEOSGeom(), point, ret);
   GEOSGeom_destroy_r(h, point);
 }
 
@@ -561,9 +554,9 @@ inline void GEOSDistanceWithin_r(GEOSContextHandle_t h,
                                           const GEOSLineString& b, double max, double* ret) {
   auto point = makeGeosPoint(h, p);
   if (b.getPrepGEOSGeom())
-    GEOSPreparedDistanceWithin_r(h, b.getPrepGEOSGeom(), point, max);
+    GEOSPreparedDistance_r(h, b.getPrepGEOSGeom(), point, ret);
   else
-    GEOSDistanceWithin_r(h, b.getGEOSGeom(), point, max);
+    GEOSDistance_r(h, b.getGEOSGeom(), point, ret);
   GEOSGeom_destroy_r(h, point);
 }
 

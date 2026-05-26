@@ -111,17 +111,18 @@ class GeometryCache {
                 size_t maxNumElements, size_t numthreads,
                 const std::string& dir)
       : GeometryCache(opts, maxSize, maxNumElements, numthreads, dir,
-                      ".spatialjoin"){};
+                      ".spatialjoin", false){};
   GeometryCache(const StorageOptions& opts, size_t maxSize,
                 size_t maxNumElements, size_t numthreads,
-                const std::string& dir, const std::string& tmpPrefix)
+                const std::string& dir, const std::string& tmpPrefix, bool useGEOSPrepared)
       : _opts(opts),
         _maxSize(maxSize),
         _maxNumElements(maxNumElements),
         _numThreads(numthreads),
         _dir(dir),
         _tmpPrefix(tmpPrefix),
-        _mutexes(numthreads + 1) {
+        _mutexes(numthreads + 1),
+        _geosPreped(useGEOSPrepared) {
     _geomsFReads.resize(numthreads + 1);
 
     _GEOScontextHandles.resize(numthreads + 1);
@@ -232,6 +233,8 @@ class GeometryCache {
   std::vector<GEOSContextHandle_t> _GEOScontextHandles;
 
   mutable std::vector<std::mutex> _mutexes;
+
+  bool _geosPreped = false;
 };
 }  // namespace sj
 
