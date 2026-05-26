@@ -32,7 +32,7 @@ std::string fullRun(const std::string& file, sj::SweeperCfg cfg,
                                   size_t predn) {
       outWriter.writeRelCb(t, a, an, b, bn, pred, predn);
     };
-    Sweeper sweeper(cfg, ".");
+    Sweeper sweeper(cfg, ".", false);
     sweeper.DUPLICATE_REMOVAL_MIN_SIZE = 0;
 
     // very small buffer size 1 here for test purposes to force buffer overflows

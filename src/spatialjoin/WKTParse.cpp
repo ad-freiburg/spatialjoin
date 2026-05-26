@@ -22,8 +22,13 @@ WKTParser::WKTParser(sj::Sweeper *sweeper, size_t numThreads)
 // _____________________________________________________________________________
 void WKTParser::processQueue(size_t t) {
   ParseBatch batch;
+
+  // init one GEOS handler per thread
+  auto geosHndl = initGEOS_r(GEOSMsgHandler, GEOSMsgHandler);
+
   while ((batch = _jobs.get()).size()) {
     sj::WriteBatch w;
+    w.geosHndl = geosHndl;
     for (const auto &job : batch) {
       if (_cancelled) break;
 

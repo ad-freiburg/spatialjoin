@@ -155,6 +155,7 @@ int main(int argc, char** argv) {
   bool useInnerOuter = false;
   bool noGeometryChecks = false;
   bool computeDE9IM = false;
+  bool useGEOS = false;
 
   bool printStats = false;
   bool verbose = false;
@@ -210,6 +211,8 @@ int main(int argc, char** argv) {
           state = 16;
         } else if (cur == "--de9im") {
           computeDE9IM = true;
+        } else if (cur == "--libgeos") {
+          useGEOS = true;
         } else if (cur == "--no-box-ids") {
           useBoxIds = false;
         } else if (cur == "--no-surface-area") {
@@ -349,7 +352,7 @@ int main(int argc, char** argv) {
       LOGTO(INFO, std::cerr) << s;
     };
 
-  Sweeper sweeper(sweeperCfg, cache);
+  Sweeper sweeper(sweeperCfg, cache, useGEOS);
 
   sweeper.log("Parsing input geometries...");
   auto ts = TIME();

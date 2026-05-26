@@ -13,6 +13,7 @@
 #include <unordered_map>
 
 #include "BoxIds.h"
+#include "Libgeos.h"
 #include "util/geo/Geo.h"
 
 namespace sj {
@@ -29,6 +30,9 @@ struct Area {
   // polygons
   util::geo::I32XSortedPolygon geom;
 
+  // optional libgeospolygon
+  GEOSPolygon geosGeom;
+
   // id
   std::string id;
 
@@ -44,8 +48,14 @@ struct Area {
   // inner geom
   util::geo::I32XSortedPolygon inner;
 
+  // optional inner libgeospolygon
+  GEOSPolygon innerGeosGeom;
+
   // outer geom
   util::geo::I32XSortedPolygon outer;
+
+  // optional outer libgeospolygon
+  GEOSPolygon outerGeosGeom;
 };
 
 struct SimpleLine {
@@ -56,6 +66,9 @@ struct SimpleLine {
 struct Line {
   // line
   util::geo::I32XSortedLine geom;
+
+  // optional libgeosline
+  GEOSLineString geosGeom;
 
   // id
   std::string id;
@@ -94,11 +107,13 @@ struct StorageOptions {
 template <typename W>
 class GeometryCache {
  public:
-  GeometryCache(const StorageOptions& opts, size_t maxSize, size_t maxNumElements, size_t numthreads,
+  GeometryCache(const StorageOptions& opts, size_t maxSize,
+                size_t maxNumElements, size_t numthreads,
                 const std::string& dir)
       : GeometryCache(opts, maxSize, maxNumElements, numthreads, dir,
                       ".spatialjoin"){};
-  GeometryCache(const StorageOptions& opts, size_t maxSize, size_t maxNumElements, size_t numthreads,
+  GeometryCache(const StorageOptions& opts, size_t maxSize,
+                size_t maxNumElements, size_t numthreads,
                 const std::string& dir, const std::string& tmpPrefix)
       : _opts(opts),
         _maxSize(maxSize),
@@ -108,6 +123,12 @@ class GeometryCache {
         _tmpPrefix(tmpPrefix),
         _mutexes(numthreads + 1) {
     _geomsFReads.resize(numthreads + 1);
+
+    _GEOScontextHandles.resize(numthreads + 1);
+
+    for (size_t i = 0; i < numthreads + 1; i++) {
+      _GEOScontextHandles[i] = initGEOS_r(GEOSMsgHandler, GEOSMsgHandler);
+    }
 
     _vals.resize(numthreads + 1);
     _valSizes.resize(numthreads + 1);
@@ -135,11 +156,13 @@ class GeometryCache {
   }
 
   size_t add(const std::string& raw);
-  size_t writeTo(const W& val, std::ostream& str) const;
+  size_t writeTo(const W& val, std::ostream& str,
+                                             GEOSContextHandle_t) const;
+
 
   std::shared_ptr<W> get(size_t off, ssize_t tid) const;
-  std::pair<size_t, W> getFrom(size_t off, std::istream& str) const;
-  std::shared_ptr<W> cache(size_t off, const W& val, size_t estSize,
+  std::pair<size_t, W> getFrom(size_t off, std::istream& str, GEOSContextHandle_t geosHndl) const;
+  std::shared_ptr<W> cache(size_t off, W& val, size_t estSize,
                            size_t tid) const;
 
   std::shared_ptr<W> get(size_t off) const { return get(off, 0); }
@@ -168,12 +191,22 @@ class GeometryCache {
  private:
   std::string getFName() const;
   size_t readLine(std::istream& str, util::geo::I32XSortedLine& ret) const;
+  size_t readGEOSLine(std::istream& str, GEOSLineString& ret,
+                      GEOSContextHandle_t geosHndl) const;
   static size_t writeLine(const util::geo::I32XSortedLine& ret,
                           std::ostream& str);
+  static size_t writeGEOSLine(const GEOSLineString& geom, std::ostream& str,
+                              GEOSContextHandle_t geosHndl);
 
   size_t readPoly(std::istream& str, util::geo::I32XSortedPolygon& ret) const;
   static size_t writePoly(const util::geo::I32XSortedPolygon& ret,
                           std::ostream& str);
+
+  size_t readGEOSPoly(std::istream& str, GEOSPolygon& ret,
+                      GEOSContextHandle_t geosHndl) const;
+
+  static size_t writeGEOSPoly(const GEOSPolygon& geom, std::ostream& str,
+                              GEOSContextHandle_t geosHndl);
 
   mutable std::fstream _geomsF;
   mutable std::vector<std::fstream> _geomsFReads;
@@ -195,6 +228,8 @@ class GeometryCache {
   bool _inMemory = true;
 
   char* _writeBuffer = 0;
+
+  std::vector<GEOSContextHandle_t> _GEOScontextHandles;
 
   mutable std::vector<std::mutex> _mutexes;
 };

@@ -196,8 +196,21 @@ I32Box Sweeper::add(const I32Polygon& poly, const std::string& gidR,
 
   WriteCand cur;
   I32XSortedPolygon spoly(poly);
+
+  GEOSPolygon geosPoly;
+
+  if (_useGeos) {
+    geosPoly = GEOSPolygon(batch.geosHndl, poly);
+  }
+
   const auto& rawBox = spoly.boundingBox();
   const auto& box = getPaddedBoundingBox(rawBox);
+
+  if ((!_useGeos && spoly.empty()) ||
+      (_useGeos && (geosPoly.getGEOSGeom() == 0 ||
+                    GEOSisEmpty_r(batch.geosHndl, geosPoly.getGEOSGeom()))))
+    return box;
+
   if (!util::geo::intersects(box, _filterBox)) return {};
 
   if (spoly.empty()) return box;
@@ -252,7 +265,7 @@ I32Box Sweeper::add(const I32Polygon& poly, const std::string& gidR,
   } else if (poly.getInners().size() == 0 && poly.getOuter().size() < 10 &&
              subid == 0 && (!_cfg.useBoxIds || boxIds.front().first == 1)) {
     std::stringstream str;
-    _simpleAreaCache.writeTo({poly.getOuter(), gid}, str);
+    _simpleAreaCache.writeTo({poly.getOuter(), gid}, str, batch.geosHndl);
     cur.raw = str.str();
 
     auto rightPoint = poly.getOuter().front();
@@ -299,6 +312,7 @@ I32Box Sweeper::add(const I32Polygon& poly, const std::string& gidR,
     }
 
     I32XSortedPolygon inner, outer;
+    GEOSPolygon geosInner, geosOuter;
 
     if (_cfg.useInnerOuter) {
       const auto& innerPoly =
@@ -308,6 +322,9 @@ I32Box Sweeper::add(const I32Polygon& poly, const std::string& gidR,
 
       inner = innerPoly;
       outer = outerPoly;
+
+      geosInner = GEOSPolygon(batch.geosHndl, innerPoly);
+      geosOuter = GEOSPolygon(batch.geosHndl, outerPoly);
     }
 
     util::geo::I32Polygon obb;
@@ -323,11 +340,6 @@ I32Box Sweeper::add(const I32Polygon& poly, const std::string& gidR,
     // careful, assign this before move below
     auto rightPoint = spoly.getOuter().rawRing().back().p;
 
-    std::stringstream str;
-    _areaCache.writeTo(
-        {std::move(spoly), gid, subid, boxIds, obb, inner, outer}, str);
-    ;
-
     size_t estimatedSize = spoly.getOuter().rawRing().size() *
                            sizeof(util::geo::XSortedTuple<int32_t>);
     for (const auto& p : spoly.getInners()) {
@@ -335,6 +347,14 @@ I32Box Sweeper::add(const I32Polygon& poly, const std::string& gidR,
           p.rawRing().size() * sizeof(util::geo::XSortedTuple<int32_t>);
     }
 
+    if (_useGeos) spoly = {};
+
+    std::stringstream str;
+    _areaCache.writeTo(
+        {std::move(spoly), std::move(geosPoly), gid, subid, boxIds, obb, inner,
+         std::move(geosInner), outer, std::move(geosOuter)},
+        str, batch.geosHndl);
+    ;
     cur.raw = str.str();
 
     cur.boxvalIn = {0,  // placeholder, will be overwritten later on
@@ -445,7 +465,7 @@ I32Box Sweeper::add(const I32Line& line, const std::string& gidR, size_t subid,
       batch.foldedSimpleLines.emplace_back(cur);
     } else {
       std::stringstream str;
-      _simpleLineCache.writeTo({gid}, str);
+      _simpleLineCache.writeTo({gid}, str, batch.geosHndl);
 
       cur.raw = str.str();
 
@@ -469,8 +489,19 @@ I32Box Sweeper::add(const I32Line& line, const std::string& gidR, size_t subid,
       sline.setMaxSegLen(std::numeric_limits<int32_t>::max());
     }
 
+    GEOSLineString geosLine;
+
+    if (_useGeos) {
+      geosLine = GEOSLineString(batch.geosHndl, line);
+
+      // empty normal line to avoid load overhead in cache
+      sline = {};
+    }
+
     std::stringstream str;
-    _lineCache.writeTo({std::move(sline), gid, subid, boxIds, obb}, str);
+    _lineCache.writeTo(
+        {std::move(sline), std::move(geosLine), gid, subid, boxIds, obb}, str,
+        batch.geosHndl);
     cur.raw = str.str();
 
     size_t estimatedSize =
@@ -562,7 +593,7 @@ I32Box Sweeper::add(const I32Point& point, const std::string& gidR,
     batch.foldedPoints.emplace_back(cur);
   } else {
     std::stringstream str;
-    _pointCache.writeTo({gid, subid}, str);
+    _pointCache.writeTo({gid, subid}, str, batch.geosHndl);
 
     cur.raw = str.str();
 
@@ -1556,18 +1587,72 @@ RelStats Sweeper::sweep() {
 }
 
 // _____________________________________________________________________________
-sj::Area Sweeper::areaFromSimpleArea(const SimpleArea* sa) const {
-  auto spoly = I32XSortedPolygon(sa->geom);
+sj::Line Sweeper::lineFromSimpleLine(I32Point a, I32Point b,
+                                     const SimpleLine* sa, size_t t) const {
+	I32XSortedLine sline;
+	GEOSLineString geosLine;
+
+
+	if (_useGeos) {
+    geosLine = GEOSLineString(_GEOScontextHandles[t], LineSegment<int32_t>(a, b));
+  } else {
+    sline = I32XSortedLine(LineSegment<int32_t>(a, b));
+	}
+
+  if (!_cfg.useFastSweepSkip) {
+    sline.setMaxSegLen(std::numeric_limits<int32_t>::max());
+  }
+
+  return {std::move(sline),
+          std::move(geosLine),
+          sa->id,
+          0,
+          (_cfg.useBoxIds ? BoxIdList{{1, 0}, {-getBoxId(a), 0}} : BoxIdList{}),
+          {}};
+}
+
+// _____________________________________________________________________________
+sj::Line Sweeper::lineFromSimpleLine(const LineSegment<int32_t> s,
+                                     size_t t) const {
+  auto sline = I32XSortedLine(s);
+  auto geosLine = GEOSLineString(_GEOScontextHandles[t], s);
+
+  if (!_cfg.useFastSweepSkip) {
+    sline.setMaxSegLen(std::numeric_limits<int32_t>::max());
+  }
+
+  return {std::move(sline),
+          std::move(geosLine),
+          "",
+          0,
+          (_cfg.useBoxIds ? BoxIdList{{1, 0}, {-getBoxId(s.first), 0}}
+                          : BoxIdList{}),
+          {}};
+}
+
+// _____________________________________________________________________________
+sj::Area Sweeper::areaFromSimpleArea(const SimpleArea* sa, size_t t) const {
+  I32XSortedPolygon spoly;
+  GEOSPolygon geosPoly;
+
+  if (_useGeos) {
+    geosPoly = GEOSPolygon(_GEOScontextHandles[t], sa->geom);
+  } else {
+    spoly = I32XSortedPolygon(sa->geom);
+  }
 
   if (!_cfg.useFastSweepSkip) {
     spoly.getOuter().setMaxSegLen(std::numeric_limits<int32_t>::max());
   }
 
   return {std::move(spoly),
+          std::move(geosPoly),
           sa->id,
           0,
           (_cfg.useBoxIds ? BoxIdList{{1, 0}, {-getBoxId(sa->geom.front()), 0}}
                           : BoxIdList{}),
+          {},
+          {},
           {},
           {},
           {}};
@@ -1578,7 +1663,10 @@ util::geo::DE9IMatrix Sweeper::DE9IMCheck(const Area* a, const Area* b,
                                           size_t t) const {
   _stats[t].totalComps++;
   // cheap equivalence check
-  if (a->geom == b->geom) {
+  if (a->geom == b->geom ||
+      (_useGeos &&
+       GEOSEqualsExact_r(_GEOScontextHandles[t], a->geosGeom.getGEOSGeom(),
+                         b->geosGeom.getGEOSGeom(), 0))) {
     // equivalent!
     return util::geo::M2FFF1FFF2;
   }
@@ -1604,42 +1692,98 @@ util::geo::DE9IMatrix Sweeper::DE9IMCheck(const Area* a, const Area* b,
     }
   }
 
-  if (_cfg.useInnerOuter && !a->outer.empty() && !b->outer.empty()) {
+  if (_cfg.useInnerOuter &&
+      ((!_useGeos && !a->outer.empty() && !b->outer.empty()) ||
+       (_useGeos && !a->outerGeosGeom.empty(_GEOScontextHandles[t]) &&
+        !b->outerGeosGeom.empty(_GEOScontextHandles[t])))) {
     auto ts = TIME();
-    auto r = util::geo::intersectsContainsCovers(a->outer, b->outer);
-    _stats[t].timeInnerOuterCheckAreaArea += TOOK(ts);
-    _stats[t].innerOuterChecksAreaArea++;
-    if (!std::get<0>(r)) return util::geo::MFF2FF1212;
+
+    if (_useGeos) {
+      auto intersects = GEOSIntersects_r(_GEOScontextHandles[t],
+                                         a->outerGeosGeom, b->outerGeosGeom);
+      _stats[t].timeInnerOuterCheckAreaArea += TOOK(ts);
+      _stats[t].innerOuterChecksAreaArea++;
+      if (!intersects) return util::geo::MFF2FF1212;
+    } else {
+      auto r = util::geo::intersectsContainsCovers(a->outer, b->outer);
+      _stats[t].timeInnerOuterCheckAreaArea += TOOK(ts);
+      _stats[t].innerOuterChecksAreaArea++;
+      if (!std::get<0>(r)) return util::geo::MFF2FF1212;
+    }
   }
 
-  if (_cfg.useInnerOuter && !a->outer.empty() && !b->inner.empty()) {
+  if (_cfg.useInnerOuter &&
+      ((!_useGeos && !a->outer.empty() && !b->inner.empty()) ||
+       (_useGeos && !a->outerGeosGeom.empty(_GEOScontextHandles[t]) &&
+        !b->innerGeosGeom.empty(_GEOScontextHandles[t])))) {
     auto ts = TIME();
-    auto r = util::geo::intersectsContainsCovers(a->outer, b->inner);
-    _stats[t].timeInnerOuterCheckAreaArea += TOOK(ts);
-    _stats[t].innerOuterChecksAreaArea++;
-    if (std::get<1>(r)) return util::geo::M2FF1FF212;
+
+    if (_useGeos) {
+      auto contains = GEOSContains_r(_GEOScontextHandles[t], b->innerGeosGeom,
+                                     a->outerGeosGeom);
+      _stats[t].timeInnerOuterCheckAreaArea += TOOK(ts);
+      _stats[t].innerOuterChecksAreaArea++;
+      if (contains) return util::geo::M2FF1FF212;
+    } else {
+      auto r = util::geo::intersectsContainsCovers(a->outer, b->inner);
+      _stats[t].timeInnerOuterCheckAreaArea += TOOK(ts);
+      _stats[t].innerOuterChecksAreaArea++;
+      if (std::get<1>(r)) return util::geo::M2FF1FF212;
+    }
   }
 
-  if (_cfg.useInnerOuter && a->outer.empty() && !b->outer.empty()) {
+  if (_cfg.useInnerOuter &&
+      ((!_useGeos && a->outer.empty() && !b->outer.empty()) ||
+       (_useGeos && a->outerGeosGeom.empty(_GEOScontextHandles[t]) &&
+        !b->outerGeosGeom.empty(_GEOScontextHandles[t])))) {
     auto ts = TIME();
-    auto r = util::geo::intersectsContainsCovers(a->geom, b->outer);
-    _stats[t].timeInnerOuterCheckAreaArea += TOOK(ts);
-    _stats[t].innerOuterChecksAreaArea++;
-    if (!std::get<0>(r)) return util::geo::MFF2FF1212;
+
+    if (_useGeos) {
+      auto intersects = GEOSIntersects_r(_GEOScontextHandles[t], a->geosGeom,
+                                         b->outerGeosGeom);
+      _stats[t].timeInnerOuterCheckAreaArea += TOOK(ts);
+      _stats[t].innerOuterChecksAreaArea++;
+      if (!intersects) return util::geo::MFF2FF1212;
+    } else {
+      auto r = util::geo::intersectsContainsCovers(a->geom, b->outer);
+      _stats[t].timeInnerOuterCheckAreaArea += TOOK(ts);
+      _stats[t].innerOuterChecksAreaArea++;
+      if (!std::get<0>(r)) return util::geo::MFF2FF1212;
+    }
   }
 
-  if (_cfg.useInnerOuter && a->outer.empty() && !b->inner.empty()) {
+  if (_cfg.useInnerOuter &&
+      ((!_useGeos && a->outer.empty() && !b->inner.empty()) ||
+       (_useGeos && a->outerGeosGeom.empty(_GEOScontextHandles[t]) &&
+        !b->innerGeosGeom.empty(_GEOScontextHandles[t])))) {
     auto ts = TIME();
-    auto r = util::geo::intersectsContainsCovers(a->geom, b->inner);
-    _stats[t].timeInnerOuterCheckAreaArea += TOOK(ts);
-    _stats[t].innerOuterChecksAreaArea++;
-    if (std::get<1>(r)) return util::geo::M2FF1FF212;
+
+    if (_useGeos) {
+      auto contains =
+          GEOSContains_r(_GEOScontextHandles[t], b->innerGeosGeom, a->geosGeom);
+      _stats[t].timeInnerOuterCheckAreaArea += TOOK(ts);
+      _stats[t].innerOuterChecksAreaArea++;
+      if (contains) return util::geo::M2FF1FF212;
+    } else {
+      auto r = util::geo::intersectsContainsCovers(a->geom, b->inner);
+      _stats[t].timeInnerOuterCheckAreaArea += TOOK(ts);
+      _stats[t].innerOuterChecksAreaArea++;
+      if (std::get<1>(r)) return util::geo::M2FF1FF212;
+    }
   }
 
-  auto ts = TIME();
-  auto res = DE9IM(b->geom, a->geom).transpose();
-  _stats[t].timeFullGeoCheckAreaArea += TOOK(ts);
-  _stats[t].fullGeoChecksAreaArea++;
+  util::geo::DE9IMatrix res;
+  if (_useGeos) {
+    auto ts = TIME();
+    res = sj::GEOSRelate_r(_GEOScontextHandles[t], a->geosGeom, b->geosGeom);
+    _stats[t].timeFullGeoCheckAreaArea += TOOK(ts);
+    _stats[t].fullGeoChecksAreaArea++;
+  } else {
+    auto ts = TIME();
+    res = DE9IM(b->geom, a->geom).transpose();
+    _stats[t].timeFullGeoCheckAreaArea += TOOK(ts);
+    _stats[t].fullGeoChecksAreaArea++;
+  }
   return res;
 }
 
@@ -1750,24 +1894,54 @@ util::geo::DE9IMatrix Sweeper::DE9IMCheck(const Line* a, const Area* b,
     }
   }
 
-  if (_cfg.useInnerOuter && !b->outer.empty()) {
-    auto ts = TIME();
-    auto r = util::geo::intersectsContainsCovers(a->geom, b->outer);
-    _stats[t].timeInnerOuterCheckAreaLine += TOOK(ts);
-    _stats[t].innerOuterChecksAreaLine++;
-    if (!std::get<0>(r)) return util::geo::MFF1FF0212;
+  if (_cfg.useInnerOuter &&
+      ((!_useGeos && !b->outer.empty()) ||
+       (_useGeos && !b->outerGeosGeom.empty(_GEOScontextHandles[t])))) {
+    if (_useGeos) {
+      auto ts = TIME();
+      auto intersects = GEOSIntersects_r(_GEOScontextHandles[t], a->geosGeom,
+                                         b->outerGeosGeom);
+      _stats[t].timeInnerOuterCheckAreaLine += TOOK(ts);
+      _stats[t].innerOuterChecksAreaLine++;
+      if (!intersects) return util::geo::MFF1FF0212;
+    } else {
+      auto ts = TIME();
+      auto r = util::geo::intersectsContainsCovers(a->geom, b->outer);
+      _stats[t].timeInnerOuterCheckAreaLine += TOOK(ts);
+      _stats[t].innerOuterChecksAreaLine++;
+      if (!std::get<0>(r)) return util::geo::MFF1FF0212;
+    }
   }
 
-  if (_cfg.useInnerOuter && !b->inner.empty()) {
-    auto ts = TIME();
-    auto r = util::geo::intersectsContainsCovers(a->geom, b->inner);
-    _stats[t].timeInnerOuterCheckAreaLine += TOOK(ts);
-    _stats[t].innerOuterChecksAreaLine++;
-    if (std::get<1>(r)) return util::geo::M1FF0FF212;
+  if (_cfg.useInnerOuter &&
+      ((!_useGeos && !b->inner.empty()) ||
+       (_useGeos && !b->innerGeosGeom.empty(_GEOScontextHandles[t])))) {
+    if (_useGeos) {
+      auto ts = TIME();
+      auto contains =
+          GEOSContains_r(_GEOScontextHandles[t], b->innerGeosGeom, a->geosGeom);
+      _stats[t].timeInnerOuterCheckAreaLine += TOOK(ts);
+      _stats[t].innerOuterChecksAreaLine++;
+      if (!contains) return util::geo::M1FF0FF212;
+    } else {
+      auto ts = TIME();
+      auto r = util::geo::intersectsContainsCovers(a->geom, b->inner);
+      _stats[t].timeInnerOuterCheckAreaLine += TOOK(ts);
+      _stats[t].innerOuterChecksAreaLine++;
+      if (std::get<1>(r)) return util::geo::M1FF0FF212;
+    }
   }
 
   auto ts = TIME();
-  auto res = DE9IM(a->geom, b->geom);
+
+  util::geo::DE9IMatrix res;
+
+  if (_useGeos) {
+    res = sj::GEOSRelate_r(_GEOScontextHandles[t], a->geosGeom, b->geosGeom);
+  } else {
+    res = DE9IM(a->geom, b->geom);
+  }
+
   _stats[t].timeFullGeoCheckAreaLine += TOOK(ts);
   _stats[t].fullGeoChecksAreaLine++;
 
@@ -1858,7 +2032,13 @@ util::geo::DE9IMatrix Sweeper::DE9IMCheck(const Line* a, const Line* b,
   }
 
   auto ts = TIME();
-  auto res = DE9IM(a->geom, b->geom);
+  util::geo::DE9IMatrix res;
+
+  if (_useGeos) {
+    res = sj::GEOSRelate_r(_GEOScontextHandles[t], a->geosGeom, b->geosGeom);
+  } else {
+    res = DE9IM(a->geom, b->geom);
+  }
   _stats[t].timeFullGeoCheckLineLine += TOOK(ts);
   _stats[t].fullGeoChecksLineLine++;
 
@@ -1916,31 +2096,53 @@ util::geo::DE9IMatrix Sweeper::DE9IMCheck(const LineSegment<int32_t>& a,
     if (r.first + r.second == 0) return util::geo::MFF1FF0212;
   }
 
-  if (_cfg.useOBB && !b->obb.empty()) {
-    auto ts = TIME();
-    auto r = intersectsContainsCovers(I32XSortedLine(a), b->obb);
-    _stats[t].timeOBBIsectAreaLine += TOOK(ts);
-    if (!std::get<0>(r)) return util::geo::MFF1FF0212;
+  if (_cfg.useInnerOuter &&
+      ((!_useGeos && !b->outer.empty()) ||
+       (_useGeos && !b->outerGeosGeom.empty(_GEOScontextHandles[t])))) {
+    if (_useGeos) {
+      auto ts = TIME();
+      auto intersects =
+          GEOSIntersects_r(_GEOScontextHandles[t],
+                           lineFromSimpleLine(a, t).geosGeom, b->outerGeosGeom);
+      _stats[t].timeInnerOuterCheckAreaLine += TOOK(ts);
+      _stats[t].innerOuterChecksAreaLine++;
+      if (!intersects) return util::geo::MFF1FF0212;
+    } else {
+      auto ts = TIME();
+      auto r = util::geo::intersectsContainsCovers(I32XSortedLine(a), b->outer);
+      _stats[t].timeInnerOuterCheckAreaLine += TOOK(ts);
+      _stats[t].innerOuterChecksAreaLine++;
+      if (!std::get<0>(r)) return util::geo::MFF1FF0212;
+    }
   }
 
-  if (_cfg.useInnerOuter && !b->outer.empty()) {
-    auto ts = TIME();
-    auto r = util::geo::intersectsContainsCovers(I32XSortedLine(a), b->outer);
-    _stats[t].timeInnerOuterCheckAreaLine += TOOK(ts);
-    _stats[t].innerOuterChecksAreaLine++;
-    if (!std::get<0>(r)) return util::geo::MFF1FF0212;
+  if (_cfg.useInnerOuter &&
+      ((!_useGeos && !b->inner.empty()) ||
+       (_useGeos && !b->innerGeosGeom.empty(_GEOScontextHandles[t])))) {
+    if (_useGeos) {
+      auto ts = TIME();
+      auto contains = GEOSContains_r(_GEOScontextHandles[t], b->innerGeosGeom,
+                                     lineFromSimpleLine(a, t).geosGeom);
+      _stats[t].timeInnerOuterCheckAreaLine += TOOK(ts);
+      _stats[t].innerOuterChecksAreaLine++;
+      if (!contains) return util::geo::M1FF0FF212;
+    } else {
+      auto ts = TIME();
+      auto r = util::geo::intersectsContainsCovers(I32XSortedLine(a), b->inner);
+      _stats[t].timeInnerOuterCheckAreaLine += TOOK(ts);
+      _stats[t].innerOuterChecksAreaLine++;
+      if (std::get<1>(r)) return util::geo::M1FF0FF212;
+    }
   }
 
-  if (_cfg.useInnerOuter && !b->inner.empty()) {
-    auto ts = TIME();
-    auto r = util::geo::intersectsContainsCovers(I32XSortedLine(a), b->inner);
-    _stats[t].timeInnerOuterCheckAreaLine += TOOK(ts);
-    _stats[t].innerOuterChecksAreaLine++;
-    if (std::get<1>(r)) return util::geo::M1FF0FF212;
-  }
-
+  util::geo::DE9IMatrix res;
   auto ts = TIME();
-  auto res = DE9IM(I32XSortedLine(a), b->geom);
+  if (_useGeos) {
+    res = sj::GEOSRelate_r(_GEOScontextHandles[t],
+                           lineFromSimpleLine(a, t).geosGeom, b->geosGeom);
+  } else {
+    res = DE9IM(I32XSortedLine(a), b->geom);
+  }
   _stats[t].timeFullGeoCheckAreaLine += TOOK(ts);
   _stats[t].fullGeoChecksAreaLine++;
   return res;
@@ -2097,7 +2299,14 @@ util::geo::DE9IMatrix Sweeper::DE9IMCheck(const LineSegment<int32_t>& a,
   }
 
   auto ts = TIME();
-  auto res = DE9IM(I32XSortedLine(a), b->geom);
+  util::geo::DE9IMatrix res;
+
+  if (_useGeos) {
+    res = sj::GEOSRelate_r(_GEOScontextHandles[t],
+                           lineFromSimpleLine(a, t).geosGeom, b->geosGeom);
+  } else {
+    res = DE9IM(I32XSortedLine(a), b->geom);
+  }
   _stats[t].timeFullGeoCheckLineLine += TOOK(ts);
   _stats[t].fullGeoChecksLineLine++;
   return res;
@@ -2215,7 +2424,14 @@ util::geo::DE9IMatrix Sweeper::DE9IMCheck(const I32Point& a, const Line* b,
   }
 
   auto ts = TIME();
-  auto res = util::geo::DE9IM(a, b->geom);
+  util::geo::DE9IMatrix res;
+
+  if (_useGeos) {
+    res = sj::GEOSRelate_r(_GEOScontextHandles[t], a, b->geosGeom);
+  } else {
+    res = util::geo::DE9IM(a, b->geom);
+  }
+
   _stats[t].timeFullGeoCheckLinePoint += TOOK(ts);
   _stats[t].fullGeoChecksLinePoint++;
 
@@ -3994,7 +4210,8 @@ std::pair<double, double> Sweeper::getMinMaxLocalScaleFactors(
   // we have to "pad" each box by -dy and dy because the distance path could
   // be within that padded box, and thus the distortions have to be computed
   // based on that path
-  double dLat = distanceUpperBound / util::geo::MIN_METERS_PER_LAT_RAD * util::geo::IRAD;
+  double dLat =
+      distanceUpperBound / util::geo::MIN_METERS_PER_LAT_RAD * util::geo::IRAD;
 
   // the lower extrema of the bounding boxes are padded by dLat
   auto withinLow = util::geo::webMercToLatLng<double>(
@@ -4167,19 +4384,26 @@ double Sweeper::distCheck(const I32Point& a, const Point* aMeta, const Area* b,
 
   auto ts = TIME();
   double maxD = _cfg.withinDist;
+	double dist = 0;
 
-  maxD = std::min(maxD,
-                  getMaxMultiDist(aMeta->id, aMeta->subId, a, b->id, b->subId,
-                                  b->geom.getOuter().rawRing().front().p, t));
+	if (_useGeos) {
+		double maxEuclideanDist = maxD * PREC;
+    GEOSDistanceWithin_r(_GEOScontextHandles[t], a, b->geosGeom, maxEuclideanDist, &dist);
+    dist = dist / PREC;
+  } else {
+		maxD = std::min(maxD,
+										getMaxMultiDist(aMeta->id, aMeta->subId, a, b->id, b->subId,
+																		b->geom.getOuter().rawRing().front().p, t));
 
-  auto scale = getMinMaxLocalScaleFactors(util::geo::getBoundingBox(a),
-                                          b->geom.boundingBox(), maxD);
+		auto scale = getMinMaxLocalScaleFactors(util::geo::getBoundingBox(a),
+																						b->geom.boundingBox(), maxD);
 
-  double maxEuclideanDist = maxD / scale.first * PREC;
+		double maxEuclideanDist = maxD / scale.first * PREC;
 
-  auto dist = util::geo::withinDist<int32_t>(
-      a, b->geom, maxD, &Sweeper::localSearchPadding, maxEuclideanDist,
-      &Sweeper::meterDist);
+		dist = util::geo::withinDist<int32_t>(
+				a, b->geom, maxD, &Sweeper::localSearchPadding, maxEuclideanDist,
+				&Sweeper::meterDist);
+	}
   _stats[t].timeFullGeoCheckAreaPoint += TOOK(ts);
   _stats[t].fullGeoChecksAreaPoint++;
 
@@ -4209,24 +4433,55 @@ util::geo::DE9IMatrix Sweeper::DE9IMCheck(const I32Point& a, const Area* b,
     if (!std::get<1>(r)) return util::geo::MFF0FFF212;
   }
 
-  if (_cfg.useInnerOuter && !b->outer.empty()) {
+  if (_cfg.useInnerOuter &&
+      ((!_useGeos && !b->outer.empty()) ||
+       (_useGeos && !b->outerGeosGeom.empty(_GEOScontextHandles[t])))) {
     auto ts = TIME();
-    auto r = containsCovers(a, b->outer);
-    _stats[t].timeInnerOuterCheckAreaPoint += TOOK(ts);
-    _stats[t].innerOuterChecksAreaPoint++;
-    if (!std::get<1>(r)) return util::geo::MFF0FFF212;
+
+    if (_useGeos) {
+      auto contains =
+          GEOSContains_r(_GEOScontextHandles[t], b->outerGeosGeom, a);
+      _stats[t].timeInnerOuterCheckAreaPoint += TOOK(ts);
+      _stats[t].innerOuterChecksAreaPoint++;
+      if (!contains) return util::geo::MFF0FFF212;
+    } else {
+      auto ts = TIME();
+      auto r = containsCovers(a, b->outer);
+      _stats[t].timeInnerOuterCheckAreaPoint += TOOK(ts);
+      _stats[t].innerOuterChecksAreaPoint++;
+      if (!std::get<1>(r)) return util::geo::MFF0FFF212;
+    }
   }
 
-  if (_cfg.useInnerOuter && !b->inner.empty()) {
+  if (_cfg.useInnerOuter &&
+      ((!_useGeos && !b->inner.empty()) ||
+       (_useGeos && !b->innerGeosGeom.empty(_GEOScontextHandles[t])))) {
     auto ts = TIME();
-    auto r = containsCovers(a, b->inner);
-    _stats[t].timeInnerOuterCheckAreaPoint += TOOK(ts);
-    _stats[t].innerOuterChecksAreaPoint++;
-    if (std::get<1>(r)) return util::geo::M0FFFFF212;
+
+    if (_useGeos) {
+      auto contains =
+          GEOSContains_r(_GEOScontextHandles[t], b->innerGeosGeom, a);
+      _stats[t].timeInnerOuterCheckAreaPoint += TOOK(ts);
+      _stats[t].innerOuterChecksAreaPoint++;
+      if (contains) return util::geo::M0FFFFF212;
+    } else {
+      auto ts = TIME();
+      auto r = containsCovers(a, b->outer);
+      _stats[t].timeInnerOuterCheckAreaPoint += TOOK(ts);
+      _stats[t].innerOuterChecksAreaPoint++;
+      if (std::get<1>(r)) return util::geo::M0FFFFF212;
+    }
   }
 
   auto ts = TIME();
-  auto res = util::geo::DE9IM(a, b->geom);
+  util::geo::DE9IMatrix res;
+
+  if (_useGeos) {
+    res = sj::GEOSRelate_r(_GEOScontextHandles[t], a, b->geosGeom);
+  } else {
+    res = util::geo::DE9IM(a, b->geom);
+  }
+
   _stats[t].timeFullGeoCheckAreaPoint += TOOK(ts);
   _stats[t].fullGeoChecksAreaPoint++;
 
@@ -4238,7 +4493,13 @@ double Sweeper::distCheck(const I32Point& a, const Point* aMeta, const Line* b,
                           size_t t) {
   auto ts = TIME();
   double maxD = _cfg.withinDist;
+	double dist;
 
+	if (_useGeos) {
+		double maxEuclideanDist = maxD * PREC;
+    GEOSDistanceWithin_r(_GEOScontextHandles[t], a, b->geosGeom, maxEuclideanDist, &dist);
+    dist = dist / PREC;
+  } else {
   maxD =
       std::min(maxD, getMaxMultiDist(aMeta->id, aMeta->subId, a, b->id,
                                      b->subId, b->geom.rawLine().front().p, t));
@@ -4248,9 +4509,10 @@ double Sweeper::distCheck(const I32Point& a, const Point* aMeta, const Line* b,
 
   double maxEuclideanDist = maxD / scale.first * PREC;
 
-  auto dist = util::geo::withinDist<int32_t>(
+   dist = util::geo::withinDist<int32_t>(
       a, b->geom, maxD, &Sweeper::localSearchPadding, maxEuclideanDist,
       &Sweeper::meterDist);
+	}
 
   _stats[t].timeFullGeoCheckLinePoint += TOOK(ts);
   _stats[t].fullGeoChecksLinePoint++;
@@ -4303,14 +4565,25 @@ double Sweeper::distCheck(const LineSegment<int32_t>& a,
 double Sweeper::distCheck(const LineSegment<int32_t>& a, const Line* b,
                           size_t t) {
   auto ts = TIME();
-  auto scale = getMinMaxLocalScaleFactors(
-      util::geo::getBoundingBox(a), b->geom.boundingBox(), _cfg.withinDist);
 
-  double maxEuclideanDist = _cfg.withinDist / scale.first * PREC;
+  double maxD = _cfg.withinDist;
+	double dist;
 
-  auto dist = util::geo::withinDist<int32_t>(
-      I32XSortedLine(a), b->geom, _cfg.withinDist, &Sweeper::localSearchPadding,
-      maxEuclideanDist, &Sweeper::meterDist);
+	if (_useGeos) {
+		double maxEuclideanDist = maxD * PREC;
+		const auto& l = lineFromSimpleLine(a, t);
+    GEOSDistanceWithin_r(_GEOScontextHandles[t], l.geosGeom, b->geosGeom, maxEuclideanDist, &dist);
+    dist = dist / PREC;
+  } else {
+		auto scale = getMinMaxLocalScaleFactors(
+				util::geo::getBoundingBox(a), b->geom.boundingBox(), _cfg.withinDist);
+
+		double maxEuclideanDist = maxD / scale.first * PREC;
+
+		dist = util::geo::withinDist<int32_t>(
+				I32XSortedLine(a), b->geom, _cfg.withinDist, &Sweeper::localSearchPadding,
+				maxEuclideanDist, &Sweeper::meterDist);
+  }
 
   _stats[t].timeFullGeoCheckAreaLine += TOOK(ts);
   _stats[t].fullGeoChecksAreaLine++;
@@ -4324,19 +4597,26 @@ double Sweeper::distCheck(const Line* a, const Line* b, size_t t) {
   if (a == b) return 0;
 
   double maxD = _cfg.withinDist;
+	double dist;
 
-  maxD = std::min(
-      maxD, getMaxMultiDist(a->id, a->subId, a->geom.rawLine().front().p, b->id,
-                            b->subId, b->geom.rawLine().front().p, t));
+	if (_useGeos) {
+		double maxEuclideanDist = maxD * PREC;
+    GEOSDistanceWithin_r(_GEOScontextHandles[t], a->geosGeom, b->geosGeom, maxEuclideanDist, &dist);
+    dist = dist / PREC;
+  } else {
+		maxD = std::min(
+				maxD, getMaxMultiDist(a->id, a->subId, a->geom.rawLine().front().p, b->id,
+															b->subId, b->geom.rawLine().front().p, t));
 
-  auto scale = getMinMaxLocalScaleFactors(a->geom.boundingBox(),
-                                          b->geom.boundingBox(), maxD);
+		auto scale = getMinMaxLocalScaleFactors(a->geom.boundingBox(),
+																						b->geom.boundingBox(), maxD);
 
-  double maxEuclideanDist = maxD / scale.first * PREC;
+		double maxEuclideanDist = maxD / scale.first * PREC;
 
-  auto dist = util::geo::withinDist<int32_t>(
-      a->geom, b->geom, maxD, &Sweeper::localSearchPadding, maxEuclideanDist,
-      &Sweeper::meterDist);
+		dist = util::geo::withinDist<int32_t>(
+				a->geom, b->geom, maxD, &Sweeper::localSearchPadding, maxEuclideanDist,
+				&Sweeper::meterDist);
+   }
 
   _stats[t].timeFullGeoCheckLineLine += TOOK(ts);
   _stats[t].fullGeoChecksLineLine++;
@@ -4386,29 +4666,47 @@ double Sweeper::distCheck(const Line* a, const Area* b, size_t t) {
     if (r.first) return 0;
   }
 
-  if (_cfg.useInnerOuter && !b->inner.empty()) {
+  if (_cfg.useInnerOuter &&
+      ((!_useGeos && !b->inner.empty()) ||
+       (_useGeos &&
+        !b->innerGeosGeom.empty(_GEOScontextHandles[t])))) {
     auto ts = TIME();
-    auto r = util::geo::intersectsContainsCovers(a->geom, b->inner);
-    _stats[t].timeInnerOuterCheckAreaLine += TOOK(ts);
-    _stats[t].innerOuterChecksAreaLine++;
-    if (std::get<0>(r)) return 0;
+    if (_useGeos) {
+      auto intersects = GEOSIntersects_r(_GEOScontextHandles[t],
+                                         a->geosGeom, b->innerGeosGeom);
+			_stats[t].timeInnerOuterCheckAreaLine += TOOK(ts);
+			_stats[t].innerOuterChecksAreaLine++;
+      if (intersects) return 0;
+    } else {
+      auto r = util::geo::intersectsContainsCovers(a->geom, b->inner);
+			_stats[t].timeInnerOuterCheckAreaLine += TOOK(ts);
+			_stats[t].innerOuterChecksAreaLine++;
+      if (std::get<0>(r)) return 0;
+    }
   }
 
   double maxD = _cfg.withinDist;
+	double dist;
 
-  maxD = std::min(
-      maxD,
-      getMaxMultiDist(a->id, a->subId, a->geom.rawLine().front().p, b->id,
-                      b->subId, b->geom.getOuter().rawRing().front().p, t));
+  if (_useGeos) {
+		double maxEuclideanDist = maxD * PREC;
+    GEOSDistanceWithin_r(_GEOScontextHandles[t], b->geosGeom, a->geosGeom, maxEuclideanDist, &dist);
+    dist = dist / PREC;
+  } else {
+		maxD = std::min(
+				maxD,
+				getMaxMultiDist(a->id, a->subId, a->geom.rawLine().front().p, b->id,
+												b->subId, b->geom.getOuter().rawRing().front().p, t));
 
-  auto scale = getMinMaxLocalScaleFactors(a->geom.boundingBox(),
-                                          b->geom.boundingBox(), maxD);
+		auto scale = getMinMaxLocalScaleFactors(a->geom.boundingBox(),
+																						b->geom.boundingBox(), maxD);
 
-  double maxEuclideanDist = maxD / scale.first * PREC;
+		double maxEuclideanDist = maxD / scale.first * PREC;
 
-  auto dist = util::geo::withinDist<int32_t>(
-      a->geom, b->geom, maxD, &Sweeper::localSearchPadding, maxEuclideanDist,
-      &Sweeper::meterDist);
+		dist = util::geo::withinDist<int32_t>(
+				a->geom, b->geom, maxD, &Sweeper::localSearchPadding, maxEuclideanDist,
+				&Sweeper::meterDist);
+  }
 
   _stats[t].timeFullGeoCheckAreaLine += TOOK(ts);
   _stats[t].fullGeoChecksAreaLine++;
@@ -4420,8 +4718,12 @@ double Sweeper::distCheck(const Line* a, const Area* b, size_t t) {
 double Sweeper::distCheck(const Area* a, const Area* b, size_t t) {
   auto ts = TIME();
 
-  // cheap equivalence check
-  if (a->geom == b->geom) {
+	// cheap pointer equivalence check
+	if (a == b) return 0;
+
+  // cheap equivalence check, can only use if we do not use geos (otherwise
+  // we would falsely report 0 here)
+  if (!_useGeos && a->geom == b->geom) {
     return 0;
   }
 
@@ -4435,31 +4737,68 @@ double Sweeper::distCheck(const Area* a, const Area* b, size_t t) {
     if (r.first) return 0;
   }
 
-  if (_cfg.useInnerOuter && a->inner.empty() && !b->inner.empty()) {
+  if (_cfg.useInnerOuter &&
+      ((!_useGeos && !a->inner.empty() && !b->inner.empty()) ||
+       (_useGeos && !a->innerGeosGeom.empty(_GEOScontextHandles[t]) &&
+        !b->innerGeosGeom.empty(_GEOScontextHandles[t])))) {
     auto ts = TIME();
-    auto r = util::geo::intersectsContainsCovers(a->geom, b->inner);
-    _stats[t].timeInnerOuterCheckAreaArea += TOOK(ts);
-    _stats[t].innerOuterChecksAreaArea++;
-    if (std::get<0>(r)) return 0;
+    if (_useGeos) {
+      auto intersects = GEOSIntersects_r(_GEOScontextHandles[t],
+                                         b->innerGeosGeom, a->innerGeosGeom);
+      _stats[t].timeInnerOuterCheckAreaArea += TOOK(ts);
+      _stats[t].innerOuterChecksAreaArea++;
+      if (intersects) return 0;
+    } else {
+      auto r = util::geo::intersectsContainsCovers(a->inner, b->inner);
+      _stats[t].timeInnerOuterCheckAreaArea += TOOK(ts);
+      _stats[t].innerOuterChecksAreaArea++;
+      if (std::get<0>(r)) return 0;
+    }
+  }
+
+  if (_cfg.useInnerOuter &&
+      ((!_useGeos && a->inner.empty() && !b->inner.empty()) ||
+       (_useGeos && a->innerGeosGeom.empty(_GEOScontextHandles[t]) &&
+        !b->innerGeosGeom.empty(_GEOScontextHandles[t])))) {
+    auto ts = TIME();
+    if (_useGeos) {
+      auto intersects = GEOSIntersects_r(_GEOScontextHandles[t],
+                                         b->innerGeosGeom, a->geosGeom);
+      _stats[t].timeInnerOuterCheckAreaArea += TOOK(ts);
+      _stats[t].innerOuterChecksAreaArea++;
+      if (intersects) return 0;
+    } else {
+      auto r = util::geo::intersectsContainsCovers(a->geom, b->inner);
+      _stats[t].timeInnerOuterCheckAreaArea += TOOK(ts);
+      _stats[t].innerOuterChecksAreaArea++;
+      if (std::get<0>(r)) return 0;
+    }
   }
 
   double maxD = _cfg.withinDist;
+  double dist;
 
-  maxD = std::min(
-      maxD, getMaxMultiDist(
-                a->id, a->subId, a->geom.getOuter().rawRing().front().p, b->id,
-                b->subId, b->geom.getOuter().rawRing().front().p, t));
+  if (_useGeos) {
+		double maxEuclideanDist = maxD * PREC;
+    GEOSDistanceWithin_r(_GEOScontextHandles[t], a->geosGeom, b->geosGeom, maxEuclideanDist, &dist);
+    dist = dist / PREC;
+  } else {
+		maxD = std::min(
+				maxD, getMaxMultiDist(
+									a->id, a->subId, a->geom.getOuter().rawRing().front().p,
+									b->id, b->subId, b->geom.getOuter().rawRing().front().p, t));
 
-  auto scale = getMinMaxLocalScaleFactors(a->geom.boundingBox(),
-                                          b->geom.boundingBox(), maxD);
+		auto scale = getMinMaxLocalScaleFactors(a->geom.boundingBox(),
+																						b->geom.boundingBox(), maxD);
+		double maxEuclideanDist = maxD / scale.first * PREC;
 
-  double maxEuclideanDist = maxD / scale.first * PREC;
+    dist = util::geo::withinDist<int32_t>(
+        a->geom, b->geom, maxD, &Sweeper::localSearchPadding, maxEuclideanDist,
+        &Sweeper::meterDist);
 
-  auto dist = util::geo::withinDist<int32_t>(
-      a->geom, b->geom, maxD, &Sweeper::localSearchPadding, maxEuclideanDist,
-      &Sweeper::meterDist);
-  _stats[t].timeFullGeoCheckAreaArea += TOOK(ts);
-  _stats[t].fullGeoChecksAreaArea++;
+    _stats[t].timeFullGeoCheckAreaArea += TOOK(ts);
+    _stats[t].fullGeoChecksAreaArea++;
+  }
 
   return dist;
 }
@@ -4497,14 +4836,14 @@ std::shared_ptr<sj::Area> Sweeper::getArea(const JobVal& sv, size_t t) const {
 
   if (sv.type == SIMPLE_POLYGON) {
     auto p = _simpleAreaCache.get(sv.id, sv.large ? -1 : t);
-    asp = std::make_shared<sj::Area>(sj::Area(areaFromSimpleArea(p.get())));
+    asp = std::make_shared<sj::Area>(sj::Area(areaFromSimpleArea(p.get(), t)));
   } else if (sv.type == FOLDED_BOX_POLYGON) {
     SimpleArea sa;
     sa.id = unfoldString(sv.id);
     sa.geom = util::geo::Polygon<int32_t>(
                   getBoundingBox(util::geo::Line<int32_t>{sv.point, sv.point2}))
                   .getOuter();
-    asp = std::make_shared<sj::Area>(sj::Area(areaFromSimpleArea(&sa)));
+    asp = std::make_shared<sj::Area>(sj::Area(areaFromSimpleArea(&sa, t)));
   } else {
     asp = _areaCache.get(sv.id, sv.large ? -1 : t);
   }
@@ -4565,7 +4904,8 @@ util::geo::I32Box Sweeper::getPaddedBoundingBox(const G1<T>& geom,
     // we have to "pad" the box by -dy and dy because the distance path could
     // be within that padded box, and thus the distortions have to be computed
     // based on that path
-    double dLat = _cfg.withinDist / util::geo::MIN_METERS_PER_LAT_RAD * util::geo::IRAD;
+    double dLat =
+        _cfg.withinDist / util::geo::MIN_METERS_PER_LAT_RAD * util::geo::IRAD;
     auto upper = util::geo::webMercToLatLng<double>(
         0.0, a.getUpperRight().getY() * 1.0 / PREC);
     auto lower = util::geo::webMercToLatLng<double>(

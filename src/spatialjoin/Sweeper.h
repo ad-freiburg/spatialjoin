@@ -99,6 +99,8 @@ struct WriteBatch {
   std::vector<WriteCand> areas;
   std::vector<WriteCand> refs;
 
+  GEOSContextHandle_t geosHndl;
+
   size_t size() const {
     return points.size() + foldedSimpleLines.size() + foldedPoints.size() +
            simpleLines.size() + lines.size() + simpleAreas.size() +
@@ -225,10 +227,10 @@ static const size_t GEOM_LARGENESS_THRESHOLD = 1024 * 1024 * 1024;
 
 class Sweeper {
  public:
-  Sweeper(SweeperCfg cfg, const std::string& cache)
-      : Sweeper(cfg, cache, ".spatialjoin") {}
+  Sweeper(SweeperCfg cfg, const std::string& cache, bool useGEOS)
+      : Sweeper(cfg, cache, ".spatialjoin", useGEOS) {}
   Sweeper(SweeperCfg cfg, const std::string& cache,
-          const std::string& tmpPrefix)
+          const std::string& tmpPrefix, bool useGEOS)
       : _cfg(cfg),
         _obufpos(0),
         _pointCache({cfg.useOBB, cfg.useInnerOuter}, cfg.geomCacheMaxSize,
@@ -247,8 +249,14 @@ class Sweeper {
                          SIMPLE_LINE_CACHE_MAX_ELEMENTS, cfg.numCacheThreads,
                          cache, tmpPrefix),
         _cache(cache),
-        _jobs(100) {
-    if (!_cfg.writeRelCb) {
+        _jobs(100),
+        _useGeos(useGEOS) {
+    _GEOScontextHandles.resize(_cfg.numThreads);
+
+    initGEOS(GEOSMsgHandler, GEOSMsgHandler);
+
+    for (size_t i = 0; i < _cfg.numThreads; i++) {
+      _GEOScontextHandles[i] = initGEOS_r(GEOSMsgHandler, GEOSMsgHandler);
     }
 
     // OUTFACTOR 1
@@ -271,7 +279,14 @@ class Sweeper {
     _outBuffer = new unsigned char[BUFFER_S];
   };
 
-  ~Sweeper() { close(_file); }
+  ~Sweeper() {
+    for (size_t i = 0; i < _cfg.numThreads; i++) {
+      GEOS_finish_r(_GEOScontextHandles[i]);
+    }
+
+    finishGEOS();
+    close(_file);
+  }
 
   void log(const std::string& msg);
 
@@ -416,8 +431,10 @@ class Sweeper {
   std::vector<std::mutex> _mutsDistance;
   std::vector<std::mutex> _mutsDE9IM;
 
-  Area areaFromSimpleArea(const SimpleArea* sa) const;
-  Line lineFromSimpleLine(const SimpleLine* sl) const;
+  Area areaFromSimpleArea(const SimpleArea* sa, size_t t) const;
+  Line lineFromSimpleLine(I32Point a, I32Point b, const SimpleLine* sl,
+                          size_t t) const;
+  Line lineFromSimpleLine(const LineSegment<int32_t> s, size_t t) const;
 
   GeomCheckRes check(const Area* a, const Area* b, size_t t) const;
   GeomCheckRes check(const Line* a, const Area* b, size_t t) const;
@@ -633,6 +650,9 @@ class Sweeper {
   mutable std::mutex _areaGeomCacheWriteMtx;
   mutable std::mutex _simpleAreaGeomCacheWriteMtx;
 
+  // libgeos contexthandles
+  std::vector<GEOSContextHandle_t> _GEOScontextHandles;
+
   std::unordered_map<std::string, util::geo::I32Box> _selfCheckBounds;
 
   std::unordered_map<
@@ -646,6 +666,8 @@ class Sweeper {
                                    std::numeric_limits<int32_t>::lowest()},
                                   {std::numeric_limits<int32_t>::max(),
                                    std::numeric_limits<int32_t>::max()}};
+
+  bool _useGeos = false;
 };
 }  // namespace sj
 
