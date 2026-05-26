@@ -812,6 +812,7 @@ void Sweeper::multiOut(size_t tOut, const std::string& gidA) {
       writeRel(tOut, gidA, a.first, "\t" + std::to_string(a.second) + "\t");
       writeRel(tOut, a.first, gidA, "\t" + std::to_string(a.second) + "\t");
 
+      std::unique_lock<std::mutex> lock(_mutsDistance[t]);
       for (size_t t = 0; t < _cfg.numThreads + 1; t++) {
         auto j = _subDistance[t].find(a.first);
         if (j != _subDistance[t].end()) {
