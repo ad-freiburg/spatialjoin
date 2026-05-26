@@ -204,6 +204,8 @@ struct SweeperCfg {
   bool useInnerOuter;
   bool noGeometryChecks;
   double withinDist;
+  bool euclideanDist;
+  bool haversineApprox;
   bool computeDE9IM;
   std::function<void(size_t t, const char* a, size_t an, const char* b,
                      size_t bn, const char* pred, size_t predn)>
@@ -569,7 +571,15 @@ class Sweeper {
   static double meterDist(const util::geo::I32Point& p1,
                           const util::geo::I32Point& p2, double maxDist);
 
+  static double euclideanDist(const util::geo::I32Point& p1,
+                          const util::geo::I32Point& p2, double maxDist);
+
   static double localSearchPadding(double euclideanDistanceUpperBound,
+                                   double distanceUpperBound,
+                                   const util::geo::I32Box& aBox,
+                                   const util::geo::I32Box& bBox);
+
+  static double noSearchPadding(double euclideanDistanceUpperBound,
                                    double distanceUpperBound,
                                    const util::geo::I32Box& aBox,
                                    const util::geo::I32Box& bBox);
