@@ -4679,21 +4679,32 @@ double Sweeper::distCheck(const LineSegment<int32_t>& a, const Area* b,
     if (r.first) return 0;
   }
 
-  auto scale =
-      _cfg.euclideanDist && !_cfg.haversineApprox
-          ? std::pair<double, double>{1.0, 1.0}
-          : getMinMaxLocalScaleFactors(util::geo::getBoundingBox(a),
-                                       b->geom.boundingBox(), _cfg.withinDist);
+  double maxD = _cfg.withinDist;
+  double dist;
 
-  double maxEuclideanDist = _cfg.withinDist / scale.first * PREC;
+  if (_useGeos) {
+    double maxEuclideanDist = maxD * PREC;
+    GEOSDistanceWithin_r(_GEOScontextHandles[t], b->geosGeom,
+                         lineFromSimpleLine(a, t).geosGeom, maxEuclideanDist,
+                         &dist);
+    dist = dist / PREC;
+  } else {
+    auto scale = _cfg.euclideanDist && !_cfg.haversineApprox
+                     ? std::pair<double, double>{1.0, 1.0}
+                     : getMinMaxLocalScaleFactors(util::geo::getBoundingBox(a),
+                                                  b->geom.boundingBox(),
+                                                  _cfg.withinDist);
 
-  auto dist = util::geo::withinDist<int32_t>(
-      I32XSortedLine(a), b->geom, _cfg.withinDist,
-      _cfg.euclideanDist ? &Sweeper::noSearchPadding
-                         : &Sweeper::localSearchPadding,
-      maxEuclideanDist,
-      _cfg.euclideanDist && !_cfg.haversineApprox ? &Sweeper::euclideanDist
-                                                  : &Sweeper::meterDist);
+    double maxEuclideanDist = maxD / scale.first * PREC;
+
+    dist = util::geo::withinDist<int32_t>(
+        I32XSortedLine(a), b->geom, _cfg.withinDist,
+        _cfg.euclideanDist ? &Sweeper::noSearchPadding
+                           : &Sweeper::localSearchPadding,
+        maxEuclideanDist,
+        _cfg.euclideanDist && !_cfg.haversineApprox ? &Sweeper::euclideanDist
+                                                    : &Sweeper::meterDist);
+  }
 
   _stats[t].timeFullGeoCheckAreaLine += TOOK(ts);
   _stats[t].fullGeoChecksAreaLine++;
