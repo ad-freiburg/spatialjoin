@@ -4854,9 +4854,18 @@ double Sweeper::distCheck(const Area* a, const Area* b, size_t t) {
   double dist;
 
   if (_useGeos) {
+    auto ts = TIME();
     double maxEuclideanDist = maxD * PREC;
     GEOSDistanceWithin_r(_GEOScontextHandles[t], a->geosGeom, b->geosGeom,
                          maxEuclideanDist, &dist);
+    dist = dist / PREC;
+  } else if (_cfg.euclideanDist) {
+    maxD = std::min(
+        maxD, getMaxMultiDist(
+                  a->id, a->subId, a->geom.getOuter().rawRing().front().p,
+                  b->id, b->subId, b->geom.getOuter().rawRing().front().p, t));
+    double maxEuclideanDist = maxD * PREC;
+    dist = util::geo::withinDist<int32_t>(a->geom, b->geom, maxEuclideanDist);
     dist = dist / PREC;
   } else {
     maxD = std::min(
