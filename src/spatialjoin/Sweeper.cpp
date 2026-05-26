@@ -837,17 +837,21 @@ void Sweeper::multiOut(size_t tOut, const std::string& gidA) {
         for (const auto& a : i->second) {
           subDE9IM[a.first] += a.second;
 
-          for (size_t t = 0; t < _cfg.numThreads + 1; t++) {
-            auto j = _subDE9IM[t].find(a.first);
-            if (j != _subDE9IM[t].end()) {
-              auto k = j->second.find(gidA);
-              if (k != j->second.end()) {
-                j->second.erase(gidA);
-              }
-            }
-          }
         }
         _subDE9IM[t].erase(i);
+      }
+    }
+
+    for (size_t t = 0; t < _cfg.numThreads + 1; t++) {
+      std::unique_lock<std::mutex> lock(_mutsDE9IM[t]);
+      for (const auto& a : subDE9IM) {
+        auto j = _subDE9IM[t].find(a.first);
+        if (j != _subDE9IM[t].end()) {
+          auto k = j->second.find(gidA);
+          if (k != j->second.end()) {
+            j->second.erase(gidA);
+          }
+        }
       }
     }
 
