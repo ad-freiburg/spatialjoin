@@ -52,33 +52,45 @@ $(DATA_DIR)/%-GEOS.spatialjoin-input.tsv: $(DATA_DIR)/%.raw.spatialjoin-input.ts
 $(DATA_DIR)/%-GEOS-PREPARED.spatialjoin-input.tsv: $(DATA_DIR)/%.raw.spatialjoin-input.tsv
 	@ln -s $(DATA_DIR)/$*.raw.spatialjoin-input.tsv $(DATA_DIR)/$*-GEOS-PREPARED.spatialjoin-input.tsv
 
+$(DATA_DIR)/%-MDIST-OURS.spatialjoin-input.tsv: $(DATA_DIR)/%.raw.spatialjoin-input.tsv
+	@ln -s $(DATA_DIR)/$*.raw.spatialjoin-input.tsv $(DATA_DIR)/$*-MDIST-OURS.spatialjoin-input.tsv
+
+$(DATA_DIR)/%-DIST-OURS.spatialjoin-input.tsv: $(DATA_DIR)/%.raw.spatialjoin-input.tsv
+	@ln -s $(DATA_DIR)/$*.raw.spatialjoin-input.tsv $(DATA_DIR)/$*-DIST-OURS.spatialjoin-input.tsv
+
+$(DATA_DIR)/%-DIST-GEOS.spatialjoin-input.tsv: $(DATA_DIR)/%.raw.spatialjoin-input.tsv
+	@ln -s $(DATA_DIR)/$*.raw.spatialjoin-input.tsv $(DATA_DIR)/$*-DIST-GEOS.spatialjoin-input.tsv
+
+$(DATA_DIR)/%-DIST-GEOS-PREPARED.spatialjoin-input.tsv: $(DATA_DIR)/%.raw.spatialjoin-input.tsv
+	@ln -s $(DATA_DIR)/$*.raw.spatialjoin-input.tsv $(DATA_DIR)/$*-DIST-GEOS-PREPARED.spatialjoin-input.tsv
+
 %-OURS.spatialjoin-evaluation.tsv: $(DATA_DIR)/%-OURS.spatialjoin-input.tsv
 	@echo "*** Evaluating dataset" $* "on OURS"
 	@python3 $(SPATIALJOIN_EVAL_SCRIPT) $*-OURS --combinations bdoi,Bdoi,BDoi,BdOi,BdoI --core-library ours 2>&1 | tee $*-OURS.spatialjoin-evaluation.tsv || echo "Run failed, see $*-OURS.spatialjoin-evaluation.log for details"
 
 %-GEOS.spatialjoin-evaluation.tsv: $(DATA_DIR)/%-GEOS.spatialjoin-input.tsv
 	@echo "*** Evaluating dataset" $* "on GEOS"
-	@python3 $(SPATIALJOIN_EVAL_SCRIPT) $*-GEOS --combinations bdoi,Bdoi,Bdoi,BDoi,BdOi,BdoI --core-library libgeos 2>&1 | tee $*-OURS.spatialjoin-evaluation.tsv || echo "Run failed, see $*-GEOS.spatialjoin-evaluation.log for details"
+	@python3 $(SPATIALJOIN_EVAL_SCRIPT) $*-GEOS --combinations bdoi,Bdoi,Bdoi,BDoi,BdOi,BdoI --core-library libgeos 2>&1 | tee $*-GEOS.spatialjoin-evaluation.tsv || echo "Run failed, see $*-GEOS.spatialjoin-evaluation.log for details"
 
 %-GEOS-PREPARED.spatialjoin-evaluation.tsv: $(DATA_DIR)/%-GEOS-PREPARED.spatialjoin-input.tsv
 	@echo "*** Evaluating dataset" $* "on GEOS-PREPARED"
 	python3 $(SPATIALJOIN_EVAL_SCRIPT) $*-GEOS-PREPARED --combinations bdoi,Bdoi,Bdoi,BDoi,BdOi,BdoI --core-library libgeos-prepared 2>&1 | tee $*-GEOS-PREPARED.spatialjoin-evaluation.tsv || echo "Run failed, see $*-GEOS-PREPARED.spatialjoin-evaluation.log for details"
 
-%-MDIST-OURS.spatialjoin-evaluation.tsv: $(DATA_DIR)/%-OURS.spatialjoin-input.tsv
+%-MDIST-OURS.spatialjoin-evaluation.tsv: $(DATA_DIR)/%-MDIST-OURS.spatialjoin-input.tsv
 	@echo "*** Evaluating dataset" $* "(distance) on OURS"
-	@python3 $(SPATIALJOIN_EVAL_SCRIPT) $*-OURS --combinations bdoi,Bdoi,BDoi,BdOi,BdoI --core-library ours --use-de9im false --use-distance true --use-meter-distance true 2>&1 | tee $*-MDIST-OURS.spatialjoin-evaluation.tsv || echo "Run failed, see $*-MDIST-OURS.spatialjoin-evaluation.log for details"
+	@python3 $(SPATIALJOIN_EVAL_SCRIPT) $*-MDIST-OURS --combinations bdoi,Bdoi,BDoi,BdOi,BdoI --core-library ours --use-de9im false --use-distance true --use-meter-distance true 2>&1 | tee $*-MDIST-OURS.spatialjoin-evaluation.tsv || echo "Run failed, see $*-MDIST-OURS.spatialjoin-evaluation.log for details"
 
-%-DIST-OURS.spatialjoin-evaluation.tsv: $(DATA_DIR)/%-OURS.spatialjoin-input.tsv
+%-DIST-OURS.spatialjoin-evaluation.tsv: $(DATA_DIR)/%-DIST-OURS.spatialjoin-input.tsv
 	@echo "*** Evaluating dataset" $* "(distance) on OURS"
-	@python3 $(SPATIALJOIN_EVAL_SCRIPT) $*-OURS --combinations bdoi,Bdoi,BDoi,BdOi,BdoI --core-library ours --use-de9im false --use-distance true 2>&1 | tee $*-DIST-OURS.spatialjoin-evaluation.tsv || echo "Run failed, see $*-DIST-OURS.spatialjoin-evaluation.log for details"
+	@python3 $(SPATIALJOIN_EVAL_SCRIPT) $*-DIST-OURS --combinations bdoi,Bdoi,BDoi,BdOi,BdoI --core-library ours --use-de9im false --use-distance true 2>&1 | tee $*-DIST-OURS.spatialjoin-evaluation.tsv || echo "Run failed, see $*-DIST-OURS.spatialjoin-evaluation.log for details"
 
-%-DIST-GEOS.spatialjoin-evaluation.tsv: $(DATA_DIR)/%-GEOS.spatialjoin-input.tsv
+%-DIST-GEOS.spatialjoin-evaluation.tsv: $(DATA_DIR)/%-DIST-GEOS.spatialjoin-input.tsv
 	@echo "*** Evaluating dataset" $* "(distance) on GEOS"
-	@python3 $(SPATIALJOIN_EVAL_SCRIPT) $*-GEOS --combinations bdoi,Bdoi,Bdoi,BDoi,BdOi,BdoI --core-library libgeos --use-de9im false --use-distance true 2>&1 | tee $*-DIST-GEOS.spatialjoin-evaluation.tsv || echo "Run failed, see $*-DIST-GEOS.spatialjoin-evaluation.log for details"
+	@python3 $(SPATIALJOIN_EVAL_SCRIPT) $*-DIST-GEOS --combinations bdoi,Bdoi,Bdoi,BDoi,BdOi,BdoI --core-library libgeos --use-de9im false --use-distance true 2>&1 | tee $*-DIST-GEOS.spatialjoin-evaluation.tsv || echo "Run failed, see $*-DIST-GEOS.spatialjoin-evaluation.log for details"
 
-%-DIST-GEOS-PREPARED.spatialjoin-evaluation.tsv: $(DATA_DIR)/%-GEOS-PREPARED.spatialjoin-input.tsv
+%-DIST-GEOS-PREPARED.spatialjoin-evaluation.tsv: $(DATA_DIR)/%-DIST_GEOS-PREPARED.spatialjoin-input.tsv
 	@echo "*** Evaluating dataset" $* "(distance) on GEOS-PREPARED"
-	python3 $(SPATIALJOIN_EVAL_SCRIPT) $*-GEOS-PREPARED --combinations bdoi,Bdoi,Bdoi,BDoi,BdOi,BdoI --core-library libgeos-prepared --use-de9im false --use-distance true 2>&1 | tee $*-DIST-GEOS-PREPARED.spatialjoin-evaluation.tsv || echo "Run failed, see $*-DIST-GEOS-PREPARED.spatialjoin-evaluation.log for details"
+	python3 $(SPATIALJOIN_EVAL_SCRIPT) $*-DIST-GEOS-PREPARED --combinations bdoi,Bdoi,Bdoi,BDoi,BdOi,BdoI --core-library libgeos-prepared --use-de9im false --use-distance true 2>&1 | tee $*-DIST-GEOS-PREPARED.spatialjoin-evaluation.tsv || echo "Run failed, see $*-DIST-GEOS-PREPARED.spatialjoin-evaluation.log for details"
 
 Q%-OURS.spatialjoin-evaluation.tsv: $(DATA_DIR)/Q%-OURS.spatialjoin-input.tsv
 	@echo "*** Evaluating dataset" Q$* "on OURS"

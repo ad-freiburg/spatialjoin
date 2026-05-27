@@ -97,6 +97,7 @@ def compute(args: argparse.Namespace):
             f"{args.spatialjoin_binary}"
             f" --num-threads {args.num_threads}"
             f" --num-caches {args.num_threads}"
+            f" --cache-max-size 100000000000"
             f" -v"
             f"{option('--de9im', args.use_de9im == 'true')}"
             f"{option('--within-distance 50', args.use_distance == 'true')}"
