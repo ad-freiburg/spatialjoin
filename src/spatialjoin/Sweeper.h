@@ -60,6 +60,7 @@ struct BoxVal {
   util::geo::I32Box b45;
   bool side;
   bool large;
+  int32_t size;
 };
 
 inline std::string toString(const BoxVal& bv) {
