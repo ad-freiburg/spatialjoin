@@ -362,8 +362,8 @@ I32Box Sweeper::add(const I32Polygon& poly, const std::string& gidR,
     cur.raw = str.str();
 
     int32_t polySizeCapped = polySize < std::numeric_limits<int32_t>::max()
-                               ? static_cast<int32_t>(polySize)
-                                                          : std::numeric_limits<int32_t>::max();
+                                 ? static_cast<int32_t>(polySize)
+                                 : std::numeric_limits<int32_t>::max();
 
     cur.boxvalIn = {0,  // placeholder, will be overwritten later on
                     box.getLowerLeft().getY(),
@@ -520,8 +520,8 @@ I32Box Sweeper::add(const I32Line& line, const std::string& gidR, size_t subid,
         line.size() * sizeof(util::geo::XSortedTuple<int32_t>);
 
     int32_t lineSizeCapped = lineSize < std::numeric_limits<int32_t>::max()
-                               ? static_cast<int32_t>(lineSize)
-                                                          : std::numeric_limits<int32_t>::max();
+                                 ? static_cast<int32_t>(lineSize)
+                                 : std::numeric_limits<int32_t>::max();
 
     cur.boxvalIn = {0,  // placeholder, will be overwritten later on
                     box.getLowerLeft().getY(),
@@ -868,7 +868,7 @@ void Sweeper::multiOut(size_t tOut, const std::string& gidA) {
     for (size_t t = 0; t < _cfg.numThreads + 1; t++) {
       std::unique_lock<std::mutex> lock(_mutsDistance[t]);
       for (const auto& a : subDistance) {
-          auto j = _subDistance[t].find(a.first);
+        auto j = _subDistance[t].find(a.first);
         if (j != _subDistance[t].end()) {
           auto k = j->second.find(gidA);
           if (k != j->second.end()) {
@@ -890,7 +890,6 @@ void Sweeper::multiOut(size_t tOut, const std::string& gidA) {
       if (i != _subDE9IM[t].end()) {
         for (const auto& a : i->second) {
           subDE9IM[a.first] += a.second;
-
         }
         _subDE9IM[t].erase(i);
       }
@@ -1292,9 +1291,7 @@ void Sweeper::duplicatesToReferences() {
           curX = cur->val;
         }
 
-
-        if (cur->type == POLYGON &&
-            cur->size >= DUPLICATE_REMOVAL_MIN_SIZE) {
+        if (cur->type == POLYGON && cur->size >= DUPLICATE_REMOVAL_MIN_SIZE) {
           size_t h = cur->numAnchors;
           const auto& existing = duplicatePolys.find(h);
 
@@ -1303,7 +1300,10 @@ void Sweeper::duplicatesToReferences() {
             auto b = _areaCache.get(existing->second.first,
                                     existing->second.second ? -1 : 0);
 
-            if (a->geom == b->geom) {
+            if ((!_useGeos && a->geom == b->geom) ||
+                (_useGeos && GEOSEqualsIdentical_r(_GEOScontextHandles[0],
+                                               a->geosGeom.getGEOSGeom(),
+                                               b->geosGeom.getGEOSGeom()))) {
               deleted.insert(cur->id);
               if (referenced.insert(existing->second.first).second) {
                 // for the first element referencing this, modify this
@@ -1323,8 +1323,7 @@ void Sweeper::duplicatesToReferences() {
           }
         }
 
-        if (cur->type == LINE &&
-            cur->size >= DUPLICATE_REMOVAL_MIN_SIZE) {
+        if (cur->type == LINE && cur->size >= DUPLICATE_REMOVAL_MIN_SIZE) {
           size_t h = cur->numAnchors;
           const auto& existing = duplicateLines.find(h);
 
@@ -1333,7 +1332,10 @@ void Sweeper::duplicatesToReferences() {
             auto b = _lineCache.get(existing->second.first,
                                     existing->second.second ? -1 : 0);
 
-            if (a->geom == b->geom) {
+            if ((!_useGeos && a->geom == b->geom) ||
+                (_useGeos && GEOSEqualsIdentical_r(_GEOScontextHandles[0],
+                                               a->geosGeom.getGEOSGeom(),
+                                               b->geosGeom.getGEOSGeom()))) {
               deleted.insert(cur->id);
               if (referenced.insert(existing->second.first).second) {
                 // for the first element referencing this, modify this
@@ -1694,10 +1696,10 @@ util::geo::DE9IMatrix Sweeper::DE9IMCheck(const Area* a, const Area* b,
                                           size_t t) const {
   _stats[t].totalComps++;
   // cheap equivalence check
-  if (a->geom == b->geom ||
+  if ((!_useGeos && a->geom == b->geom) ||
       (_useGeos &&
-       GEOSEqualsExact_r(_GEOScontextHandles[t], a->geosGeom.getGEOSGeom(),
-                         b->geosGeom.getGEOSGeom(), 0))) {
+       GEOSEqualsIdentical_r(_GEOScontextHandles[t], a->geosGeom.getGEOSGeom(),
+                         b->geosGeom.getGEOSGeom()))) {
     // equivalent!
     return util::geo::M2FFF1FFF2;
   }
@@ -1821,7 +1823,10 @@ util::geo::DE9IMatrix Sweeper::DE9IMCheck(const Area* a, const Area* b,
 // _____________________________________________________________________________
 GeomCheckRes Sweeper::check(const Area* a, const Area* b, size_t t) const {
   // cheap equivalence check
-  if (a->geom == b->geom) {
+  if ((!_useGeos && a->geom == b->geom) ||
+      (_useGeos &&
+       GEOSEqualsIdentical_r(_GEOScontextHandles[t], a->geosGeom.getGEOSGeom(),
+                         b->geosGeom.getGEOSGeom()))) {
     // equivalent!
     return {1, 1, 1, 0, 0};
   }
@@ -2039,7 +2044,10 @@ util::geo::DE9IMatrix Sweeper::DE9IMCheck(const Line* a, const Line* b,
                                           size_t t) const {
   _stats[t].totalComps++;
   // cheap equivalence check
-  if (a->geom == b->geom) {
+  if ((!_useGeos && a->geom == b->geom) ||
+      (_useGeos &&
+       GEOSEqualsIdentical_r(_GEOScontextHandles[t], a->geosGeom.getGEOSGeom(),
+                         b->geosGeom.getGEOSGeom()))) {
     // equivalent!
     return util::geo::M10FF0FFF2;
   }
@@ -2079,7 +2087,10 @@ util::geo::DE9IMatrix Sweeper::DE9IMCheck(const Line* a, const Line* b,
 // _____________________________________________________________________________
 GeomCheckRes Sweeper::check(const Line* a, const Line* b, size_t t) const {
   // cheap equivalence check
-  if (a->geom == b->geom) {
+  if ((!_useGeos && a->geom == b->geom) ||
+      (_useGeos &&
+       GEOSEqualsIdentical_r(_GEOScontextHandles[t], a->geosGeom.getGEOSGeom(),
+                         b->geosGeom.getGEOSGeom()))) {
     // equivalent!
     return {1, 1, 0, 0, 0};
   }
@@ -2133,9 +2144,8 @@ util::geo::DE9IMatrix Sweeper::DE9IMCheck(const LineSegment<int32_t>& a,
     if (_useGeos) {
       auto ts = TIME();
       const auto& line = lineFromSimpleLine(a, t);
-      auto intersects =
-          GEOSIntersects_r(_GEOScontextHandles[t],
-                           line.geosGeom, b->outerGeosGeom);
+      auto intersects = GEOSIntersects_r(_GEOScontextHandles[t], line.geosGeom,
+                                         b->outerGeosGeom);
       _stats[t].timeInnerOuterCheckAreaLine += TOOK(ts);
       _stats[t].innerOuterChecksAreaLine++;
       if (!intersects) return util::geo::MFF1FF0212;
@@ -2172,8 +2182,7 @@ util::geo::DE9IMatrix Sweeper::DE9IMCheck(const LineSegment<int32_t>& a,
   auto ts = TIME();
   if (_useGeos) {
     const auto& line = lineFromSimpleLine(a, t);
-    res = sj::GEOSRelate_r(_GEOScontextHandles[t],
-                           line.geosGeom, b->geosGeom);
+    res = sj::GEOSRelate_r(_GEOScontextHandles[t], line.geosGeom, b->geosGeom);
   } else {
     res = DE9IM(I32XSortedLine(a), b->geom);
   }
@@ -2337,8 +2346,7 @@ util::geo::DE9IMatrix Sweeper::DE9IMCheck(const LineSegment<int32_t>& a,
 
   if (_useGeos) {
     const auto& line = lineFromSimpleLine(a, t);
-    res = sj::GEOSRelate_r(_GEOScontextHandles[t],
-                           line.geosGeom, b->geosGeom);
+    res = sj::GEOSRelate_r(_GEOScontextHandles[t], line.geosGeom, b->geosGeom);
   } else {
     res = DE9IM(I32XSortedLine(a), b->geom);
   }
@@ -4668,6 +4676,13 @@ double Sweeper::distCheck(const Line* a, const Line* b, size_t t) {
   auto ts = TIME();
   if (a == b) return 0;
 
+  if ((!_useGeos && a->geom == b->geom) ||
+      (_useGeos &&
+       GEOSEqualsIdentical_r(_GEOScontextHandles[t], a->geosGeom.getGEOSGeom(),
+                         b->geosGeom.getGEOSGeom()))) {
+    return 0;
+  }
+
   double maxD = _cfg.withinDist;
   double dist;
 
@@ -4720,9 +4735,8 @@ double Sweeper::distCheck(const LineSegment<int32_t>& a, const Area* b,
   if (_useGeos) {
     double maxEuclideanDist = maxD * PREC;
     const auto& line = lineFromSimpleLine(a, t);
-    GEOSDistanceWithin_r(_GEOScontextHandles[t], b->geosGeom,
-                         line.geosGeom, maxEuclideanDist,
-                         &dist);
+    GEOSDistanceWithin_r(_GEOScontextHandles[t], b->geosGeom, line.geosGeom,
+                         maxEuclideanDist, &dist);
     dist = dist / PREC;
   } else {
     auto scale = _cfg.euclideanDist && !_cfg.haversineApprox
@@ -4824,7 +4838,10 @@ double Sweeper::distCheck(const Area* a, const Area* b, size_t t) {
 
   // cheap equivalence check, can only use if we do not use geos (otherwise
   // we would falsely report 0 here)
-  if (!_useGeos && a->geom == b->geom) {
+  if ((!_useGeos && a->geom == b->geom) ||
+      (_useGeos &&
+       GEOSEqualsIdentical_r(_GEOScontextHandles[t], a->geosGeom.getGEOSGeom(),
+                         b->geosGeom.getGEOSGeom()))) {
     return 0;
   }
 
