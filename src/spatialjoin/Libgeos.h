@@ -318,7 +318,7 @@ inline void GEOSDistance_r(GEOSContextHandle_t h,
 
 inline void GEOSDistanceWithin_r(GEOSContextHandle_t h,
                                           const GEOSPolygon& a,
-                                          const GEOSLineString& b, double max, double* ret) {
+                                          const GEOSLineString& b, double, double* ret) {
   if ((a.getPrepGEOSGeom() && !b.getPrepGEOSGeom()) ||
       (a.getPrepGEOSGeom() && b.getPrepGEOSGeom() &&
        a.getSize() > b.getSize())) {
@@ -336,7 +336,7 @@ inline void GEOSDistanceWithin_r(GEOSContextHandle_t h,
 
 inline void GEOSDistanceWithin_r(GEOSContextHandle_t h,
                                           const GEOSLineString& a,
-                                          const GEOSLineString& b, double max, double* ret) {
+                                          const GEOSLineString& b, double, double* ret) {
   if ((a.getPrepGEOSGeom() && !b.getPrepGEOSGeom()) ||
       (a.getPrepGEOSGeom() && b.getPrepGEOSGeom() &&
        a.getSize() > b.getSize())) {
@@ -354,7 +354,7 @@ inline void GEOSDistanceWithin_r(GEOSContextHandle_t h,
 
 inline void GEOSDistanceWithin_r(GEOSContextHandle_t h,
                                           const GEOSPolygon& a,
-                                          const GEOSPolygon& b, double max, double* ret) {
+                                          const GEOSPolygon& b, double, double* ret) {
   if ((a.getPrepGEOSGeom() && !b.getPrepGEOSGeom()) ||
       (a.getPrepGEOSGeom() && b.getPrepGEOSGeom() &&
        a.getSize() > b.getSize())) {
@@ -540,7 +540,7 @@ inline bool GEOSContains_r(GEOSContextHandle_t h, const GEOSPolygon& b,
 
 inline void GEOSDistanceWithin_r(GEOSContextHandle_t h,
                                           const I32Point& p,
-                                          const GEOSPolygon& b, double max, double* ret) {
+                                          const GEOSPolygon& b, double, double* ret) {
   auto point = makeGeosPoint(h, p);
   if (b.getPrepGEOSGeom())
     GEOSPreparedDistance_r(h, b.getPrepGEOSGeom(), point, ret);
@@ -551,7 +551,7 @@ inline void GEOSDistanceWithin_r(GEOSContextHandle_t h,
 
 inline void GEOSDistanceWithin_r(GEOSContextHandle_t h,
                                           const I32Point& p,
-                                          const GEOSLineString& b, double max, double* ret) {
+                                          const GEOSLineString& b, double, double* ret) {
   auto point = makeGeosPoint(h, p);
   if (b.getPrepGEOSGeom())
     GEOSPreparedDistance_r(h, b.getPrepGEOSGeom(), point, ret);
