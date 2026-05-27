@@ -9,6 +9,7 @@ import argparse
 import re
 import subprocess
 import time
+import sys
 from pathlib import Path
 
 import argcomplete
@@ -56,10 +57,11 @@ def compute(args: argparse.Namespace):
     # NOTE: Since May 2025, `spatialjoin` no longer supports cutouts because
     # they do not work easily with `libgeos`, and we want to compare with
     # `libgeos`.
+    # NOTE: Since May 2026, we dropped the 'surface-area' option
     all_options = [
         ("b", "--no-box-ids"),
         # ("c", "--no-cutouts"),
-        ("s", "--no-surface-area"),
+        # ("s", "--no-surface-area"),
         ("d", "--no-diag-box"),
         ("o", "--no-oriented-envelope"),
         ("I", "--use-inner-outer"),
@@ -94,11 +96,18 @@ def compute(args: argparse.Namespace):
             f"cat {args.basename}.spatialjoin-input.tsv | "
             f"{args.spatialjoin_binary}"
             f" --num-threads {args.num_threads}"
+            f" --num-caches {args.num_threads}"
+            f" -v"
             f"{option('--de9im', args.use_de9im == 'true')}"
+            f"{option('--within-distance 50', args.use_distance == 'true')}"
+            f"{option('--euclidean-dist', args.use_distance == 'true' and args.use_meter_distance == 'false')}"
             f"{option('--no-fast-sweep-skip', args.no_fast_sweep_skip)}"
-            f"{option('--libgeos', args.core_library == 'libgeos')}"
+            f"{option('--libgeos', args.core_library == 'libgeos' or args.core_library == 'libgeos-prepared')}"
+            f"{option('--libgeos-prepared', args.core_library == 'libgeos-prepared')}"
             f" {combination_options}"
         )
+
+        #  print("sj call: " + cmd, file=sys.stderr)
 
         # Optionally, generate RDF output.
         if args.rdf_output:
@@ -133,13 +142,19 @@ def compute(args: argparse.Namespace):
 
         # Run the command and time it.
         start = time.time()
-        result = subprocess.run(
-            cmd,
-            shell=True,
-            executable="/bin/bash",
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.PIPE,
-        )
+        try:
+            result = subprocess.run(
+                cmd,
+                shell=True,
+                executable="/bin/bash",
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
+                timeout=3600 * 10
+            )
+        except subprocess.TimeoutExpired:
+            print(f"{name}\tinf\tinf\tinf", flush=True)
+            continue
+
         end = time.time()
         total_time = f"{end - start:.3f}"
 
@@ -159,12 +174,12 @@ def compute(args: argparse.Namespace):
         parse_time = "[not found]"
         sweep_time = "[not found]"
         for line in result.stderr.decode().split("\n"):
+            match = re.match(".*INFO : Done parsing \\(([0-9.]+)s\\)\\.", line)
+            if match and parse_time == "[not found]":
+                parse_time = f"{float(match.group(1)):.3f}"
             match = re.match(".*INFO : done \\(([0-9.]+)s\\)\\.", line)
-            if match:
-                if parse_time == "[not found]":
-                    parse_time = f"{float(match.group(1)):.3f}"
-                elif sweep_time == "[not found]":
-                    sweep_time = f"{float(match.group(1)):.3f}"
+            if match and sweep_time == "[not found]":
+                sweep_time = f"{float(match.group(1)):.3f}"
 
         print(f"{name}\t{total_time}\t{parse_time}\t{sweep_time}", flush=True)
 
@@ -281,11 +296,11 @@ def analyze_all(args: argparse.Namespace):
     # NOTE: See above, regarding the cutouts option.
     descriptions = {
         0: "box ids",
-        1: "surface area",
+        #1: "surface area",
         # 2: "cutouts",
-        2: "diagonal boxes",
-        3: "oriented boxes",
-        4: "inner/outer boxes",
+        1: "diagonal boxes",
+        2: "oriented boxes",
+        3: "inner/outer boxes",
     }
 
     # For each option, compute its maximal and minimal speedup relative
@@ -371,6 +386,18 @@ if __name__ == "__main__":
         help="Number of threads to use in call of `spatialjoin` (default: 28)",
     )
     parser.add_argument(
+        "--use-meter-distance",
+        choices=["true", "false"],
+        default="false",
+        help="Use exact meter distance (default: false)",
+    )
+    parser.add_argument(
+        "--use-distance",
+        choices=["true", "false"],
+        default="false",
+        help="Use within-dist 50 for spatial relations (default: false)",
+    )
+    parser.add_argument(
         "--use-de9im",
         choices=["true", "false"],
         default="true",
@@ -378,9 +405,9 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--core-library",
-        choices=["ours", "libgeos"],
+        choices=["ours", "libgeos", "libgeos-prepared"],
         default="ours",
-        help="Use our core library or `libgeos` (default: `ours`)",
+        help="Use our core library, `libgeos` or `libgeos-prepared` (default: `ours`)",
     )
     parser.add_argument(
         "--spatialjoin-binary",
@@ -404,8 +431,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "--option-indexes",
         type=str,
-        default="0,1,2,3,4",
-        help="Comma-separated list of option indexes " "(default: 0,1,2,3,4,5)",
+        default="0,1,2,3",
+        help="Comma-separated list of option indexes " "(default: 0,1,2,3)",
     )
     parser.add_argument(
         "--no-fast-sweep-skip",
@@ -413,7 +440,7 @@ if __name__ == "__main__":
         default=False,
         help="Call spatialjoin with --no-fast-sweep-skip",
     )
-    combinations = ["ALL", "bsdoi,Bsdoi,BSdoi,BSDoi,BSdOi,BSdoI"]
+    combinations = ["ALL", "bdoi,Bdoi,BDoi,BdOi,BdoI"]
     parser.add_argument(
         "--combinations",
         type=str,

@@ -840,12 +840,15 @@ void Sweeper::multiOut(size_t tOut, const std::string& gidA) {
     }
 
     for (const auto& a : subDistance) {
-      writeRel(tOut, gidA, a.first, "\t" + std::to_string(a.second) + "\t");
-      writeRel(tOut, a.first, gidA, "\t" + std::to_string(a.second) + "\t");
+      const auto& dStr = util::formatFloat(a.second, 4);
+      writeRel(tOut, gidA, a.first, "\t" + dStr + "\t");
+      writeRel(tOut, a.first, gidA, "\t" + dStr + "\t");
+    }
 
-      for (size_t t = 0; t < _cfg.numThreads + 1; t++) {
-        std::unique_lock<std::mutex> lock(_mutsDistance[t]);
-        auto j = _subDistance[t].find(a.first);
+    for (size_t t = 0; t < _cfg.numThreads + 1; t++) {
+      std::unique_lock<std::mutex> lock(_mutsDistance[t]);
+      for (const auto& a : subDistance) {
+          auto j = _subDistance[t].find(a.first);
         if (j != _subDistance[t].end()) {
           auto k = j->second.find(gidA);
           if (k != j->second.end()) {
@@ -1266,6 +1269,7 @@ void Sweeper::duplicatesToReferences() {
           duplicateLines = {};
           curX = cur->val;
         }
+
 
         if (cur->type == POLYGON &&
             cur->point.getX() >= DUPLICATE_REMOVAL_MIN_SIZE) {
@@ -4807,8 +4811,7 @@ double Sweeper::distCheck(const Area* a, const Area* b, size_t t) {
     auto r = boxIdIsect(a->boxIds, b->boxIds);
     _stats[t].timeBoxIdIsectAreaArea += TOOK(ts);
 
-    // all boxes of a are fully contained in b, we intersect and we are
-    // contained and we do not touch or overlap
+    // at least one box is fully contained in b
     if (r.first) return 0;
   }
 
