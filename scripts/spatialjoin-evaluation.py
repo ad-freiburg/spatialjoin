@@ -100,15 +100,15 @@ def compute(args: argparse.Namespace):
             f" --cache-max-size 100000000000"
             f" -v"
             f"{option('--de9im', args.use_de9im == 'true')}"
-            f"{option('--within-distance 50', args.use_distance == 'true')}"
-            f"{option('--euclidean-dist', args.use_distance == 'true' and args.use_meter_distance == 'false')}"
+            f" --within-distance {args.within_distance}"
+            f"{option('--euclidean-dist', args.within_distance != '-1' and args.use_meter_distance == 'false')}"
             f"{option('--no-fast-sweep-skip', args.no_fast_sweep_skip)}"
             f"{option('--libgeos', args.core_library == 'libgeos' or args.core_library == 'libgeos-prepared')}"
             f"{option('--libgeos-prepared', args.core_library == 'libgeos-prepared')}"
             f" {combination_options}"
         )
 
-        #  print("sj call: " + cmd, file=sys.stderr)
+        #print("sj call: " + cmd, file=sys.stderr)
 
         # Optionally, generate RDF output.
         if args.rdf_output:
@@ -387,16 +387,16 @@ if __name__ == "__main__":
         help="Number of threads to use in call of `spatialjoin` (default: 28)",
     )
     parser.add_argument(
+        "--within-distance",
+        type=str,
+        default="-1",
+        help="Distance used for within-dist (default: -1)",
+    )
+    parser.add_argument(
         "--use-meter-distance",
         choices=["true", "false"],
         default="false",
         help="Use exact meter distance (default: false)",
-    )
-    parser.add_argument(
-        "--use-distance",
-        choices=["true", "false"],
-        default="false",
-        help="Use within-dist 50 for spatial relations (default: false)",
     )
     parser.add_argument(
         "--use-de9im",
