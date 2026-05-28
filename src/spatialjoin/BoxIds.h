@@ -68,8 +68,8 @@ inline void getBoxIds(const util::geo::I32XSortedLine& line,
 
       const util::geo::I32XSortedPolygon boxPoly{util::geo::I32Polygon(box)};
 
-      auto check = util::geo::intersectsContainsCovers(
-          line, envelope, boxPoly, box, &firstInA, &firstInB);
+      auto check = util::geo::intersectsContainsCovers(line, boxPoly, &firstInA,
+                                                       &firstInB);
 
       if (std::get<0>(check)) {
         if (localXWidth == 1 && localYHeight == 1) {
@@ -118,10 +118,8 @@ inline void getBoxIds(const util::geo::I32XSortedPolygon& poly,
 
       const util::geo::I32XSortedPolygon boxPoly{util::geo::I32Polygon(box)};
 
-      double boxArea = GRID_AREA * (localXWidth) * (localYHeight);
-
-      auto check = util::geo::intersectsContainsCovers(
-          boxPoly, box, boxArea, poly, envelope, area, &firstInA, &firstInB);
+      auto check = util::geo::intersectsContainsCovers(boxPoly, poly, &firstInA,
+                                                       &firstInB);
 
       if (std::get<1>(check)) {
         // we can insert all at once

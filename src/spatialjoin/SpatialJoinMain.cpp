@@ -107,12 +107,14 @@ void printHelp(int argc, char** argv) {
       << "  --cache-max-size (default: " + std::to_string(DEFAULT_CACHE_SIZE) +
              ")"
       << "maximum approx. size in bytes of cache per type and\n"
-      << std::setw(42) << " " << "thread, 0 = unlimited\n"
+      << std::setw(42) << " "
+      << "thread, 0 = unlimited\n"
       << std::setw(42)
       << "  --cache-max-elements (default: " +
              std::to_string(DEFAULT_CACHE_NUM_ELEMENTS) + ")"
       << "maximum number of elements per cache, type and thread,\n"
-      << std::setw(42) << " " << "0 = unlimited\n"
+      << std::setw(42) << " "
+      << "0 = unlimited\n"
       << std::setw(42) << "  --no-geometry-checks"
       << "do not compute geometric relations, only report number of\n"
       << std::setw(42) << " "
@@ -146,6 +148,8 @@ int main(int argc, char** argv) {
   std::string crosses = " crosses ";
   std::string suffix = "\n";
   double withinDist = -1;
+  bool euclideanDist = false;
+  bool haversineApprox = false;
 
   bool useBoxIds = true;
   bool useArea = true;
@@ -224,6 +228,11 @@ int main(int argc, char** argv) {
           useFastSweepSkip = false;
         } else if (cur == "--use-inner-outer") {
           useInnerOuter = true;
+        } else if (cur == "--euclidean-dist") {
+          euclideanDist = true;
+        } else if (cur == "--haversine-approx") {
+          euclideanDist = true;
+          haversineApprox = true;
         } else if (cur == "--stats") {
           printStats = true;
         } else if (cur == "--verbose" || cur == "-v") {
@@ -334,6 +343,8 @@ int main(int argc, char** argv) {
                             useInnerOuter,
                             noGeometryChecks,
                             withinDist,
+                            euclideanDist,
+                            haversineApprox,
                             computeDE9IM,
                             writeRelCb,
                             {},
