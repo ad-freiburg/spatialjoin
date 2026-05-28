@@ -2845,8 +2845,8 @@ void Sweeper::doDistCheck(const JobVal cur, const JobVal sv, size_t t) {
       writeDist(t, a->id, a->subId, b->id, 0, dist);
     }
   } else if (isArea(sv.type) && isArea(cur.type)) {
-    std::shared_ptr<Area> a = getArea(sv, sv.large ? -1 : t);
-    std::shared_ptr<Area> b = getArea(cur, cur.large ? -1 : t);
+    std::shared_ptr<Area> a = getArea(cur, cur.large ? -1 : t);
+    std::shared_ptr<Area> b = getArea(sv, sv.large ? -1 : t);
 
     // no expensive self checks for multi geoms
     if (a->id == b->id) return;
@@ -4652,7 +4652,7 @@ util::geo::I32Box Sweeper::getPaddedBoundingBox(const G1<T>& geom,
 
   if (_cfg.withinDist >= 0) {
     if (_cfg.euclideanDist && !_cfg.haversineApprox)
-      return util::geo::pad(bbox, _cfg.withinDist / 2.0);
+      return util::geo::pad(bbox, _cfg.withinDist * PREC / 2.0);
 
     auto a = (reinterpret_cast<const void*>(&geom) ==
                       reinterpret_cast<const void*>(&refGeom)
