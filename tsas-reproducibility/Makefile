@@ -127,7 +127,7 @@ eval-table3-%: %-GEOS.spatialjoin-evaluation.tsv
 
 eval-table4-%: %-GEOS-PREPARED.spatialjoin-evaluation.tsv
 	@echo "*** Table 4 entries (GEOS-PREPARED) on dataset" $*
-	@python3 $(SPATIALJOIN_EVAL_SCRIPT) $*-GEOS --combinations bdoi,Bdoi,BDoi,BdOi,BdoI --analyze total --core-library libgeos-prepared --minutes
+	@python3 $(SPATIALJOIN_EVAL_SCRIPT) $*-GEOS-PREPARED --combinations bdoi,Bdoi,BDoi,BdOi,BdoI --analyze total --core-library libgeos-prepared --minutes
 
 eval-table5-%: %-DIST-OURS.spatialjoin-evaluation.tsv
 	@echo "*** Table 5 entries (OURS) on dataset" $*
