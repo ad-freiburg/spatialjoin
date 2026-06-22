@@ -336,14 +336,6 @@ class Sweeper {
     _filterBox = filterBox;
   }
 
-  template <template <typename> class G, typename T>
-  util::geo::I32Box getPaddedBoundingBox(const G<T>& geom) const;
-
-  template <template <typename> class G1, template <typename> class G2,
-            typename T>
-  util::geo::I32Box getPaddedBoundingBox(const G1<T>& geom,
-                                         const G2<T>& refGeom) const;
-
   static size_t foldString(const std::string& s);
   static std::string unfoldString(size_t folded);
 
@@ -547,6 +539,60 @@ class Sweeper {
 
   void duplicatesToReferences();
 
+  template <template <typename> class G, typename T>
+  util::geo::I32Box getPaddedBoundingBox(const G<T>& geom) const {
+    return getPaddedBoundingBox(geom, geom);
+  }
+
+  template <template <typename> class G1, template <typename> class G2,
+            typename T>
+  util::geo::I32Box getPaddedBoundingBox(const G1<T>& geom,
+                                         const G2<T>& refGeom) const {
+    auto bbox = util::geo::getBoundingBox(geom);
+
+    if (_cfg.withinDist >= 0) {
+      double scaleFactor =
+          getMaxScaleFactor(reinterpret_cast<const void*>(&geom) ==
+                                    reinterpret_cast<const void*>(&refGeom)
+                                ? bbox
+                                : util::geo::getBoundingBox(refGeom));
+
+      double pad = (_cfg.withinDist / 2.0) * scaleFactor * PREC;
+
+      double llx = bbox.getLowerLeft().getX();
+      double lly = bbox.getLowerLeft().getY();
+      double urx = bbox.getUpperRight().getX();
+      double ury = bbox.getUpperRight().getY();
+
+      double m = sj::boxids::WORLD_W / 2.0;
+
+      T llxt = -m;
+      T llyt = -m;
+      T urxt = m;
+      T uryt = m;
+
+      if (llx - pad > -m) {
+        llxt = llx - pad;
+      }
+
+      if (lly - pad > -m) {
+        llyt = lly - pad;
+      }
+
+      if (urx + pad < m) {
+        urxt = urx + pad;
+      }
+
+      if (ury + pad < m) {
+        uryt = ury + pad;
+      }
+
+      return {{llxt, llyt}, {urxt, uryt}};
+    }
+
+    return bbox;
+  }
+
   static int boxCmp(const void* a, const void* b) {
     const auto& boxa = static_cast<const BoxVal*>(a);
     const auto& boxb = static_cast<const BoxVal*>(b);
@@ -631,6 +677,7 @@ class Sweeper {
                                   {std::numeric_limits<int32_t>::max(),
                                    std::numeric_limits<int32_t>::max()}};
 };
+
 }  // namespace sj
 
 #endif
