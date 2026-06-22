@@ -141,7 +141,7 @@ int main(int, char**) {
     {
       RunStats stats;
       auto res =
-          fullRun("../src/spatialjoin/tests/datasets/freiburg", cfg, &stats);
+          fullRun(TEST_DATASET_DIR "/freiburg", cfg, &stats);
 
       TEST(stats.numReferences, ==, 3);
 
@@ -339,7 +339,7 @@ int main(int, char**) {
 
     {
       RunStats stats;
-      auto res = fullRun("../src/spatialjoin/tests/datasets/brandenburg_test",
+      auto res = fullRun(TEST_DATASET_DIR "/brandenburg_test",
                          cfg, &stats);
       TEST(stats.numReferences, ==, 0);
       TEST(res.find("$Brandenburg-Point intersects Brandenburg-Way$") !=
@@ -349,7 +349,7 @@ int main(int, char**) {
     {
       RunStats stats;
       auto res =
-          fullRun("../src/spatialjoin/tests/datasets/brandenburg", cfg, &stats);
+          fullRun(TEST_DATASET_DIR "/brandenburg", cfg, &stats);
       TEST(stats.numReferences, ==, 7);
       TEST(res.find("$Brandenburg covers Brandenburg2$") != std::string::npos);
       TEST(res.find("$Brandenburg intersects Brandenburg-Way$") !=
@@ -387,7 +387,7 @@ int main(int, char**) {
     {
       RunStats stats;
       auto res = fullRun(
-          "../src/spatialjoin/tests/datasets/brandenburg_nonself", cfg, &stats);
+          TEST_DATASET_DIR "/brandenburg_nonself", cfg, &stats);
       TEST(stats.numReferences, ==, 7);
       TEST(res.find("$Brandenburg covers Brandenburg2$") == std::string::npos);
       TEST(res.find("$Brandenburg intersects Brandenburg-Way$") ==
@@ -427,7 +427,7 @@ int main(int, char**) {
 
     {
       RunStats stats;
-      auto res = fullRun("../src/spatialjoin/tests/datasets/collectiontests",
+      auto res = fullRun(TEST_DATASET_DIR "/collectiontests",
                          cfg, &stats);
       // without box IDs, a polygon is converted into a box polygon
       if (cfg.useBoxIds) {
@@ -531,7 +531,7 @@ int main(int, char**) {
     {
       RunStats stats;
       auto res =
-          fullRun("../src/spatialjoin/tests/datasets/multitests", cfg, &stats);
+          fullRun(TEST_DATASET_DIR "/multitests", cfg, &stats);
 
       // without box IDs, a polygon is converted into a box polygon
       if (cfg.useBoxIds) {
@@ -631,7 +631,7 @@ int main(int, char**) {
     {
       RunStats stats;
       auto res =
-          fullRun("../src/spatialjoin/tests/datasets/coverfail", cfg, &stats);
+          fullRun(TEST_DATASET_DIR "/coverfail", cfg, &stats);
       TEST(stats.numReferences, ==, 0);
       TEST(res.find("$1 intersects 2$") != std::string::npos);
       TEST(res.find("$2 intersects 1$") != std::string::npos);
@@ -646,7 +646,7 @@ int main(int, char**) {
     {
       RunStats stats;
       auto res =
-          fullRun("../src/spatialjoin/tests/datasets/touchfail", cfg, &stats);
+          fullRun(TEST_DATASET_DIR "/touchfail", cfg, &stats);
       TEST(stats.numReferences, ==, 0);
       TEST(res.find("$1 intersects 2$") != std::string::npos);
       TEST(res.find("$2 intersects 1$") != std::string::npos);
@@ -658,7 +658,7 @@ int main(int, char**) {
 
     {
       RunStats stats;
-      auto res = fullRun("../src/spatialjoin/tests/datasets/touchwayfail", cfg,
+      auto res = fullRun(TEST_DATASET_DIR "/touchwayfail", cfg,
                          &stats);
       TEST(stats.numReferences, ==, 0);
       TEST(res.find("$1 touches 2$") != std::string::npos);
@@ -667,7 +667,7 @@ int main(int, char**) {
 
     {
       RunStats stats;
-      auto res = fullRun("../src/spatialjoin/tests/datasets/simpleareafail",
+      auto res = fullRun(TEST_DATASET_DIR "/simpleareafail",
                          cfg, &stats);
       TEST(stats.numReferences, ==, 0);
       TEST(res.find("$1 intersects 2$") != std::string::npos);
@@ -678,7 +678,7 @@ int main(int, char**) {
     {
       RunStats stats;
       auto res =
-          fullRun("../src/spatialjoin/tests/datasets/touchfail2", cfg, &stats);
+          fullRun(TEST_DATASET_DIR "/touchfail2", cfg, &stats);
       TEST(stats.numReferences, ==, 0);
       TEST(res.find("$1 covers 2$") != std::string::npos);
       TEST(res.find("$1 intersects 2$") != std::string::npos);
@@ -688,7 +688,7 @@ int main(int, char**) {
     {
       RunStats stats;
       auto res =
-          fullRun("../src/spatialjoin/tests/datasets/boxidfail", cfg, &stats);
+          fullRun(TEST_DATASET_DIR "/boxidfail", cfg, &stats);
       TEST(stats.numReferences, ==, 0);
       TEST(res.find("$osmway:312944635 intersects osmway:312944634$") !=
            std::string::npos);
@@ -698,7 +698,7 @@ int main(int, char**) {
     {
       RunStats stats;
       auto res =
-          fullRun("../src/spatialjoin/tests/datasets/boxidfail2", cfg, &stats);
+          fullRun(TEST_DATASET_DIR "/boxidfail2", cfg, &stats);
       TEST(stats.numReferences, ==, 0);
       TEST(res.find("$osmway:205756242 intersects osmway:50218266$") !=
            std::string::npos);
@@ -708,7 +708,7 @@ int main(int, char**) {
     {
       RunStats stats;
       auto res =
-          fullRun("../src/spatialjoin/tests/datasets/boxidfail3", cfg, &stats);
+          fullRun(TEST_DATASET_DIR "/boxidfail3", cfg, &stats);
       TEST(stats.numReferences, ==, 0);
       TEST(res.find("$osmway:901094335 intersects osmnode:8370757906$") !=
            std::string::npos);
@@ -719,7 +719,7 @@ int main(int, char**) {
     {
       RunStats stats;
       auto res =
-          fullRun("../src/spatialjoin/tests/datasets/references", cfg, &stats);
+          fullRun(TEST_DATASET_DIR "/references", cfg, &stats);
       // without box IDs, two polygons are converted into box polygons
       if (cfg.useBoxIds) {
         TEST(stats.numReferences, ==, 16);
@@ -806,7 +806,7 @@ int main(int, char**) {
     {
       RunStats stats;
       auto res =
-          fullRun("../src/spatialjoin/tests/datasets/bawue", cfg, &stats);
+          fullRun(TEST_DATASET_DIR "/bawue", cfg, &stats);
       TEST(stats.numReferences, ==, 1);
       TEST(res.find("$germany covers bawue$") != std::string::npos);
       TEST(res.find("$germany contains bawue$") != std::string::npos);
@@ -819,7 +819,7 @@ int main(int, char**) {
     {
       RunStats stats;
       auto res =
-          fullRun("../src/spatialjoin/tests/datasets/freiburg", cfg, &stats);
+          fullRun(TEST_DATASET_DIR "/freiburg", cfg, &stats);
       TEST(stats.numReferences, ==, 3);
       TEST(res.find("$freiburg1\t2FFF1FFF2\tfreiburg2$") != std::string::npos);
       TEST(res.find("$freiburg2\t2FFF1FFF2\tfreiburg1$") != std::string::npos);
@@ -835,7 +835,7 @@ int main(int, char**) {
     {
       RunStats stats;
       auto res =
-          fullRun("../src/spatialjoin/tests/datasets/references", cfg, &stats);
+          fullRun(TEST_DATASET_DIR "/references", cfg, &stats);
       if (cfg.useBoxIds) {
         TEST(stats.numReferences, ==, 16);
       } else {
@@ -854,7 +854,7 @@ int main(int, char**) {
     {
       RunStats stats;
       auto res =
-          fullRun("../src/spatialjoin/tests/datasets/references", cfg, &stats);
+          fullRun(TEST_DATASET_DIR "/references", cfg, &stats);
       if (cfg.useBoxIds) {
         TEST(stats.numReferences, ==, 16);
       } else {
@@ -872,7 +872,7 @@ int main(int, char**) {
     {
       RunStats stats;
       auto res =
-          fullRun("../src/spatialjoin/tests/datasets/freiburg", cfg, &stats);
+          fullRun(TEST_DATASET_DIR "/freiburg", cfg, &stats);
       TEST(stats.numReferences, ==, 3);
       TEST(res.find("$freiburg1\t0\tfreiburg2$") != std::string::npos);
       TEST(res.find("$freiburg2\t0\tfreiburg1$") != std::string::npos);

@@ -66,11 +66,5 @@ endif()
 
 add_subdirectory(src)
 
-# tests
-if(PROJECT_IS_TOP_LEVEL AND CMAKE_TESTING_ENABLED)
-  add_test("utilTest" utilTest)
-  add_test("spatialjoinTest" spatialjoinTest)
-endif()
-
 # install target
 install(TARGETS spatialjoin RUNTIME DESTINATION bin)
