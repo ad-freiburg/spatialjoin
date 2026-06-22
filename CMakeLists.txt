@@ -10,8 +10,7 @@ if(PROJECT_IS_TOP_LEVEL)
 	enable_testing()
 endif()
 
-set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake/")
-set(EXECUTABLE_OUTPUT_PATH "${CMAKE_SOURCE_DIR}/build")
+set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_CURRENT_SOURCE_DIR}/cmake/")
 
 # set compiler flags, see http://stackoverflow.com/questions/7724569/debug-vs-release-in-cmake
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3 -fno-signed-zeros -fno-trapping-math -Wall -Wno-format-extra-args -Wextra -Wformat-nonliteral -Wformat-security -Wformat=2 -Wextra -Wno-implicit-fallthrough -Wnarrowing -pedantic")
@@ -74,7 +73,4 @@ if(PROJECT_IS_TOP_LEVEL AND CMAKE_TESTING_ENABLED)
 endif()
 
 # install target
-install(
-  FILES build/spatialjoin DESTINATION bin
-  PERMISSIONS OWNER_EXECUTE GROUP_EXECUTE WORLD_EXECUTE
-)
+install(TARGETS spatialjoin RUNTIME DESTINATION bin)
