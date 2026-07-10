@@ -202,6 +202,7 @@ struct SweeperCfg {
   bool noGeometryChecks;
   double withinDist;
   bool computeDE9IM;
+  bool forceTwoSided;
   std::function<void(size_t t, const char* a, size_t an, const char* b,
                      size_t bn, const char* pred, size_t predn)>
       writeRelCb;
@@ -268,6 +269,8 @@ class Sweeper {
     // OUTFACTOR 1
 
     _outBuffer = new unsigned char[BUFFER_S];
+
+    if (_cfg.forceTwoSided) _numSides = 2;
   };
 
   ~Sweeper() { close(_file); }

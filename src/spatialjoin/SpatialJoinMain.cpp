@@ -335,6 +335,7 @@ int main(int argc, char** argv) {
                             noGeometryChecks,
                             withinDist,
                             computeDE9IM,
+                            false,
                             writeRelCb,
                             {},
                             {},
