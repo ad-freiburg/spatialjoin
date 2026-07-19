@@ -4,5 +4,5 @@ target_compile_definitions(spatialjoinTest PRIVATE
   TEST_DATASET_DIR="${CMAKE_CURRENT_SOURCE_DIR}/datasets")
 
 if(PROJECT_IS_TOP_LEVEL AND CMAKE_TESTING_ENABLED)
-  add_test("spatialjoinTest" spatialjoinTest)
+	add_test(NAME "spatialjoinTest" COMMAND spatialjoinTest)
 endif()
