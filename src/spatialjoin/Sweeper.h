@@ -213,7 +213,7 @@ struct SweeperCfg {
 };
 
 // buffer size _must_ be multiples of sizeof(BoxVal)
-static const ssize_t BUFFER_S = sizeof(BoxVal) * 64 * 1024 * 512;
+static const ssize_t BUFFER_S = sizeof(BoxVal) * 64 * 1024 * 4;
 
 static const size_t MAX_OUT_LINE_LENGTH = 1000;
 
@@ -248,8 +248,6 @@ class Sweeper {
                          cache, tmpPrefix),
         _cache(cache),
         _jobs(100) {
-    if (!_cfg.writeRelCb) {
-    }
 
     // OUTFACTOR 1
     _fname = util::getTmpFName(_cache, tmpPrefix, "events");
