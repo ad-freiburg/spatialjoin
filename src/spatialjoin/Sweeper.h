@@ -212,8 +212,10 @@ struct SweeperCfg {
   std::function<void()> sweepCancellationCb;
 };
 
-// buffer size _must_ be multiples of sizeof(BoxVal)
-static const ssize_t BUFFER_S = sizeof(BoxVal) * 64 * 1024 * 4;
+// buffer size _must_ be multiples of sizeof(BoxVal) and should hold at least
+// one element
+static const ssize_t BUFFER_S =
+    ((16 * 1024 * 1024 + sizeof(BoxVal)) / sizeof(BoxVal)) * sizeof(BoxVal);
 
 static const size_t MAX_OUT_LINE_LENGTH = 1000;
 
@@ -248,7 +250,6 @@ class Sweeper {
                          cache, tmpPrefix),
         _cache(cache),
         _jobs(100) {
-
     // OUTFACTOR 1
     _fname = util::getTmpFName(_cache, tmpPrefix, "events");
     _file = open(_fname.c_str(), O_RDWR | O_CREAT | O_TRUNC, 0666);
@@ -390,7 +391,6 @@ class Sweeper {
 
     return bbox;
   }
-
 
   static size_t foldString(const std::string& s);
   static std::string unfoldString(size_t folded);
