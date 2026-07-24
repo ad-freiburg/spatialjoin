@@ -202,7 +202,7 @@ I32Box Sweeper::add(const I32Polygon& poly, const std::string& gidR,
 
   if (spoly.empty()) return box;
 
-  size_t polySize = poly.getSize();
+  size_t polySize = poly.size();
   double areaSize = area(poly);
 
   double outerAreaSize = outerArea(poly);
@@ -274,7 +274,7 @@ I32Box Sweeper::add(const I32Polygon& poly, const std::string& gidR,
                     SIMPLE_POLYGON,
                     areaSize,
                     {},
-                    poly.getSize(),
+                    poly.size(),
                     box45,
                     side,
                     estimatedSize > GEOM_LARGENESS_THRESHOLD,
@@ -287,7 +287,7 @@ I32Box Sweeper::add(const I32Polygon& poly, const std::string& gidR,
                      SIMPLE_POLYGON,
                      areaSize,
                      rightPoint,
-                     poly.getSize(),
+                     poly.size(),
                      box45,
                      side,
                      estimatedSize > GEOM_LARGENESS_THRESHOLD,
