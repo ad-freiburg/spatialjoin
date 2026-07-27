@@ -14,6 +14,7 @@
 
 using sj::ParseBatch;
 using sj::Sweeper;
+using util::geo::DE9IMFilter;
 using util::geo::DLine;
 using util::geo::DPoint;
 using util::geo::I32Line;
@@ -58,7 +59,11 @@ void printHelp(int argc, char** argv) {
       << "cache directory for intermediate files\n"
       << std::setw(42) << "  --de9im"
       << "output DE-9IM relationships\n"
-      << std::setw(42) << "  --within-distance (or --within-dist, default: -1)"
+      << std::setw(42) << "  --de9im-filter"
+      << "only output relations which match given DE-9IM filter (has\n"
+      << std::setw(42) << " "
+      << "no effect for --within-distance)\n"
+      << std::setw(42) << "  --within-dist[ance] (default: -1)"
       << "if set to non-negative value, only compute for each object\n"
       << std::setw(42) << " "
       << "the objects within the given distance\n\n"
@@ -94,8 +99,6 @@ void printHelp(int argc, char** argv) {
       << "disable diagonal bounding-box based pre-filter\n"
       << std::setw(42) << "  --no-fast-sweep-skip"
       << "disable fast sweep skip using binary search\n"
-      << std::setw(42) << "  --use-inner-outer"
-      << "(experimental) use inner/outer geometries\n\n"
       << std::setfill(' ') << std::left << "Misc:\n"
       << std::setw(42)
       << "  --num-threads (default: " + std::to_string(NUM_THREADS) + ")"
@@ -128,9 +131,6 @@ void printHelp(int argc, char** argv) {
 
 // _____________________________________________________________________________
 int main(int argc, char** argv) {
-  // disable output buffering for standard output
-  setbuf(stdout, NULL);
-
   // initialize randomness
   srand(time(NULL) + rand());  // NOLINT
 
@@ -156,7 +156,6 @@ int main(int argc, char** argv) {
   bool useOBB = true;
   bool useDiagBox = true;
   bool useFastSweepSkip = true;
-  bool useInnerOuter = false;
   bool noGeometryChecks = false;
   bool computeDE9IM = false;
 
@@ -167,6 +166,7 @@ int main(int argc, char** argv) {
   size_t numCaches = NUM_THREADS;
   size_t geomCacheMaxSizeBytes = DEFAULT_CACHE_SIZE;
   size_t geomCacheMaxNumElements = DEFAULT_CACHE_NUM_ELEMENTS;
+  DE9IMFilter de9imFilter;
 
   std::vector<std::string> inputFiles;
 
@@ -212,6 +212,8 @@ int main(int argc, char** argv) {
           state = 15;
         } else if (cur == "--cache-max-elements") {
           state = 16;
+        } else if (cur == "--de9im-filter") {
+          state = 17;
         } else if (cur == "--de9im") {
           computeDE9IM = true;
         } else if (cur == "--no-box-ids") {
@@ -226,8 +228,6 @@ int main(int argc, char** argv) {
           noGeometryChecks = true;
         } else if (cur == "--no-fast-sweep-skip") {
           useFastSweepSkip = false;
-        } else if (cur == "--use-inner-outer") {
-          useInnerOuter = true;
         } else if (cur == "--euclidean-dist") {
           euclideanDist = true;
         } else if (cur == "--haversine-approx") {
@@ -305,7 +305,53 @@ int main(int argc, char** argv) {
         std::stringstream(cur) >> geomCacheMaxNumElements;
         state = 0;
         break;
+      case 17:
+        if (cur.size() < 9) cur.insert(cur.size(), 9 - cur.size(), '*');
+        de9imFilter = cur.c_str();
+        state = 0;
+        break;
     }
+  }
+
+  if (de9imFilter.maxExteriorDim() < 2) {
+    if (verbose) {
+      LOGTO(INFO, std::cerr) << "Skipping all comparisons because of DE-9IM "
+                                "filter which will not match any pairs...";
+      LOGTO(INFO, std::cerr)
+          << " (max exterior dim=" << (int)de9imFilter.maxExteriorDim() << ")";
+    }
+    return 0;
+  }
+
+  if (de9imFilter.minLeftBoundaryDim() > 1) {
+    if (verbose) {
+      LOGTO(INFO, std::cerr) << "Skipping all comparisons because of DE-9IM "
+                                "filter which will not match any pairs...";
+      LOGTO(INFO, std::cerr)
+          << " (min left boundary dim=" << (int)de9imFilter.minLeftBoundaryDim()
+          << ")";
+    }
+    return 0;
+  }
+
+  if (de9imFilter.minRightBoundaryDim() > 1) {
+    if (verbose) {
+      LOGTO(INFO, std::cerr) << "Skipping all comparisons because of DE-9IM "
+                                "filter which will not match any pairs...";
+      LOGTO(INFO, std::cerr) << " (min right boundary dim="
+                             << (int)de9imFilter.minRightBoundaryDim() << ")";
+    }
+    return 0;
+  }
+
+  if (de9imFilter.maxInteriorDim() < 0) {
+    if (verbose) {
+      LOGTO(INFO, std::cerr) << "Skipping all comparisons because of DE-9IM "
+                                "filter which will not match any pairs...";
+      LOGTO(INFO, std::cerr)
+          << " (max interior dim=" << (int)de9imFilter.maxInteriorDim() << ")";
+    }
+    return 0;
   }
 
   const static size_t CACHE_SIZE = 1024 * 1024;
@@ -340,12 +386,12 @@ int main(int argc, char** argv) {
                             useOBB,
                             useDiagBox,
                             useFastSweepSkip,
-                            useInnerOuter,
                             noGeometryChecks,
                             withinDist,
                             euclideanDist,
                             haversineApprox,
                             computeDE9IM,
+                            de9imFilter,
                             inputFiles.size() == 2,
                             writeRelCb,
                             {},
@@ -375,6 +421,7 @@ int main(int argc, char** argv) {
                 << std::endl;
       exit(1);
     }
+
     for (size_t i = 0; i < inputFiles.size(); i++) {
       if (util::endsWith(inputFiles[i], ".bz2")) {
 #ifndef SPATIALJOIN_NO_BZIP2
@@ -456,4 +503,6 @@ int main(int argc, char** argv) {
   sweeper.log("done (" + std::to_string(TOOK(ts) / 1000000000.0) + "s).");
 
   delete[] buf;
+
+  return 0;
 }

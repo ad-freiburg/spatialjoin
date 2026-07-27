@@ -40,12 +40,6 @@ struct Area {
 
   // OBB
   util::geo::I32XSortedPolygon obb;
-
-  // inner geom
-  util::geo::I32XSortedPolygon inner;
-
-  // outer geom
-  util::geo::I32XSortedPolygon outer;
 };
 
 struct SimpleLine {
@@ -88,7 +82,6 @@ const static size_t WRITE_BUFF_SIZE = 1024 * 1024 * 4l;
 
 struct StorageOptions {
   bool storeOBB;
-  bool storeInnerOuter;
 };
 
 template <typename W>

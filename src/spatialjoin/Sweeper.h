@@ -181,6 +181,7 @@ inline bool operator==(const Job& a, const Job& b) {
 
 typedef std::vector<Job> JobBatch;
 
+// intersects, contains, covers, touches, crosses / overlaps
 typedef std::tuple<bool, bool, bool, bool, bool> GeomCheckRes;
 
 struct SweeperCfg {
@@ -200,12 +201,12 @@ struct SweeperCfg {
   bool useOBB;
   bool useDiagBox;
   bool useFastSweepSkip;
-  bool useInnerOuter;
   bool noGeometryChecks;
   double withinDist;
   bool euclideanDist;
   bool haversineApprox;
   bool computeDE9IM;
+  util::geo::DE9IMFilter de9imFilter;
   bool forceTwoSided;
   std::function<void(size_t t, const char* a, size_t an, const char* b,
                      size_t bn, const char* pred, size_t predn)>
@@ -237,23 +238,26 @@ class Sweeper {
           const std::string& tmpPrefix)
       : _cfg(cfg),
         _obufpos(0),
-        _pointCache({cfg.useOBB, cfg.useInnerOuter}, cfg.geomCacheMaxSize,
+        _pointCache({cfg.useOBB}, cfg.geomCacheMaxSize,
                     POINT_CACHE_MAX_ELEMENTS, cfg.numCacheThreads, cache,
                     tmpPrefix),
-        _areaCache({cfg.useOBB, cfg.useInnerOuter}, cfg.geomCacheMaxSize,
+        _areaCache({cfg.useOBB}, cfg.geomCacheMaxSize,
                    cfg.geomCacheMaxNumElements, cfg.numCacheThreads, cache,
                    tmpPrefix),
-        _simpleAreaCache({cfg.useOBB, cfg.useInnerOuter}, cfg.geomCacheMaxSize,
+        _simpleAreaCache({cfg.useOBB}, cfg.geomCacheMaxSize,
                          cfg.geomCacheMaxNumElements, cfg.numCacheThreads,
                          cache, tmpPrefix),
-        _lineCache({cfg.useOBB, cfg.useInnerOuter}, cfg.geomCacheMaxSize,
+        _lineCache({cfg.useOBB}, cfg.geomCacheMaxSize,
                    cfg.geomCacheMaxNumElements, cfg.numCacheThreads, cache,
                    tmpPrefix),
-        _simpleLineCache({cfg.useOBB, cfg.useInnerOuter}, cfg.geomCacheMaxSize,
+        _simpleLineCache({cfg.useOBB}, cfg.geomCacheMaxSize,
                          SIMPLE_LINE_CACHE_MAX_ELEMENTS, cfg.numCacheThreads,
                          cache, tmpPrefix),
         _cache(cache),
-        _jobs(100) {
+        _jobs(100),
+        _numSides(1),
+        _dontNeedFullDE9IM(!_cfg.computeDE9IM &&
+                           _cfg.de9imFilter == util::geo::FANY) {
     // OUTFACTOR 1
     _fname = util::getTmpFName(_cache, tmpPrefix, "events");
     _file = open(_fname.c_str(), O_RDWR | O_CREAT | O_TRUNC, 0666);
@@ -409,7 +413,7 @@ class Sweeper {
 
   util::JobQueue<JobBatch> _jobs;
 
-  uint8_t _numSides = 1;
+  std::atomic<uint8_t> _numSides;
 
   std::vector<std::mutex> _mutsEquals;
   std::vector<std::mutex> _mutsCovers;
@@ -425,22 +429,6 @@ class Sweeper {
 
   Area areaFromSimpleArea(const SimpleArea* sa) const;
   Line lineFromSimpleLine(const SimpleLine* sl) const;
-
-  GeomCheckRes check(const Area* a, const Area* b, size_t t) const;
-  GeomCheckRes check(const Line* a, const Area* b, size_t t) const;
-  GeomCheckRes check(const util::geo::LineSegment<int32_t>& a, const Area* b,
-                     size_t t) const;
-  GeomCheckRes check(const Line* a, const Line* b, size_t t) const;
-  GeomCheckRes check(const Line* a, const util::geo::LineSegment<int32_t>& b,
-                     size_t t) const;
-  GeomCheckRes check(const util::geo::LineSegment<int32_t>& a,
-                     const util::geo::LineSegment<int32_t>& b, size_t t) const;
-  GeomCheckRes check(const util::geo::LineSegment<int32_t>& a, const Line* b,
-                     size_t t) const;
-  std::pair<bool, bool> check(const util::geo::I32Point& a, const Area* b,
-                              size_t t) const;
-  std::tuple<bool, bool> check(const util::geo::I32Point& a, const Line* b,
-                               size_t t) const;
 
   double distCheck(const util::geo::I32Point& a, const Point* aMeta,
                    const Area* b, size_t t);
@@ -661,6 +649,7 @@ class Sweeper {
                                    std::numeric_limits<int32_t>::lowest()},
                                   {std::numeric_limits<int32_t>::max(),
                                    std::numeric_limits<int32_t>::max()}};
+  bool _dontNeedFullDE9IM;
 };
 
 }  // namespace sj

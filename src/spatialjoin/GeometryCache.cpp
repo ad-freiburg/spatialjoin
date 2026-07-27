@@ -237,14 +237,6 @@ std::pair<size_t, sj::Area> sj::GeometryCache<sj::Area>::getFrom(
     estSize += readPoly(str, ret.obb);
   }
 
-  if (_opts.storeInnerOuter) {
-    // simplified inner
-    estSize += readPoly(str, ret.inner);
-
-    // simplified outer
-    estSize += readPoly(str, ret.outer);
-  }
-
   return {estSize, ret};
 }
 
@@ -445,14 +437,6 @@ size_t sj::GeometryCache<sj::Area>::writeTo(const sj::Area& val,
   if (_opts.storeOBB) {
     // OBB
     ret += writePoly(val.obb, str);
-  }
-
-  if (_opts.storeInnerOuter) {
-    // innerGeom
-    ret += writePoly(val.inner, str);
-
-    // outerGeom
-    ret += writePoly(val.outer, str);
   }
 
   return ret;
