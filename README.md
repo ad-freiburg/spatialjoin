@@ -9,6 +9,11 @@ Ryzen 9 7950X machine with 16 physical and 32 virtual cores, 128 GB of RAM (DDR5
 
 The methods behind this tool are described in [this SIGSPATIAL'25 paper](https://ad-publications.cs.uni-freiburg.de/SIGSPATIAL_spatialjoin_BBK_2025.pdf).
 
+## Reproducibility materials for 2026 TSAS Special Issue on 2025 SIGSPATIAL
+
+Additional materials for our submission to the TSAS Special Issue on the 2025 SIGSPATIAL can be found  [here](https://github.com/ad-freiburg/spatialjoin/tree/geos-evaluation-v2/tsas-reproducibilityhttps://github.com/ad-freiburg/spatialjoin/tree/geos-evaluation-v2/tsas-reproducibility).
+
+
 ## Reproducibility materials for SIGSPATIAL'25 submission 143
 
 Additional materials required to do a full evaluation of our tool and a comparison against `libgeos` can be found [here](https://github.com/ad-freiburg/spatialjoin/tree/use-libgeos-option/sigspatial-reproducibility-143).
