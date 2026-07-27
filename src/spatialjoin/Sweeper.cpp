@@ -20,7 +20,6 @@
 #include <sstream>
 
 #include "BoxIds.h"
-#include "InnerOuter.h"
 #include "Sweeper.h"
 #include "util/Misc.h"
 #include "util/geo/IntervalIdx.h"
@@ -34,10 +33,13 @@ using sj::boxids::BoxIdList;
 using sj::boxids::getBoxId;
 using sj::boxids::getBoxIds;
 using sj::boxids::packBoxIds;
-using sj::innerouter::Mode;
+using util::preadAll;
+using util::pwriteAll;
+using util::readAll;
 using util::writeAll;
 using util::geo::area;
 using util::geo::DE9IM;
+using util::geo::DPoint;
 using util::geo::FPoint;
 using util::geo::getBoundingBox;
 using util::geo::I32Box;
@@ -52,6 +54,7 @@ using util::geo::I32XSortedPolygon;
 using util::geo::intersectsContainsCovers;
 using util::geo::intersectsCovers;
 using util::geo::LineSegment;
+using util::geo::Point;
 using util::geo::webMercToLatLng;
 using util::LogLevel::DEBUG;
 using util::LogLevel::ERROR;
@@ -67,7 +70,7 @@ const static double cos45 = 1.0 / sqrt(2);
 // _____________________________________________________________________________
 I32Box Sweeper::add(const I32MultiPolygon& a, const std::string& gid, bool side,
                     WriteBatch& batch) const {
-  uint16_t subid = 0;  // a subid of 0 means "single polygon"
+  size_t subid = 0;  // a subid of 0 means "single polygon"
   if (a.size() > 1) subid = 1;
 
   return add(a, gid, subid, side, batch);
@@ -76,7 +79,7 @@ I32Box Sweeper::add(const I32MultiPolygon& a, const std::string& gid, bool side,
 // _____________________________________________________________________________
 I32Box Sweeper::add(const I32MultiLine& a, const std::string& gid, bool side,
                     WriteBatch& batch) const {
-  uint16_t subid = 0;  // a subid of 0 means "single line"
+  size_t subid = 0;  // a subid of 0 means "single line"
   if (a.size() > 1) subid = 1;
 
   return add(a, gid, subid, side, batch);
@@ -85,7 +88,7 @@ I32Box Sweeper::add(const I32MultiLine& a, const std::string& gid, bool side,
 // _____________________________________________________________________________
 I32Box Sweeper::add(const I32MultiPoint& a, const std::string& gid, bool side,
                     WriteBatch& batch) const {
-  uint16_t subid = 0;  // a subid of 0 means "single point"
+  size_t subid = 0;  // a subid of 0 means "single point"
   if (a.size() > 1) subid = 1;
 
   return add(a, gid, subid, side, batch);
@@ -138,33 +141,33 @@ I32Box Sweeper::add(const I32MultiPoint& a, const std::string& gid,
 
 // _____________________________________________________________________________
 void Sweeper::multiAdd(const std::string& gid, bool side, int32_t xLeft,
-                       int32_t xRight) {
+                       int32_t xRight, const I32Point& pointRight) {
   auto i = _multiGidToId[side].find(gid);
 
   if (i == _multiGidToId[side].end()) {
     _multiIds[side].push_back(gid);
     _multiRightX[side].push_back(xRight);
+    _multiRightPoint[gid] = pointRight;
     _multiLeftX[side].push_back(xLeft);
     _multiGidToId[side][gid] = _multiIds[side].size() - 1;
     _subSizes[gid] = 1;
   } else {
     size_t id = _multiGidToId[side][gid];
     if (xRight > _multiRightX[side][id]) _multiRightX[side][id] = xRight;
+    if (pointRight.getX() > _multiRightPoint[gid].getX())
+      _multiRightPoint[gid] = pointRight;
     if (xLeft < _multiLeftX[side][id]) _multiLeftX[side][id] = xLeft;
     _subSizes[gid] = _subSizes[gid] + 1;
   }
 }
 
 // _____________________________________________________________________________
-void Sweeper::add(const std::string& parent, const util::geo::I32Box& box,
-                  const std::string& gid, bool side, WriteBatch& batch) const {
-  add(parent, box, gid, 0, side, batch);
-}
-
-// _____________________________________________________________________________
 void Sweeper::add(const std::string& parentR, const util::geo::I32Box& box,
                   const std::string& gidR, size_t subid, bool side,
                   WriteBatch& batch) const {
+  // NOTE: referencing atm *only* works if the referenced geometry is a non-
+  // multi geometry. If a multi geometry is referenced, the behavior is
+  // undefined.
   std::string gid = (side ? ("B" + gidR) : ("A" + gidR));
   std::string parent = (side ? ("B" + parentR) : ("A" + parentR));
 
@@ -194,23 +197,27 @@ I32Box Sweeper::add(const I32Polygon& poly, const std::string& gidR,
     if (_cfg.de9imFilter.maxInteriorDim() < 2) return {};
     if (side && _cfg.de9imFilter.maxRightInteriorDim() < 2) return {};
     if (side && _cfg.de9imFilter.minRightBoundaryDim() > 1) return {};
-    if (_numSides > 1 && !side && _cfg.de9imFilter.maxLeftInteriorDim() < 2)
+    if (_numSides > 1 && !side &&
+        _cfg.de9imFilter.maxLeftInteriorDim() < 2)
       return {};
-    if (_numSides > 1 && !side && _cfg.de9imFilter.minLeftBoundaryDim() > 1)
+    if (_numSides > 1 && !side &&
+        _cfg.de9imFilter.minLeftBoundaryDim() > 1)
       return {};
   }
 
   std::string gid = (side ? ("B" + gidR) : ("A" + gidR));
 
   WriteCand cur;
-  const auto& rawBox = getBoundingBox(poly);
+  I32XSortedPolygon spoly(poly);
+  const auto& rawBox = spoly.boundingBox();
   const auto& box = getPaddedBoundingBox(rawBox);
   if (!util::geo::intersects(box, _filterBox)) return {};
-  I32XSortedPolygon spoly(poly);
 
   if (spoly.empty()) return box;
 
+  size_t polySize = poly.size();
   double areaSize = area(poly);
+
   double outerAreaSize = outerArea(poly);
   BoxIdList boxIds;
 
@@ -238,9 +245,11 @@ I32Box Sweeper::add(const I32Polygon& poly, const std::string& gidR,
                     FOLDED_BOX_POLYGON,
                     areaSize,
                     box.getUpperRight(),
+                    4,
                     box45,
                     side,
-                    false};
+                    false,
+                    0};
     cur.boxvalOut = {0,  // placeholder, will be overwritten later on
                      box.getLowerLeft().getY(),
                      box.getUpperRight().getY(),
@@ -249,15 +258,23 @@ I32Box Sweeper::add(const I32Polygon& poly, const std::string& gidR,
                      FOLDED_BOX_POLYGON,
                      areaSize,
                      box.getLowerLeft(),
+                     4,
                      box45,
                      side,
-                     false};
+                     false,
+                     0};
     batch.foldedBoxAreas.emplace_back(cur);
   } else if (poly.getInners().size() == 0 && poly.getOuter().size() < 10 &&
              subid == 0 && (!_cfg.useBoxIds || boxIds.front().first == 1)) {
     std::stringstream str;
     _simpleAreaCache.writeTo({poly.getOuter(), gid}, str);
     cur.raw = str.str();
+
+    auto rightPoint = poly.getOuter().front();
+
+    for (const auto& p : poly.getOuter()) {
+      if (p.getX() > rightPoint.getX()) rightPoint = p;
+    }
 
     size_t estimatedSize =
         poly.getOuter().size() * sizeof(util::geo::XSortedTuple<int32_t>);
@@ -270,9 +287,11 @@ I32Box Sweeper::add(const I32Polygon& poly, const std::string& gidR,
                     SIMPLE_POLYGON,
                     areaSize,
                     {},
+                    poly.size(),
                     box45,
                     side,
-                    estimatedSize > GEOM_LARGENESS_THRESHOLD};
+                    estimatedSize > GEOM_LARGENESS_THRESHOLD,
+                    0};
     cur.boxvalOut = {0,  // placeholder, will be overwritten later on
                      box.getLowerLeft().getY(),
                      box.getUpperRight().getY(),
@@ -280,10 +299,12 @@ I32Box Sweeper::add(const I32Polygon& poly, const std::string& gidR,
                      true,
                      SIMPLE_POLYGON,
                      areaSize,
-                     {},
+                     rightPoint,
+                     poly.size(),
                      box45,
                      side,
-                     estimatedSize > GEOM_LARGENESS_THRESHOLD};
+                     estimatedSize > GEOM_LARGENESS_THRESHOLD,
+                     0};
     batch.simpleAreas.emplace_back(cur);
   } else {
     if (!_cfg.useFastSweepSkip) {
@@ -292,27 +313,6 @@ I32Box Sweeper::add(const I32Polygon& poly, const std::string& gidR,
       for (auto& inner : spoly.getInners()) {
         inner.setMaxSegLen(std::numeric_limits<int32_t>::max());
       }
-    }
-
-    I32XSortedPolygon inner, outer;
-    I32Box innerBox, outerBox;
-    double outerOuterAreaSize = 0;
-    double innerOuterAreaSize = 0;
-
-    if (_cfg.useInnerOuter) {
-      const auto& innerPoly =
-          sj::innerouter::simplifiedPoly<Mode::INNER>(poly, 1 / (3.14 * 20));
-      const auto& outerPoly =
-          sj::innerouter::simplifiedPoly<Mode::OUTER>(poly, 1 / (3.14 * 20));
-
-      innerBox = getBoundingBox(innerPoly);
-      outerBox = getBoundingBox(outerPoly);
-
-      innerOuterAreaSize = outerArea(innerPoly);
-      outerOuterAreaSize = outerArea(outerPoly);
-
-      inner = innerPoly;
-      outer = outerPoly;
     }
 
     util::geo::I32Polygon obb;
@@ -325,12 +325,12 @@ I32Box Sweeper::add(const I32Polygon& poly, const std::string& gidR,
       if (obb.getOuter().size() >= poly.getOuter().size()) obb = {};
     }
 
+    // careful, assign this before move below
+    auto rightPoint = spoly.getOuter().rawRing().back().p;
+
     std::stringstream str;
     _areaCache.writeTo(
-        {std::move(spoly), box, gid, subid, areaSize,
-         _cfg.useArea ? outerAreaSize : 0, boxIds, obb, inner, innerBox,
-         innerOuterAreaSize, outer, outerBox, outerOuterAreaSize},
-        str);
+        {std::move(spoly), gid, subid, boxIds, obb}, str);
     ;
 
     size_t estimatedSize = spoly.getOuter().rawRing().size() *
@@ -342,6 +342,10 @@ I32Box Sweeper::add(const I32Polygon& poly, const std::string& gidR,
 
     cur.raw = str.str();
 
+    int32_t polySizeCapped = polySize < std::numeric_limits<int32_t>::max()
+                                 ? static_cast<int32_t>(polySize)
+                                 : std::numeric_limits<int32_t>::max();
+
     cur.boxvalIn = {0,  // placeholder, will be overwritten later on
                     box.getLowerLeft().getY(),
                     box.getUpperRight().getY(),
@@ -350,9 +354,11 @@ I32Box Sweeper::add(const I32Polygon& poly, const std::string& gidR,
                     POLYGON,
                     areaSize,
                     {},
+                    polySize,
                     box45,
                     side,
-                    estimatedSize > GEOM_LARGENESS_THRESHOLD};
+                    estimatedSize > GEOM_LARGENESS_THRESHOLD,
+                    polySizeCapped};
     cur.boxvalOut = {0,  // placeholder, will be overwritten later on
                      box.getLowerLeft().getY(),
                      box.getUpperRight().getY(),
@@ -360,10 +366,12 @@ I32Box Sweeper::add(const I32Polygon& poly, const std::string& gidR,
                      true,
                      POLYGON,
                      areaSize,
-                     {},
+                     rightPoint,
+                     polySize,
                      box45,
                      side,
-                     estimatedSize > GEOM_LARGENESS_THRESHOLD};
+                     estimatedSize > GEOM_LARGENESS_THRESHOLD,
+                     polySizeCapped};
     batch.areas.emplace_back(cur);
   }
 
@@ -390,11 +398,14 @@ I32Box Sweeper::add(const I32Line& line, const std::string& gidR, size_t subid,
     if (side && _cfg.de9imFilter.minRightInteriorDim() > 1) return {};
     if (side && _cfg.de9imFilter.minRightBoundaryDim() > 0) return {};
     if (side && _cfg.de9imFilter.maxRightInteriorDim() < 1) return {};
-    if (_numSides > 1 && !side && _cfg.de9imFilter.minLeftInteriorDim() > 1)
+    if (_numSides > 1 && !side &&
+        _cfg.de9imFilter.minLeftInteriorDim() > 1)
       return {};
-    if (_numSides > 1 && !side && _cfg.de9imFilter.maxLeftInteriorDim() < 1)
+    if (_numSides > 1 && !side &&
+        _cfg.de9imFilter.maxLeftInteriorDim() < 1)
       return {};
-    if (_numSides > 1 && !side && _cfg.de9imFilter.minLeftBoundaryDim() > 0)
+    if (_numSides > 1 && !side &&
+        _cfg.de9imFilter.minLeftBoundaryDim() > 0)
       return {};
   }
   if (_cfg.de9imFilter.maxExteriorDim() < 2) return {};
@@ -403,8 +414,11 @@ I32Box Sweeper::add(const I32Line& line, const std::string& gidR, size_t subid,
 
   WriteCand cur;
 
-  const auto& rawBox = getBoundingBox(line);
+  I32XSortedLine sline(line);
+
+  const auto& rawBox = sline.boundingBox();
   const auto& box = getPaddedBoundingBox(rawBox);
+
   if (!util::geo::intersects(box, _filterBox)) return {};
   BoxIdList boxIds;
 
@@ -413,6 +427,7 @@ I32Box Sweeper::add(const I32Line& line, const std::string& gidR, size_t subid,
   }
 
   const double len = util::geo::len(line);
+  size_t lineSize = line.size();
 
   I32Box box45;
   if (_cfg.useDiagBox) {
@@ -436,9 +451,11 @@ I32Box Sweeper::add(const I32Line& line, const std::string& gidR, size_t subid,
         SIMPLE_LINE,
         len,
         line.front().getX() < line.back().getX() ? line.back() : line.front(),
+        2,
         box45,
         side,
-        false};
+        false,
+        0};
     cur.boxvalOut = {
         0,  // placeholder, will be overwritten later on,
         box.getLowerLeft().getY(),
@@ -448,9 +465,11 @@ I32Box Sweeper::add(const I32Line& line, const std::string& gidR, size_t subid,
         SIMPLE_LINE,
         len,
         line.front().getX() < line.back().getX() ? line.front() : line.back(),
+        2,
         box45,
         side,
-        false};
+        false,
+        0};
 
     // check if we can fold the gid into the offset id, because the gid is all
     // we store in the cache for points
@@ -468,8 +487,9 @@ I32Box Sweeper::add(const I32Line& line, const std::string& gidR, size_t subid,
     }
   } else {
     // normal line
-    I32XSortedLine sline(line);
     if (line.empty()) return {};
+    if (sline.rawLine().empty()) return {};
+    auto rightPoint = sline.rawLine().back().p;
     util::geo::I32Polygon obb;
     if (_cfg.useOBB && line.size() >= OBB_MIN_SIZE) {
       obb = util::geo::convexHull(
@@ -484,12 +504,15 @@ I32Box Sweeper::add(const I32Line& line, const std::string& gidR, size_t subid,
     }
 
     std::stringstream str;
-    _lineCache.writeTo({std::move(sline), box, gid, subid, len, boxIds, obb},
-                       str);
+    _lineCache.writeTo({std::move(sline), gid, subid, boxIds, obb}, str);
     cur.raw = str.str();
 
     size_t estimatedSize =
         line.size() * sizeof(util::geo::XSortedTuple<int32_t>);
+
+    int32_t lineSizeCapped = lineSize < std::numeric_limits<int32_t>::max()
+                                 ? static_cast<int32_t>(lineSize)
+                                 : std::numeric_limits<int32_t>::max();
 
     cur.boxvalIn = {0,  // placeholder, will be overwritten later on
                     box.getLowerLeft().getY(),
@@ -499,9 +522,11 @@ I32Box Sweeper::add(const I32Line& line, const std::string& gidR, size_t subid,
                     LINE,
                     len,
                     {},
+                    lineSize,
                     box45,
                     side,
-                    estimatedSize > GEOM_LARGENESS_THRESHOLD};
+                    estimatedSize > GEOM_LARGENESS_THRESHOLD,
+                    lineSizeCapped};
     cur.boxvalOut = {0,  // placeholder, will be overwritten later on
                      box.getLowerLeft().getY(),
                      box.getUpperRight().getY(),
@@ -509,10 +534,12 @@ I32Box Sweeper::add(const I32Line& line, const std::string& gidR, size_t subid,
                      true,
                      LINE,
                      len,
-                     {},
+                     rightPoint,
+                     lineSize,
                      box45,
                      side,
-                     estimatedSize > GEOM_LARGENESS_THRESHOLD};
+                     estimatedSize > GEOM_LARGENESS_THRESHOLD,
+                     lineSizeCapped};
     batch.lines.emplace_back(cur);
   }
 
@@ -537,11 +564,14 @@ I32Box Sweeper::add(const I32Point& point, const std::string& gidR,
     if (side && _cfg.de9imFilter.minRightInteriorDim() > 0) return {};
     if (side && _cfg.de9imFilter.maxRightInteriorDim() < 0) return {};
     if (side && _cfg.de9imFilter.minRightBoundaryDim() >= 0) return {};
-    if (_numSides > 1 && !side && _cfg.de9imFilter.minLeftInteriorDim() > 0)
+    if (_numSides > 1 && !side &&
+        _cfg.de9imFilter.minLeftInteriorDim() > 0)
       return {};
-    if (_numSides > 1 && !side && _cfg.de9imFilter.maxLeftInteriorDim() < 0)
+    if (_numSides > 1 && !side &&
+        _cfg.de9imFilter.maxLeftInteriorDim() < 0)
       return {};
-    if (_numSides > 1 && !side && _cfg.de9imFilter.minLeftBoundaryDim() >= 0)
+    if (_numSides > 1 && !side &&
+        _cfg.de9imFilter.minLeftBoundaryDim() >= 0)
       return {};
   }
 
@@ -567,9 +597,11 @@ I32Box Sweeper::add(const I32Point& point, const std::string& gidR,
                   POINT,
                   0,
                   point,
+                  1,
                   getPaddedBoundingBox(pointR, rawBox),
                   side,
-                  false};
+                  false,
+                  0};
   cur.boxvalOut = {0,  // placeholder, will be overwritten later on
                    box.getLowerLeft().getY(),
                    box.getUpperRight().getY(),
@@ -578,9 +610,11 @@ I32Box Sweeper::add(const I32Point& point, const std::string& gidR,
                    POINT,
                    0,
                    point,
+                   1,
                    getPaddedBoundingBox(pointR, rawBox),
                    side,
-                   false};
+                   false,
+                   0};
 
   cur.gid = gid;
 
@@ -677,7 +711,7 @@ void Sweeper::addBatch(WriteBatch& cands) {
     if (cand.subid > 0) {
       std::unique_lock<std::mutex> lock(_multiAddMtx);
       multiAdd(cand.gid, cand.boxvalIn.side, cand.boxvalIn.val,
-               cand.boxvalOut.val);
+               cand.boxvalOut.val, cand.boxvalOut.point);
     }
   }
 
@@ -685,7 +719,7 @@ void Sweeper::addBatch(WriteBatch& cands) {
     if (cand.subid > 0) {
       std::unique_lock<std::mutex> lock(_multiAddMtx);
       multiAdd(cand.gid, cand.boxvalIn.side, cand.boxvalIn.val,
-               cand.boxvalOut.val);
+               cand.boxvalOut.val, cand.boxvalOut.point);
     }
   }
 
@@ -693,7 +727,7 @@ void Sweeper::addBatch(WriteBatch& cands) {
     if (cand.subid > 0) {
       std::unique_lock<std::mutex> lock(_multiAddMtx);
       multiAdd(cand.gid, cand.boxvalIn.side, cand.boxvalIn.val,
-               cand.boxvalOut.val);
+               cand.boxvalOut.val, cand.boxvalOut.point);
     }
   }
 
@@ -701,7 +735,7 @@ void Sweeper::addBatch(WriteBatch& cands) {
     if (cand.subid > 0) {
       std::unique_lock<std::mutex> lock(_multiAddMtx);
       multiAdd(cand.gid, cand.boxvalIn.side, cand.boxvalIn.val,
-               cand.boxvalOut.val);
+               cand.boxvalOut.val, cand.boxvalOut.point);
     }
   }
 
@@ -709,7 +743,7 @@ void Sweeper::addBatch(WriteBatch& cands) {
     if (cand.subid > 0) {
       std::unique_lock<std::mutex> lock(_multiAddMtx);
       multiAdd(cand.gid, cand.boxvalIn.side, cand.boxvalIn.val,
-               cand.boxvalOut.val);
+               cand.boxvalOut.val, cand.boxvalOut.point);
     }
   }
 
@@ -717,7 +751,7 @@ void Sweeper::addBatch(WriteBatch& cands) {
     if (cand.subid > 0) {
       std::unique_lock<std::mutex> lock(_multiAddMtx);
       multiAdd(cand.gid, cand.boxvalIn.side, cand.boxvalIn.val,
-               cand.boxvalOut.val);
+               cand.boxvalOut.val, cand.boxvalOut.point);
     }
   }
 
@@ -772,7 +806,9 @@ void Sweeper::addBatch(WriteBatch& cands) {
         log("@ " + std::to_string(_curSweepId / 2));
     }
     for (const auto& cand : cands.refs) {
-      _refs[cand.raw][cand.gid] = cand.subid;
+      _refs[cand.raw][0][cand.gid] = cand.subid;
+      _selfCheckBounds[cand.raw] = util::geo::getBoundingBox(
+          I32Point{cand.boxvalIn.val, cand.boxvalIn.loY});
       if (_curSweepId / 2 % 1000000 == 0)
         log("@ " + std::to_string(_curSweepId / 2));
     }
@@ -801,15 +837,6 @@ void Sweeper::clearMultis(bool force) {
       int32_t rightX = _multiRightX[i][mid];
       if (force || rightX < curMinThreadX) {
         curBatch.push_back({{}, {}, gid});
-
-        if (_refs.size()) {
-          auto i = _refs.find(gid);
-          if (i != _refs.end()) {
-            for (const auto& ref : i->second) {
-              curBatch.push_back({{}, {}, ref.first});
-            }
-          }
-        }
         a = _activeMultis[i].erase(a);
       } else {
         a++;
@@ -850,6 +877,7 @@ void Sweeper::multiOut(size_t tOut, const std::string& gidA) {
       writeRel(tOut, a.first, gidA, "\t" + std::to_string(a.second) + "\t");
 
       for (size_t t = 0; t < _cfg.numThreads + 1; t++) {
+        std::unique_lock<std::mutex> lock(_mutsDistance[t]);
         auto j = _subDistance[t].find(a.first);
         if (j != _subDistance[t].end()) {
           auto k = j->second.find(gidA);
@@ -872,18 +900,21 @@ void Sweeper::multiOut(size_t tOut, const std::string& gidA) {
       if (i != _subDE9IM[t].end()) {
         for (const auto& a : i->second) {
           subDE9IM[a.first] += a.second;
-
-          for (size_t t = 0; t < _cfg.numThreads + 1; t++) {
-            auto j = _subDE9IM[t].find(a.first);
-            if (j != _subDE9IM[t].end()) {
-              auto k = j->second.find(gidA);
-              if (k != j->second.end()) {
-                j->second.erase(gidA);
-              }
-            }
-          }
         }
         _subDE9IM[t].erase(i);
+      }
+    }
+
+    for (size_t t = 0; t < _cfg.numThreads + 1; t++) {
+      std::unique_lock<std::mutex> lock(_mutsDE9IM[t]);
+      for (const auto& a : subDE9IM) {
+        auto j = _subDE9IM[t].find(a.first);
+        if (j != _subDE9IM[t].end()) {
+          auto k = j->second.find(gidA);
+          if (k != j->second.end()) {
+            j->second.erase(gidA);
+          }
+        }
       }
     }
 
@@ -1111,6 +1142,26 @@ void Sweeper::flush() {
   log(std::to_string(_multiIds[0].size() + _multiIds[1].size()) +
       " multi geometries");
 
+  for (const auto& ref : _refs) {
+    for (const auto& sub : ref.second) {
+      _selfChecks.push_back({ref.first, sub.first});
+
+      diskAdd({_selfChecks.size() - 1,
+               1,
+               0,
+               _selfCheckBounds[ref.first].getLowerLeft().getX(),
+               false,
+               SELF_CHECK,
+               0.0,
+               {},
+               0,
+               {},
+               false,
+               false,
+               0});
+    }
+  }
+
   for (size_t side = 0; side < 2; side++) {
     for (size_t i = 0; i < _multiIds[side].size(); i++) {
       diskAdd({i,
@@ -1121,9 +1172,11 @@ void Sweeper::flush() {
                POINT,
                0.0,
                {},
+               0,
                {},
-               side,
-               false});
+               static_cast<bool>(side),
+               false,
+               0});
     }
   }
 
@@ -1180,6 +1233,154 @@ void Sweeper::flush() {
 #endif
 
   log("...done");
+
+  duplicatesToReferences();
+
+  log(std::to_string(_refs.size()) + " reference geometries");
+}
+
+// _____________________________________________________________________________
+void Sweeper::duplicatesToReferences() {
+  // start at beginning of _file
+  lseek(_file, 0, SEEK_SET);
+
+  const size_t RBUF_SIZE = 100000;
+  unsigned char* buf = new unsigned char[sizeof(BoxVal) * RBUF_SIZE];
+
+  std::unordered_set<size_t> deleted;
+  std::unordered_set<size_t> referenced;
+
+  log("Removing duplicates...");
+
+  ssize_t len;
+  size_t jj = 0;
+
+  int32_t curX = 0;
+
+  std::unordered_map<uint64_t, std::pair<size_t, bool>> duplicatePolys,
+      duplicateLines;
+
+  size_t pos = 0;
+
+  try {
+    while ((len = preadAll(_file, buf, sizeof(BoxVal) * RBUF_SIZE, pos)) != 0) {
+      size_t posOld = pos;
+      pos += len;
+      if (len < 0) {
+        std::stringstream ss;
+        ss << "Could not read from events file '" << _fname << "'\n";
+        ss << strerror(errno) << std::endl;
+        throw std::runtime_error(ss.str());
+      }
+
+      if (len % sizeof(BoxVal))
+        throw std::runtime_error("Corrupted events file");
+
+      bool updated = false;
+
+      for (ssize_t i = 0; i < len; i += sizeof(BoxVal)) {
+        auto cur = reinterpret_cast<BoxVal*>(buf + i);
+
+        if (_cfg.sweepCancellationCb && jj % 10000 == 0) {
+          _cfg.sweepCancellationCb();
+        }
+
+        jj++;
+
+        if (cur->out) {
+          if ((cur->type == POLYGON || cur->type == LINE) &&
+              deleted.erase(cur->id)) {
+            // erase it if present, to avoid unnecessary memory consumption
+            cur->type = DELETED;
+            updated = true;
+          }
+          referenced.erase(cur->id);
+          continue;
+        }
+
+        if (curX != cur->val) {
+          // new equal-X block
+          duplicatePolys = {};
+          duplicateLines = {};
+          curX = cur->val;
+        }
+
+        if (cur->type == POLYGON && cur->size >= DUPLICATE_REMOVAL_MIN_SIZE) {
+          size_t h = cur->numAnchors;
+          const auto& existing = duplicatePolys.find(h);
+
+          if (existing != duplicatePolys.end()) {
+            auto a = _areaCache.get(cur->id, cur->large ? -1 : 0);
+            auto b = _areaCache.get(existing->second.first,
+                                    existing->second.second ? -1 : 0);
+
+            if (a->geom == b->geom) {
+              deleted.insert(cur->id);
+              if (referenced.insert(existing->second.first).second) {
+                // for the first element referencing this, modify this
+                // event to the self check of the referenced geom
+                cur->type = SELF_CHECK_AREA;
+                _selfChecks.push_back({b->id, b->subId});
+                cur->id = _selfChecks.size() - 1;
+              } else {
+                cur->type = DELETED;
+              }
+
+              updated = true;
+              _refs[b->id][b->subId][a->id] = a->subId;
+            }
+          } else {
+            duplicatePolys[h] = {(size_t)cur->id, cur->large};
+          }
+        }
+
+        if (cur->type == LINE && cur->size >= DUPLICATE_REMOVAL_MIN_SIZE) {
+          size_t h = cur->numAnchors;
+          const auto& existing = duplicateLines.find(h);
+
+          if (existing != duplicateLines.end()) {
+            auto a = _lineCache.get(cur->id, cur->large ? -1 : 0);
+            auto b = _lineCache.get(existing->second.first,
+                                    existing->second.second ? -1 : 0);
+
+            if (a->geom == b->geom) {
+              deleted.insert(cur->id);
+              if (referenced.insert(existing->second.first).second) {
+                // for the first element referencing this, modify this
+                // event to the self check of the referenced geom
+                cur->type = SELF_CHECK_LINE;
+                _selfChecks.push_back({b->id, b->subId});
+                cur->id = _selfChecks.size() - 1;
+              } else {
+                cur->type = DELETED;
+              }
+              updated = true;
+              _refs[b->id][b->subId][a->id] = a->subId;
+            }
+          } else {
+            duplicateLines[h] = {(size_t)cur->id, cur->large};
+          }
+        }
+      }
+
+      // if we changed something in this buffer, write it back
+      if (updated) pwriteAll(_file, buf, len, posOld);
+    }
+  } catch (...) {
+    // graceful handling of an exception during sweep
+
+    delete[] buf;
+
+    // set the cancelled variable to true
+    _cancelled = true;
+
+    // rethrow exception
+    throw;
+  }
+
+  delete[] buf;
+
+  log("...done");
 }
 
 // _____________________________________________________________________________
@@ -1212,6 +1413,8 @@ RelStats Sweeper::sweep() {
 
   const size_t RBUF_SIZE = 100000;
   unsigned char* buf = new unsigned char[sizeof(BoxVal) * RBUF_SIZE];
+
+  ssize_t len;
 
   util::geo::IntervalIdx<int32_t, SweepVal> actives[2];
 
@@ -1252,16 +1455,17 @@ RelStats Sweeper::sweep() {
   for (size_t i = 0; i < thrds.size(); i++)
     thrds[i] = std::thread(&Sweeper::processQueue, this, i);
 
-  ssize_t len;
-
   try {
-    while ((len = util::readAll(_file, buf, sizeof(BoxVal) * RBUF_SIZE)) != 0) {
+    while ((len = readAll(_file, buf, sizeof(BoxVal) * RBUF_SIZE)) != 0) {
       if (len < 0) {
         std::stringstream ss;
         ss << "Could not read from events file '" << _fname << "'\n";
         ss << strerror(errno) << std::endl;
         throw std::runtime_error(ss.str());
       }
+
+      if (len % sizeof(BoxVal))
+        throw std::runtime_error("Corrupted events file");
 
       for (ssize_t i = 0; i < len; i += sizeof(BoxVal)) {
         auto cur = reinterpret_cast<const BoxVal*>(buf + i);
@@ -1272,7 +1476,17 @@ RelStats Sweeper::sweep() {
 
         jj++;
 
-        if (!cur->out && cur->loY == 1 && cur->upY == 0 && cur->type == POINT) {
+        if (jj % 200000 == 0) clearMultis(false);
+
+        if (cur->type == DELETED) {
+          continue;
+        } else if (cur->type == SELF_CHECK || cur->type == SELF_CHECK_AREA ||
+                   cur->type == SELF_CHECK_LINE ||
+                   cur->type == SELF_CHECK_POINT) {
+          // self checks, required if we have reference geoms
+          curBatch.push_back({*cur, *cur, ""});
+        } else if (!cur->out && cur->loY == 1 && cur->upY == 0 &&
+                   cur->type == POINT) {
           // special multi-IN
           _activeMultis[cur->side].insert(cur->id);
         } else if (!cur->out) {
@@ -1330,14 +1544,9 @@ RelStats Sweeper::sweep() {
 
           if ((jj % 100 == 0) && _cfg.sweepProgressCb)
             _cfg.sweepProgressCb(jj / 2);
-
-          if (jj % 200000 == 0) clearMultis(false);
         } else {
           // OUT event
           actives[cur->side].erase({cur->loY, cur->upY}, {cur->id, cur->type});
-
-          // optional self checks, required if we have reference geoms
-          if (_refs.size()) curBatch.push_back({*cur, *cur, ""});
 
           counts++;
 
@@ -1420,8 +1629,6 @@ RelStats Sweeper::sweep() {
 
 // _____________________________________________________________________________
 sj::Area Sweeper::areaFromSimpleArea(const SimpleArea* sa) const {
-  double areaSize = util::geo::ringArea(sa->geom);
-
   auto spoly = I32XSortedPolygon(sa->geom);
 
   if (!_cfg.useFastSweepSkip) {
@@ -1429,20 +1636,11 @@ sj::Area Sweeper::areaFromSimpleArea(const SimpleArea* sa) const {
   }
 
   return {std::move(spoly),
-          util::geo::getBoundingBox(sa->geom),
           sa->id,
           0,
-          areaSize,
-          _cfg.useArea ? areaSize : 0,
           (_cfg.useBoxIds ? BoxIdList{{1, 0}, {-getBoxId(sa->geom.front()), 0}}
                           : BoxIdList{}),
-          {},
-          {},
-          {},
-          0,
-          {},
-          {},
-          0};
+          {}};
 }
 
 // _____________________________________________________________________________
@@ -1450,7 +1648,7 @@ util::geo::DE9IMatrix Sweeper::DE9IMCheck(const Area* a, const Area* b,
                                           size_t t) const {
   _stats[t].totalComps++;
   // cheap equivalence check
-  if (a->box == b->box && a->area == b->area && a->geom == b->geom) {
+  if (a->geom == b->geom) {
     // equivalent!
     return util::geo::M2FFF1FFF2;
   }
@@ -1474,7 +1672,8 @@ util::geo::DE9IMatrix Sweeper::DE9IMCheck(const Area* a, const Area* b,
         // we surely overlap if the area of b is greater than the area of a
         // or if the bounding box of b is not in a
         // otherwise, we cannot be sure
-        if (b->area > a->area || !util::geo::contains(b->box, a->box))
+        if (b->geom.area() > a->geom.area() ||
+            !util::geo::contains(b->geom.boundingBox(), a->geom.boundingBox()))
           // this is an incomplete matrix by design, specified to return true
           // for only intersects() and overlaps02()
           return util::geo::M2F2FFF2F2;
@@ -1491,49 +1690,9 @@ util::geo::DE9IMatrix Sweeper::DE9IMCheck(const Area* a, const Area* b,
     }
   }
 
-  if (_cfg.useInnerOuter && !a->outer.empty() && !b->outer.empty()) {
-    auto ts = TIME();
-    auto r = util::geo::intersectsContainsCovers(
-        a->outer, a->outerBox, a->outerOuterArea, b->outer, b->outerBox,
-        b->outerOuterArea);
-    _stats[t].timeInnerOuterCheckAreaArea += TOOK(ts);
-    _stats[t].innerOuterChecksAreaArea++;
-    if (!std::get<0>(r)) return util::geo::MFF2FF1212;
-  }
-
-  if (_cfg.useInnerOuter && !a->outer.empty() && !b->inner.empty()) {
-    auto ts = TIME();
-    auto r = util::geo::intersectsContainsCovers(
-        a->outer, a->outerBox, a->outerOuterArea, b->inner, b->innerBox,
-        b->innerOuterArea);
-    _stats[t].timeInnerOuterCheckAreaArea += TOOK(ts);
-    _stats[t].innerOuterChecksAreaArea++;
-    if (std::get<1>(r)) return util::geo::M2FF1FF212;
-  }
-
-  if (_cfg.useInnerOuter && a->outer.empty() && !b->outer.empty()) {
-    auto ts = TIME();
-    auto r = util::geo::intersectsContainsCovers(a->geom, a->box, a->outerArea,
-                                                 b->outer, b->outerBox,
-                                                 b->outerOuterArea);
-    _stats[t].timeInnerOuterCheckAreaArea += TOOK(ts);
-    _stats[t].innerOuterChecksAreaArea++;
-    if (!std::get<0>(r)) return util::geo::MFF2FF1212;
-  }
-
-  if (_cfg.useInnerOuter && a->outer.empty() && !b->inner.empty()) {
-    auto ts = TIME();
-    auto r = util::geo::intersectsContainsCovers(a->geom, a->box, a->outerArea,
-                                                 b->inner, b->innerBox,
-                                                 b->innerOuterArea);
-    _stats[t].timeInnerOuterCheckAreaArea += TOOK(ts);
-    _stats[t].innerOuterChecksAreaArea++;
-    if (std::get<1>(r)) return util::geo::M2FF1FF212;
-  }
-
   auto ts = TIME();
-  auto res =
-      DE9IM(a->geom, a->box, a->outerArea, b->geom, b->box, b->outerArea);
+  auto res = DE9IM(b->geom, a->geom).transpose();
+
   _stats[t].timeFullGeoCheckAreaArea += TOOK(ts);
   _stats[t].fullGeoChecksAreaArea++;
   return res;
@@ -1576,26 +1735,8 @@ util::geo::DE9IMatrix Sweeper::DE9IMCheck(const Line* a, const Area* b,
     }
   }
 
-  if (_cfg.useInnerOuter && !b->outer.empty()) {
-    auto ts = TIME();
-    auto r = util::geo::intersectsContainsCovers(a->geom, a->box, b->outer,
-                                                 b->outerBox);
-    _stats[t].timeInnerOuterCheckAreaLine += TOOK(ts);
-    _stats[t].innerOuterChecksAreaLine++;
-    if (!std::get<0>(r)) return util::geo::MFF1FF0212;
-  }
-
-  if (_cfg.useInnerOuter && !b->inner.empty()) {
-    auto ts = TIME();
-    auto r = util::geo::intersectsContainsCovers(a->geom, a->box, b->inner,
-                                                 b->innerBox);
-    _stats[t].timeInnerOuterCheckAreaLine += TOOK(ts);
-    _stats[t].innerOuterChecksAreaLine++;
-    if (std::get<1>(r)) return util::geo::M1FF0FF212;
-  }
-
   auto ts = TIME();
-  auto res = DE9IM(a->geom, a->box, b->geom, b->box);
+  auto res = DE9IM(a->geom, b->geom);
   _stats[t].timeFullGeoCheckAreaLine += TOOK(ts);
   _stats[t].fullGeoChecksAreaLine++;
 
@@ -1607,7 +1748,7 @@ util::geo::DE9IMatrix Sweeper::DE9IMCheck(const Line* a, const Line* b,
                                           size_t t) const {
   _stats[t].totalComps++;
   // cheap equivalence check
-  if (a->box == b->box && a->geom == b->geom) {
+  if (a->geom == b->geom) {
     // equivalent!
     return util::geo::M10FF0FFF2;
   }
@@ -1631,7 +1772,7 @@ util::geo::DE9IMatrix Sweeper::DE9IMCheck(const Line* a, const Line* b,
   }
 
   auto ts = TIME();
-  auto res = DE9IM(a->geom, b->geom, a->box, b->box);
+  auto res = DE9IM(a->geom, b->geom);
   _stats[t].timeFullGeoCheckLineLine += TOOK(ts);
   _stats[t].fullGeoChecksLineLine++;
 
@@ -1662,26 +1803,8 @@ util::geo::DE9IMatrix Sweeper::DE9IMCheck(const LineSegment<int32_t>& a,
     if (!std::get<0>(r)) return util::geo::MFF1FF0212;
   }
 
-  if (_cfg.useInnerOuter && !b->outer.empty()) {
-    auto ts = TIME();
-    auto r = util::geo::intersectsContainsCovers(
-        I32XSortedLine(a), getBoundingBox(a), b->outer, b->outerBox);
-    _stats[t].timeInnerOuterCheckAreaLine += TOOK(ts);
-    _stats[t].innerOuterChecksAreaLine++;
-    if (!std::get<0>(r)) return util::geo::MFF1FF0212;
-  }
-
-  if (_cfg.useInnerOuter && !b->inner.empty()) {
-    auto ts = TIME();
-    auto r = util::geo::intersectsContainsCovers(
-        I32XSortedLine(a), getBoundingBox(a), b->inner, b->box);
-    _stats[t].timeInnerOuterCheckAreaLine += TOOK(ts);
-    _stats[t].innerOuterChecksAreaLine++;
-    if (std::get<1>(r)) return util::geo::M1FF0FF212;
-  }
-
   auto ts = TIME();
-  auto res = DE9IM(I32XSortedLine(a), getBoundingBox(a), b->geom, b->box);
+  auto res = DE9IM(I32XSortedLine(a), b->geom);
   _stats[t].timeFullGeoCheckAreaLine += TOOK(ts);
   _stats[t].fullGeoChecksAreaLine++;
   return res;
@@ -1769,7 +1892,7 @@ util::geo::DE9IMatrix Sweeper::DE9IMCheck(const LineSegment<int32_t>& a,
   }
 
   auto ts = TIME();
-  auto res = DE9IM(I32XSortedLine(a), b->geom, getBoundingBox(a), b->box);
+  auto res = DE9IM(I32XSortedLine(a), b->geom);
   _stats[t].timeFullGeoCheckLineLine += TOOK(ts);
   _stats[t].fullGeoChecksLineLine++;
   return res;
@@ -1866,7 +1989,30 @@ void Sweeper::writeDE9IM(size_t t, const std::string& a, size_t aSub,
     }
   }
 
-  // TODO: handle references!
+  // handle references
+
+  if (_refs.size() == 0) return;
+
+  auto referersA = _refs.find(a);
+  auto referersB = _refs.find(b);
+
+  if (referersB != _refs.end()) {
+    const auto& subs = referersB->second.find(bSub);
+    if (subs != referersB->second.end()) {
+      for (const auto& idB : subs->second) {
+        writeDE9IM(t, a, aSub, idB.first, idB.second, de9im);
+      }
+    }
+  }
+
+  if (referersA != _refs.end()) {
+    const auto& subs = referersA->second.find(aSub);
+    if (subs != referersA->second.end()) {
+      for (const auto& idA : subs->second) {
+        writeDE9IM(t, idA.first, idA.second, b, bSub, de9im);
+      }
+    }
+  }
 }
 
 // ____________________________________________________________________________
@@ -1888,12 +2034,38 @@ void Sweeper::writeDist(size_t t, const std::string& a, size_t aSub,
     }
   }
 
-  // TODO: handle references
+  // handle references
+
+  if (_refs.size() == 0) return;
+
+  auto referersA = _refs.find(a);
+  auto referersB = _refs.find(b);
+
+  if (referersB != _refs.end()) {
+    const auto& subs = referersB->second.find(bSub);
+    if (subs != referersB->second.end()) {
+      for (const auto& idB : subs->second) {
+        writeDist(t, a, aSub, idB.first, idB.second, dist);
+      }
+    }
+  }
+
+  // no need to check exactly the same direction again
+  if (a != b || aSub != bSub) {
+    if (referersA != _refs.end()) {
+      const auto& subs = referersA->second.find(aSub);
+      if (subs != referersA->second.end()) {
+        for (const auto& idA : subs->second) {
+          writeDist(t, idA.first, idA.second, b, bSub, dist);
+        }
+      }
+    }
+  }
 }
 
 // ____________________________________________________________________________
-void Sweeper::writeIntersect(size_t t, const std::string& a,
-                             const std::string& b) {
+void Sweeper::writeIntersect(size_t t, const std::string& a, size_t aSub,
+                             const std::string& b, size_t bSub) {
   if (a != b) {
     _relStats[t].intersects++;
     _relStats[t].intersects++;
@@ -1909,54 +2081,49 @@ void Sweeper::writeIntersect(size_t t, const std::string& a,
   auto referersB = _refs.find(b);
 
   if (referersB != _refs.end()) {
-    for (const auto& idB : referersB->second) {
-      writeIntersect(t, a, idB.first);
+    const auto& subs = referersB->second.find(bSub);
+    if (subs != referersB->second.end()) {
+      for (const auto& idB : subs->second) {
+        writeIntersect(t, a, aSub, idB.first, idB.second);
+      }
     }
   }
 
-  if (referersA != _refs.end()) {
-    for (const auto& idA : referersA->second) {
-      writeIntersect(t, idA.first, b);
+  // no need to check exactly the same direction again
+  if (a != b || aSub != bSub) {
+    if (referersA != _refs.end()) {
+      const auto& subs = referersA->second.find(aSub);
+      if (subs != referersA->second.end()) {
+        for (const auto& idA : subs->second) {
+          writeIntersect(t, idA.first, idA.second, b, bSub);
+        }
+      }
     }
   }
 }
 
 // ____________________________________________________________________________
-void Sweeper::selfCheck(const JobVal cur, size_t t) {
-  if (cur.type == FOLDED_POINT) {
-    auto ts = TIME();
-    auto gid = unfoldString(cur.id);
-    _stats[t].timeGeoCacheRetrievalPoint += TOOK(ts);
-
-    writeIntersect(t, gid, gid);
-    writeEquals(t, gid, 0, gid, 0);
-    writeCovers(t, gid, gid, 0);
-  } else if (cur.type == POINT) {
-    auto ts = TIME();
-    auto a = _pointCache.get(cur.id, cur.large ? -1 : t);
-    _stats[t].timeGeoCacheRetrievalPoint += TOOK(ts);
-
-    writeIntersect(t, a->id, a->id);
-    writeEquals(t, a->id, a->subId, a->id, a->subId);
-    writeCovers(t, a->id, a->id, a->subId);
-  } else if (cur.type == LINE) {
-    auto a = _lineCache.get(cur.id, cur.large ? -1 : t);
-
-    writeIntersect(t, a->id, a->id);
-    writeEquals(t, a->id, a->subId, a->id, a->subId);
-    writeCovers(t, a->id, a->id, a->subId);
-  } else if (isSimpleLine(cur.type)) {
-    auto a = getSimpleLine(cur, cur.large ? -1 : t);
-
-    writeIntersect(t, a->id, a->id);
-    writeEquals(t, a->id, 0, a->id, 0);
-    writeCovers(t, a->id, a->id, 0);
-  } else if (isArea(cur.type)) {
-    auto a = getArea(cur, cur.large ? -1 : t);
-
-    writeIntersect(t, a->id, a->id);
-    writeEquals(t, a->id, a->subId, a->id, a->subId);
-    writeCovers(t, a->id, a->id, a->subId);
+void Sweeper::selfCheck(const std::string& a, size_t subId, GeomType type,
+                        size_t t) {
+  if (_cfg.computeDE9IM) {
+    if (type == SELF_CHECK_LINE)
+      writeDE9IM(t, a, subId, a, subId, util::geo::M10FF0FFF2);
+    else if (type == SELF_CHECK_AREA)
+      writeDE9IM(t, a, subId, a, subId, util::geo::M2FFF1FFF2);
+    else if (type == SELF_CHECK_POINT)
+      writeDE9IM(t, a, subId, a, subId, util::geo::M0FFFFFFF2);
+    else {
+      // LOG(WARN)
+      // << "Input reference geometries not supported with DE-9IM computation";
+    }
+  } else if (_cfg.withinDist >= 0) {
+    writeDist(t, a, subId, a, subId, 0);
+  } else {
+    writeIntersect(t, a, subId, a, subId);
+    writeEquals(t, a, subId, a, subId);
+    writeCovers(t, a, subId, a, subId);
+    writeContains(t, a, subId, a, subId);
+    writeNotCrosses(t, a, subId, a, subId);
   }
 }
 
@@ -1967,6 +2134,13 @@ void Sweeper::doDE9IMCheck(const JobVal cur, const JobVal sv, size_t t) {
 
   // every 10000 checks, update our position
   if (_checks[t] % 10000 == 0) _atomicCurX[t] = _curX[t];
+
+  if (cur.type == SELF_CHECK || cur.type == SELF_CHECK_AREA ||
+      cur.type == SELF_CHECK_LINE || cur.type == SELF_CHECK_POINT)
+    return selfCheck(_selfChecks[cur.id].first, _selfChecks[cur.id].second,
+                     cur.type, t);
+
+  if (cur.type == sv.type && cur.id == sv.id) return;
 
   if (isPoint(cur.type) && isPoint(sv.type)) {
     auto p1 = cur.point;
@@ -2204,15 +2378,25 @@ void Sweeper::doDistCheck(const JobVal cur, const JobVal sv, size_t t) {
   // every 10000 checks, update our position
   if (_checks[t] % 10000 == 0) _atomicCurX[t] = _curX[t];
 
+  if (cur.type == SELF_CHECK || cur.type == SELF_CHECK_AREA ||
+      cur.type == SELF_CHECK_LINE || cur.type == SELF_CHECK_POINT)
+    return selfCheck(_selfChecks[cur.id].first, _selfChecks[cur.id].second,
+                     cur.type, t);
+
+  if (cur.type == sv.type && cur.id == sv.id) return;
+
   if (isPoint(cur.type) && isPoint(sv.type)) {
     auto p1 = cur.point;
     auto p2 = sv.point;
 
-    auto dist = meterDist(p1, p2);
+    auto dist = meterDist(p1, p2, _cfg.withinDist);
 
     if (dist <= _cfg.withinDist) {
       auto a = getPoint(cur.id, cur.type, cur.large ? -1 : t);
       auto b = getPoint(sv.id, sv.type, sv.large ? -1 : t);
+
+      // no self checks
+      if (a->id == b->id) return;
 
       writeDist(t, a->id, a->subId, b->id, b->subId, dist);
     }
@@ -2220,22 +2404,22 @@ void Sweeper::doDistCheck(const JobVal cur, const JobVal sv, size_t t) {
     auto p = cur.point;
 
     std::shared_ptr<Area> a = getArea(sv, sv.large ? -1 : t);
+    auto b = getPoint(cur.id, cur.type, cur.large ? -1 : t);
 
-    double dist = distCheck(p, a.get(), t);
+    double dist = distCheck(p, b.get(), a.get(), t);
 
     if (dist <= _cfg.withinDist) {
-      auto b = getPoint(cur.id, cur.type, cur.large ? -1 : t);
       writeDist(t, a->id, a->subId, b->id, b->subId, dist);
     }
   } else if (isArea(cur.type) && isPoint(sv.type)) {
     auto p = sv.point;
 
     std::shared_ptr<Area> a = getArea(cur, cur.large ? -1 : t);
+    auto b = getPoint(sv.id, sv.type, sv.large ? -1 : t);
 
-    double dist = distCheck(p, a.get(), t);
+    double dist = distCheck(p, b.get(), a.get(), t);
 
     if (dist <= _cfg.withinDist) {
-      auto b = getPoint(sv.id, sv.type, sv.large ? -1 : t);
       writeDist(t, a->id, a->subId, b->id, b->subId, dist);
     }
   } else if (isLine(cur.type) && isPoint(sv.type)) {
@@ -2253,10 +2437,10 @@ void Sweeper::doDistCheck(const JobVal cur, const JobVal sv, size_t t) {
       }
     } else {
       auto b = _lineCache.get(cur.id, cur.large ? -1 : t);
-      dist = distCheck(p, b.get(), t);
+      auto a = getPoint(sv.id, sv.type, sv.large ? -1 : t);
+      dist = distCheck(p, a.get(), b.get(), t);
 
       if (dist <= _cfg.withinDist) {
-        auto a = getPoint(sv.id, sv.type, sv.large ? -1 : t);
         writeDist(t, a->id, a->subId, b->id, b->subId, dist);
       }
     }
@@ -2275,16 +2459,21 @@ void Sweeper::doDistCheck(const JobVal cur, const JobVal sv, size_t t) {
       }
     } else {
       auto b = _lineCache.get(sv.id, sv.large ? -1 : t);
-      dist = distCheck(p, b.get(), t);
+      auto a = getPoint(cur.id, cur.type, cur.large ? -1 : t);
+
+      dist = distCheck(p, a.get(), b.get(), t);
 
       if (dist <= _cfg.withinDist) {
-        auto a = getPoint(cur.id, cur.type, cur.large ? -1 : t);
         writeDist(t, a->id, a->subId, b->id, b->subId, dist);
       }
     }
   } else if (sv.type == LINE && cur.type == LINE) {
     auto a = _lineCache.get(sv.id, sv.large ? -1 : t);
     auto b = _lineCache.get(cur.id, cur.large ? -1 : t);
+
+    // no expensive self checks for multi geoms
+    if (a->id == b->id) return;
+
     auto dist = distCheck(a.get(), b.get(), t);
 
     if (dist <= _cfg.withinDist) {
@@ -2308,6 +2497,7 @@ void Sweeper::doDistCheck(const JobVal cur, const JobVal sv, size_t t) {
     }
   } else if (sv.type == LINE && isSimpleLine(cur.type)) {
     auto a = _lineCache.get(sv.id, sv.large ? -1 : t);
+
     auto dist = distCheck({cur.point, cur.point2}, a.get(), t);
 
     if (dist <= _cfg.withinDist) {
@@ -2315,8 +2505,11 @@ void Sweeper::doDistCheck(const JobVal cur, const JobVal sv, size_t t) {
       writeDist(t, a->id, a->subId, b->id, 0, dist);
     }
   } else if (isArea(sv.type) && isArea(cur.type)) {
-    std::shared_ptr<Area> a = getArea(sv, sv.large ? -1 : t);
-    std::shared_ptr<Area> b = getArea(cur, cur.large ? -1 : t);
+    std::shared_ptr<Area> a = getArea(cur, cur.large ? -1 : t);
+    std::shared_ptr<Area> b = getArea(sv, sv.large ? -1 : t);
+
+    // no expensive self checks for multi geoms
+    if (a->id == b->id) return;
 
     auto dist = distCheck(a.get(), b.get(), t);
 
@@ -2328,6 +2521,9 @@ void Sweeper::doDistCheck(const JobVal cur, const JobVal sv, size_t t) {
 
     std::shared_ptr<Area> b = getArea(cur, cur.large ? -1 : t);
 
+    // no expensive self checks for multi geoms
+    if (a->id == b->id) return;
+
     auto dist = distCheck(a.get(), b.get(), t);
 
     if (dist <= _cfg.withinDist) {
@@ -2337,6 +2533,10 @@ void Sweeper::doDistCheck(const JobVal cur, const JobVal sv, size_t t) {
     std::shared_ptr<Area> a = getArea(sv, sv.large ? -1 : t);
 
     auto b = _lineCache.get(cur.id, cur.large ? -1 : t);
+
+    // no expensive self checks for multi geoms
+    if (a->id == b->id) return;
+
     auto dist = distCheck(b.get(), a.get(), t);
 
     if (dist <= _cfg.withinDist) {
@@ -2368,10 +2568,15 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
   _checks[t]++;
   _curX[t] = cur.val;
 
-  if (cur.type == sv.type && cur.id == sv.id) return selfCheck(cur, t);
-
   // every 10000 checks, update our position
   if (_checks[t] % 10000 == 0) _atomicCurX[t] = _curX[t];
+
+  if (cur.type == SELF_CHECK || cur.type == SELF_CHECK_AREA ||
+      cur.type == SELF_CHECK_LINE || cur.type == SELF_CHECK_POINT)
+    return selfCheck(_selfChecks[cur.id].first, _selfChecks[cur.id].second,
+                     cur.type, t);
+
+  if (cur.type == sv.type && cur.id == sv.id) return;
 
   if (isArea(cur.type) && isArea(sv.type)) {
     std::shared_ptr<Area> a = getArea(cur, cur.large ? -1 : t);
@@ -2380,7 +2585,7 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
     if (a->id == b->id) return;  // no self-checks in multigeometries
 
     _stats[t].areaCmps++;
-    _stats[t].areaSizeSum += std::max(a->area, b->area);
+    _stats[t].areaSizeSum += std::max(a->geom.area(), b->geom.area());
 
     _stats[t].anchorSum += std::max(a->geom.size() / 2, b->geom.size() / 2);
 
@@ -2390,27 +2595,27 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
 
     // intersects
     if (res.intersects()) {
-      writeIntersect(t, a->id, b->id);
+      writeIntersect(t, a->id, a->subId, b->id, b->subId);
     }
 
     // contained
     if (res.within()) {
-      writeContains(t, b->id, a->id, a->subId);
+      writeContains(t, b->id, b->subId, a->id, a->subId);
     }
 
     // covered
     if (res.coveredBy()) {
-      writeCovers(t, b->id, a->id, a->subId);
+      writeCovers(t, b->id, b->subId, a->id, a->subId);
 
-      if (fabs(a->area - b->area) < util::geo::EPSILON) {
+      if (fabs(a->geom.area() - b->geom.area()) < util::geo::EPSILON) {
         // both areas were equivalent
         writeEquals(t, a->id, a->subId, b->id, b->subId);
 
         // covers in other direction
-        writeCovers(t, a->id, b->id, b->subId);
+        writeCovers(t, a->id, a->subId, b->id, b->subId);
 
         // contains in other direction
-        writeContains(t, a->id, b->id, b->subId);
+        writeContains(t, a->id, a->subId, b->id, b->subId);
       }
     }
 
@@ -2427,10 +2632,7 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
 
     // overlaps
     if (res.overlaps02()) {
-      _relStats[t].overlaps++;
-      writeRel(t, a->id, b->id, _cfg.sepOverlaps);
-      _relStats[t].overlaps++;
-      writeRel(t, b->id, a->id, _cfg.sepOverlaps);
+      writeOverlaps(t, a->id, a->subId, b->id, b->subId);
     }
   } else if (cur.type == LINE && isArea(sv.type)) {
     std::shared_ptr<Area> b = getArea(sv, sv.large ? -1 : t);
@@ -2442,10 +2644,10 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
     if (a->id == b->id) return;  // no self-checks in multigeometries
 
     _stats[t].areaCmps++;
-    _stats[t].areaSizeSum += b->area;
+    _stats[t].areaSizeSum += b->geom.area();
 
     _stats[t].lineCmps++;
-    _stats[t].lineLenSum += a->length;
+    _stats[t].lineLenSum += a->geom.length();
 
     _stats[t].anchorSum += std::max(a->geom.size() / 2, b->geom.size() / 2);
 
@@ -2455,17 +2657,17 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
 
     // intersects
     if (res.intersects()) {
-      writeIntersect(t, a->id, b->id);
+      writeIntersect(t, b->id, b->subId, a->id, a->subId);
     }
 
     // contains
     if (res.within()) {
-      writeContains(t, b->id, a->id, a->subId);
+      writeContains(t, b->id, b->subId, a->id, a->subId);
     }
 
     // covers
     if (res.coveredBy()) {
-      writeCovers(t, b->id, a->id, a->subId);
+      writeCovers(t, b->id, b->subId, a->id, a->subId);
     }
 
     // touches
@@ -2494,7 +2696,7 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
     if (a->id == b->id) return;  // no self-checks in multigeometries
 
     _stats[t].areaCmps++;
-    _stats[t].areaSizeSum += b->area;
+    _stats[t].areaSizeSum += b->geom.area();
 
     _stats[t].lineCmps++;
     _stats[t].lineLenSum += util::geo::dist(cur.point, cur.point2);
@@ -2507,17 +2709,17 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
 
     // intersects
     if (res.intersects()) {
-      writeIntersect(t, a->id, b->id);
+      writeIntersect(t, a->id, 0, b->id, b->subId);
     }
 
     // contains
     if (res.within()) {
-      writeContains(t, b->id, a->id, 0);
+      writeContains(t, b->id, b->subId, a->id, 0);
     }
 
     // covers
     if (res.coveredBy()) {
-      writeCovers(t, b->id, a->id, 0);
+      writeCovers(t, b->id, 0, a->id, 0);
     }
 
     // touches
@@ -2544,10 +2746,10 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
     if (a->id == b->id) return;  // no self-checks in multigeometries
 
     _stats[t].areaCmps++;
-    _stats[t].areaSizeSum += a->area;
+    _stats[t].areaSizeSum += a->geom.area();
 
     _stats[t].lineCmps++;
-    _stats[t].lineLenSum += b->length;
+    _stats[t].lineLenSum += b->geom.length();
 
     _stats[t].anchorSum += std::max(a->geom.size() / 2, b->geom.size() / 2);
 
@@ -2557,17 +2759,17 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
 
     // intersects
     if (res.intersects()) {
-      writeIntersect(t, a->id, b->id);
+      writeIntersect(t, a->id, a->subId, b->id, b->subId);
     }
 
     // contains
     if (res.within()) {
-      writeContains(t, a->id, b->id, b->subId);
+      writeContains(t, a->id, a->subId, b->id, b->subId);
     }
 
     // covers
     if (res.coveredBy()) {
-      writeCovers(t, a->id, b->id, b->subId);
+      writeCovers(t, a->id, a->subId, b->id, b->subId);
     }
 
     // touches
@@ -2594,7 +2796,7 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
     _stats[t].timeGeoCacheRetrievalSimpleLine += TOOK(ts);
 
     _stats[t].areaCmps++;
-    _stats[t].areaSizeSum += a->area;
+    _stats[t].areaSizeSum += a->geom.area();
 
     _stats[t].lineCmps++;
     _stats[t].lineLenSum += util::geo::dist(sv.point, sv.point2);
@@ -2607,17 +2809,17 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
 
     // intersects
     if (res.intersects()) {
-      writeIntersect(t, a->id, b->id);
+      writeIntersect(t, a->id, a->subId, b->id, 0);
     }
 
     // contains
     if (res.within()) {
-      writeContains(t, a->id, b->id, 0);
+      writeContains(t, a->id, a->subId, b->id, 0);
     }
 
     // covers
     if (res.coveredBy()) {
-      writeCovers(t, a->id, b->id, 0);
+      writeCovers(t, a->id, a->subId, b->id, 0);
     }
 
     // touches
@@ -2643,7 +2845,7 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
     if (a->id == b->id) return;  // no self-checks in multigeometries
 
     _stats[t].lineCmps++;
-    _stats[t].lineLenSum += std::max(a->length, b->length);
+    _stats[t].lineLenSum += std::max(a->geom.length(), b->geom.length());
 
     _stats[t].anchorSum += std::max(a->geom.size() / 2, b->geom.size() / 2);
 
@@ -2653,22 +2855,21 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
 
     // intersects
     if (res.intersects()) {
-      writeIntersect(t, a->id, b->id);
+      writeIntersect(t, a->id, a->subId, b->id, b->subId);
     }
 
     // covers
     if (res.coveredBy()) {
       writeNotCrosses(t, a->id, a->subId, b->id, b->subId);
-
       if (a->subId == 0) writeNotOverlaps(t, a->id, a->subId, b->id, b->subId);
 
-      writeCovers(t, b->id, a->id, a->subId);
+      writeCovers(t, b->id, b->subId, a->id, a->subId);
 
-      if (fabs(a->length - b->length) < util::geo::EPSILON) {
+      if (fabs(a->geom.length() - b->geom.length()) < util::geo::EPSILON) {
         // both lines were equivalent
         writeEquals(t, a->id, a->subId, b->id, b->subId);
 
-        writeCovers(t, a->id, b->id, b->subId);
+        writeCovers(t, a->id, a->subId, b->id, b->subId);
       }
     }
 
@@ -2699,7 +2900,7 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
 
     _stats[t].lineCmps++;
     _stats[t].lineLenSum +=
-        std::max(a->length, util::geo::dist(sv.point, sv.point2));
+        std::max(a->geom.length(), util::geo::dist(sv.point, sv.point2));
 
     _stats[t].anchorSum += std::max(a->geom.size() / 2, (size_t)2);
 
@@ -2709,19 +2910,19 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
 
     // intersects
     if (res.intersects()) {
-      writeIntersect(t, a->id, b->id);
+      writeIntersect(t, a->id, a->subId, b->id, 0);
     }
 
     // covers
     if (res.coveredBy()) {
+      writeCovers(t, b->id, 0, a->id, a->subId);
       writeNotCrosses(t, a->id, a->subId, b->id, 0);
 
-      writeCovers(t, b->id, a->id, a->subId);
-
-      if (fabs(a->length - util::geo::len(LineSegment<int32_t>(
-                               sv.point, sv.point2))) < util::geo::EPSILON) {
+      if (fabs(a->geom.length() -
+               util::geo::len(LineSegment<int32_t>(sv.point, sv.point2))) <
+          util::geo::EPSILON) {
         // both lines were equivalent
-        writeCovers(t, a->id, b->id, 0);
+        writeCovers(t, a->id, a->subId, b->id, 0);
 
         writeEquals(t, a->id, a->subId, b->id, 0);
       }
@@ -2755,7 +2956,7 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
 
     _stats[t].lineCmps++;
     _stats[t].lineLenSum +=
-        std::max(b->length, util::geo::dist(cur.point, cur.point2));
+        std::max(b->geom.length(), util::geo::dist(cur.point, cur.point2));
 
     _stats[t].anchorSum += std::max(b->geom.size() / 2, (size_t)2);
 
@@ -2765,21 +2966,21 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
 
     // intersects
     if (res.intersects()) {
-      writeIntersect(t, a->id, b->id);
+      writeIntersect(t, a->id, 0, b->id, b->subId);
     }
 
     // covers
     if (res.coveredBy()) {
       writeNotCrosses(t, a->id, 0, b->id, b->subId);
-      writeCovers(t, b->id, a->id, 0);
+      writeCovers(t, b->id, b->subId, a->id, 0);
 
       writeNotOverlaps(t, a->id, 0, b->id, b->subId);
 
       if (fabs(util::geo::len(LineSegment<int32_t>(cur.point, cur.point2)) -
-               b->length) < util::geo::EPSILON) {
+               b->geom.length()) < util::geo::EPSILON) {
         writeEquals(t, a->id, 0, b->id, b->subId);
 
-        writeCovers(t, a->id, b->id, b->subId);
+        writeCovers(t, a->id, 0, b->id, b->subId);
       }
     }
 
@@ -2818,17 +3019,17 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
     auto res = DE9IMCheck({cur.point, cur.point2}, {sv.point, sv.point2}, t);
 
     if (res.intersects()) {
-      writeIntersect(t, a->id, b->id);
+      writeIntersect(t, a->id, 0, b->id, 0);
     }
 
     if (res.coveredBy()) {
-      writeCovers(t, b->id, a->id, 0);
+      writeCovers(t, b->id, 0, a->id, 0);
 
       if (fabs(util::geo::len(LineSegment<int32_t>(cur.point, cur.point2)) -
                util::geo::len(LineSegment<int32_t>(sv.point, sv.point2))) <
           util::geo::EPSILON) {
         writeEquals(t, a->id, 0, b->id, 0);
-        writeCovers(t, a->id, b->id, 0);
+        writeCovers(t, a->id, 0, b->id, 0);
       }
     }
 
@@ -2859,14 +3060,14 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
                //
     _stats[t].totalComps++;
 
-    writeIntersect(t, a->id, b->id);
+    writeIntersect(t, a->id, a->subId, b->id, b->subId);
     writeEquals(t, a->id, a->subId, b->id, b->subId);
 
-    writeCovers(t, b->id, a->id, a->subId);
-    writeContains(t, b->id, a->id, a->subId);
+    writeCovers(t, b->id, b->subId, a->id, a->subId);
+    writeContains(t, b->id, b->subId, a->id, a->subId);
 
-    writeCovers(t, a->id, b->id, b->subId);
-    writeContains(t, a->id, b->id, b->subId);
+    writeCovers(t, a->id, a->subId, b->id, b->subId);
+    writeContains(t, a->id, a->subId, b->id, b->subId);
   } else if (isPoint(cur.type) && isSimpleLine(sv.type)) {
     auto p = cur.point;
 
@@ -2880,12 +3081,12 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
       auto ts = TIME();
       auto b = getSimpleLine(sv, sv.large ? -1 : t);
       _stats[t].timeGeoCacheRetrievalSimpleLine += TOOK(ts);
-      writeIntersect(t, a->id, b->id);
+      writeIntersect(t, a->id, a->subId, b->id, 0);
 
-      writeCovers(t, b->id, a->id, a->subId);
+      writeCovers(t, b->id, 0, a->id, a->subId);
 
       if (p != sv.point && p != sv.point2) {
-        writeContains(t, b->id, a->id, a->subId);
+        writeContains(t, b->id, 0, a->id, a->subId);
 
         writeNotTouches(t, a->id, a->subId, b->id, 0);
       } else {
@@ -2899,7 +3100,7 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
     _stats[t].timeGeoCacheRetrievalLine += TOOK(ts);
 
     _stats[t].lineCmps++;
-    _stats[t].lineLenSum += b->length;
+    _stats[t].lineLenSum += b->geom.length();
 
     _stats[t].anchorSum += b->geom.size() / 2;
 
@@ -2912,21 +3113,21 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
 
       if (a->id == b->id) return;  // no self-checks in multigeometries
 
-      writeIntersect(t, a->id, b->id);
+      writeIntersect(t, a->id, a->subId, b->id, b->subId);
 
-      writeCovers(t, b->id, a->id, a->subId);
+      writeCovers(t, b->id, b->subId, a->id, a->subId);
 
       if (res.within()) {
-        writeContains(t, b->id, a->id, a->subId);
+        writeContains(t, b->id, b->subId, a->id, a->subId);
         writeNotTouches(t, a->id, a->subId, b->id, b->subId);
       } else {
         writeTouches(t, a->id, a->subId, b->id, b->subId);
       }
 
-      if (b->length == 0) {
+      if (b->geom.length() == 0) {
         // zero length line, point also covers line
 
-        writeCovers(t, a->id, b->id, b->subId);
+        writeCovers(t, a->id, a->subId, b->id, b->subId);
       }
     }
   } else if (isPoint(cur.type) && isArea(sv.type)) {
@@ -2940,11 +3141,11 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
     if (res.coveredBy()) {
       auto a = getPoint(cur.id, cur.type, cur.large ? -1 : t);
 
-      writeCovers(t, b->id, a->id, a->subId);
-      writeIntersect(t, a->id, b->id);
+      writeCovers(t, b->id, b->subId, a->id, a->subId);
+      writeIntersect(t, a->id, a->subId, b->id, b->subId);
 
       if (res.within()) {
-        writeContains(t, b->id, a->id, a->subId);
+        writeContains(t, b->id, b->subId, a->id, a->subId);
 
         if (_refs.count(a->id) || a->subId != 0) {
           writeNotTouches(t, a->id, a->subId, b->id, b->subId);
@@ -3037,14 +3238,23 @@ void Sweeper::writeOverlaps(size_t t, const std::string& a, size_t aSub,
   auto referersB = _refs.find(b);
 
   if (referersB != _refs.end()) {
-    for (const auto& idB : referersB->second) {
-      writeOverlaps(t, a, aSub, idB.first, idB.second);
+    const auto& subs = referersB->second.find(bSub);
+    if (subs != referersB->second.end()) {
+      for (const auto& idB : subs->second) {
+        writeOverlaps(t, a, aSub, idB.first, idB.second);
+      }
     }
   }
 
-  if (referersA != _refs.end()) {
-    for (const auto& idA : referersA->second) {
-      writeOverlaps(t, idA.first, idA.second, b, bSub);
+  // no need to check exactly the same direction again
+  if (a != b || aSub != bSub) {
+    if (referersA != _refs.end()) {
+      const auto& subs = referersA->second.find(aSub);
+      if (subs != referersA->second.end()) {
+        for (const auto& idA : subs->second) {
+          writeOverlaps(t, idA.first, idA.second, b, bSub);
+        }
+      }
     }
   }
 }
@@ -3052,9 +3262,7 @@ void Sweeper::writeOverlaps(size_t t, const std::string& a, size_t aSub,
 // _____________________________________________________________________________
 void Sweeper::writeNotOverlaps(size_t t, const std::string& a, size_t aSub,
                                const std::string& b, size_t bSub) {
-  if (a == b) return;
-
-  if ((aSub != 0 || bSub != 0) && !refRelated(a, b)) {
+  if (a != b && (aSub != 0 || bSub != 0)) {
     std::unique_lock<std::mutex> lock(_mutsNotOverlaps[t]);
 
     if (bSub != 0) _subNotOverlaps[t][b].insert(a);
@@ -3069,14 +3277,20 @@ void Sweeper::writeNotOverlaps(size_t t, const std::string& a, size_t aSub,
   auto referersB = _refs.find(b);
 
   if (referersB != _refs.end()) {
-    for (const auto& idB : referersB->second) {
-      writeNotOverlaps(t, a, aSub, idB.first, idB.second);
+    const auto& subs = referersB->second.find(bSub);
+    if (subs != referersB->second.end()) {
+      for (const auto& idB : subs->second) {
+        writeNotOverlaps(t, a, aSub, idB.first, idB.second);
+      }
     }
   }
 
   if (referersA != _refs.end()) {
-    for (const auto& idA : referersA->second) {
-      writeNotOverlaps(t, idA.first, idA.second, b, bSub);
+    const auto& subs = referersA->second.find(aSub);
+    if (subs != referersA->second.end()) {
+      for (const auto& idA : subs->second) {
+        writeNotOverlaps(t, idA.first, idA.second, b, bSub);
+      }
     }
   }
 }
@@ -3106,14 +3320,23 @@ void Sweeper::writeCrosses(size_t t, const std::string& a, size_t aSub,
   auto referersB = _refs.find(b);
 
   if (referersB != _refs.end()) {
-    for (const auto& idB : referersB->second) {
-      writeCrosses(t, a, aSub, idB.first, idB.second);
+    const auto& subs = referersB->second.find(bSub);
+    if (subs != referersB->second.end()) {
+      for (const auto& idB : subs->second) {
+        writeCrosses(t, a, aSub, idB.first, idB.second);
+      }
     }
   }
 
-  if (referersA != _refs.end()) {
-    for (const auto& idA : referersA->second) {
-      writeCrosses(t, idA.first, idA.second, b, bSub);
+  // no need to check exactly the same direction again
+  if (a != b || aSub != bSub) {
+    if (referersA != _refs.end()) {
+      const auto& subs = referersA->second.find(aSub);
+      if (subs != referersA->second.end()) {
+        for (const auto& idA : subs->second) {
+          writeCrosses(t, idA.first, idA.second, b, bSub);
+        }
+      }
     }
   }
 }
@@ -3121,8 +3344,7 @@ void Sweeper::writeCrosses(size_t t, const std::string& a, size_t aSub,
 // _____________________________________________________________________________
 void Sweeper::writeNotCrosses(size_t t, const std::string& a, size_t aSub,
                               const std::string& b, size_t bSub) {
-  if (a == b) return;
-  if ((aSub != 0 || bSub != 0) && !refRelated(a, b)) {
+  if (a != b && (aSub != 0 || bSub != 0)) {
     std::unique_lock<std::mutex> lock(_mutsNotCrosses[t]);
 
     if (bSub != 0) _subNotCrosses[t][b].insert(a);
@@ -3137,14 +3359,23 @@ void Sweeper::writeNotCrosses(size_t t, const std::string& a, size_t aSub,
   auto referersB = _refs.find(b);
 
   if (referersB != _refs.end()) {
-    for (const auto& idB : referersB->second) {
-      writeNotCrosses(t, a, aSub, idB.first, idB.second);
+    const auto& subs = referersB->second.find(bSub);
+    if (subs != referersB->second.end()) {
+      for (const auto& idB : subs->second) {
+        writeNotCrosses(t, a, aSub, idB.first, idB.second);
+      }
     }
   }
 
-  if (referersA != _refs.end()) {
-    for (const auto& idA : referersA->second) {
-      writeNotCrosses(t, idA.first, idA.second, b, bSub);
+  // no need to check exactly the same direction again
+  if (a != b || aSub != bSub) {
+    if (referersA != _refs.end()) {
+      const auto& subs = referersA->second.find(aSub);
+      if (subs != referersA->second.end()) {
+        for (const auto& idA : subs->second) {
+          writeNotCrosses(t, idA.first, idA.second, b, bSub);
+        }
+      }
     }
   }
 }
@@ -3174,14 +3405,23 @@ void Sweeper::writeTouches(size_t t, const std::string& a, size_t aSub,
   auto referersB = _refs.find(b);
 
   if (referersB != _refs.end()) {
-    for (const auto& idB : referersB->second) {
-      writeTouches(t, a, aSub, idB.first, idB.second);
+    const auto& subs = referersB->second.find(bSub);
+    if (subs != referersB->second.end()) {
+      for (const auto& idB : subs->second) {
+        writeTouches(t, a, aSub, idB.first, idB.second);
+      }
     }
   }
 
-  if (referersA != _refs.end()) {
-    for (const auto& idA : referersA->second) {
-      writeTouches(t, idA.first, idA.second, b, bSub);
+  // no need to check exactly the same direction again
+  if (a != b || aSub != bSub) {
+    if (referersA != _refs.end()) {
+      const auto& subs = referersA->second.find(aSub);
+      if (subs != referersA->second.end()) {
+        for (const auto& idA : subs->second) {
+          writeTouches(t, idA.first, idA.second, b, bSub);
+        }
+      }
     }
   }
 }
@@ -3189,9 +3429,7 @@ void Sweeper::writeTouches(size_t t, const std::string& a, size_t aSub,
 // _____________________________________________________________________________
 void Sweeper::writeNotTouches(size_t t, const std::string& a, size_t aSub,
                               const std::string& b, size_t bSub) {
-  if (a == b) return;
-
-  if ((aSub != 0 || bSub != 0) && !refRelated(a, b)) {
+  if (a != b && (aSub != 0 || bSub != 0)) {
     std::unique_lock<std::mutex> lock(_mutsNotTouches[t]);
 
     if (bSub != 0) _subNotTouches[t][b].insert(a);
@@ -3206,14 +3444,23 @@ void Sweeper::writeNotTouches(size_t t, const std::string& a, size_t aSub,
   auto referersB = _refs.find(b);
 
   if (referersB != _refs.end()) {
-    for (const auto& idB : referersB->second) {
-      writeNotTouches(t, a, aSub, idB.first, idB.second);
+    const auto& subs = referersB->second.find(bSub);
+    if (subs != referersB->second.end()) {
+      for (const auto& idB : subs->second) {
+        writeNotTouches(t, a, aSub, idB.first, idB.second);
+      }
     }
   }
 
-  if (referersA != _refs.end()) {
-    for (const auto& idA : referersA->second) {
-      writeNotTouches(t, idA.first, idA.second, b, bSub);
+  // no need to check exactly the same direction again
+  if (a != b || aSub != bSub) {
+    if (referersA != _refs.end()) {
+      const auto& subs = referersA->second.find(aSub);
+      if (subs != referersA->second.end()) {
+        for (const auto& idA : subs->second) {
+          writeNotTouches(t, idA.first, idA.second, b, bSub);
+        }
+      }
     }
   }
 }
@@ -3246,21 +3493,30 @@ void Sweeper::writeEquals(size_t t, const std::string& a, size_t aSub,
   auto referersB = _refs.find(b);
 
   if (referersB != _refs.end()) {
-    for (const auto& idB : referersB->second) {
-      writeEquals(t, a, aSub, idB.first, idB.second);
+    const auto& subs = referersB->second.find(bSub);
+    if (subs != referersB->second.end()) {
+      for (const auto& idB : subs->second) {
+        writeEquals(t, a, aSub, idB.first, idB.second);
+      }
     }
   }
 
-  if (referersA != _refs.end()) {
-    for (const auto& idA : referersA->second) {
-      writeEquals(t, idA.first, idA.second, b, bSub);
+  // no need to check exactly the same direction again
+  if (a != b || aSub != bSub) {
+    if (referersA != _refs.end()) {
+      const auto& subs = referersA->second.find(aSub);
+      if (subs != referersA->second.end()) {
+        for (const auto& idA : subs->second) {
+          writeEquals(t, idA.first, idA.second, b, bSub);
+        }
+      }
     }
   }
 }
 
 // _____________________________________________________________________________
-void Sweeper::writeCovers(size_t t, const std::string& a, const std::string& b,
-                          size_t bSub) {
+void Sweeper::writeCovers(size_t t, const std::string& a, size_t aSub,
+                          const std::string& b, size_t bSub) {
   if (a != b) {
     if (bSub > 0) {
       std::unique_lock<std::mutex> lock(_mutsCovers[t]);
@@ -3279,20 +3535,26 @@ void Sweeper::writeCovers(size_t t, const std::string& a, const std::string& b,
   auto referersB = _refs.find(b);
 
   if (referersB != _refs.end()) {
-    for (const auto& idB : referersB->second) {
-      writeCovers(t, a, idB.first, idB.second);
+    const auto& subs = referersB->second.find(bSub);
+    if (subs != referersB->second.end()) {
+      for (const auto& idB : subs->second) {
+        writeCovers(t, a, aSub, idB.first, idB.second);
+      }
     }
   }
 
   if (referersA != _refs.end()) {
-    for (const auto& idA : referersA->second) {
-      writeCovers(t, idA.first, b, bSub);
+    const auto& subs = referersA->second.find(aSub);
+    if (subs != referersA->second.end()) {
+      for (const auto& idA : subs->second) {
+        writeCovers(t, idA.first, idA.second, b, bSub);
+      }
     }
   }
 }
 
 // _____________________________________________________________________________
-void Sweeper::writeContains(size_t t, const std::string& a,
+void Sweeper::writeContains(size_t t, const std::string& a, size_t aSub,
                             const std::string& b, size_t bSub) {
   if (a != b) {
     if (bSub > 0) {
@@ -3312,22 +3574,26 @@ void Sweeper::writeContains(size_t t, const std::string& a,
   auto referersB = _refs.find(b);
 
   if (referersB != _refs.end()) {
-    for (const auto& idB : referersB->second) {
-      writeContains(t, a, idB.first, idB.second);
+    const auto& subs = referersB->second.find(bSub);
+    if (subs != referersB->second.end()) {
+      for (const auto& idB : subs->second) {
+        writeContains(t, a, aSub, idB.first, idB.second);
+      }
     }
   }
 
   if (referersA != _refs.end()) {
-    for (const auto& idA : referersA->second) {
-      writeContains(t, idA.first, b, bSub);
+    const auto& subs = referersA->second.find(aSub);
+    if (subs != referersA->second.end()) {
+      for (const auto& idA : subs->second) {
+        writeContains(t, idA.first, idA.second, b, bSub);
+      }
     }
   }
 }
 
 // _____________________________________________________________________________
 bool Sweeper::notCrosses(const std::string& a, const std::string& b) {
-  if (refRelated(a, b)) return true;
-
   for (size_t t = 0; t < _cfg.numThreads + 1; t++) {
     std::unique_lock<std::mutex> lock(_mutsNotCrosses[t]);
     auto i = _subNotCrosses[t].find(a);
@@ -3339,8 +3605,6 @@ bool Sweeper::notCrosses(const std::string& a, const std::string& b) {
 
 // _____________________________________________________________________________
 bool Sweeper::notTouches(const std::string& a, const std::string& b) {
-  if (refRelated(a, b)) return true;
-
   for (size_t t = 0; t < _cfg.numThreads + 1; t++) {
     std::unique_lock<std::mutex> lock(_mutsNotTouches[t]);
     auto i = _subNotTouches[t].find(a);
@@ -3352,8 +3616,6 @@ bool Sweeper::notTouches(const std::string& a, const std::string& b) {
 
 // _____________________________________________________________________________
 bool Sweeper::notOverlaps(const std::string& a, const std::string& b) {
-  if (refRelated(a, b)) return true;
-
   for (size_t t = 0; t < _cfg.numThreads + 1; t++) {
     std::unique_lock<std::mutex> lock(_mutsNotOverlaps[t]);
     auto i = _subNotOverlaps[t].find(a);
@@ -3370,14 +3632,134 @@ void Sweeper::log(const std::string& msg) {
 }
 
 // _____________________________________________________________________________
-bool Sweeper::refRelated(const std::string& a, const std::string& b) const {
-  auto i = _refs.find(a);
-  if (i != _refs.end() && i->second.find(b) != i->second.end()) return true;
+std::pair<double, double> Sweeper::getMinMaxLocalScaleFactors(
+    const I32Box& boxA, const I32Box& boxB, double distanceUpperBound) {
+  auto withinBox = util::geo::extendBox(boxA, boxB);
 
-  auto j = _refs.find(b);
-  if (j != _refs.end() && j->second.find(a) != j->second.end()) return true;
+  // convert distanceUpperBound (meters) to maximum latitude padding (degrees)
+  // we have to "pad" each box by -dy and dy because the distance path could
+  // be within that padded box, and thus the distortions have to be computed
+  // based on that path
+  double dLat =
+      distanceUpperBound / util::geo::MIN_METERS_PER_LAT_RAD * util::geo::IRAD;
 
-  return false;
+  // the lower extrema of the bounding boxes are padded by dLat
+  auto withinLow = util::geo::webMercToLatLng<double>(
+      0.0, withinBox.getLowerLeft().getY() * 1.0 / PREC);
+  auto aLow = util::geo::webMercToLatLng<double>(
+      0.0, boxA.getLowerLeft().getY() * 1.0 / PREC);
+  aLow.setY(aLow.getY() - dLat);
+  auto bLow = util::geo::webMercToLatLng<double>(
+      0.0, boxB.getLowerLeft().getY() * 1.0 / PREC);
+  bLow.setY(bLow.getY() - dLat);
+
+  // the upper extrema of the bounding boxes are padded by dLat
+  auto withinUp = util::geo::webMercToLatLng<double>(
+      0.0, withinBox.getUpperRight().getY() * 1.0 / PREC);
+  auto aUp = util::geo::webMercToLatLng<double>(
+      0.0, boxA.getUpperRight().getY() * 1.0 / PREC);
+  aUp.setY(aUp.getY() + dLat);
+  auto bUp = util::geo::webMercToLatLng<double>(
+      0.0, boxB.getUpperRight().getY() * 1.0 / PREC);
+  bUp.setY(bUp.getY() + dLat);
+
+  double yRangeMin = std::min(
+      90.0 - util::geo::EPSILON,
+      std::max(withinLow.getY() * 1.0, std::max(aLow.getY(), bLow.getY())));
+  double yRangeMax = std::max(
+      -90.0 - util::geo::EPSILON,
+      std::min(withinUp.getY() * 1.0, std::min(aUp.getY(), bUp.getY())));
+
+  double a = cos(yRangeMin * util::geo::RAD);
+  double b = cos(yRangeMax * util::geo::RAD);
+
+  // if we crossed the pole, we encountered a scale factor of 1!
+  if (withinLow.getY() < 0 && withinUp.getY() > 0) {
+    return {std::min(a, b), std::max(1.0, std::max(a, b))};
+  }
+
+  return {std::min(a, b), std::max(a, b)};
+}
+
+// _____________________________________________________________________________
+double Sweeper::noSearchPadding(double euclideanDistanceUpperBound, double,
+                                const I32Box&, const I32Box&) {
+  return euclideanDistanceUpperBound;
+}
+
+// _____________________________________________________________________________
+double Sweeper::localSearchPadding(double euclideanDistanceUpperBound,
+                                   double distanceUpperBound,
+                                   const I32Box& boxA, const I32Box& boxB) {
+  auto minScaleALow =
+      getMinMaxLocalScaleFactors(util::geo::getBoundingBox(boxA.getLowerLeft()),
+                                 boxB, distanceUpperBound)
+          .second;
+  auto minScaleAUp = getMinMaxLocalScaleFactors(
+                         util::geo::getBoundingBox(boxA.getUpperRight()), boxB,
+                         distanceUpperBound)
+                         .second;
+  auto minScaleBLow =
+      getMinMaxLocalScaleFactors(util::geo::getBoundingBox(boxB.getLowerLeft()),
+                                 boxA, distanceUpperBound)
+          .second;
+  auto minScaleBUp = getMinMaxLocalScaleFactors(
+                         util::geo::getBoundingBox(boxB.getUpperRight()), boxA,
+                         distanceUpperBound)
+                         .second;
+
+  double min = std::min(std::min(minScaleALow, minScaleAUp),
+                        std::min(minScaleBLow, minScaleBUp));
+  auto a = getMinMaxLocalScaleFactors(boxA, boxB, distanceUpperBound);
+  double max = a.second;
+
+  double factorNew2 = max / min;
+
+  double minEuclideanXDist = util::geo::dist(
+      LineSegment<int32_t>{I32Point{boxA.getLowerLeft().getX(), 0},
+                           I32Point{boxA.getUpperRight().getX(), 0}},
+      LineSegment<int32_t>{I32Point{boxB.getLowerLeft().getX(), 0},
+                           I32Point{boxB.getUpperRight().getX(), 0}});
+  double minEuclideanYDist = util::geo::dist(
+      LineSegment<int32_t>{I32Point{0, boxA.getLowerLeft().getY()},
+                           I32Point{0, boxA.getUpperRight().getY()}},
+      LineSegment<int32_t>{I32Point{0, boxB.getLowerLeft().getY()},
+                           I32Point{0, boxB.getUpperRight().getY()}});
+
+  double padding = factorNew2 * euclideanDistanceUpperBound;
+  auto xPadding = (sqrt(std::max(
+      0.0, padding * padding - minEuclideanYDist * minEuclideanYDist)));
+  auto yPadding = (sqrt(std::max(
+      0.0, padding * padding - minEuclideanXDist * minEuclideanXDist)));
+
+  auto paddedA = util::geo::pad(boxA, xPadding, yPadding);
+
+  auto boxBStar = util::geo::intersection(paddedA, boxB);
+
+  double min2 = std::numeric_limits<double>::infinity();
+  double max2 = 0;
+
+  std::vector<I32Point> cornerA = {boxA.getLowerLeft(), boxA.getLowerRight(),
+                                   boxA.getUpperRight(), boxA.getUpperLeft()};
+  std::vector<I32Point> cornerB = {
+      boxBStar.getLowerLeft(), boxBStar.getLowerRight(),
+      boxBStar.getUpperRight(), boxBStar.getUpperLeft()};
+
+  for (size_t i = 0; i < cornerA.size(); i++) {
+    for (size_t j = 0; j < cornerB.size(); j++) {
+      double eucD = util::geo::dist(cornerA[i], cornerB[j]);
+      double mD = meterDist(cornerA[i], cornerB[j],
+                            std::numeric_limits<double>::infinity());
+      if (mD / eucD < min2) min2 = mD / eucD;
+      if (mD / eucD > max2) max2 = mD / eucD;
+    }
+  }
+
+  double factorNew3 = max2 / min2;
+
+  if (factorNew2 < factorNew3) return factorNew2 * euclideanDistanceUpperBound;
+
+  return factorNew3 * euclideanDistanceUpperBound;
 }
 
 // _____________________________________________________________________________
@@ -3399,15 +3781,39 @@ double Sweeper::getMaxScaleFactor(const I32Point& p) const {
 }
 
 // _____________________________________________________________________________
-double Sweeper::meterDist(const I32Point& p1, const I32Point& p2) {
-  return util::geo::webMercMeterDist(FPoint{(p1.getX() * 1.0) / (PREC * 1.0),
-                                            (p1.getY() * 1.0) / (PREC * 1.0)},
-                                     FPoint{(p2.getX() * 1.0) / (PREC * 1.0),
-                                            (p2.getY() * 1.0) / (PREC * 1.0)});
+double Sweeper::euclideanDist(const I32Point& p1, const I32Point& p2, double) {
+  return util::geo::dist(p1, p2) / PREC;
 }
 
 // _____________________________________________________________________________
-double Sweeper::distCheck(const I32Point& a, const Area* b, size_t t) const {
+double Sweeper::meterDist(const I32Point& p1, const I32Point& p2,
+                          double maxDist) {
+  auto fp1 = FPoint{static_cast<float>((p1.getX() * 1.0) / (PREC * 1.0)),
+                    static_cast<float>((p1.getY() * 1.0) / (PREC * 1.0))};
+  auto fp2 = FPoint{static_cast<float>((p2.getX() * 1.0) / (PREC * 1.0)),
+                    static_cast<float>((p2.getY() * 1.0) / (PREC * 1.0))};
+
+  double dX = fp2.getX() - fp1.getX();
+  double dY = fp2.getY() - fp1.getY();
+
+  // get max absolute latitude (distance distortion)
+  double distFactor = std::min(util::geo::webMercDistFactor(fp1),
+                               util::geo::webMercDistFactor(fp2));
+
+  // early abort
+  if (std::abs(dY) > maxDist / distFactor)
+    return std::numeric_limits<double>::max();
+  if (std::abs(dX) > maxDist / distFactor)
+    return std::numeric_limits<double>::max();
+  if ((dX * dX + dY * dY) > (maxDist / distFactor) * (maxDist / distFactor))
+    return std::numeric_limits<double>::max();
+
+  return util::geo::webMercMeterDist(fp1, fp2);
+}
+
+// _____________________________________________________________________________
+double Sweeper::distCheck(const I32Point& a, const Point* aMeta, const Area* b,
+                          size_t t) {
   if (_cfg.useBoxIds) {
     auto ts = TIME();
     auto r = boxIdIsect({{1, 0}, {getBoxId(a), 0}}, b->boxIds);
@@ -3418,12 +3824,26 @@ double Sweeper::distCheck(const I32Point& a, const Area* b, size_t t) const {
   }
 
   auto ts = TIME();
-  double scaleFactor =
-      std::max(getMaxScaleFactor(a), getMaxScaleFactor(b->box)) * PREC;
+  double maxD = _cfg.withinDist;
 
-  auto dist =
-      util::geo::withinDist<int32_t>(a, b->geom, _cfg.withinDist * scaleFactor,
-                                     _cfg.withinDist, &Sweeper::meterDist);
+  maxD = std::min(maxD,
+                  getMaxMultiDist(aMeta->id, aMeta->subId, a, b->id, b->subId,
+                                  b->geom.getOuter().rawRing().front().p, t));
+
+  auto scale = _cfg.euclideanDist && !_cfg.haversineApprox
+                   ? std::pair<double, double>{1, 1}
+                   : getMinMaxLocalScaleFactors(util::geo::getBoundingBox(a),
+                                                b->geom.boundingBox(), maxD);
+
+  double maxEuclideanDist = maxD / scale.first * PREC;
+
+  auto dist = util::geo::withinDist<int32_t>(
+      a, b->geom, maxD,
+      _cfg.euclideanDist ? &Sweeper::noSearchPadding
+                         : &Sweeper::localSearchPadding,
+      maxEuclideanDist,
+      _cfg.euclideanDist && !_cfg.haversineApprox ? &Sweeper::euclideanDist
+                                                  : &Sweeper::meterDist);
 
   _stats[t].timeFullGeoCheckAreaPoint += TOOK(ts);
   _stats[t].fullGeoChecksAreaPoint++;
@@ -3454,22 +3874,6 @@ util::geo::DE9IMatrix Sweeper::DE9IMCheck(const I32Point& a, const Area* b,
     if (!std::get<1>(r)) return util::geo::MFF0FFF212;
   }
 
-  if (_cfg.useInnerOuter && !b->outer.empty()) {
-    auto ts = TIME();
-    auto r = containsCovers(a, b->outer);
-    _stats[t].timeInnerOuterCheckAreaPoint += TOOK(ts);
-    _stats[t].innerOuterChecksAreaPoint++;
-    if (!std::get<1>(r)) return util::geo::MFF0FFF212;
-  }
-
-  if (_cfg.useInnerOuter && !b->inner.empty()) {
-    auto ts = TIME();
-    auto r = containsCovers(a, b->inner);
-    _stats[t].timeInnerOuterCheckAreaPoint += TOOK(ts);
-    _stats[t].innerOuterChecksAreaPoint++;
-    if (std::get<1>(r)) return util::geo::M0FFFFF212;
-  }
-
   auto ts = TIME();
   auto res = util::geo::DE9IM(a, b->geom);
   _stats[t].timeFullGeoCheckAreaPoint += TOOK(ts);
@@ -3479,14 +3883,30 @@ util::geo::DE9IMatrix Sweeper::DE9IMCheck(const I32Point& a, const Area* b,
 }
 
 // _____________________________________________________________________________
-double Sweeper::distCheck(const I32Point& a, const Line* b, size_t t) const {
+double Sweeper::distCheck(const I32Point& a, const Point* aMeta, const Line* b,
+                          size_t t) {
   auto ts = TIME();
-  double scaleFactor =
-      std::max(getMaxScaleFactor(a), getMaxScaleFactor(b->box)) * PREC;
+  double maxD = _cfg.withinDist;
 
-  auto dist =
-      util::geo::withinDist<int32_t>(a, b->geom, _cfg.withinDist * scaleFactor,
-                                     _cfg.withinDist, &Sweeper::meterDist);
+  maxD =
+      std::min(maxD, getMaxMultiDist(aMeta->id, aMeta->subId, a, b->id,
+                                     b->subId, b->geom.rawLine().front().p, t));
+
+  auto scale = _cfg.euclideanDist && !_cfg.haversineApprox
+                   ? std::pair<double, double>{1.0, 1.0}
+                   : getMinMaxLocalScaleFactors(util::geo::getBoundingBox(a),
+                                                b->geom.boundingBox(), maxD);
+
+  double maxEuclideanDist = maxD / scale.first * PREC;
+
+  auto dist = util::geo::withinDist<int32_t>(
+      a, b->geom, maxD,
+      _cfg.euclideanDist ? &Sweeper::noSearchPadding
+                         : &Sweeper::localSearchPadding,
+      maxEuclideanDist,
+      _cfg.euclideanDist && !_cfg.haversineApprox ? &Sweeper::euclideanDist
+                                                  : &Sweeper::meterDist);
+
   _stats[t].timeFullGeoCheckLinePoint += TOOK(ts);
   _stats[t].fullGeoChecksLinePoint++;
 
@@ -3508,12 +3928,14 @@ util::geo::DE9IMatrix Sweeper::DE9IMCheck(const I32Point& a,
 
 // _____________________________________________________________________________
 double Sweeper::distCheck(const I32Point& a, const LineSegment<int32_t>& b,
-                          size_t t) const {
+                          size_t t) {
   auto ts = TIME();
 
   auto p2 = projectOn(b.first, a, b.second);
 
-  auto dist = Sweeper::meterDist(a, p2);
+  auto dist = _cfg.euclideanDist && !_cfg.haversineApprox
+                  ? Sweeper::euclideanDist(a, p2, _cfg.withinDist)
+                  : Sweeper::meterDist(a, p2, _cfg.withinDist);
 
   _stats[t].timeFullGeoCheckLinePoint += TOOK(ts);
   _stats[t].fullGeoChecksLinePoint++;
@@ -3523,10 +3945,13 @@ double Sweeper::distCheck(const I32Point& a, const LineSegment<int32_t>& b,
 
 // _____________________________________________________________________________
 double Sweeper::distCheck(const LineSegment<int32_t>& a,
-                          const LineSegment<int32_t>& b, size_t t) const {
+                          const LineSegment<int32_t>& b, size_t t) {
   auto ts = TIME();
 
-  auto dist = util::geo::dist<int32_t>(a, b, &Sweeper::meterDist);
+  auto dist = util::geo::dist<int32_t>(
+      a, b,
+      _cfg.euclideanDist && !_cfg.haversineApprox ? &Sweeper::euclideanDist
+                                                  : &Sweeper::meterDist);
 
   _stats[t].timeFullGeoCheckLineLine += TOOK(ts);
   _stats[t].fullGeoChecksLineLine++;
@@ -3536,17 +3961,23 @@ double Sweeper::distCheck(const LineSegment<int32_t>& a,
 
 // _____________________________________________________________________________
 double Sweeper::distCheck(const LineSegment<int32_t>& a, const Line* b,
-                          size_t t) const {
+                          size_t t) {
   auto ts = TIME();
-  double scaleFactor = std::max(
-      std::max(getMaxScaleFactor(a.second), getMaxScaleFactor(a.first)),
-      getMaxScaleFactor(b->box));
+  auto scale =
+      _cfg.euclideanDist && !_cfg.haversineApprox
+          ? std::pair<double, double>{1.0, 1.0}
+          : getMinMaxLocalScaleFactors(util::geo::getBoundingBox(a),
+                                       b->geom.boundingBox(), _cfg.withinDist);
+
+  double maxEuclideanDist = _cfg.withinDist / scale.first * PREC;
 
   auto dist = util::geo::withinDist<int32_t>(
-      I32XSortedLine(a), b->geom, getBoundingBox(a), b->box,
-      _cfg.withinDist * scaleFactor * PREC,
-      _cfg.withinDist * scaleFactor * PREC, _cfg.withinDist,
-      &Sweeper::meterDist);
+      I32XSortedLine(a), b->geom, _cfg.withinDist,
+      _cfg.euclideanDist ? &Sweeper::noSearchPadding
+                         : &Sweeper::localSearchPadding,
+      maxEuclideanDist,
+      _cfg.euclideanDist && !_cfg.haversineApprox ? &Sweeper::euclideanDist
+                                                  : &Sweeper::meterDist);
 
   _stats[t].timeFullGeoCheckAreaLine += TOOK(ts);
   _stats[t].fullGeoChecksAreaLine++;
@@ -3555,15 +3986,30 @@ double Sweeper::distCheck(const LineSegment<int32_t>& a, const Line* b,
 }
 
 // _____________________________________________________________________________
-double Sweeper::distCheck(const Line* a, const Line* b, size_t t) const {
+double Sweeper::distCheck(const Line* a, const Line* b, size_t t) {
   auto ts = TIME();
-  double scaleFactor =
-      std::max(getMaxScaleFactor(a->box), getMaxScaleFactor(b->box));
+  if (a == b) return 0;
+
+  double maxD = _cfg.withinDist;
+
+  maxD = std::min(
+      maxD, getMaxMultiDist(a->id, a->subId, a->geom.rawLine().front().p, b->id,
+                            b->subId, b->geom.rawLine().front().p, t));
+
+  auto scale = _cfg.euclideanDist && !_cfg.haversineApprox
+                   ? std::pair<double, double>{1.0, 1.0}
+                   : getMinMaxLocalScaleFactors(a->geom.boundingBox(),
+                                                b->geom.boundingBox(), maxD);
+
+  double maxEuclideanDist = maxD / scale.first * PREC;
 
   auto dist = util::geo::withinDist<int32_t>(
-      a->geom, b->geom, a->box, b->box, _cfg.withinDist * scaleFactor * PREC,
-      _cfg.withinDist * scaleFactor * PREC, _cfg.withinDist,
-      &Sweeper::meterDist);
+      a->geom, b->geom, maxD,
+      _cfg.euclideanDist ? &Sweeper::noSearchPadding
+                         : &Sweeper::localSearchPadding,
+      maxEuclideanDist,
+      _cfg.euclideanDist && !_cfg.haversineApprox ? &Sweeper::euclideanDist
+                                                  : &Sweeper::meterDist);
 
   _stats[t].timeFullGeoCheckLineLine += TOOK(ts);
   _stats[t].fullGeoChecksLineLine++;
@@ -3573,7 +4019,7 @@ double Sweeper::distCheck(const Line* a, const Line* b, size_t t) const {
 
 // _____________________________________________________________________________
 double Sweeper::distCheck(const LineSegment<int32_t>& a, const Area* b,
-                          size_t t) const {
+                          size_t t) {
   auto ts = TIME();
 
   if (_cfg.useBoxIds) {
@@ -3584,15 +4030,21 @@ double Sweeper::distCheck(const LineSegment<int32_t>& a, const Area* b,
     if (r.first) return 0;
   }
 
-  double scaleFactor = std::max(
-      getMaxScaleFactor(b->box),
-      std::max(getMaxScaleFactor(a.second), getMaxScaleFactor(a.first)));
+  auto scale =
+      _cfg.euclideanDist && !_cfg.haversineApprox
+          ? std::pair<double, double>{1.0, 1.0}
+          : getMinMaxLocalScaleFactors(util::geo::getBoundingBox(a),
+                                       b->geom.boundingBox(), _cfg.withinDist);
+
+  double maxEuclideanDist = _cfg.withinDist / scale.first * PREC;
 
   auto dist = util::geo::withinDist<int32_t>(
-      I32XSortedLine(a), b->geom, getBoundingBox(a), b->box,
-      _cfg.withinDist * scaleFactor * PREC,
-      _cfg.withinDist * scaleFactor * PREC, _cfg.withinDist,
-      &Sweeper::meterDist);
+      I32XSortedLine(a), b->geom, _cfg.withinDist,
+      _cfg.euclideanDist ? &Sweeper::noSearchPadding
+                         : &Sweeper::localSearchPadding,
+      maxEuclideanDist,
+      _cfg.euclideanDist && !_cfg.haversineApprox ? &Sweeper::euclideanDist
+                                                  : &Sweeper::meterDist);
 
   _stats[t].timeFullGeoCheckAreaLine += TOOK(ts);
   _stats[t].fullGeoChecksAreaLine++;
@@ -3601,7 +4053,7 @@ double Sweeper::distCheck(const LineSegment<int32_t>& a, const Area* b,
 }
 
 // _____________________________________________________________________________
-double Sweeper::distCheck(const Line* a, const Area* b, size_t t) const {
+double Sweeper::distCheck(const Line* a, const Area* b, size_t t) {
   auto ts = TIME();
 
   if (_cfg.useBoxIds) {
@@ -3614,13 +4066,27 @@ double Sweeper::distCheck(const Line* a, const Area* b, size_t t) const {
     if (r.first) return 0;
   }
 
-  double scaleFactor =
-      std::max(getMaxScaleFactor(a->box), getMaxScaleFactor(b->box));
+  double maxD = _cfg.withinDist;
+
+  maxD = std::min(
+      maxD,
+      getMaxMultiDist(a->id, a->subId, a->geom.rawLine().front().p, b->id,
+                      b->subId, b->geom.getOuter().rawRing().front().p, t));
+
+  auto scale = _cfg.euclideanDist && !_cfg.haversineApprox
+                   ? std::pair<double, double>{1.0, 1.0}
+                   : getMinMaxLocalScaleFactors(a->geom.boundingBox(),
+                                                b->geom.boundingBox(), maxD);
+
+  double maxEuclideanDist = maxD / scale.first * PREC;
 
   auto dist = util::geo::withinDist<int32_t>(
-      a->geom, b->geom, a->box, b->box, _cfg.withinDist * scaleFactor * PREC,
-      _cfg.withinDist * scaleFactor * PREC, _cfg.withinDist,
-      &Sweeper::meterDist);
+      a->geom, b->geom, maxD,
+      _cfg.euclideanDist ? &Sweeper::noSearchPadding
+                         : &Sweeper::localSearchPadding,
+      maxEuclideanDist,
+      _cfg.euclideanDist && !_cfg.haversineApprox ? &Sweeper::euclideanDist
+                                                  : &Sweeper::meterDist);
 
   _stats[t].timeFullGeoCheckAreaLine += TOOK(ts);
   _stats[t].fullGeoChecksAreaLine++;
@@ -3629,12 +4095,11 @@ double Sweeper::distCheck(const Line* a, const Area* b, size_t t) const {
 }
 
 // _____________________________________________________________________________
-double Sweeper::distCheck(const Area* a, const Area* b, size_t t) const {
+double Sweeper::distCheck(const Area* a, const Area* b, size_t t) {
   auto ts = TIME();
 
   // cheap equivalence check
-  if (a->box == b->box && a->area == b->area && a->geom == b->geom) {
-    // equivalent!
+  if (a->geom == b->geom) {
     return 0;
   }
 
@@ -3648,14 +4113,27 @@ double Sweeper::distCheck(const Area* a, const Area* b, size_t t) const {
     if (r.first) return 0;
   }
 
-  double scaleFactor =
-      std::max(getMaxScaleFactor(a->box), getMaxScaleFactor(b->box));
+  double maxD = _cfg.withinDist;
+
+  maxD = std::min(
+      maxD, getMaxMultiDist(
+                a->id, a->subId, a->geom.getOuter().rawRing().front().p, b->id,
+                b->subId, b->geom.getOuter().rawRing().front().p, t));
+
+  auto scale = _cfg.euclideanDist && !_cfg.haversineApprox
+                   ? std::pair<double, double>{1.0, 1.0}
+                   : getMinMaxLocalScaleFactors(a->geom.boundingBox(),
+                                                b->geom.boundingBox(), maxD);
+
+  double maxEuclideanDist = maxD / scale.first * PREC;
 
   auto dist = util::geo::withinDist<int32_t>(
-      a->geom, b->geom, a->box, b->box, _cfg.withinDist * scaleFactor * PREC,
-      _cfg.withinDist * scaleFactor * PREC, _cfg.withinDist,
-      &Sweeper::meterDist);
-
+      a->geom, b->geom, maxD,
+      _cfg.euclideanDist ? &Sweeper::noSearchPadding
+                         : &Sweeper::localSearchPadding,
+      maxEuclideanDist,
+      _cfg.euclideanDist && !_cfg.haversineApprox ? &Sweeper::euclideanDist
+                                                  : &Sweeper::meterDist);
   _stats[t].timeFullGeoCheckAreaArea += TOOK(ts);
   _stats[t].fullGeoChecksAreaArea++;
 
@@ -3711,3 +4189,138 @@ std::shared_ptr<sj::Area> Sweeper::getArea(const JobVal& sv, size_t t) const {
 
   return asp;
 }
+
+// _____________________________________________________________________________
+double Sweeper::getMaxMultiDist(const std::string& idA, size_t aSub,
+                                const I32Point& leftAPoint,
+                                const std::string& idB, size_t bSub,
+                                const I32Point& leftBPoint, size_t t) {
+  double maxD = _cfg.withinDist;
+  // for multigeometries, we may already have a minimum distance above which we
+  // are not required to search
+  if (aSub > 0) {
+    double d =
+        _cfg.euclideanDist && !_cfg.haversineApprox
+            ? Sweeper::euclideanDist(_multiRightPoint[idA], leftBPoint, maxD)
+            : Sweeper::meterDist(_multiRightPoint[idA], leftBPoint, maxD);
+    maxD = std::min(maxD, d);
+    std::unique_lock<std::mutex> lock(_mutsDistance[t]);
+    if (_subDistance[t][idA].find(idB) != _subDistance[t][idA].end()) {
+      maxD = std::min(maxD, _subDistance[t][idA][idB]);
+    }
+  }
+  if (bSub > 0) {
+    double d =
+        _cfg.euclideanDist && !_cfg.haversineApprox
+            ? Sweeper::euclideanDist(_multiRightPoint[idB], leftAPoint, maxD)
+            : Sweeper::meterDist(_multiRightPoint[idB], leftAPoint, maxD);
+    maxD = std::min(maxD, d);
+    std::unique_lock<std::mutex> lock(_mutsDistance[t]);
+    if (_subDistance[t][idB].find(idA) != _subDistance[t][idB].end()) {
+      maxD = std::min(maxD, _subDistance[t][idB][idA]);
+    }
+  }
+
+  return maxD;
+}
+
+// _____________________________________________________________________________
+template <template <typename> class G1, template <typename> class G2,
+          typename T>
+util::geo::I32Box Sweeper::getPaddedBoundingBox(const G1<T>& geom,
+                                                const G2<T>& refGeom) const {
+  auto bbox = util::geo::getBoundingBox(geom);
+
+  if (_cfg.withinDist >= 0) {
+    if (_cfg.euclideanDist && !_cfg.haversineApprox)
+      return util::geo::pad(bbox, _cfg.withinDist * PREC / 2.0);
+
+    auto a = (reinterpret_cast<const void*>(&geom) ==
+                      reinterpret_cast<const void*>(&refGeom)
+                  ? bbox
+                  : util::geo::getBoundingBox(refGeom));
+
+    // convert distanceUpperBound (meters) to maximum latitude padding (degrees)
+    // we have to "pad" the box by -dy and dy because the distance path could
+    // be within that padded box, and thus the distortions have to be computed
+    // based on that path
+    double dLat =
+        _cfg.withinDist / util::geo::MIN_METERS_PER_LAT_RAD * util::geo::IRAD;
+    auto upper = util::geo::webMercToLatLng<double>(
+        0.0, a.getUpperRight().getY() * 1.0 / PREC);
+    auto lower = util::geo::webMercToLatLng<double>(
+        0.0, a.getLowerLeft().getY() * 1.0 / PREC);
+
+    double scaleLatUp =
+        cos(std::min(90.0 - util::geo::EPSILON, (upper.getY() + dLat)) *
+            util::geo::RAD);
+    double scaleLatLow =
+        cos(std::max(-90.0 + util::geo::EPSILON, (lower.getY() - dLat)) *
+            util::geo::RAD);
+    double scaleFactor = std::min(scaleLatUp, scaleLatLow);
+
+    double pad = (_cfg.withinDist / 2.0) / scaleFactor * PREC;
+
+    double llx = bbox.getLowerLeft().getX();
+    double lly = bbox.getLowerLeft().getY();
+    double urx = bbox.getUpperRight().getX();
+    double ury = bbox.getUpperRight().getY();
+
+    double m = sj::boxids::WORLD_W / 2.0;
+
+    // restrict padding to world extent
+    T llxt = -m;
+    T llyt = -m;
+    T urxt = m;
+    T uryt = m;
+
+    if (llx - pad > -m) {
+      llxt = llx - pad;
+    }
+
+    if (lly - pad > -m) {
+      llyt = lly - pad;
+    }
+
+    if (urx + pad < m) {
+      urxt = urx + pad;
+    }
+
+    if (ury + pad < m) {
+      uryt = ury + pad;
+    }
+
+    return {{llxt, llyt}, {urxt, uryt}};
+  }
+
+  return bbox;
+}
+
+// _____________________________________________________________________________
+size_t Sweeper::foldString(const std::string& s) {
+  size_t ret = 0;
+  for (size_t i = 0; i < std::min((size_t)7, s.size()); i++) {
+    size_t tmp = static_cast<unsigned char>(s[i]);
+    ret |= tmp << (i * 8);
+  }
+
+  // highest byte stores the length
+  ret |= (s.size() << 56);
+
+  return ret;
+};
+
+// _____________________________________________________________________________
+std::string Sweeper::unfoldString(size_t folded) {
+  // shift by 7 bytes to get size
+  size_t n = folded >> 56;
+
+  std::string ret;
+  ret.reserve(n);
+
+  for (size_t i = 0; i < n; i++) {
+    ret.push_back(static_cast<char>(folded >> (i * 8)) & 0xFF);
+  }
+
+  return ret;
+};

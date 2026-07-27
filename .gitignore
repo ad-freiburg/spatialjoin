@@ -1,3 +1,6 @@
-*.sw?
+*.sw*
 *.ttl
 *.bz2
+*.tsv
+*.csv
+build/

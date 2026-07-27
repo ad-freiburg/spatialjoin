@@ -59,7 +59,11 @@ void printHelp(int argc, char** argv) {
       << "cache directory for intermediate files\n"
       << std::setw(42) << "  --de9im"
       << "output DE-9IM relationships\n"
-      << std::setw(42) << "  --within-distance (default: '-1')"
+      << std::setw(42) << "  --de9im-filter"
+      << "only output relations which match given DE-9IM filter (has\n"
+      << std::setw(42) << " "
+      << "no effect for --within-distance)\n"
+      << std::setw(42) << "  --within-dist[ance] (default: -1)"
       << "if set to non-negative value, only compute for each object\n"
       << std::setw(42) << " "
       << "the objects within the given distance\n\n"
@@ -95,8 +99,6 @@ void printHelp(int argc, char** argv) {
       << "disable diagonal bounding-box based pre-filter\n"
       << std::setw(42) << "  --no-fast-sweep-skip"
       << "disable fast sweep skip using binary search\n"
-      << std::setw(42) << "  --use-inner-outer"
-      << "(experimental) use inner/outer geometries\n\n"
       << std::setfill(' ') << std::left << "Misc:\n"
       << std::setw(42)
       << "  --num-threads (default: " + std::to_string(NUM_THREADS) + ")"
@@ -146,13 +148,14 @@ int main(int argc, char** argv) {
   std::string crosses = " crosses ";
   std::string suffix = "\n";
   double withinDist = -1;
+  bool euclideanDist = false;
+  bool haversineApprox = false;
 
   bool useBoxIds = true;
   bool useArea = true;
   bool useOBB = true;
   bool useDiagBox = true;
   bool useFastSweepSkip = true;
-  bool useInnerOuter = false;
   bool noGeometryChecks = false;
   bool computeDE9IM = false;
 
@@ -205,6 +208,8 @@ int main(int argc, char** argv) {
           state = 14;
         } else if (cur == "--within-distance") {
           state = 15;
+        } else if (cur == "--within-dist") {
+          state = 15;
         } else if (cur == "--cache-max-elements") {
           state = 16;
         } else if (cur == "--de9im-filter") {
@@ -223,8 +228,11 @@ int main(int argc, char** argv) {
           noGeometryChecks = true;
         } else if (cur == "--no-fast-sweep-skip") {
           useFastSweepSkip = false;
-        } else if (cur == "--use-inner-outer") {
-          useInnerOuter = true;
+        } else if (cur == "--euclidean-dist") {
+          euclideanDist = true;
+        } else if (cur == "--haversine-approx") {
+          euclideanDist = true;
+          haversineApprox = true;
         } else if (cur == "--stats") {
           printStats = true;
         } else if (cur == "--verbose" || cur == "-v") {
@@ -299,7 +307,6 @@ int main(int argc, char** argv) {
         break;
       case 17:
         if (cur.size() < 9) cur.insert(cur.size(), 9 - cur.size(), '*');
-        std::cout << cur << std::endl;
         de9imFilter = cur.c_str();
         state = 0;
         break;
@@ -379,11 +386,13 @@ int main(int argc, char** argv) {
                             useOBB,
                             useDiagBox,
                             useFastSweepSkip,
-                            useInnerOuter,
                             noGeometryChecks,
                             withinDist,
+                            euclideanDist,
+                            haversineApprox,
                             computeDE9IM,
                             de9imFilter,
+                            inputFiles.size() == 2,
                             writeRelCb,
                             {},
                             {},
@@ -412,9 +421,6 @@ int main(int argc, char** argv) {
                 << std::endl;
       exit(1);
     }
-
-    // already set number of sides to 2, if we have two files
-    sweeper.setNumSides(inputFiles.size());
 
     for (size_t i = 0; i < inputFiles.size(); i++) {
       if (util::endsWith(inputFiles[i], ".bz2")) {
@@ -489,13 +495,7 @@ int main(int argc, char** argv) {
 
   sweeper.log("Done parsing (" + std::to_string(TOOK(ts) / 1000000000.0) +
               "s).");
-  ts = TIME();
-
-  sweeper.log("Sorting sweep events...");
-
   sweeper.flush();
-
-  sweeper.log("done (" + std::to_string(TOOK(ts) / 1000000000.0) + "s).");
 
   sweeper.log("Sweeping...");
   ts = TIME();

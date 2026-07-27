@@ -167,6 +167,7 @@ class WKTParserBase {
                                 {std::numeric_limits<int32_t>::max(),
                                  std::numeric_limits<int32_t>::max()}),
               id, subId, side, batch);
+          subId++;
         }
         c = end + 1;
       } while (c < lastC && ((end = strchr(c, ',')) || (end = strchr(c, '>'))));
@@ -201,6 +202,7 @@ class WKTParserBase {
           _bboxes[t] = util::geo::extendBox(_sweeper->add(mp, id, side, batch),
                                             _bboxes[t]);
       } else if (wktType == util::geo::WKTType::COLLECTION) {
+
         const auto &col = collectionFromWKTProj<int32_t>(c, 0, &projFunc);
 
         size_t numGeoms = 0;
