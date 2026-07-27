@@ -202,6 +202,7 @@ class WKTParserBase {
           _bboxes[t] = util::geo::extendBox(_sweeper->add(mp, id, side, batch),
                                             _bboxes[t]);
       } else if (wktType == util::geo::WKTType::COLLECTION) {
+
         const auto &col = collectionFromWKTProj<int32_t>(c, 0, &projFunc);
 
         size_t numGeoms = 0;
