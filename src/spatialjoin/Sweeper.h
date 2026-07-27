@@ -206,6 +206,7 @@ struct SweeperCfg {
   bool euclideanDist;
   bool haversineApprox;
   bool computeDE9IM;
+  bool forceTwoSided;
   std::function<void(size_t t, const char* a, size_t an, const char* b,
                      size_t bn, const char* pred, size_t predn)>
       writeRelCb;
@@ -215,8 +216,10 @@ struct SweeperCfg {
   std::function<void()> sweepCancellationCb;
 };
 
-// buffer size _must_ be multiples of sizeof(BoxVal)
-static const ssize_t BUFFER_S = sizeof(BoxVal) * 64 * 1024 * 512;
+// buffer size _must_ be multiples of sizeof(BoxVal) and should hold at least
+// one element
+static const ssize_t BUFFER_S =
+    ((16 * 1024 * 1024 + sizeof(BoxVal)) / sizeof(BoxVal)) * sizeof(BoxVal);
 
 static const size_t MAX_OUT_LINE_LENGTH = 1000;
 
@@ -251,9 +254,6 @@ class Sweeper {
                          cache, tmpPrefix),
         _cache(cache),
         _jobs(100) {
-    if (!_cfg.writeRelCb) {
-    }
-
     // OUTFACTOR 1
     _fname = util::getTmpFName(_cache, tmpPrefix, "events");
     _file = open(_fname.c_str(), O_RDWR | O_CREAT | O_TRUNC, 0666);
@@ -272,6 +272,8 @@ class Sweeper {
     // OUTFACTOR 1
 
     _outBuffer = new unsigned char[BUFFER_S];
+
+    if (_cfg.forceTwoSided) _numSides = 2;
   };
 
   ~Sweeper() { close(_file); }

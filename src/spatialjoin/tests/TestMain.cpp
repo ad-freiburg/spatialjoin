@@ -82,64 +82,64 @@ int main(int, char**) {
       " contains ", " covers ",  " touches ", " equals ", " overlaps ",
       " crosses ",  false,       false,       false,      false,
       false,        false,       false,       -1,         false,
-      false,        false,       {},          {},         {},
-      {},           {}};
+      false,        false,       false,       {},         {},
+      {},           {},          {}};
 
   sj::SweeperCfg all{
       NUM_THREADS,  NUM_THREADS, 1000,        1000,       " intersects ",
       " contains ", " covers ",  " touches ", " equals ", " overlaps ",
       " crosses ",  true,        true,        true,       true,
       true,         true,        false,       -1,         false,
-      false,        false,       {},          {},         {},
-      {},           {}};
+      false,        false,       false,       {},         {},
+      {},           {},          {}};
 
   sj::SweeperCfg noSurfaceArea{
       NUM_THREADS,  NUM_THREADS, 1000,        1000,       " intersects ",
       " contains ", " covers ",  " touches ", " equals ", " overlaps ",
       " crosses ",  true,        false,       true,       true,
       true,         true,        false,       -1,         false,
-      false,        false,       {},          {},         {},
-      {},           {}};
+      false,        false,       false,       {},         {},
+      {},           {},          {}};
 
   sj::SweeperCfg noBoxIds{
       NUM_THREADS,  NUM_THREADS, 1000,        1000,       " intersects ",
       " contains ", " covers ",  " touches ", " equals ", " overlaps ",
       " crosses ",  false,       true,        true,       true,
       true,         true,        false,       -1,         false,
-      false,        false,       {},          {},         {},
-      {},           {}};
+      false,        false,       false,       {},         {},
+      {},           {},          {}};
 
   sj::SweeperCfg noObb{
       NUM_THREADS,  NUM_THREADS, 1000,        1000,       " intersects ",
       " contains ", " covers ",  " touches ", " equals ", " overlaps ",
       " crosses ",  true,        true,        false,      true,
       true,         true,        false,       -1,         false,
-      false,        false,       {},          {},         {},
-      {},           {}};
+      false,        false,       false,       {},         {},
+      {},           {},          {}};
 
   sj::SweeperCfg noDiagBox{
       NUM_THREADS,  NUM_THREADS, 1000,        1000,       " intersects ",
       " contains ", " covers ",  " touches ", " equals ", " overlaps ",
       " crosses ",  true,        true,        true,       false,
       true,         true,        false,       -1,         false,
-      false,        false,       {},          {},         {},
-      {},           {}};
+      false,        false,       false,       {},         {},
+      {},           {},          {}};
 
   sj::SweeperCfg noFastSweep{
       NUM_THREADS,  NUM_THREADS, 1000,        1000,       " intersects ",
       " contains ", " covers ",  " touches ", " equals ", " overlaps ",
       " crosses ",  true,        true,        true,       true,
       false,        true,        false,       -1,         false,
-      false,        false,       {},          {},         {},
-      {},           {}};
+      false,        false,       false,       {},         {},
+      {},           {},          {}};
 
   sj::SweeperCfg noInnerOuter{
       NUM_THREADS,  NUM_THREADS, 1000,        1000,       " intersects ",
       " contains ", " covers ",  " touches ", " equals ", " overlaps ",
       " crosses ",  true,        true,        true,       true,
       true,         false,       false,       -1,         false,
-      false,        false,       {},          {},         {},
-      {},           {}};
+      false,        false,       false,       {},         {},
+      {},           {},          {}};
 
   std::vector<sj::SweeperCfg> cfgs{baseline,    all,         noSurfaceArea,
                                    noBoxIds,    noObb,       noDiagBox,
@@ -148,8 +148,7 @@ int main(int, char**) {
   for (auto cfg : cfgs) {
     {
       RunStats stats;
-      auto res =
-          fullRun(TEST_DATASET_DIR "/freiburg", cfg, &stats);
+      auto res = fullRun(TEST_DATASET_DIR "/freiburg", cfg, &stats);
 
       TEST(stats.numReferences, ==, 3);
 
@@ -347,8 +346,7 @@ int main(int, char**) {
 
     {
       RunStats stats;
-      auto res = fullRun(TEST_DATASET_DIR "/brandenburg_test",
-                         cfg, &stats);
+      auto res = fullRun(TEST_DATASET_DIR "/brandenburg_test", cfg, &stats);
       TEST(stats.numReferences, ==, 0);
       TEST(res.find("$Brandenburg-Point intersects Brandenburg-Way$") !=
            std::string::npos);
@@ -356,8 +354,7 @@ int main(int, char**) {
 
     {
       RunStats stats;
-      auto res =
-          fullRun(TEST_DATASET_DIR "/brandenburg", cfg, &stats);
+      auto res = fullRun(TEST_DATASET_DIR "/brandenburg", cfg, &stats);
       TEST(stats.numReferences, ==, 7);
       TEST(res.find("$Brandenburg covers Brandenburg2$") != std::string::npos);
       TEST(res.find("$Brandenburg intersects Brandenburg-Way$") !=
@@ -394,8 +391,7 @@ int main(int, char**) {
 
     {
       RunStats stats;
-      auto res = fullRun(
-          TEST_DATASET_DIR "/brandenburg_nonself", cfg, &stats);
+      auto res = fullRun(TEST_DATASET_DIR "/brandenburg_nonself", cfg, &stats);
       TEST(stats.numReferences, ==, 7);
       TEST(res.find("$Brandenburg covers Brandenburg2$") == std::string::npos);
       TEST(res.find("$Brandenburg intersects Brandenburg-Way$") ==
@@ -435,8 +431,7 @@ int main(int, char**) {
 
     {
       RunStats stats;
-      auto res = fullRun(TEST_DATASET_DIR "/collectiontests",
-                         cfg, &stats);
+      auto res = fullRun(TEST_DATASET_DIR "/collectiontests", cfg, &stats);
       // without box IDs, a polygon is converted into a box polygon
       if (cfg.useBoxIds) {
         TEST(stats.numReferences, ==, 11);
@@ -538,8 +533,7 @@ int main(int, char**) {
 
     {
       RunStats stats;
-      auto res =
-          fullRun(TEST_DATASET_DIR "/multitests", cfg, &stats);
+      auto res = fullRun(TEST_DATASET_DIR "/multitests", cfg, &stats);
 
       // without box IDs, a polygon is converted into a box polygon
       if (cfg.useBoxIds) {
@@ -638,8 +632,7 @@ int main(int, char**) {
 
     {
       RunStats stats;
-      auto res =
-          fullRun(TEST_DATASET_DIR "/coverfail", cfg, &stats);
+      auto res = fullRun(TEST_DATASET_DIR "/coverfail", cfg, &stats);
       TEST(stats.numReferences, ==, 0);
       TEST(res.find("$1 intersects 2$") != std::string::npos);
       TEST(res.find("$2 intersects 1$") != std::string::npos);
@@ -653,8 +646,7 @@ int main(int, char**) {
 
     {
       RunStats stats;
-      auto res =
-          fullRun(TEST_DATASET_DIR "/touchfail", cfg, &stats);
+      auto res = fullRun(TEST_DATASET_DIR "/touchfail", cfg, &stats);
       TEST(stats.numReferences, ==, 0);
       TEST(res.find("$1 intersects 2$") != std::string::npos);
       TEST(res.find("$2 intersects 1$") != std::string::npos);
@@ -666,8 +658,7 @@ int main(int, char**) {
 
     {
       RunStats stats;
-      auto res = fullRun(TEST_DATASET_DIR "/touchwayfail", cfg,
-                         &stats);
+      auto res = fullRun(TEST_DATASET_DIR "/touchwayfail", cfg, &stats);
       TEST(stats.numReferences, ==, 0);
       TEST(res.find("$1 touches 2$") != std::string::npos);
       TEST(res.find("$2 touches 1$") != std::string::npos);
@@ -675,8 +666,7 @@ int main(int, char**) {
 
     {
       RunStats stats;
-      auto res = fullRun(TEST_DATASET_DIR "/simpleareafail",
-                         cfg, &stats);
+      auto res = fullRun(TEST_DATASET_DIR "/simpleareafail", cfg, &stats);
       TEST(stats.numReferences, ==, 0);
       TEST(res.find("$1 intersects 2$") != std::string::npos);
       TEST(res.find("$2 intersects 1$") != std::string::npos);
@@ -685,8 +675,7 @@ int main(int, char**) {
 
     {
       RunStats stats;
-      auto res =
-          fullRun(TEST_DATASET_DIR "/touchfail2", cfg, &stats);
+      auto res = fullRun(TEST_DATASET_DIR "/touchfail2", cfg, &stats);
       TEST(stats.numReferences, ==, 0);
       TEST(res.find("$1 covers 2$") != std::string::npos);
       TEST(res.find("$1 intersects 2$") != std::string::npos);
@@ -695,8 +684,7 @@ int main(int, char**) {
 
     {
       RunStats stats;
-      auto res =
-          fullRun(TEST_DATASET_DIR "/boxidfail", cfg, &stats);
+      auto res = fullRun(TEST_DATASET_DIR "/boxidfail", cfg, &stats);
       TEST(stats.numReferences, ==, 0);
       TEST(res.find("$osmway:312944635 intersects osmway:312944634$") !=
            std::string::npos);
@@ -705,8 +693,7 @@ int main(int, char**) {
     }
     {
       RunStats stats;
-      auto res =
-          fullRun(TEST_DATASET_DIR "/boxidfail2", cfg, &stats);
+      auto res = fullRun(TEST_DATASET_DIR "/boxidfail2", cfg, &stats);
       TEST(stats.numReferences, ==, 0);
       TEST(res.find("$osmway:205756242 intersects osmway:50218266$") !=
            std::string::npos);
@@ -715,8 +702,7 @@ int main(int, char**) {
     }
     {
       RunStats stats;
-      auto res =
-          fullRun(TEST_DATASET_DIR "/boxidfail3", cfg, &stats);
+      auto res = fullRun(TEST_DATASET_DIR "/boxidfail3", cfg, &stats);
       TEST(stats.numReferences, ==, 0);
       TEST(res.find("$osmway:901094335 intersects osmnode:8370757906$") !=
            std::string::npos);
@@ -726,8 +712,7 @@ int main(int, char**) {
 
     {
       RunStats stats;
-      auto res =
-          fullRun(TEST_DATASET_DIR "/references", cfg, &stats);
+      auto res = fullRun(TEST_DATASET_DIR "/references", cfg, &stats);
       // without box IDs, two polygons are converted into box polygons
       if (cfg.useBoxIds) {
         TEST(stats.numReferences, ==, 16);
@@ -813,8 +798,7 @@ int main(int, char**) {
 
     {
       RunStats stats;
-      auto res =
-          fullRun(TEST_DATASET_DIR "/bawue", cfg, &stats);
+      auto res = fullRun(TEST_DATASET_DIR "/bawue", cfg, &stats);
       TEST(stats.numReferences, ==, 1);
       TEST(res.find("$germany covers bawue$") != std::string::npos);
       TEST(res.find("$germany contains bawue$") != std::string::npos);
@@ -826,8 +810,7 @@ int main(int, char**) {
     cfg.computeDE9IM = true;
     {
       RunStats stats;
-      auto res =
-          fullRun(TEST_DATASET_DIR "/freiburg", cfg, &stats);
+      auto res = fullRun(TEST_DATASET_DIR "/freiburg", cfg, &stats);
       TEST(stats.numReferences, ==, 3);
       TEST(res.find("$freiburg1\t2FFF1FFF2\tfreiburg2$") != std::string::npos);
       TEST(res.find("$freiburg2\t2FFF1FFF2\tfreiburg1$") != std::string::npos);
@@ -842,8 +825,7 @@ int main(int, char**) {
     }
     {
       RunStats stats;
-      auto res =
-          fullRun(TEST_DATASET_DIR "/references", cfg, &stats);
+      auto res = fullRun(TEST_DATASET_DIR "/references", cfg, &stats);
       if (cfg.useBoxIds) {
         TEST(stats.numReferences, ==, 16);
       } else {
@@ -860,27 +842,26 @@ int main(int, char**) {
   for (auto cfg : cfgs) {
     cfg.withinDist = 1;
     // {
-      // RunStats stats;
-      // auto res =
-          // fullRun("../src/spatialjoin/tests/datasets/references", cfg, &stats);
-      // if (cfg.useBoxIds) {
-        // TEST(stats.numReferences, ==, 16);
-      // } else {
-        // TEST(stats.numReferences, ==, 14);
-      // }
-      // TEST(res.find("$TestB\t0\tTestA$") != std::string::npos);
-      // TEST(res.find("$TestA\t0\tTestB$") != std::string::npos);
-      // TEST(res.find("$TestB\t0\tRefB$") != std::string::npos);
-      // TEST(res.find("$RefB\t0\tTestB$") != std::string::npos);
-      // TEST(res.find("$TestA\t0\tRefB$") != std::string::npos);
-      // TEST(res.find("$RefB\t0\tTestA$") != std::string::npos);
+    // RunStats stats;
+    // auto res =
+    // fullRun("../src/spatialjoin/tests/datasets/references", cfg, &stats);
+    // if (cfg.useBoxIds) {
+    // TEST(stats.numReferences, ==, 16);
+    // } else {
+    // TEST(stats.numReferences, ==, 14);
+    // }
+    // TEST(res.find("$TestB\t0\tTestA$") != std::string::npos);
+    // TEST(res.find("$TestA\t0\tTestB$") != std::string::npos);
+    // TEST(res.find("$TestB\t0\tRefB$") != std::string::npos);
+    // TEST(res.find("$RefB\t0\tTestB$") != std::string::npos);
+    // TEST(res.find("$TestA\t0\tRefB$") != std::string::npos);
+    // TEST(res.find("$RefB\t0\tTestA$") != std::string::npos);
     // }
 
     cfg.withinDist = 5000;
     {
       RunStats stats;
-      auto res =
-          fullRun(TEST_DATASET_DIR "/freiburg", cfg, &stats);
+      auto res = fullRun(TEST_DATASET_DIR "/freiburg", cfg, &stats);
       TEST(stats.numReferences, ==, 3);
       TEST(res.find("$freiburg1\t0\tfreiburg2$") != std::string::npos);
       TEST(res.find("$freiburg2\t0\tfreiburg1$") != std::string::npos);

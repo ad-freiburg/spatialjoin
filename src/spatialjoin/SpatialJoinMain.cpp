@@ -346,6 +346,7 @@ int main(int argc, char** argv) {
                             euclideanDist,
                             haversineApprox,
                             computeDE9IM,
+                            inputFiles.size() == 2,
                             writeRelCb,
                             {},
                             {},

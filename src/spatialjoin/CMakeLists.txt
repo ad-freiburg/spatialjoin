@@ -2,6 +2,10 @@ file(GLOB_RECURSE SPATIALJOIN_SRC *.cpp)
 list(REMOVE_ITEM SPATIALJOIN_SRC TestMain.cpp)
 list(FILTER SPATIALJOIN_SRC EXCLUDE REGEX ".*/tests/.*")
 
+if(PROJECT_IS_TOP_LEVEL)
+    set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}")
+endif()
+
 set(spatialjoin_main SpatialJoinMain.cpp)
 
 list(REMOVE_ITEM SPATIALJOIN_SRC ${spatialjoin_main})
@@ -35,4 +39,8 @@ endif(ZLIB_FOUND)
 
 if(CMAKE_TESTING_ENABLED)
     add_subdirectory(tests)
+endif()
+
+if(PROJECT_IS_TOP_LEVEL AND CMAKE_TESTING_ENABLED)
+	add_test(NAME "utilTest" COMMAND utilTest)
 endif()
