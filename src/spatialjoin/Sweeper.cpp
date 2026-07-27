@@ -4638,12 +4638,6 @@ double Sweeper::getMaxMultiDist(const std::string& idA, size_t aSub,
 }
 
 // _____________________________________________________________________________
-template <template <typename> class G, typename T>
-util::geo::I32Box Sweeper::getPaddedBoundingBox(const G<T>& geom) const {
-  return getPaddedBoundingBox(geom, geom);
-}
-
-// _____________________________________________________________________________
 template <template <typename> class G1, template <typename> class G2,
           typename T>
 util::geo::I32Box Sweeper::getPaddedBoundingBox(const G1<T>& geom,

@@ -341,7 +341,9 @@ class Sweeper {
   }
 
   template <template <typename> class G, typename T>
-  util::geo::I32Box getPaddedBoundingBox(const G<T>& geom) const;
+  util::geo::I32Box getPaddedBoundingBox(const G<T>& geom) const {
+    return getPaddedBoundingBox(geom, geom);
+  }
 
   template <template <typename> class G1, template <typename> class G2,
             typename T>
@@ -658,6 +660,7 @@ class Sweeper {
                                   {std::numeric_limits<int32_t>::max(),
                                    std::numeric_limits<int32_t>::max()}};
 };
+
 }  // namespace sj
 
 #endif
