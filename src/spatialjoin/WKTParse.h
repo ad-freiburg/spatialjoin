@@ -104,8 +104,8 @@ class WKTParserBase {
     }
   };
 
-  static util::geo::I32Point projFunc(const util::geo::DPoint &p) {
-    auto projPoint = latLngToWebMerc(p);
+  static util::geo::I32Point projFunc(const util::geo::DPoint &p, util::geo::CRSType sourceCRS) {
+    auto projPoint = projectToWebMerc(p, sourceCRS);
     return {static_cast<int>(projPoint.getX() * PREC),
             static_cast<int>(projPoint.getY() * PREC)};
   }
@@ -172,38 +172,39 @@ class WKTParserBase {
         c = end + 1;
       } while (c < lastC && ((end = strchr(c, ',')) || (end = strchr(c, '>'))));
     } else {
+      auto crsType = getCRSType(c, &c);
       auto wktType = getWKTType(c, &c);
       if (wktType == util::geo::WKTType::POINT) {
-        const auto &point = pointFromWKTProj<int32_t>(c, 0, &projFunc);
+        const auto &point = pointFromWKTProj<int32_t>(c, 0, &projFunc, crsType);
         _bboxes[t] = util::geo::extendBox(_sweeper->add(point, id, side, batch),
                                           _bboxes[t]);
       } else if (wktType == util::geo::WKTType::MULTIPOINT) {
-        const auto &mp = multiPointFromWKTProj<int32_t>(c, 0, &projFunc);
+        const auto &mp = multiPointFromWKTProj<int32_t>(c, 0, &projFunc, crsType);
         if (mp.size() != 0)
           _bboxes[t] = util::geo::extendBox(_sweeper->add(mp, id, side, batch),
                                             _bboxes[t]);
       } else if (wktType == util::geo::WKTType::LINESTRING) {
-        const auto &line = lineFromWKTProj<int32_t>(c, 0, &projFunc);
+        const auto &line = lineFromWKTProj<int32_t>(c, 0, &projFunc, crsType);
         if (line.size() > 1)
           _bboxes[t] = util::geo::extendBox(
               _sweeper->add(line, id, side, batch), _bboxes[t]);
       } else if (wktType == util::geo::WKTType::MULTILINESTRING) {
-        const auto &ml = multiLineFromWKTProj<int32_t>(c, 0, &projFunc);
+        const auto &ml = multiLineFromWKTProj<int32_t>(c, 0, &projFunc, crsType);
         _bboxes[t] = util::geo::extendBox(_sweeper->add(ml, id, side, batch),
                                           _bboxes[t]);
       } else if (wktType == util::geo::WKTType::POLYGON) {
-        const auto &poly = polygonFromWKTProj<int32_t>(c, 0, &projFunc);
+        const auto &poly = polygonFromWKTProj<int32_t>(c, 0, &projFunc, crsType);
         if (poly.getOuter().size() > 1)
           _bboxes[t] = util::geo::extendBox(
               _sweeper->add(poly, id, side, batch), _bboxes[t]);
       } else if (wktType == util::geo::WKTType::MULTIPOLYGON) {
-        const auto &mp = multiPolygonFromWKTProj<int32_t>(c, 0, &projFunc);
+        const auto &mp = multiPolygonFromWKTProj<int32_t>(c, 0, &projFunc, crsType);
         if (mp.size())
           _bboxes[t] = util::geo::extendBox(_sweeper->add(mp, id, side, batch),
                                             _bboxes[t]);
       } else if (wktType == util::geo::WKTType::COLLECTION) {
 
-        const auto &col = collectionFromWKTProj<int32_t>(c, 0, &projFunc);
+        const auto &col = collectionFromWKTProj<int32_t>(c, 0, &projFunc, crsType);
 
         size_t numGeoms = 0;
         for (const auto &a : col) {
