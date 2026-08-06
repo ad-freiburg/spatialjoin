@@ -140,6 +140,8 @@ class WKTParserBase {
       c = idp + 1;
     }
 
+    auto crsType = getCRSType(c, &c);
+
     if (lastC - c > 2 && *c == '<') {
       // handle reference geometries
       const char *end = strchr(c, ',');
@@ -172,9 +174,9 @@ class WKTParserBase {
         c = end + 1;
       } while (c < lastC && ((end = strchr(c, ',')) || (end = strchr(c, '>'))));
     } else {
-      auto crsType = getCRSType(c, &c);
       // erroneous line / crs type, ignore
       if (crsType == util::geo::CRSType::UNSUPPORTED) return; 
+
       auto wktType = getWKTType(c, &c);
       if (wktType == util::geo::WKTType::POINT) {
         const auto &point = pointFromWKTProj<int32_t>(c, 0, &projFunc, crsType);
