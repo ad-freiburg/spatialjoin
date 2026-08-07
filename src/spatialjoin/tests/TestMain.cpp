@@ -8,6 +8,7 @@
 #include "spatialjoin/BoxIds.h"
 #include "spatialjoin/OutputWriter.h"
 #include "spatialjoin/GeometryCacheManager.h"
+#include "spatialjoin/Sweeper.h"
 #include "spatialjoin/WKTParse.h"
 #include "util/Test.h"
 #include "util/geo/Geo.h"
@@ -15,6 +16,7 @@
 
 using sj::ParseBatch;
 using sj::GeometryCacheManager;
+using sj::Sweeper;
 
 size_t NUM_THREADS = 1;
 
@@ -56,7 +58,8 @@ std::string fullRun(const std::string& file, sj::SweeperCfg cfg,
 
     cacheManager.flush();
 
-    cacheManager.sweep();
+    Sweeper sweeper(cfg, &cacheManager);
+    sweeper.sweep(cacheManager.events());
 
     stats->numReferences = cacheManager.numReferences();
 

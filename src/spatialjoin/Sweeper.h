@@ -34,92 +34,26 @@ namespace sj {
 
 class Sweeper {
  public:
-  Sweeper(SweeperCfg cfg, const std::string& cache)
-      : Sweeper(cfg, cache, ".spatialjoin") {}
-  Sweeper(SweeperCfg cfg, const std::string& cache,
-          const std::string& tmpPrefix)
+  Sweeper(SweeperCfg cfg,
+          const GeometryCacheManager* cacheManager)
       : _cfg(cfg),
         _obufpos(0),
-        _pointCache({cfg.useOBB}, cfg.geomCacheMaxSize,
-                    POINT_CACHE_MAX_ELEMENTS, cfg.numCacheThreads, cache,
-                    tmpPrefix),
-        _areaCache({cfg.useOBB}, cfg.geomCacheMaxSize,
-                   cfg.geomCacheMaxNumElements, cfg.numCacheThreads, cache,
-                   tmpPrefix),
-        _simpleAreaCache({cfg.useOBB}, cfg.geomCacheMaxSize,
-                         cfg.geomCacheMaxNumElements, cfg.numCacheThreads,
-                         cache, tmpPrefix),
-        _lineCache({cfg.useOBB}, cfg.geomCacheMaxSize,
-                   cfg.geomCacheMaxNumElements, cfg.numCacheThreads, cache,
-                   tmpPrefix),
-        _simpleLineCache({cfg.useOBB}, cfg.geomCacheMaxSize,
-                         SIMPLE_LINE_CACHE_MAX_ELEMENTS, cfg.numCacheThreads,
-                         cache, tmpPrefix),
-        _cache(cache),
+        _cacheManager(cacheManager),
         _jobs(100),
-        _numSides(1),
         _dontNeedFullDE9IM(!_cfg.computeDE9IM &&
                            _cfg.de9imFilter == util::geo::FANY) {
-    // OUTFACTOR 1
-    _fname = util::getTmpFName(_cache, tmpPrefix, "events");
-    _file = open(_fname.c_str(), O_RDWR | O_CREAT | O_TRUNC, 0666);
-
-    if (_file < 0) {
-      throw std::runtime_error("Could not open temporary file " + _fname);
-    }
-
-    // immediately unlink
-    unlink(_fname.c_str());
-
-#ifdef __unix__
-    posix_fadvise(_file, 0, 0, POSIX_FADV_SEQUENTIAL);
-#endif
-
-    // OUTFACTOR 1
-
     _outBuffer = new unsigned char[BUFFER_S];
-
-    if (_cfg.forceTwoSided) _numSides = 2;
   };
-
-  ~Sweeper() { close(_file); }
 
   void log(const std::string& msg);
 
-  RelStats sweep();
+  RelStats sweep(int events);
 
   size_t numElements() const { return _curSweepId / 2; }
 
-  size_t numReferences() const {
-    size_t ret = 0;
-    for (const auto& subs : _refs) {
-      for (const auto& refd : subs.second) {
-        ret += refd.second.size();
-      }
-    }
-    return ret;
-  }
-
-  void setFilterBox(const util::geo::I32Box& filterBox) {
-    _filterBox = filterBox;
-  }
-
-  template <template <typename> class G, typename T>
-  util::geo::I32Box getPaddedBoundingBox(const G<T>& geom) const {
-    return getPaddedBoundingBox(geom, geom);
-  }
-
-  template <template <typename> class G1, template <typename> class G2,
-            typename T>
-  util::geo::I32Box getPaddedBoundingBox(const G1<T>& geom,
-                                         const G2<T>& refGeom) const;
-  static size_t foldString(const std::string& s);
   static std::string unfoldString(size_t folded);
 
-  double DUPLICATE_REMOVAL_MIN_SIZE = 500;
-
  private:
-
   Area areaFromSimpleArea(const SimpleArea* sa) const;
   Line lineFromSimpleLine(const SimpleLine* sl) const;
 
@@ -174,8 +108,6 @@ class Sweeper {
   void diskAdd(const BoxVal& bv);
 
   void multiOut(size_t t, const std::string& gid);
-  void multiAdd(const std::string& gid, bool side, int32_t xLeft,
-                int32_t xRight, const util::geo::I32Point& pointRight);
   void clearMultis(bool force);
 
   void writeIntersect(size_t t, const std::string& a, size_t aSub,
@@ -241,7 +173,7 @@ class Sweeper {
                           const util::geo::I32Point& p2, double maxDist);
 
   static double euclideanDist(const util::geo::I32Point& p1,
-                          const util::geo::I32Point& p2, double maxDist);
+                              const util::geo::I32Point& p2, double maxDist);
 
   static double localSearchPadding(double euclideanDistanceUpperBound,
                                    double distanceUpperBound,
@@ -249,15 +181,13 @@ class Sweeper {
                                    const util::geo::I32Box& bBox);
 
   static double noSearchPadding(double euclideanDistanceUpperBound,
-                                   double distanceUpperBound,
-                                   const util::geo::I32Box& aBox,
-                                   const util::geo::I32Box& bBox);
+                                double distanceUpperBound,
+                                const util::geo::I32Box& aBox,
+                                const util::geo::I32Box& bBox);
 
   void fillBatch(JobBatch* batch,
                  const util::geo::IntervalIdx<int32_t, SweepVal>* actives,
                  const BoxVal* cur) const;
-
-  void duplicatesToReferences();
 
   static int boxCmp(const void* a, const void* b) {
     const auto& boxa = static_cast<const BoxVal*>(a);
@@ -323,8 +253,6 @@ class Sweeper {
 
   const SweeperCfg _cfg;
   size_t _curSweepId = 0;
-  std::string _fname;
-  int _file;
   unsigned char* _outBuffer;
   ssize_t _obufpos;
 
@@ -336,12 +264,6 @@ class Sweeper {
   std::vector<RelStats> _relStats;
 
   mutable std::vector<Stats> _stats;
-
-  GeometryCache<Point> _pointCache;
-  GeometryCache<Area> _areaCache;
-  GeometryCache<SimpleArea> _simpleAreaCache;
-  GeometryCache<Line> _lineCache;
-  GeometryCache<SimpleLine> _simpleLineCache;
 
   std::vector<std::map<std::string, std::map<std::string, double>>>
       _subDistance;
@@ -363,19 +285,9 @@ class Sweeper {
 
   std::set<size_t> _activeMultis[2];
 
-  // these are written during the geometry add phase
-  std::vector<std::string> _multiIds[2];
-  std::vector<int32_t> _multiRightX[2];
-  std::map<std::string, util::geo::I32Point> _multiRightPoint;
-  std::vector<int32_t> _multiLeftX[2];
-  std::map<std::string, size_t> _multiGidToId[2];
-  std::map<std::string, size_t> _subSizes;
-
-  std::string _cache;
+  const GeometryCacheManager* _cacheManager;
 
   util::JobQueue<JobBatch> _jobs;
-
-  std::atomic<uint8_t> _numSides;
 
   std::vector<std::mutex> _mutsEquals;
   std::vector<std::mutex> _mutsCovers;
@@ -397,19 +309,6 @@ class Sweeper {
   mutable std::mutex _areaGeomCacheWriteMtx;
   mutable std::mutex _simpleAreaGeomCacheWriteMtx;
 
-  std::unordered_map<std::string, util::geo::I32Box> _selfCheckBounds;
-
-  std::unordered_map<
-      std::string,
-      std::unordered_map<size_t, std::unordered_map<std::string, size_t>>>
-      _refs;
-
-  std::vector<std::pair<std::string, size_t>> _selfChecks;
-
-  util::geo::I32Box _filterBox = {{std::numeric_limits<int32_t>::lowest(),
-                                   std::numeric_limits<int32_t>::lowest()},
-                                  {std::numeric_limits<int32_t>::max(),
-                                   std::numeric_limits<int32_t>::max()}};
   bool _dontNeedFullDE9IM;
 };
 

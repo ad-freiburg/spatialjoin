@@ -7,6 +7,7 @@
 #include "BoxIds.h"
 #include "OutputWriter.h"
 #include "GeometryCacheManager.h"
+#include "Sweeper.h"
 #include "WKTParse.h"
 #include "util/Misc.h"
 #include "util/geo/Geo.h"
@@ -14,6 +15,7 @@
 
 using sj::ParseBatch;
 using sj::GeometryCacheManager;
+using sj::Sweeper;
 using util::geo::DE9IMFilter;
 using util::geo::DLine;
 using util::geo::DPoint;
@@ -497,9 +499,11 @@ int main(int argc, char** argv) {
               "s).");
   cacheManager.flush();
 
+  Sweeper sweeper(sweeperCfg, &cacheManager);
+
   cacheManager.log("Sweeping...");
   ts = TIME();
-  cacheManager.sweep();
+  sweeper.sweep(cacheManager.events());
   cacheManager.log("done (" + std::to_string(TOOK(ts) / 1000000000.0) + "s).");
 
   delete[] buf;

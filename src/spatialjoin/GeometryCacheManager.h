@@ -235,7 +235,7 @@ class GeometryCacheManager {
   GeometryCacheManager(SweeperCfg cfg, const std::string& cache)
       : GeometryCacheManager(cfg, cache, ".spatialjoin") {}
   GeometryCacheManager(SweeperCfg cfg, const std::string& cache,
-          const std::string& tmpPrefix)
+                       const std::string& tmpPrefix)
       : _cfg(cfg),
         _obufpos(0),
         _pointCache({cfg.useOBB}, cfg.geomCacheMaxSize,
@@ -328,9 +328,9 @@ class GeometryCacheManager {
 
   void flush();
 
-  RelStats sweep();
-
   size_t numElements() const { return _curSweepId / 2; }
+
+  int events() const { return _file; }
 
   size_t numReferences() const {
     size_t ret = 0;
@@ -340,6 +340,70 @@ class GeometryCacheManager {
       }
     }
     return ret;
+  }
+
+  std::shared_ptr<sj::Line> getLine(size_t id, size_t tid) const {
+    return _lineCache.get(id, tid);
+  }
+  std::shared_ptr<sj::SimpleLine> getSimpleLine(size_t id, size_t tid) const {
+    return _simpleLineCache.get(id, tid);
+  }
+
+  std::shared_ptr<sj::Area> getArea(size_t id, size_t tid) const {
+    return _areaCache.get(id, tid);
+  }
+
+  std::shared_ptr<sj::SimpleArea> getSimpleArea(size_t id, size_t tid) const {
+    return _simpleAreaCache.get(id, tid);
+  }
+
+  std::shared_ptr<sj::Point> getPoint(size_t id, size_t tid) const {
+    return _pointCache.get(id, tid);
+  }
+
+  std::pair<size_t, size_t> size() const;
+
+  size_t numSides() const { return _numSides; }
+
+  size_t subSize(const std::string& id) const {
+    return _subSizes.at(id);
+  }
+
+  bool isMulti(const std::string& id) const {
+    return _subSizes.find(id) != _subSizes.end();
+  }
+
+  size_t numMultis(bool side) const { return _multiIds[side].size(); }
+
+  const std::string& multiId(bool side, size_t id) const {
+    return _multiIds[side][id];
+  }
+
+  int32_t multiRightX(bool side, size_t id) const {
+    return _multiRightX[side][id];
+  }
+
+  util::geo::I32Point multiRightPoint(const std::string& gid) const {
+    auto i = _multiRightPoint.find(gid);
+    if (i == _multiRightPoint.end()) return {};
+    return i->second;
+  }
+
+  bool hasRefs() const { return _refs.size() != 0; }
+
+  bool isRefed(const std::string& gid) const { return _refs.count(gid); }
+
+  const std::unordered_map<std::string, size_t>* getRefs(
+      const std::string& gid, size_t subId) const {
+    auto i = _refs.find(gid);
+    if (i == _refs.end()) return nullptr;
+    auto j = i->second.find(subId);
+    if (j == i->second.end()) return nullptr;
+    return &j->second;
+  }
+
+  std::pair<std::string, size_t> selfCheck(size_t id) const {
+    return _selfChecks[id];
   }
 
   void setFilterBox(const util::geo::I32Box& filterBox) {
@@ -356,148 +420,19 @@ class GeometryCacheManager {
   util::geo::I32Box getPaddedBoundingBox(const G1<T>& geom,
                                          const G2<T>& refGeom) const;
   static size_t foldString(const std::string& s);
-  static std::string unfoldString(size_t folded);
 
   double DUPLICATE_REMOVAL_MIN_SIZE = 500;
 
  private:
-
-  Area areaFromSimpleArea(const SimpleArea* sa) const;
-  Line lineFromSimpleLine(const SimpleLine* sl) const;
-
-  double distCheck(const util::geo::I32Point& a, const Point* aMeta,
-                   const Area* b, size_t t);
-  double distCheck(const util::geo::I32Point& a, const Point* aMeta,
-                   const Line* b, size_t t);
-  double distCheck(const util::geo::I32Point& a,
-                   const util::geo::LineSegment<int32_t>& b, size_t t);
-  double distCheck(const util::geo::LineSegment<int32_t>& a,
-                   const util::geo::LineSegment<int32_t>& b, size_t t);
-  double distCheck(const util::geo::LineSegment<int32_t>& a, const Line* b,
-                   size_t t);
-  double distCheck(const util::geo::LineSegment<int32_t>& a, const Area* b,
-                   size_t t);
-  double distCheck(const Line* a, const Line* b, size_t t);
-  double distCheck(const Area* a, const Area* b, size_t t);
-  double distCheck(const Line* a, const Area* b, size_t t);
-
   double getMaxMultiDist(const std::string& idA, size_t aSub,
                          const util::geo::I32Point& leftAPoint,
                          const std::string& idB, size_t bSub,
                          const util::geo::I32Point& leftBPoint, size_t t);
 
-  util::geo::DE9IMatrix DE9IMCheck(const util::geo::I32Point& a, const Area* b,
-                                   size_t t) const;
-  util::geo::DE9IMatrix DE9IMCheck(const util::geo::I32Point& a, const Line* b,
-                                   size_t t) const;
-  util::geo::DE9IMatrix DE9IMCheck(const util::geo::I32Point& a,
-                                   const util::geo::LineSegment<int32_t>& b,
-                                   size_t t) const;
-  util::geo::DE9IMatrix DE9IMCheck(const util::geo::LineSegment<int32_t>& a,
-                                   const util::geo::LineSegment<int32_t>& b,
-                                   size_t t) const;
-  util::geo::DE9IMatrix DE9IMCheck(const util::geo::LineSegment<int32_t>& a,
-                                   const Line* b, size_t t) const;
-  util::geo::DE9IMatrix DE9IMCheck(const util::geo::LineSegment<int32_t>& a,
-                                   const Area* b, size_t t) const;
-  util::geo::DE9IMatrix DE9IMCheck(const Line* a, const Line* b,
-                                   size_t t) const;
-  util::geo::DE9IMatrix DE9IMCheck(const Area* a, const Area* b,
-                                   size_t t) const;
-  util::geo::DE9IMatrix DE9IMCheck(const Line* a, const Area* b,
-                                   size_t t) const;
-
-  double getMaxScaleFactor(const util::geo::I32Box& geom) const;
-  static std::pair<double, double> getMinMaxLocalScaleFactors(
-      const util::geo::I32Box& boxA, const util::geo::I32Box& boxB,
-      double distanceUpperBound);
-  double getMaxScaleFactor(const util::geo::I32Point& geom) const;
-
   void diskAdd(const BoxVal& bv);
 
-  void multiOut(size_t t, const std::string& gid);
   void multiAdd(const std::string& gid, bool side, int32_t xLeft,
                 int32_t xRight, const util::geo::I32Point& pointRight);
-  void clearMultis(bool force);
-
-  void writeIntersect(size_t t, const std::string& a, size_t aSub,
-                      const std::string& b, size_t bSub);
-  void writeRel(size_t t, const std::string& a, const std::string& b,
-                const std::string& pred);
-  void writeContains(size_t t, const std::string& a, size_t aSub,
-                     const std::string& b, size_t bSub);
-  void writeCovers(size_t t, const std::string& a, size_t aSub,
-                   const std::string& b, size_t bSub);
-  void writeEquals(size_t t, const std::string& a, size_t aSub,
-                   const std::string& b, size_t bSub);
-  void writeDE9IM(size_t t, const std::string& a, size_t aSub,
-                  const std::string& b, size_t bSub,
-                  util::geo::DE9IMatrix de9im);
-  void writeDist(size_t t, const std::string& a, size_t aSub,
-                 const std::string& b, size_t bSub, double dist);
-  void writeTouches(size_t t, const std::string& a, size_t aSub,
-                    const std::string& b, size_t bSub);
-  void writeNotTouches(size_t t, const std::string& a, size_t aSub,
-                       const std::string& b, size_t bSub);
-
-  void writeOverlaps(size_t t, const std::string& a, size_t aSub,
-                     const std::string& b, size_t bSub);
-  void writeNotOverlaps(size_t t, const std::string& a, size_t aSub,
-                        const std::string& b, size_t bSub);
-
-  void writeCrosses(size_t t, const std::string& a, size_t aSub,
-                    const std::string& b, size_t bSub);
-  void writeNotCrosses(size_t t, const std::string& a, size_t aSub,
-                       const std::string& b, size_t bSub);
-
-  void doCheck(JobVal cur, JobVal sv, size_t t);
-  void doDistCheck(JobVal cur, JobVal sv, size_t t);
-  void doDE9IMCheck(JobVal cur, JobVal sv, size_t t);
-  void selfCheck(const std::string& a, size_t subId, GeomType type, size_t t);
-  void processQueue(size_t t);
-
-  bool notOverlaps(const std::string& a, const std::string& b);
-  bool notTouches(const std::string& a, const std::string& b);
-  bool notCrosses(const std::string& a, const std::string& b);
-
-  std::shared_ptr<sj::Point> getPoint(size_t id, GeomType gt, size_t t) const;
-  static bool isPoint(GeomType gt) { return gt == POINT || gt == FOLDED_POINT; }
-
-  static bool isArea(GeomType gt) {
-    return gt == POLYGON || gt == SIMPLE_POLYGON || gt == FOLDED_BOX_POLYGON;
-  }
-
-  std::shared_ptr<sj::Area> getArea(const JobVal& j, size_t) const;
-
-  std::shared_ptr<sj::SimpleLine> getSimpleLine(const JobVal& cur,
-                                                size_t t) const;
-  static bool isLine(GeomType gt) {
-    return gt == LINE || gt == SIMPLE_LINE || gt == FOLDED_SIMPLE_LINE;
-  }
-
-  static bool isSimpleLine(GeomType gt) {
-    return gt == SIMPLE_LINE || gt == FOLDED_SIMPLE_LINE;
-  }
-
-  static double meterDist(const util::geo::I32Point& p1,
-                          const util::geo::I32Point& p2, double maxDist);
-
-  static double euclideanDist(const util::geo::I32Point& p1,
-                          const util::geo::I32Point& p2, double maxDist);
-
-  static double localSearchPadding(double euclideanDistanceUpperBound,
-                                   double distanceUpperBound,
-                                   const util::geo::I32Box& aBox,
-                                   const util::geo::I32Box& bBox);
-
-  static double noSearchPadding(double euclideanDistanceUpperBound,
-                                   double distanceUpperBound,
-                                   const util::geo::I32Box& aBox,
-                                   const util::geo::I32Box& bBox);
-
-  void fillBatch(JobBatch* batch,
-                 const util::geo::IntervalIdx<int32_t, SweepVal>* actives,
-                 const BoxVal* cur) const;
 
   void duplicatesToReferences();
 
