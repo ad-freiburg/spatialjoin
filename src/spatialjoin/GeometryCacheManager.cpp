@@ -20,14 +20,14 @@
 #include <sstream>
 
 #include "BoxIds.h"
-#include "Sweeper.h"
+#include "GeometryCacheManager.h"
 #include "util/Misc.h"
 #include "util/geo/IntervalIdx.h"
 #include "util/log/Log.h"
 
 using sj::GeomCheckRes;
 using sj::GeomType;
-using sj::Sweeper;
+using sj::GeometryCacheManager;
 using sj::boxids::boxIdIsect;
 using sj::boxids::BoxIdList;
 using sj::boxids::getBoxId;
@@ -68,7 +68,755 @@ const static double sin45 = 1.0 / sqrt(2);
 const static double cos45 = 1.0 / sqrt(2);
 
 // _____________________________________________________________________________
-void Sweeper::clearMultis(bool force) {
+I32Box GeometryCacheManager::add(const I32MultiPolygon& a, const std::string& gid, bool side,
+                    WriteBatch& batch) const {
+  size_t subid = 0;  // a subid of 0 means "single polygon"
+  if (a.size() > 1) subid = 1;
+
+  return add(a, gid, subid, side, batch);
+}
+
+// _____________________________________________________________________________
+I32Box GeometryCacheManager::add(const I32MultiLine& a, const std::string& gid, bool side,
+                    WriteBatch& batch) const {
+  size_t subid = 0;  // a subid of 0 means "single line"
+  if (a.size() > 1) subid = 1;
+
+  return add(a, gid, subid, side, batch);
+}
+
+// _____________________________________________________________________________
+I32Box GeometryCacheManager::add(const I32MultiPoint& a, const std::string& gid, bool side,
+                    WriteBatch& batch) const {
+  size_t subid = 0;  // a subid of 0 means "single point"
+  if (a.size() > 1) subid = 1;
+
+  return add(a, gid, subid, side, batch);
+}
+
+// _____________________________________________________________________________
+I32Box GeometryCacheManager::add(const I32MultiPolygon& a, const std::string& gid,
+                    size_t subId, bool side, WriteBatch& batch) const {
+  I32Box ret;
+  for (const auto& poly : a) {
+    if (poly.getOuter().size() < 2) continue;
+    auto box = add(poly, gid, subId, side, batch);
+    if (box.isNull()) continue;
+    ret = util::geo::extendBox(box, ret);
+    subId++;
+  }
+
+  return ret;
+}
+
+// _____________________________________________________________________________
+I32Box GeometryCacheManager::add(const I32MultiLine& a, const std::string& gid, size_t subId,
+                    bool side, WriteBatch& batch) const {
+  I32Box ret;
+  for (const auto& line : a) {
+    if (line.size() < 2) continue;
+    auto box = add(line, gid, subId, side, batch);
+    if (box.isNull()) continue;
+    ret = util::geo::extendBox(box, ret);
+    subId++;
+  }
+
+  return ret;
+}
+
+// _____________________________________________________________________________
+I32Box GeometryCacheManager::add(const I32MultiPoint& a, const std::string& gid,
+                    size_t subid, bool side, WriteBatch& batch) const {
+  I32Box ret;
+  size_t newId = subid;
+  for (const auto& point : a) {
+    auto box = add(point, gid, newId, side, batch);
+    if (box.isNull()) continue;
+    ret = util::geo::extendBox(box, ret);
+    newId++;
+  }
+
+  return ret;
+}
+
+// _____________________________________________________________________________
+void GeometryCacheManager::multiAdd(const std::string& gid, bool side, int32_t xLeft,
+                       int32_t xRight, const I32Point& pointRight) {
+  auto i = _multiGidToId[side].find(gid);
+
+  if (i == _multiGidToId[side].end()) {
+    _multiIds[side].push_back(gid);
+    _multiRightX[side].push_back(xRight);
+    _multiRightPoint[gid] = pointRight;
+    _multiLeftX[side].push_back(xLeft);
+    _multiGidToId[side][gid] = _multiIds[side].size() - 1;
+    _subSizes[gid] = 1;
+  } else {
+    size_t id = _multiGidToId[side][gid];
+    if (xRight > _multiRightX[side][id]) _multiRightX[side][id] = xRight;
+    if (pointRight.getX() > _multiRightPoint[gid].getX())
+      _multiRightPoint[gid] = pointRight;
+    if (xLeft < _multiLeftX[side][id]) _multiLeftX[side][id] = xLeft;
+    _subSizes[gid] = _subSizes[gid] + 1;
+  }
+}
+
+// _____________________________________________________________________________
+void GeometryCacheManager::add(const std::string& parentR, const util::geo::I32Box& box,
+                  const std::string& gidR, size_t subid, bool side,
+                  WriteBatch& batch) const {
+  // NOTE: referencing atm *only* works if the referenced geometry is a non-
+  // multi geometry. If a multi geometry is referenced, the behavior is
+  // undefined.
+  std::string gid = (side ? ("B" + gidR) : ("A" + gidR));
+  std::string parent = (side ? ("B" + parentR) : ("A" + parentR));
+
+  BoxVal boxl, boxr;
+  boxl.side = side;
+  boxr.side = side;
+
+  boxl.val = box.getLowerLeft().getX();
+  boxr.val = box.getUpperRight().getX();
+
+  batch.refs.push_back({parent, gid, boxl, boxr, subid});
+}
+
+// _____________________________________________________________________________
+I32Box GeometryCacheManager::add(const I32Polygon& poly, const std::string& gid, bool side,
+                    WriteBatch& batch) const {
+  return add(poly, gid, 0, side, batch);
+}
+
+// _____________________________________________________________________________
+I32Box GeometryCacheManager::add(const I32Polygon& poly, const std::string& gidR,
+                    size_t subid, bool side, WriteBatch& batch) const {
+  if (subid == 0 && _cfg.de9imFilter != util::geo::FANY) {
+    // drop certain geometries if we can be sure that they will never match
+    // the given DE-9IM filter
+    if (_cfg.de9imFilter.minBoundaryDim() > 1) return {};
+    if (_cfg.de9imFilter.maxInteriorDim() < 2) return {};
+    if (side && _cfg.de9imFilter.maxRightInteriorDim() < 2) return {};
+    if (side && _cfg.de9imFilter.minRightBoundaryDim() > 1) return {};
+    if (_numSides > 1 && !side &&
+        _cfg.de9imFilter.maxLeftInteriorDim() < 2)
+      return {};
+    if (_numSides > 1 && !side &&
+        _cfg.de9imFilter.minLeftBoundaryDim() > 1)
+      return {};
+  }
+
+  std::string gid = (side ? ("B" + gidR) : ("A" + gidR));
+
+  WriteCand cur;
+  I32XSortedPolygon spoly(poly);
+  const auto& rawBox = spoly.boundingBox();
+  const auto& box = getPaddedBoundingBox(rawBox);
+  if (!util::geo::intersects(box, _filterBox)) return {};
+
+  if (spoly.empty()) return box;
+
+  size_t polySize = poly.size();
+  double areaSize = area(poly);
+
+  double outerAreaSize = outerArea(poly);
+  BoxIdList boxIds;
+
+  if (_cfg.useBoxIds) {
+    boxIds = packBoxIds(getBoxIds(spoly, rawBox, outerAreaSize));
+  }
+
+  I32Box box45;
+  if (_cfg.useDiagBox) {
+    auto polyR = util::geo::rotateSinCos(poly, sin45, cos45, I32Point(0, 0));
+    box45 = getPaddedBoundingBox(polyR, rawBox);
+  }
+
+  cur.subid = subid;
+  cur.gid = gid;
+
+  if (poly.getInners().size() == 0 && subid == 0 && gid.size() < 8 &&
+      (!_cfg.useBoxIds || boxIds.front().first == 1) &&
+      area(rawBox) == areaSize) {
+    cur.boxvalIn = {0,  // placeholder, will be overwritten later on
+                    box.getLowerLeft().getY(),
+                    box.getUpperRight().getY(),
+                    box.getLowerLeft().getX(),
+                    false,
+                    FOLDED_BOX_POLYGON,
+                    areaSize,
+                    box.getUpperRight(),
+                    4,
+                    box45,
+                    side,
+                    false,
+                    0};
+    cur.boxvalOut = {0,  // placeholder, will be overwritten later on
+                     box.getLowerLeft().getY(),
+                     box.getUpperRight().getY(),
+                     box.getUpperRight().getX(),
+                     true,
+                     FOLDED_BOX_POLYGON,
+                     areaSize,
+                     box.getLowerLeft(),
+                     4,
+                     box45,
+                     side,
+                     false,
+                     0};
+    batch.foldedBoxAreas.emplace_back(cur);
+  } else if (poly.getInners().size() == 0 && poly.getOuter().size() < 10 &&
+             subid == 0 && (!_cfg.useBoxIds || boxIds.front().first == 1)) {
+    std::stringstream str;
+    _simpleAreaCache.writeTo({poly.getOuter(), gid}, str);
+    cur.raw = str.str();
+
+    auto rightPoint = poly.getOuter().front();
+
+    for (const auto& p : poly.getOuter()) {
+      if (p.getX() > rightPoint.getX()) rightPoint = p;
+    }
+
+    size_t estimatedSize =
+        poly.getOuter().size() * sizeof(util::geo::XSortedTuple<int32_t>);
+
+    cur.boxvalIn = {0,  // placeholder, will be overwritten later on
+                    box.getLowerLeft().getY(),
+                    box.getUpperRight().getY(),
+                    box.getLowerLeft().getX(),
+                    false,
+                    SIMPLE_POLYGON,
+                    areaSize,
+                    {},
+                    poly.size(),
+                    box45,
+                    side,
+                    estimatedSize > GEOM_LARGENESS_THRESHOLD,
+                    0};
+    cur.boxvalOut = {0,  // placeholder, will be overwritten later on
+                     box.getLowerLeft().getY(),
+                     box.getUpperRight().getY(),
+                     box.getUpperRight().getX(),
+                     true,
+                     SIMPLE_POLYGON,
+                     areaSize,
+                     rightPoint,
+                     poly.size(),
+                     box45,
+                     side,
+                     estimatedSize > GEOM_LARGENESS_THRESHOLD,
+                     0};
+    batch.simpleAreas.emplace_back(cur);
+  } else {
+    if (!_cfg.useFastSweepSkip) {
+      spoly.setInnerMaxSegLen(std::numeric_limits<int32_t>::max());
+      spoly.getOuter().setMaxSegLen(std::numeric_limits<int32_t>::max());
+      for (auto& inner : spoly.getInners()) {
+        inner.setMaxSegLen(std::numeric_limits<int32_t>::max());
+      }
+    }
+
+    util::geo::I32Polygon obb;
+
+    if (_cfg.useOBB && poly.getOuter().size() >= OBB_MIN_SIZE) {
+      obb = util::geo::convexHull(
+          util::geo::pad(util::geo::getOrientedEnvelope(poly), 10));
+
+      // drop redundant oriented bbox
+      if (obb.getOuter().size() >= poly.getOuter().size()) obb = {};
+    }
+
+    // careful, assign this before move below
+    auto rightPoint = spoly.getOuter().rawRing().back().p;
+
+    std::stringstream str;
+    _areaCache.writeTo(
+        {std::move(spoly), gid, subid, boxIds, obb}, str);
+    ;
+
+    size_t estimatedSize = spoly.getOuter().rawRing().size() *
+                           sizeof(util::geo::XSortedTuple<int32_t>);
+    for (const auto& p : spoly.getInners()) {
+      estimatedSize +=
+          p.rawRing().size() * sizeof(util::geo::XSortedTuple<int32_t>);
+    }
+
+    cur.raw = str.str();
+
+    int32_t polySizeCapped = polySize < std::numeric_limits<int32_t>::max()
+                                 ? static_cast<int32_t>(polySize)
+                                 : std::numeric_limits<int32_t>::max();
+
+    cur.boxvalIn = {0,  // placeholder, will be overwritten later on
+                    box.getLowerLeft().getY(),
+                    box.getUpperRight().getY(),
+                    box.getLowerLeft().getX(),
+                    false,
+                    POLYGON,
+                    areaSize,
+                    {},
+                    polySize,
+                    box45,
+                    side,
+                    estimatedSize > GEOM_LARGENESS_THRESHOLD,
+                    polySizeCapped};
+    cur.boxvalOut = {0,  // placeholder, will be overwritten later on
+                     box.getLowerLeft().getY(),
+                     box.getUpperRight().getY(),
+                     box.getUpperRight().getX(),
+                     true,
+                     POLYGON,
+                     areaSize,
+                     rightPoint,
+                     polySize,
+                     box45,
+                     side,
+                     estimatedSize > GEOM_LARGENESS_THRESHOLD,
+                     polySizeCapped};
+    batch.areas.emplace_back(cur);
+  }
+
+  return box;
+}
+
+// _____________________________________________________________________________
+I32Box GeometryCacheManager::add(const I32Line& line, const std::string& gid, bool side,
+                    WriteBatch& batch) const {
+  return add(line, gid, 0, side, batch);
+}
+
+// _____________________________________________________________________________
+I32Box GeometryCacheManager::add(const I32Line& line, const std::string& gidR, size_t subid,
+                    bool side, WriteBatch& batch) const {
+  if (line.size() < 2) return {};
+
+  if (subid == 0 && _cfg.de9imFilter != util::geo::FANY) {
+    // drop certain geometries if we can be sure that they will never match
+    // the given DE-9IM filter
+    if (_cfg.de9imFilter.minInteriorDim() > 1) return {};
+    if (_cfg.de9imFilter.minBoundaryDim() > 0) return {};
+    if (_cfg.de9imFilter.maxInteriorDim() < 1) return {};
+    if (side && _cfg.de9imFilter.minRightInteriorDim() > 1) return {};
+    if (side && _cfg.de9imFilter.minRightBoundaryDim() > 0) return {};
+    if (side && _cfg.de9imFilter.maxRightInteriorDim() < 1) return {};
+    if (_numSides > 1 && !side &&
+        _cfg.de9imFilter.minLeftInteriorDim() > 1)
+      return {};
+    if (_numSides > 1 && !side &&
+        _cfg.de9imFilter.maxLeftInteriorDim() < 1)
+      return {};
+    if (_numSides > 1 && !side &&
+        _cfg.de9imFilter.minLeftBoundaryDim() > 0)
+      return {};
+  }
+  if (_cfg.de9imFilter.maxExteriorDim() < 2) return {};
+
+  std::string gid = (side ? ("B" + gidR) : ("A" + gidR));
+
+  WriteCand cur;
+
+  I32XSortedLine sline(line);
+
+  const auto& rawBox = sline.boundingBox();
+  const auto& box = getPaddedBoundingBox(rawBox);
+
+  if (!util::geo::intersects(box, _filterBox)) return {};
+  BoxIdList boxIds;
+
+  if (_cfg.useBoxIds) {
+    boxIds = packBoxIds(getBoxIds(line, rawBox));
+  }
+
+  const double len = util::geo::len(line);
+  size_t lineSize = line.size();
+
+  I32Box box45;
+  if (_cfg.useDiagBox) {
+    auto lineR = util::geo::rotateSinCos(line, sin45, cos45, I32Point(0, 0));
+    box45 = getPaddedBoundingBox(lineR, rawBox);
+  }
+
+  cur.subid = subid;
+  cur.gid = gid;
+
+  if (line.size() == 2 && (!_cfg.useBoxIds || boxIds.front().first == 1) &&
+      subid == 0) {
+    // simple line
+
+    cur.boxvalIn = {
+        0,  // placeholder, will be overwritten later on
+        box.getLowerLeft().getY(),
+        box.getUpperRight().getY(),
+        box.getLowerLeft().getX(),
+        false,
+        SIMPLE_LINE,
+        len,
+        line.front().getX() < line.back().getX() ? line.back() : line.front(),
+        2,
+        box45,
+        side,
+        false,
+        0};
+    cur.boxvalOut = {
+        0,  // placeholder, will be overwritten later on,
+        box.getLowerLeft().getY(),
+        box.getUpperRight().getY(),
+        box.getUpperRight().getX(),
+        true,
+        SIMPLE_LINE,
+        len,
+        line.front().getX() < line.back().getX() ? line.front() : line.back(),
+        2,
+        box45,
+        side,
+        false,
+        0};
+
+    // check if we can fold the gid into the offset id, because the gid is all
+    // we store in the cache for points
+    if (subid == 0 && gid.size() < 8) {
+      cur.boxvalIn.type = FOLDED_SIMPLE_LINE;
+      cur.boxvalOut.type = FOLDED_SIMPLE_LINE;
+      batch.foldedSimpleLines.emplace_back(cur);
+    } else {
+      std::stringstream str;
+      _simpleLineCache.writeTo({gid}, str);
+
+      cur.raw = str.str();
+
+      batch.simpleLines.emplace_back(cur);
+    }
+  } else {
+    // normal line
+    if (line.empty()) return {};
+    if (sline.rawLine().empty()) return {};
+    auto rightPoint = sline.rawLine().back().p;
+    util::geo::I32Polygon obb;
+    if (_cfg.useOBB && line.size() >= OBB_MIN_SIZE) {
+      obb = util::geo::convexHull(
+          util::geo::pad(util::geo::getOrientedEnvelope(line), 10));
+
+      // drop redundant oriented bbox
+      if (obb.getOuter().size() >= line.size()) obb = {};
+    }
+
+    if (!_cfg.useFastSweepSkip) {
+      sline.setMaxSegLen(std::numeric_limits<int32_t>::max());
+    }
+
+    std::stringstream str;
+    _lineCache.writeTo({std::move(sline), gid, subid, boxIds, obb}, str);
+    cur.raw = str.str();
+
+    size_t estimatedSize =
+        line.size() * sizeof(util::geo::XSortedTuple<int32_t>);
+
+    int32_t lineSizeCapped = lineSize < std::numeric_limits<int32_t>::max()
+                                 ? static_cast<int32_t>(lineSize)
+                                 : std::numeric_limits<int32_t>::max();
+
+    cur.boxvalIn = {0,  // placeholder, will be overwritten later on
+                    box.getLowerLeft().getY(),
+                    box.getUpperRight().getY(),
+                    box.getLowerLeft().getX(),
+                    false,
+                    LINE,
+                    len,
+                    {},
+                    lineSize,
+                    box45,
+                    side,
+                    estimatedSize > GEOM_LARGENESS_THRESHOLD,
+                    lineSizeCapped};
+    cur.boxvalOut = {0,  // placeholder, will be overwritten later on
+                     box.getLowerLeft().getY(),
+                     box.getUpperRight().getY(),
+                     box.getUpperRight().getX(),
+                     true,
+                     LINE,
+                     len,
+                     rightPoint,
+                     lineSize,
+                     box45,
+                     side,
+                     estimatedSize > GEOM_LARGENESS_THRESHOLD,
+                     lineSizeCapped};
+    batch.lines.emplace_back(cur);
+  }
+
+  return box;
+}
+
+// _____________________________________________________________________________
+I32Box GeometryCacheManager::add(const I32Point& point, const std::string& gid, bool side,
+                    WriteBatch& batch) const {
+  return add(point, gid, 0, side, batch);
+}
+
+// _____________________________________________________________________________
+I32Box GeometryCacheManager::add(const I32Point& point, const std::string& gidR,
+                    size_t subid, bool side, WriteBatch& batch) const {
+  if (subid == 0 && _cfg.de9imFilter != util::geo::FANY) {
+    // drop certain geometries if we can be sure that they will never match
+    // the given DE-9IM filter
+    if (_cfg.de9imFilter.minInteriorDim() > 0) return {};
+    if (_cfg.de9imFilter.minBoundaryDim() >= 0) return {};
+    if (_cfg.de9imFilter.maxInteriorDim() < 0) return {};
+    if (side && _cfg.de9imFilter.minRightInteriorDim() > 0) return {};
+    if (side && _cfg.de9imFilter.maxRightInteriorDim() < 0) return {};
+    if (side && _cfg.de9imFilter.minRightBoundaryDim() >= 0) return {};
+    if (_numSides > 1 && !side &&
+        _cfg.de9imFilter.minLeftInteriorDim() > 0)
+      return {};
+    if (_numSides > 1 && !side &&
+        _cfg.de9imFilter.maxLeftInteriorDim() < 0)
+      return {};
+    if (_numSides > 1 && !side &&
+        _cfg.de9imFilter.minLeftBoundaryDim() >= 0)
+      return {};
+  }
+
+  if (_cfg.de9imFilter.maxExteriorDim() < 2) return {};
+
+  std::string gid = (side ? ("B" + gidR) : ("A" + gidR));
+
+  WriteCand cur;
+
+  const auto& rawBox = getBoundingBox(point);
+  const auto& box = getPaddedBoundingBox(rawBox);
+
+  cur.subid = subid;
+
+  if (!util::geo::intersects(box, _filterBox)) return {};
+
+  auto pointR = util::geo::rotateSinCos(point, sin45, cos45, I32Point(0, 0));
+  cur.boxvalIn = {0,  // placeholder, will be overwritten later on
+                  box.getLowerLeft().getY(),
+                  box.getUpperRight().getY(),
+                  box.getLowerLeft().getX(),
+                  false,
+                  POINT,
+                  0,
+                  point,
+                  1,
+                  getPaddedBoundingBox(pointR, rawBox),
+                  side,
+                  false,
+                  0};
+  cur.boxvalOut = {0,  // placeholder, will be overwritten later on
+                   box.getLowerLeft().getY(),
+                   box.getUpperRight().getY(),
+                   box.getUpperRight().getX(),
+                   true,
+                   POINT,
+                   0,
+                   point,
+                   1,
+                   getPaddedBoundingBox(pointR, rawBox),
+                   side,
+                   false,
+                   0};
+
+  cur.gid = gid;
+
+  // check if we can fold the gid into the offset id, because the gid is all
+  // we store in the cache for points
+  if (subid == 0 && gid.size() < 8) {
+    cur.boxvalIn.type = FOLDED_POINT;
+    cur.boxvalOut.type = FOLDED_POINT;
+    batch.foldedPoints.emplace_back(cur);
+  } else {
+    std::stringstream str;
+    _pointCache.writeTo({gid, subid}, str);
+
+    cur.raw = str.str();
+
+    batch.points.emplace_back(cur);
+  }
+
+  return box;
+}
+
+// _____________________________________________________________________________
+void GeometryCacheManager::addBatch(WriteBatch& cands) {
+  {
+    for (auto& cand : cands.foldedPoints) {
+      if (cand.boxvalIn.side) _numSides = 2;
+      cand.boxvalIn.id = foldString(cand.gid);
+      cand.boxvalOut.id = cand.boxvalIn.id;
+    }
+  }
+
+  {
+    std::unique_lock<std::mutex> lock(_pointGeomCacheWriteMtx);
+    for (auto& cand : cands.points) {
+      if (cand.boxvalIn.side) _numSides = 2;
+      cand.boxvalIn.id = _pointCache.add(cand.raw);
+      cand.boxvalOut.id = cand.boxvalIn.id;
+    }
+  }
+
+  {
+    std::unique_lock<std::mutex> lock(_lineGeomCacheWriteMtx);
+    for (auto& cand : cands.lines) {
+      if (cand.boxvalIn.side) _numSides = 2;
+      cand.boxvalIn.id = _lineCache.add(cand.raw);
+      cand.boxvalOut.id = cand.boxvalIn.id;
+    }
+  }
+
+  {
+    std::unique_lock<std::mutex> lock(_simpleLineGeomCacheWriteMtx);
+    for (auto& cand : cands.simpleLines) {
+      if (cand.boxvalIn.side) _numSides = 2;
+      cand.boxvalIn.id = _simpleLineCache.add(cand.raw);
+      cand.boxvalOut.id = cand.boxvalIn.id;
+    }
+  }
+
+  {
+    for (auto& cand : cands.foldedSimpleLines) {
+      if (cand.boxvalIn.side) _numSides = 2;
+      cand.boxvalIn.id = foldString(cand.gid);
+      cand.boxvalOut.id = cand.boxvalIn.id;
+    }
+  }
+
+  {
+    for (auto& cand : cands.foldedBoxAreas) {
+      if (cand.boxvalIn.side) _numSides = 2;
+      cand.boxvalIn.id = foldString(cand.gid);
+      cand.boxvalOut.id = cand.boxvalIn.id;
+    }
+  }
+
+  {
+    std::unique_lock<std::mutex> lock(_simpleAreaGeomCacheWriteMtx);
+    for (auto& cand : cands.simpleAreas) {
+      if (cand.boxvalIn.side) _numSides = 2;
+      cand.boxvalIn.id = _simpleAreaCache.add(cand.raw);
+      cand.boxvalOut.id = cand.boxvalIn.id;
+    }
+  }
+
+  {
+    std::unique_lock<std::mutex> lock(_areaGeomCacheWriteMtx);
+    for (auto& cand : cands.areas) {
+      if (cand.boxvalIn.side) _numSides = 2;
+      cand.boxvalIn.id = _areaCache.add(cand.raw);
+      cand.boxvalOut.id = cand.boxvalIn.id;
+    }
+  }
+
+  for (const auto& cand : cands.points) {
+    if (cand.subid > 0) {
+      std::unique_lock<std::mutex> lock(_multiAddMtx);
+      multiAdd(cand.gid, cand.boxvalIn.side, cand.boxvalIn.val,
+               cand.boxvalOut.val, cand.boxvalOut.point);
+    }
+  }
+
+  for (const auto& cand : cands.simpleLines) {
+    if (cand.subid > 0) {
+      std::unique_lock<std::mutex> lock(_multiAddMtx);
+      multiAdd(cand.gid, cand.boxvalIn.side, cand.boxvalIn.val,
+               cand.boxvalOut.val, cand.boxvalOut.point);
+    }
+  }
+
+  for (const auto& cand : cands.lines) {
+    if (cand.subid > 0) {
+      std::unique_lock<std::mutex> lock(_multiAddMtx);
+      multiAdd(cand.gid, cand.boxvalIn.side, cand.boxvalIn.val,
+               cand.boxvalOut.val, cand.boxvalOut.point);
+    }
+  }
+
+  for (const auto& cand : cands.simpleAreas) {
+    if (cand.subid > 0) {
+      std::unique_lock<std::mutex> lock(_multiAddMtx);
+      multiAdd(cand.gid, cand.boxvalIn.side, cand.boxvalIn.val,
+               cand.boxvalOut.val, cand.boxvalOut.point);
+    }
+  }
+
+  for (const auto& cand : cands.areas) {
+    if (cand.subid > 0) {
+      std::unique_lock<std::mutex> lock(_multiAddMtx);
+      multiAdd(cand.gid, cand.boxvalIn.side, cand.boxvalIn.val,
+               cand.boxvalOut.val, cand.boxvalOut.point);
+    }
+  }
+
+  for (const auto& cand : cands.refs) {
+    if (cand.subid > 0) {
+      std::unique_lock<std::mutex> lock(_multiAddMtx);
+      multiAdd(cand.gid, cand.boxvalIn.side, cand.boxvalIn.val,
+               cand.boxvalOut.val, cand.boxvalOut.point);
+    }
+  }
+
+  {
+    std::unique_lock<std::mutex> lock(_sweepEventWriteMtx);
+    for (const auto& cand : cands.foldedPoints) {
+      diskAdd(cand.boxvalIn);
+      diskAdd(cand.boxvalOut);
+      if (_curSweepId / 2 % 1000000 == 0)
+        log("@ " + std::to_string(_curSweepId / 2));
+    }
+    for (const auto& cand : cands.points) {
+      diskAdd(cand.boxvalIn);
+      diskAdd(cand.boxvalOut);
+      if (_curSweepId / 2 % 1000000 == 0)
+        log("@ " + std::to_string(_curSweepId / 2));
+    }
+    for (const auto& cand : cands.foldedSimpleLines) {
+      diskAdd(cand.boxvalIn);
+      diskAdd(cand.boxvalOut);
+      if (_curSweepId / 2 % 1000000 == 0)
+        log("@ " + std::to_string(_curSweepId / 2));
+    }
+    for (const auto& cand : cands.foldedBoxAreas) {
+      diskAdd(cand.boxvalIn);
+      diskAdd(cand.boxvalOut);
+      if (_curSweepId / 2 % 1000000 == 0)
+        log("@ " + std::to_string(_curSweepId / 2));
+    }
+    for (const auto& cand : cands.simpleLines) {
+      diskAdd(cand.boxvalIn);
+      diskAdd(cand.boxvalOut);
+      if (_curSweepId / 2 % 1000000 == 0)
+        log("@ " + std::to_string(_curSweepId / 2));
+    }
+    for (const auto& cand : cands.lines) {
+      diskAdd(cand.boxvalIn);
+      diskAdd(cand.boxvalOut);
+      if (_curSweepId / 2 % 1000000 == 0)
+        log("@ " + std::to_string(_curSweepId / 2));
+    }
+    for (const auto& cand : cands.simpleAreas) {
+      diskAdd(cand.boxvalIn);
+      diskAdd(cand.boxvalOut);
+      if (_curSweepId / 2 % 1000000 == 0)
+        log("@ " + std::to_string(_curSweepId / 2));
+    }
+    for (const auto& cand : cands.areas) {
+      diskAdd(cand.boxvalIn);
+      diskAdd(cand.boxvalOut);
+      if (_curSweepId / 2 % 1000000 == 0)
+        log("@ " + std::to_string(_curSweepId / 2));
+    }
+    for (const auto& cand : cands.refs) {
+      _refs[cand.raw][0][cand.gid] = cand.subid;
+      _selfCheckBounds[cand.raw] = util::geo::getBoundingBox(
+          I32Point{cand.boxvalIn.val, cand.boxvalIn.loY});
+      if (_curSweepId / 2 % 1000000 == 0)
+        log("@ " + std::to_string(_curSweepId / 2));
+    }
+  }
+}
+
+// _____________________________________________________________________________
+void GeometryCacheManager::clearMultis(bool force) {
   JobBatch curBatch;
   size_t batchSize = 1000;
   int32_t curMinThreadX = std::numeric_limits<int32_t>::max();
@@ -106,7 +854,7 @@ void Sweeper::clearMultis(bool force) {
 }
 
 // _____________________________________________________________________________
-void Sweeper::multiOut(size_t tOut, const std::string& gidA) {
+void GeometryCacheManager::multiOut(size_t tOut, const std::string& gidA) {
   // collect dist, if requested
   if (_cfg.withinDist >= 0) {
     std::map<std::string, double> subDistance;
@@ -388,7 +1136,273 @@ void Sweeper::multiOut(size_t tOut, const std::string& gidA) {
 }
 
 // _____________________________________________________________________________
-RelStats Sweeper::sweep() {
+void GeometryCacheManager::flush() {
+  if (_numSides > 1) log("(Non-self join between 2 datasets)");
+
+  log(std::to_string(_multiIds[0].size() + _multiIds[1].size()) +
+      " multi geometries");
+
+  for (const auto& ref : _refs) {
+    for (const auto& sub : ref.second) {
+      _selfChecks.push_back({ref.first, sub.first});
+
+      diskAdd({_selfChecks.size() - 1,
+               1,
+               0,
+               _selfCheckBounds[ref.first].getLowerLeft().getX(),
+               false,
+               SELF_CHECK,
+               0.0,
+               {},
+               0,
+               {},
+               false,
+               false,
+               0});
+    }
+  }
+
+  for (size_t side = 0; side < 2; side++) {
+    for (size_t i = 0; i < _multiIds[side].size(); i++) {
+      diskAdd({i,
+               1,
+               0,
+               _multiLeftX[side][i] - 1,
+               false,
+               POINT,
+               0.0,
+               {},
+               0,
+               {},
+               static_cast<bool>(side),
+               false,
+               0});
+    }
+  }
+
+  ssize_t r = writeAll(_file, _outBuffer, _obufpos);
+  if (r < 0) {
+    std::stringstream ss;
+    ss << "Could not write to events file '" << _fname << "'\n";
+    ss << strerror(errno) << std::endl;
+    throw std::runtime_error(ss.str());
+  }
+
+  delete[] _outBuffer;
+
+  _obufpos = 0;
+
+  _pointCache.flush();
+  _areaCache.flush();
+  _simpleAreaCache.flush();
+  _lineCache.flush();
+  _simpleLineCache.flush();
+
+  log("Sorting events...");
+
+  std::string newFName = util::getTmpFName(_cache, ".spatialjoin", "sorttmp");
+  int newFile = open(newFName.c_str(), O_RDWR | O_CREAT, 0666);
+  unlink(newFName.c_str());
+
+  if (newFile < 0) {
+    throw std::runtime_error("Could not open temporary file " + newFName);
+    exit(1);
+  }
+
+#ifdef __unix__
+  posix_fadvise(newFile, 0, 0, POSIX_FADV_SEQUENTIAL);
+#endif
+  r = util::externalSort(_file, newFile, sizeof(BoxVal), _curSweepId,
+                         _cfg.numThreads, boxCmp);
+
+  if (r < 0) {
+    std::stringstream ss;
+    ss << "Could not sort events file '" << _fname << "'\n";
+    ss << strerror(errno) << std::endl;
+    throw std::runtime_error(ss.str());
+  }
+
+  fsync(newFile);
+
+  close(_file);
+
+  _file = newFile;
+
+#ifdef __unix__
+  posix_fadvise(_file, 0, 0, POSIX_FADV_SEQUENTIAL);
+#endif
+
+  log("...done");
+
+  duplicatesToReferences();
+
+  log(std::to_string(_refs.size()) + " reference geometries");
+}
+
+// _____________________________________________________________________________
+void GeometryCacheManager::duplicatesToReferences() {
+  // start at beginning of _file
+  lseek(_file, 0, SEEK_SET);
+
+  const size_t RBUF_SIZE = 100000;
+  unsigned char* buf = new unsigned char[sizeof(BoxVal) * RBUF_SIZE];
+
+  std::unordered_set<size_t> deleted;
+  std::unordered_set<size_t> referenced;
+
+  log("Removing duplicates...");
+
+  ssize_t len;
+  size_t jj = 0;
+
+  int32_t curX = 0;
+
+  std::unordered_map<uint64_t, std::pair<size_t, bool>> duplicatePolys,
+      duplicateLines;
+
+  size_t pos = 0;
+
+  try {
+    while ((len = preadAll(_file, buf, sizeof(BoxVal) * RBUF_SIZE, pos)) != 0) {
+      size_t posOld = pos;
+      pos += len;
+      if (len < 0) {
+        std::stringstream ss;
+        ss << "Could not read from events file '" << _fname << "'\n";
+        ss << strerror(errno) << std::endl;
+        throw std::runtime_error(ss.str());
+      }
+
+      if (len % sizeof(BoxVal))
+        throw std::runtime_error("Corrupted events file");
+
+      bool updated = false;
+
+      for (ssize_t i = 0; i < len; i += sizeof(BoxVal)) {
+        auto cur = reinterpret_cast<BoxVal*>(buf + i);
+
+        if (_cfg.sweepCancellationCb && jj % 10000 == 0) {
+          _cfg.sweepCancellationCb();
+        }
+
+        jj++;
+
+        if (cur->out) {
+          if ((cur->type == POLYGON || cur->type == LINE) &&
+              deleted.erase(cur->id)) {
+            // erase it if present, to avoid unnecessary memory consumption
+            cur->type = DELETED;
+            updated = true;
+          }
+          referenced.erase(cur->id);
+          continue;
+        }
+
+        if (curX != cur->val) {
+          // new equal-X block
+          duplicatePolys = {};
+          duplicateLines = {};
+          curX = cur->val;
+        }
+
+        if (cur->type == POLYGON && cur->size >= DUPLICATE_REMOVAL_MIN_SIZE) {
+          size_t h = cur->numAnchors;
+          const auto& existing = duplicatePolys.find(h);
+
+          if (existing != duplicatePolys.end()) {
+            auto a = _areaCache.get(cur->id, cur->large ? -1 : 0);
+            auto b = _areaCache.get(existing->second.first,
+                                    existing->second.second ? -1 : 0);
+
+            if (a->geom == b->geom) {
+              deleted.insert(cur->id);
+              if (referenced.insert(existing->second.first).second) {
+                // for the first element referencing this, modify this
+                // event to the self check of the referenced geom
+                cur->type = SELF_CHECK_AREA;
+                _selfChecks.push_back({b->id, b->subId});
+                cur->id = _selfChecks.size() - 1;
+              } else {
+                cur->type = DELETED;
+              }
+
+              updated = true;
+              _refs[b->id][b->subId][a->id] = a->subId;
+            }
+          } else {
+            duplicatePolys[h] = {(size_t)cur->id, cur->large};
+          }
+        }
+
+        if (cur->type == LINE && cur->size >= DUPLICATE_REMOVAL_MIN_SIZE) {
+          size_t h = cur->numAnchors;
+          const auto& existing = duplicateLines.find(h);
+
+          if (existing != duplicateLines.end()) {
+            auto a = _lineCache.get(cur->id, cur->large ? -1 : 0);
+            auto b = _lineCache.get(existing->second.first,
+                                    existing->second.second ? -1 : 0);
+
+            if (a->geom == b->geom) {
+              deleted.insert(cur->id);
+              if (referenced.insert(existing->second.first).second) {
+                // for the first element referencing this, modify this
+                // event to the self check of the referenced geom
+                cur->type = SELF_CHECK_LINE;
+                _selfChecks.push_back({b->id, b->subId});
+                cur->id = _selfChecks.size() - 1;
+              } else {
+                cur->type = DELETED;
+              }
+              updated = true;
+              _refs[b->id][b->subId][a->id] = a->subId;
+            }
+          } else {
+            duplicateLines[h] = {(size_t)cur->id, cur->large};
+          }
+        }
+      }
+
+      // if we changed something in this buffer, write it back
+      if (updated) pwriteAll(_file, buf, len, posOld);
+    }
+  } catch (...) {
+    // graceful handling of an exception during sweep
+
+    delete[] buf;
+
+    // set the cancelled variable to true
+    _cancelled = true;
+
+    // rethrow exception
+    throw;
+  }
+
+  delete[] buf;
+
+  log("...done");
+}
+
+// _____________________________________________________________________________
+void GeometryCacheManager::diskAdd(const BoxVal& bv) {
+  memcpy(_outBuffer + _obufpos, &bv, sizeof(BoxVal));
+  _obufpos += sizeof(BoxVal);
+
+  if (_obufpos + sizeof(BoxVal) > BUFFER_S) {
+    ssize_t r = writeAll(_file, _outBuffer, _obufpos);
+    if (r < 0) {
+      std::stringstream ss;
+      ss << "Could not write to events file '" << _fname << "'\n";
+      ss << strerror(errno) << std::endl;
+      throw std::runtime_error(ss.str());
+    }
+    _obufpos = 0;
+  }
+  _curSweepId++;
+}
+
+// _____________________________________________________________________________
+RelStats GeometryCacheManager::sweep() {
   // start at beginning of _file
   lseek(_file, 0, SEEK_SET);
 
@@ -439,7 +1453,7 @@ RelStats Sweeper::sweep() {
   // fire up worker threads for geometry checking
   std::vector<std::thread> thrds(_cfg.numThreads);
   for (size_t i = 0; i < thrds.size(); i++)
-    thrds[i] = std::thread(&Sweeper::processQueue, this, i);
+    thrds[i] = std::thread(&GeometryCacheManager::processQueue, this, i);
 
   try {
     while ((len = readAll(_file, buf, sizeof(BoxVal) * RBUF_SIZE)) != 0) {
@@ -583,7 +1597,7 @@ RelStats Sweeper::sweep() {
   _jobs.reset();
   // fire up new workers to clear multis
   for (size_t i = 0; i < thrds.size(); i++)
-    thrds[i] = std::thread(&Sweeper::processQueue, this, i);
+    thrds[i] = std::thread(&GeometryCacheManager::processQueue, this, i);
 
   // now also clear the multis
   clearMultis(true);
@@ -614,7 +1628,7 @@ RelStats Sweeper::sweep() {
 }
 
 // _____________________________________________________________________________
-sj::Area Sweeper::areaFromSimpleArea(const SimpleArea* sa) const {
+sj::Area GeometryCacheManager::areaFromSimpleArea(const SimpleArea* sa) const {
   auto spoly = I32XSortedPolygon(sa->geom);
 
   if (!_cfg.useFastSweepSkip) {
@@ -630,7 +1644,7 @@ sj::Area Sweeper::areaFromSimpleArea(const SimpleArea* sa) const {
 }
 
 // _____________________________________________________________________________
-util::geo::DE9IMatrix Sweeper::DE9IMCheck(const Area* a, const Area* b,
+util::geo::DE9IMatrix GeometryCacheManager::DE9IMCheck(const Area* a, const Area* b,
                                           size_t t) const {
   _stats[t].totalComps++;
   // cheap equivalence check
@@ -685,7 +1699,7 @@ util::geo::DE9IMatrix Sweeper::DE9IMCheck(const Area* a, const Area* b,
 }
 
 // _____________________________________________________________________________
-util::geo::DE9IMatrix Sweeper::DE9IMCheck(const Line* a, const Area* b,
+util::geo::DE9IMatrix GeometryCacheManager::DE9IMCheck(const Line* a, const Area* b,
                                           size_t t) const {
   _stats[t].totalComps++;
   if (_cfg.useBoxIds) {
@@ -730,7 +1744,7 @@ util::geo::DE9IMatrix Sweeper::DE9IMCheck(const Line* a, const Area* b,
 }
 
 // _____________________________________________________________________________
-util::geo::DE9IMatrix Sweeper::DE9IMCheck(const Line* a, const Line* b,
+util::geo::DE9IMatrix GeometryCacheManager::DE9IMCheck(const Line* a, const Line* b,
                                           size_t t) const {
   _stats[t].totalComps++;
   // cheap equivalence check
@@ -766,7 +1780,7 @@ util::geo::DE9IMatrix Sweeper::DE9IMCheck(const Line* a, const Line* b,
 }
 
 // _____________________________________________________________________________
-util::geo::DE9IMatrix Sweeper::DE9IMCheck(const LineSegment<int32_t>& a,
+util::geo::DE9IMatrix GeometryCacheManager::DE9IMCheck(const LineSegment<int32_t>& a,
                                           const Area* b, size_t t) const {
   _stats[t].totalComps++;
   if (_cfg.useBoxIds) {
@@ -797,7 +1811,7 @@ util::geo::DE9IMatrix Sweeper::DE9IMCheck(const LineSegment<int32_t>& a,
 }
 
 // _____________________________________________________________________________
-util::geo::DE9IMatrix Sweeper::DE9IMCheck(const LineSegment<int32_t>& a,
+util::geo::DE9IMatrix GeometryCacheManager::DE9IMCheck(const LineSegment<int32_t>& a,
                                           const LineSegment<int32_t>& b,
                                           size_t t) const {
   _stats[t].totalComps++;
@@ -858,7 +1872,7 @@ util::geo::DE9IMatrix Sweeper::DE9IMCheck(const LineSegment<int32_t>& a,
 }
 
 // _____________________________________________________________________________
-util::geo::DE9IMatrix Sweeper::DE9IMCheck(const LineSegment<int32_t>& a,
+util::geo::DE9IMatrix GeometryCacheManager::DE9IMCheck(const LineSegment<int32_t>& a,
                                           const Line* b, size_t t) const {
   _stats[t].totalComps++;
   if (_cfg.useBoxIds) {
@@ -885,7 +1899,7 @@ util::geo::DE9IMatrix Sweeper::DE9IMCheck(const LineSegment<int32_t>& a,
 }
 
 // _____________________________________________________________________________
-util::geo::DE9IMatrix Sweeper::DE9IMCheck(const I32Point& a, const Line* b,
+util::geo::DE9IMatrix GeometryCacheManager::DE9IMCheck(const I32Point& a, const Line* b,
                                           size_t t) const {
   _stats[t].totalComps++;
   if (_cfg.useBoxIds) {
@@ -906,7 +1920,7 @@ util::geo::DE9IMatrix Sweeper::DE9IMCheck(const I32Point& a, const Line* b,
 }
 
 // ____________________________________________________________________________
-void Sweeper::writeRel(size_t t, const std::string& a, const std::string& b,
+void GeometryCacheManager::writeRel(size_t t, const std::string& a, const std::string& b,
                        const std::string& pred) {
   if (!_cfg.writeRelCb) return;
 
@@ -921,7 +1935,7 @@ void Sweeper::writeRel(size_t t, const std::string& a, const std::string& b,
 }
 
 // ____________________________________________________________________________
-void Sweeper::writeDE9IM(size_t t, const std::string& a, size_t aSub,
+void GeometryCacheManager::writeDE9IM(size_t t, const std::string& a, size_t aSub,
                          const std::string& b, size_t bSub,
                          util::geo::DE9IMatrix de9im) {
   if (a != b) {
@@ -1002,7 +2016,7 @@ void Sweeper::writeDE9IM(size_t t, const std::string& a, size_t aSub,
 }
 
 // ____________________________________________________________________________
-void Sweeper::writeDist(size_t t, const std::string& a, size_t aSub,
+void GeometryCacheManager::writeDist(size_t t, const std::string& a, size_t aSub,
                         const std::string& b, size_t bSub, double dist) {
   if (a != b) {
     if (bSub > 0 || aSub > 0) {
@@ -1050,7 +2064,7 @@ void Sweeper::writeDist(size_t t, const std::string& a, size_t aSub,
 }
 
 // ____________________________________________________________________________
-void Sweeper::writeIntersect(size_t t, const std::string& a, size_t aSub,
+void GeometryCacheManager::writeIntersect(size_t t, const std::string& a, size_t aSub,
                              const std::string& b, size_t bSub) {
   if (a != b) {
     _relStats[t].intersects++;
@@ -1089,7 +2103,7 @@ void Sweeper::writeIntersect(size_t t, const std::string& a, size_t aSub,
 }
 
 // ____________________________________________________________________________
-void Sweeper::selfCheck(const std::string& a, size_t subId, GeomType type,
+void GeometryCacheManager::selfCheck(const std::string& a, size_t subId, GeomType type,
                         size_t t) {
   if (_cfg.computeDE9IM) {
     if (type == SELF_CHECK_LINE)
@@ -1114,7 +2128,7 @@ void Sweeper::selfCheck(const std::string& a, size_t subId, GeomType type,
 }
 
 // ____________________________________________________________________________
-void Sweeper::doDE9IMCheck(const JobVal cur, const JobVal sv, size_t t) {
+void GeometryCacheManager::doDE9IMCheck(const JobVal cur, const JobVal sv, size_t t) {
   _checks[t]++;
   _curX[t] = cur.val;
 
@@ -1357,7 +2371,7 @@ void Sweeper::doDE9IMCheck(const JobVal cur, const JobVal sv, size_t t) {
 }
 
 // ____________________________________________________________________________
-void Sweeper::doDistCheck(const JobVal cur, const JobVal sv, size_t t) {
+void GeometryCacheManager::doDistCheck(const JobVal cur, const JobVal sv, size_t t) {
   _checks[t]++;
   _curX[t] = cur.val;
 
@@ -1550,7 +2564,7 @@ void Sweeper::doDistCheck(const JobVal cur, const JobVal sv, size_t t) {
 }
 
 // ____________________________________________________________________________
-void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
+void GeometryCacheManager::doCheck(const JobVal cur, const JobVal sv, size_t t) {
   _checks[t]++;
   _curX[t] = cur.val;
 
@@ -2144,7 +3158,7 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
 }
 
 // _____________________________________________________________________________
-void Sweeper::processQueue(size_t t) {
+void GeometryCacheManager::processQueue(size_t t) {
   try {
     JobBatch batch;
     while ((batch = _jobs.get()).size()) {
@@ -2175,7 +3189,7 @@ void Sweeper::processQueue(size_t t) {
 }
 
 // _____________________________________________________________________________
-void Sweeper::fillBatch(
+void GeometryCacheManager::fillBatch(
     JobBatch* batch, const util::geo::IntervalIdx<int32_t, SweepVal>* actives,
     const BoxVal* cur) const {
   const auto& overlaps = actives->overlap_find_all({cur->loY, cur->upY});
@@ -2200,7 +3214,7 @@ void Sweeper::fillBatch(
 }
 
 // _____________________________________________________________________________
-void Sweeper::writeOverlaps(size_t t, const std::string& a, size_t aSub,
+void GeometryCacheManager::writeOverlaps(size_t t, const std::string& a, size_t aSub,
                             const std::string& b, size_t bSub) {
   if (a != b) {
     if (aSub == 0 && bSub == 0) {
@@ -2246,7 +3260,7 @@ void Sweeper::writeOverlaps(size_t t, const std::string& a, size_t aSub,
 }
 
 // _____________________________________________________________________________
-void Sweeper::writeNotOverlaps(size_t t, const std::string& a, size_t aSub,
+void GeometryCacheManager::writeNotOverlaps(size_t t, const std::string& a, size_t aSub,
                                const std::string& b, size_t bSub) {
   if (a != b && (aSub != 0 || bSub != 0)) {
     std::unique_lock<std::mutex> lock(_mutsNotOverlaps[t]);
@@ -2282,7 +3296,7 @@ void Sweeper::writeNotOverlaps(size_t t, const std::string& a, size_t aSub,
 }
 
 // _____________________________________________________________________________
-void Sweeper::writeCrosses(size_t t, const std::string& a, size_t aSub,
+void GeometryCacheManager::writeCrosses(size_t t, const std::string& a, size_t aSub,
                            const std::string& b, size_t bSub) {
   if (a == b) return;
 
@@ -2328,7 +3342,7 @@ void Sweeper::writeCrosses(size_t t, const std::string& a, size_t aSub,
 }
 
 // _____________________________________________________________________________
-void Sweeper::writeNotCrosses(size_t t, const std::string& a, size_t aSub,
+void GeometryCacheManager::writeNotCrosses(size_t t, const std::string& a, size_t aSub,
                               const std::string& b, size_t bSub) {
   if (a != b && (aSub != 0 || bSub != 0)) {
     std::unique_lock<std::mutex> lock(_mutsNotCrosses[t]);
@@ -2367,7 +3381,7 @@ void Sweeper::writeNotCrosses(size_t t, const std::string& a, size_t aSub,
 }
 
 // _____________________________________________________________________________
-void Sweeper::writeTouches(size_t t, const std::string& a, size_t aSub,
+void GeometryCacheManager::writeTouches(size_t t, const std::string& a, size_t aSub,
                            const std::string& b, size_t bSub) {
   if (a == b) return;
 
@@ -2413,7 +3427,7 @@ void Sweeper::writeTouches(size_t t, const std::string& a, size_t aSub,
 }
 
 // _____________________________________________________________________________
-void Sweeper::writeNotTouches(size_t t, const std::string& a, size_t aSub,
+void GeometryCacheManager::writeNotTouches(size_t t, const std::string& a, size_t aSub,
                               const std::string& b, size_t bSub) {
   if (a != b && (aSub != 0 || bSub != 0)) {
     std::unique_lock<std::mutex> lock(_mutsNotTouches[t]);
@@ -2452,7 +3466,7 @@ void Sweeper::writeNotTouches(size_t t, const std::string& a, size_t aSub,
 }
 
 // _____________________________________________________________________________
-void Sweeper::writeEquals(size_t t, const std::string& a, size_t aSub,
+void GeometryCacheManager::writeEquals(size_t t, const std::string& a, size_t aSub,
                           const std::string& b, size_t bSub) {
   if (a != b) {
     if (aSub == 0 && bSub == 0) {
@@ -2501,7 +3515,7 @@ void Sweeper::writeEquals(size_t t, const std::string& a, size_t aSub,
 }
 
 // _____________________________________________________________________________
-void Sweeper::writeCovers(size_t t, const std::string& a, size_t aSub,
+void GeometryCacheManager::writeCovers(size_t t, const std::string& a, size_t aSub,
                           const std::string& b, size_t bSub) {
   if (a != b) {
     if (bSub > 0) {
@@ -2540,7 +3554,7 @@ void Sweeper::writeCovers(size_t t, const std::string& a, size_t aSub,
 }
 
 // _____________________________________________________________________________
-void Sweeper::writeContains(size_t t, const std::string& a, size_t aSub,
+void GeometryCacheManager::writeContains(size_t t, const std::string& a, size_t aSub,
                             const std::string& b, size_t bSub) {
   if (a != b) {
     if (bSub > 0) {
@@ -2579,7 +3593,7 @@ void Sweeper::writeContains(size_t t, const std::string& a, size_t aSub,
 }
 
 // _____________________________________________________________________________
-bool Sweeper::notCrosses(const std::string& a, const std::string& b) {
+bool GeometryCacheManager::notCrosses(const std::string& a, const std::string& b) {
   for (size_t t = 0; t < _cfg.numThreads + 1; t++) {
     std::unique_lock<std::mutex> lock(_mutsNotCrosses[t]);
     auto i = _subNotCrosses[t].find(a);
@@ -2590,7 +3604,7 @@ bool Sweeper::notCrosses(const std::string& a, const std::string& b) {
 }
 
 // _____________________________________________________________________________
-bool Sweeper::notTouches(const std::string& a, const std::string& b) {
+bool GeometryCacheManager::notTouches(const std::string& a, const std::string& b) {
   for (size_t t = 0; t < _cfg.numThreads + 1; t++) {
     std::unique_lock<std::mutex> lock(_mutsNotTouches[t]);
     auto i = _subNotTouches[t].find(a);
@@ -2601,7 +3615,7 @@ bool Sweeper::notTouches(const std::string& a, const std::string& b) {
 }
 
 // _____________________________________________________________________________
-bool Sweeper::notOverlaps(const std::string& a, const std::string& b) {
+bool GeometryCacheManager::notOverlaps(const std::string& a, const std::string& b) {
   for (size_t t = 0; t < _cfg.numThreads + 1; t++) {
     std::unique_lock<std::mutex> lock(_mutsNotOverlaps[t]);
     auto i = _subNotOverlaps[t].find(a);
@@ -2613,12 +3627,12 @@ bool Sweeper::notOverlaps(const std::string& a, const std::string& b) {
 }
 
 // _____________________________________________________________________________
-void Sweeper::log(const std::string& msg) {
+void GeometryCacheManager::log(const std::string& msg) {
   if (_cfg.logCb) _cfg.logCb(msg);
 }
 
 // _____________________________________________________________________________
-std::pair<double, double> Sweeper::getMinMaxLocalScaleFactors(
+std::pair<double, double> GeometryCacheManager::getMinMaxLocalScaleFactors(
     const I32Box& boxA, const I32Box& boxB, double distanceUpperBound) {
   auto withinBox = util::geo::extendBox(boxA, boxB);
 
@@ -2668,13 +3682,13 @@ std::pair<double, double> Sweeper::getMinMaxLocalScaleFactors(
 }
 
 // _____________________________________________________________________________
-double Sweeper::noSearchPadding(double euclideanDistanceUpperBound, double,
+double GeometryCacheManager::noSearchPadding(double euclideanDistanceUpperBound, double,
                                 const I32Box&, const I32Box&) {
   return euclideanDistanceUpperBound;
 }
 
 // _____________________________________________________________________________
-double Sweeper::localSearchPadding(double euclideanDistanceUpperBound,
+double GeometryCacheManager::localSearchPadding(double euclideanDistanceUpperBound,
                                    double distanceUpperBound,
                                    const I32Box& boxA, const I32Box& boxB) {
   auto minScaleALow =
@@ -2749,7 +3763,7 @@ double Sweeper::localSearchPadding(double euclideanDistanceUpperBound,
 }
 
 // _____________________________________________________________________________
-double Sweeper::getMaxScaleFactor(const I32Box& bbox) const {
+double GeometryCacheManager::getMaxScaleFactor(const I32Box& bbox) const {
   double invScaleFactor = std::min(
       util::geo::webMercDistFactor(I32Point{bbox.getLowerLeft().getX() / PREC,
                                             bbox.getLowerLeft().getY() / PREC}),
@@ -2761,18 +3775,18 @@ double Sweeper::getMaxScaleFactor(const I32Box& bbox) const {
 }
 
 // _____________________________________________________________________________
-double Sweeper::getMaxScaleFactor(const I32Point& p) const {
+double GeometryCacheManager::getMaxScaleFactor(const I32Point& p) const {
   return 1.0 / util::geo::webMercDistFactor(
                    I32Point{p.getX() / PREC, p.getY() / PREC});
 }
 
 // _____________________________________________________________________________
-double Sweeper::euclideanDist(const I32Point& p1, const I32Point& p2, double) {
+double GeometryCacheManager::euclideanDist(const I32Point& p1, const I32Point& p2, double) {
   return util::geo::dist(p1, p2) / PREC;
 }
 
 // _____________________________________________________________________________
-double Sweeper::meterDist(const I32Point& p1, const I32Point& p2,
+double GeometryCacheManager::meterDist(const I32Point& p1, const I32Point& p2,
                           double maxDist) {
   auto fp1 = FPoint{static_cast<float>((p1.getX() * 1.0) / (PREC * 1.0)),
                     static_cast<float>((p1.getY() * 1.0) / (PREC * 1.0))};
@@ -2798,7 +3812,7 @@ double Sweeper::meterDist(const I32Point& p1, const I32Point& p2,
 }
 
 // _____________________________________________________________________________
-double Sweeper::distCheck(const I32Point& a, const Point* aMeta, const Area* b,
+double GeometryCacheManager::distCheck(const I32Point& a, const Point* aMeta, const Area* b,
                           size_t t) {
   if (_cfg.useBoxIds) {
     auto ts = TIME();
@@ -2825,11 +3839,11 @@ double Sweeper::distCheck(const I32Point& a, const Point* aMeta, const Area* b,
 
   auto dist = util::geo::withinDist<int32_t>(
       a, b->geom, maxD,
-      _cfg.euclideanDist ? &Sweeper::noSearchPadding
-                         : &Sweeper::localSearchPadding,
+      _cfg.euclideanDist ? &GeometryCacheManager::noSearchPadding
+                         : &GeometryCacheManager::localSearchPadding,
       maxEuclideanDist,
-      _cfg.euclideanDist && !_cfg.haversineApprox ? &Sweeper::euclideanDist
-                                                  : &Sweeper::meterDist);
+      _cfg.euclideanDist && !_cfg.haversineApprox ? &GeometryCacheManager::euclideanDist
+                                                  : &GeometryCacheManager::meterDist);
 
   _stats[t].timeFullGeoCheckAreaPoint += TOOK(ts);
   _stats[t].fullGeoChecksAreaPoint++;
@@ -2838,7 +3852,7 @@ double Sweeper::distCheck(const I32Point& a, const Point* aMeta, const Area* b,
 }
 
 // _____________________________________________________________________________
-util::geo::DE9IMatrix Sweeper::DE9IMCheck(const I32Point& a, const Area* b,
+util::geo::DE9IMatrix GeometryCacheManager::DE9IMCheck(const I32Point& a, const Area* b,
                                           size_t t) const {
   _stats[t].totalComps++;
   if (_cfg.useBoxIds) {
@@ -2869,7 +3883,7 @@ util::geo::DE9IMatrix Sweeper::DE9IMCheck(const I32Point& a, const Area* b,
 }
 
 // _____________________________________________________________________________
-double Sweeper::distCheck(const I32Point& a, const Point* aMeta, const Line* b,
+double GeometryCacheManager::distCheck(const I32Point& a, const Point* aMeta, const Line* b,
                           size_t t) {
   auto ts = TIME();
   double maxD = _cfg.withinDist;
@@ -2887,11 +3901,11 @@ double Sweeper::distCheck(const I32Point& a, const Point* aMeta, const Line* b,
 
   auto dist = util::geo::withinDist<int32_t>(
       a, b->geom, maxD,
-      _cfg.euclideanDist ? &Sweeper::noSearchPadding
-                         : &Sweeper::localSearchPadding,
+      _cfg.euclideanDist ? &GeometryCacheManager::noSearchPadding
+                         : &GeometryCacheManager::localSearchPadding,
       maxEuclideanDist,
-      _cfg.euclideanDist && !_cfg.haversineApprox ? &Sweeper::euclideanDist
-                                                  : &Sweeper::meterDist);
+      _cfg.euclideanDist && !_cfg.haversineApprox ? &GeometryCacheManager::euclideanDist
+                                                  : &GeometryCacheManager::meterDist);
 
   _stats[t].timeFullGeoCheckLinePoint += TOOK(ts);
   _stats[t].fullGeoChecksLinePoint++;
@@ -2900,7 +3914,7 @@ double Sweeper::distCheck(const I32Point& a, const Point* aMeta, const Line* b,
 }
 
 // _____________________________________________________________________________
-util::geo::DE9IMatrix Sweeper::DE9IMCheck(const I32Point& a,
+util::geo::DE9IMatrix GeometryCacheManager::DE9IMCheck(const I32Point& a,
                                           const LineSegment<int32_t>& b,
                                           size_t t) const {
   _stats[t].totalComps++;
@@ -2913,15 +3927,15 @@ util::geo::DE9IMatrix Sweeper::DE9IMCheck(const I32Point& a,
 }
 
 // _____________________________________________________________________________
-double Sweeper::distCheck(const I32Point& a, const LineSegment<int32_t>& b,
+double GeometryCacheManager::distCheck(const I32Point& a, const LineSegment<int32_t>& b,
                           size_t t) {
   auto ts = TIME();
 
   auto p2 = projectOn(b.first, a, b.second);
 
   auto dist = _cfg.euclideanDist && !_cfg.haversineApprox
-                  ? Sweeper::euclideanDist(a, p2, _cfg.withinDist)
-                  : Sweeper::meterDist(a, p2, _cfg.withinDist);
+                  ? GeometryCacheManager::euclideanDist(a, p2, _cfg.withinDist)
+                  : GeometryCacheManager::meterDist(a, p2, _cfg.withinDist);
 
   _stats[t].timeFullGeoCheckLinePoint += TOOK(ts);
   _stats[t].fullGeoChecksLinePoint++;
@@ -2930,14 +3944,14 @@ double Sweeper::distCheck(const I32Point& a, const LineSegment<int32_t>& b,
 }
 
 // _____________________________________________________________________________
-double Sweeper::distCheck(const LineSegment<int32_t>& a,
+double GeometryCacheManager::distCheck(const LineSegment<int32_t>& a,
                           const LineSegment<int32_t>& b, size_t t) {
   auto ts = TIME();
 
   auto dist = util::geo::dist<int32_t>(
       a, b,
-      _cfg.euclideanDist && !_cfg.haversineApprox ? &Sweeper::euclideanDist
-                                                  : &Sweeper::meterDist);
+      _cfg.euclideanDist && !_cfg.haversineApprox ? &GeometryCacheManager::euclideanDist
+                                                  : &GeometryCacheManager::meterDist);
 
   _stats[t].timeFullGeoCheckLineLine += TOOK(ts);
   _stats[t].fullGeoChecksLineLine++;
@@ -2946,7 +3960,7 @@ double Sweeper::distCheck(const LineSegment<int32_t>& a,
 }
 
 // _____________________________________________________________________________
-double Sweeper::distCheck(const LineSegment<int32_t>& a, const Line* b,
+double GeometryCacheManager::distCheck(const LineSegment<int32_t>& a, const Line* b,
                           size_t t) {
   auto ts = TIME();
   auto scale =
@@ -2959,11 +3973,11 @@ double Sweeper::distCheck(const LineSegment<int32_t>& a, const Line* b,
 
   auto dist = util::geo::withinDist<int32_t>(
       I32XSortedLine(a), b->geom, _cfg.withinDist,
-      _cfg.euclideanDist ? &Sweeper::noSearchPadding
-                         : &Sweeper::localSearchPadding,
+      _cfg.euclideanDist ? &GeometryCacheManager::noSearchPadding
+                         : &GeometryCacheManager::localSearchPadding,
       maxEuclideanDist,
-      _cfg.euclideanDist && !_cfg.haversineApprox ? &Sweeper::euclideanDist
-                                                  : &Sweeper::meterDist);
+      _cfg.euclideanDist && !_cfg.haversineApprox ? &GeometryCacheManager::euclideanDist
+                                                  : &GeometryCacheManager::meterDist);
 
   _stats[t].timeFullGeoCheckAreaLine += TOOK(ts);
   _stats[t].fullGeoChecksAreaLine++;
@@ -2972,7 +3986,7 @@ double Sweeper::distCheck(const LineSegment<int32_t>& a, const Line* b,
 }
 
 // _____________________________________________________________________________
-double Sweeper::distCheck(const Line* a, const Line* b, size_t t) {
+double GeometryCacheManager::distCheck(const Line* a, const Line* b, size_t t) {
   auto ts = TIME();
   if (a == b) return 0;
 
@@ -2991,11 +4005,11 @@ double Sweeper::distCheck(const Line* a, const Line* b, size_t t) {
 
   auto dist = util::geo::withinDist<int32_t>(
       a->geom, b->geom, maxD,
-      _cfg.euclideanDist ? &Sweeper::noSearchPadding
-                         : &Sweeper::localSearchPadding,
+      _cfg.euclideanDist ? &GeometryCacheManager::noSearchPadding
+                         : &GeometryCacheManager::localSearchPadding,
       maxEuclideanDist,
-      _cfg.euclideanDist && !_cfg.haversineApprox ? &Sweeper::euclideanDist
-                                                  : &Sweeper::meterDist);
+      _cfg.euclideanDist && !_cfg.haversineApprox ? &GeometryCacheManager::euclideanDist
+                                                  : &GeometryCacheManager::meterDist);
 
   _stats[t].timeFullGeoCheckLineLine += TOOK(ts);
   _stats[t].fullGeoChecksLineLine++;
@@ -3004,7 +4018,7 @@ double Sweeper::distCheck(const Line* a, const Line* b, size_t t) {
 }
 
 // _____________________________________________________________________________
-double Sweeper::distCheck(const LineSegment<int32_t>& a, const Area* b,
+double GeometryCacheManager::distCheck(const LineSegment<int32_t>& a, const Area* b,
                           size_t t) {
   auto ts = TIME();
 
@@ -3026,11 +4040,11 @@ double Sweeper::distCheck(const LineSegment<int32_t>& a, const Area* b,
 
   auto dist = util::geo::withinDist<int32_t>(
       I32XSortedLine(a), b->geom, _cfg.withinDist,
-      _cfg.euclideanDist ? &Sweeper::noSearchPadding
-                         : &Sweeper::localSearchPadding,
+      _cfg.euclideanDist ? &GeometryCacheManager::noSearchPadding
+                         : &GeometryCacheManager::localSearchPadding,
       maxEuclideanDist,
-      _cfg.euclideanDist && !_cfg.haversineApprox ? &Sweeper::euclideanDist
-                                                  : &Sweeper::meterDist);
+      _cfg.euclideanDist && !_cfg.haversineApprox ? &GeometryCacheManager::euclideanDist
+                                                  : &GeometryCacheManager::meterDist);
 
   _stats[t].timeFullGeoCheckAreaLine += TOOK(ts);
   _stats[t].fullGeoChecksAreaLine++;
@@ -3039,7 +4053,7 @@ double Sweeper::distCheck(const LineSegment<int32_t>& a, const Area* b,
 }
 
 // _____________________________________________________________________________
-double Sweeper::distCheck(const Line* a, const Area* b, size_t t) {
+double GeometryCacheManager::distCheck(const Line* a, const Area* b, size_t t) {
   auto ts = TIME();
 
   if (_cfg.useBoxIds) {
@@ -3068,11 +4082,11 @@ double Sweeper::distCheck(const Line* a, const Area* b, size_t t) {
 
   auto dist = util::geo::withinDist<int32_t>(
       a->geom, b->geom, maxD,
-      _cfg.euclideanDist ? &Sweeper::noSearchPadding
-                         : &Sweeper::localSearchPadding,
+      _cfg.euclideanDist ? &GeometryCacheManager::noSearchPadding
+                         : &GeometryCacheManager::localSearchPadding,
       maxEuclideanDist,
-      _cfg.euclideanDist && !_cfg.haversineApprox ? &Sweeper::euclideanDist
-                                                  : &Sweeper::meterDist);
+      _cfg.euclideanDist && !_cfg.haversineApprox ? &GeometryCacheManager::euclideanDist
+                                                  : &GeometryCacheManager::meterDist);
 
   _stats[t].timeFullGeoCheckAreaLine += TOOK(ts);
   _stats[t].fullGeoChecksAreaLine++;
@@ -3081,7 +4095,7 @@ double Sweeper::distCheck(const Line* a, const Area* b, size_t t) {
 }
 
 // _____________________________________________________________________________
-double Sweeper::distCheck(const Area* a, const Area* b, size_t t) {
+double GeometryCacheManager::distCheck(const Area* a, const Area* b, size_t t) {
   auto ts = TIME();
 
   // cheap equivalence check
@@ -3115,11 +4129,11 @@ double Sweeper::distCheck(const Area* a, const Area* b, size_t t) {
 
   auto dist = util::geo::withinDist<int32_t>(
       a->geom, b->geom, maxD,
-      _cfg.euclideanDist ? &Sweeper::noSearchPadding
-                         : &Sweeper::localSearchPadding,
+      _cfg.euclideanDist ? &GeometryCacheManager::noSearchPadding
+                         : &GeometryCacheManager::localSearchPadding,
       maxEuclideanDist,
-      _cfg.euclideanDist && !_cfg.haversineApprox ? &Sweeper::euclideanDist
-                                                  : &Sweeper::meterDist);
+      _cfg.euclideanDist && !_cfg.haversineApprox ? &GeometryCacheManager::euclideanDist
+                                                  : &GeometryCacheManager::meterDist);
   _stats[t].timeFullGeoCheckAreaArea += TOOK(ts);
   _stats[t].fullGeoChecksAreaArea++;
 
@@ -3127,7 +4141,7 @@ double Sweeper::distCheck(const Area* a, const Area* b, size_t t) {
 }
 
 // _____________________________________________________________________________
-std::shared_ptr<sj::Point> Sweeper::getPoint(size_t id, GeomType gt,
+std::shared_ptr<sj::Point> GeometryCacheManager::getPoint(size_t id, GeomType gt,
                                              size_t t) const {
   std::shared_ptr<sj::Point> ret;
   auto ts = TIME();
@@ -3142,7 +4156,7 @@ std::shared_ptr<sj::Point> Sweeper::getPoint(size_t id, GeomType gt,
 }
 
 // _____________________________________________________________________________
-std::shared_ptr<sj::SimpleLine> Sweeper::getSimpleLine(const JobVal& cur,
+std::shared_ptr<sj::SimpleLine> GeometryCacheManager::getSimpleLine(const JobVal& cur,
                                                        size_t t) const {
   if (cur.type == sj::FOLDED_SIMPLE_LINE) {
     return std::make_shared<sj::SimpleLine>(
@@ -3153,7 +4167,7 @@ std::shared_ptr<sj::SimpleLine> Sweeper::getSimpleLine(const JobVal& cur,
 }
 
 // _____________________________________________________________________________
-std::shared_ptr<sj::Area> Sweeper::getArea(const JobVal& sv, size_t t) const {
+std::shared_ptr<sj::Area> GeometryCacheManager::getArea(const JobVal& sv, size_t t) const {
   auto ts = TIME();
   std::shared_ptr<Area> asp;
 
@@ -3177,7 +4191,7 @@ std::shared_ptr<sj::Area> Sweeper::getArea(const JobVal& sv, size_t t) const {
 }
 
 // _____________________________________________________________________________
-double Sweeper::getMaxMultiDist(const std::string& idA, size_t aSub,
+double GeometryCacheManager::getMaxMultiDist(const std::string& idA, size_t aSub,
                                 const I32Point& leftAPoint,
                                 const std::string& idB, size_t bSub,
                                 const I32Point& leftBPoint, size_t t) {
@@ -3187,8 +4201,8 @@ double Sweeper::getMaxMultiDist(const std::string& idA, size_t aSub,
   if (aSub > 0) {
     double d =
         _cfg.euclideanDist && !_cfg.haversineApprox
-            ? Sweeper::euclideanDist(_multiRightPoint[idA], leftBPoint, maxD)
-            : Sweeper::meterDist(_multiRightPoint[idA], leftBPoint, maxD);
+            ? GeometryCacheManager::euclideanDist(_multiRightPoint[idA], leftBPoint, maxD)
+            : GeometryCacheManager::meterDist(_multiRightPoint[idA], leftBPoint, maxD);
     maxD = std::min(maxD, d);
     std::unique_lock<std::mutex> lock(_mutsDistance[t]);
     if (_subDistance[t][idA].find(idB) != _subDistance[t][idA].end()) {
@@ -3198,8 +4212,8 @@ double Sweeper::getMaxMultiDist(const std::string& idA, size_t aSub,
   if (bSub > 0) {
     double d =
         _cfg.euclideanDist && !_cfg.haversineApprox
-            ? Sweeper::euclideanDist(_multiRightPoint[idB], leftAPoint, maxD)
-            : Sweeper::meterDist(_multiRightPoint[idB], leftAPoint, maxD);
+            ? GeometryCacheManager::euclideanDist(_multiRightPoint[idB], leftAPoint, maxD)
+            : GeometryCacheManager::meterDist(_multiRightPoint[idB], leftAPoint, maxD);
     maxD = std::min(maxD, d);
     std::unique_lock<std::mutex> lock(_mutsDistance[t]);
     if (_subDistance[t][idB].find(idA) != _subDistance[t][idB].end()) {
@@ -3213,7 +4227,7 @@ double Sweeper::getMaxMultiDist(const std::string& idA, size_t aSub,
 // _____________________________________________________________________________
 template <template <typename> class G1, template <typename> class G2,
           typename T>
-util::geo::I32Box Sweeper::getPaddedBoundingBox(const G1<T>& geom,
+util::geo::I32Box GeometryCacheManager::getPaddedBoundingBox(const G1<T>& geom,
                                                 const G2<T>& refGeom) const {
   auto bbox = util::geo::getBoundingBox(geom);
 
@@ -3283,7 +4297,7 @@ util::geo::I32Box Sweeper::getPaddedBoundingBox(const G1<T>& geom,
 }
 
 // _____________________________________________________________________________
-size_t Sweeper::foldString(const std::string& s) {
+size_t GeometryCacheManager::foldString(const std::string& s) {
   size_t ret = 0;
   for (size_t i = 0; i < std::min((size_t)7, s.size()); i++) {
     size_t tmp = static_cast<unsigned char>(s[i]);
@@ -3297,7 +4311,7 @@ size_t Sweeper::foldString(const std::string& s) {
 };
 
 // _____________________________________________________________________________
-std::string Sweeper::unfoldString(size_t folded) {
+std::string GeometryCacheManager::unfoldString(size_t folded) {
   // shift by 7 bytes to get size
   size_t n = folded >> 56;
 

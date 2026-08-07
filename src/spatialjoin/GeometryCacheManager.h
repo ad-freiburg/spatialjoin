@@ -1,8 +1,8 @@
-// Copyright 2023, University of Freiburg
+// Copyright 2026, University of Freiburg
 // Authors: Patrick Brosi <brosi@cs.uni-freiburg.de>.
 
-#ifndef SPATIALJOINS_SWEEPER_H_
-#define SPATIALJOINS_SWEEPER_H_
+#ifndef SPATIALJOINS_GEOMETRYCACHEMANAGER_H_
+#define SPATIALJOINS_GEOMETRYCACHEMANAGER_H_
 
 #include <fcntl.h>
 #include <stdio.h>
@@ -20,7 +20,6 @@
 #include <unordered_set>
 
 #include "GeometryCache.h"
-#include "GeometryCacheManager.h"
 #include "Stats.h"
 #include "util/JobQueue.h"
 #include "util/geo/Geo.h"
@@ -32,11 +31,210 @@
 
 namespace sj {
 
-class Sweeper {
+enum GeomType : uint8_t {
+  POLYGON = 0,
+  LINE = 1,
+  POINT = 2,
+  SIMPLE_LINE = 3,
+  SIMPLE_POLYGON = 4,
+  FOLDED_POINT = 5,
+  FOLDED_SIMPLE_LINE = 6,
+  FOLDED_BOX_POLYGON = 7,
+  DELETED = 8,
+  SELF_CHECK = 9,
+  SELF_CHECK_AREA = 10,
+  SELF_CHECK_LINE = 11,
+  SELF_CHECK_POINT = 12
+};
+
+struct BoxVal {
+  size_t id;
+  int32_t loY;
+  int32_t upY;
+  int32_t val;
+  bool out : 1;
+  GeomType type : 4;
+  double areaOrLen;
+  util::geo::I32Point point;
+  size_t numAnchors;
+  util::geo::I32Box b45;
+  bool side;
+  bool large;
+  int32_t size;
+};
+
+inline std::string toString(const BoxVal& bv) {
+  std::stringstream ret;
+
+  ret << "(id=" << bv.id;
+  ret << " loY=" << bv.loY;
+  ret << " upY=" << bv.upY;
+  ret << " val=" << bv.val;
+  ret << " out=" << bv.out;
+  ret << " type=" << (int)bv.type;
+  ret << " point=" << util::geo::getWKT(bv.point);
+  // ret << " b45=" << util::geo::getWKT(bv.b45);
+  ret << " side=" << bv.side;
+  ret << " large=" << bv.large;
+  ret << ")";
+
+  return ret.str();
+}
+
+struct WriteCand {
+  std::string raw;
+  std::string gid;
+  BoxVal boxvalIn;
+  BoxVal boxvalOut;
+  size_t subid;
+};
+
+struct WriteBatch {
+  std::vector<WriteCand> points;
+  std::vector<WriteCand> foldedPoints;
+  std::vector<WriteCand> simpleLines;
+  std::vector<WriteCand> foldedSimpleLines;
+  std::vector<WriteCand> lines;
+  std::vector<WriteCand> simpleAreas;
+  std::vector<WriteCand> foldedBoxAreas;
+  std::vector<WriteCand> areas;
+  std::vector<WriteCand> refs;
+
+  size_t size() const {
+    return points.size() + foldedSimpleLines.size() + foldedPoints.size() +
+           simpleLines.size() + lines.size() + simpleAreas.size() +
+           areas.size() + refs.size();
+  }
+};
+
+inline bool operator==(const BoxVal& a, const BoxVal& b) {
+  return a.id == b.id && a.loY == b.loY && a.upY == b.upY && a.type == b.type;
+}
+
+struct SweepVal {
+  SweepVal(size_t id, GeomType type)
+      : id(id), type(type), side(false), large(false) {}
+  SweepVal(size_t id, GeomType type, util::geo::I32Box b45,
+           util::geo::I32Point point, util::geo::I32Point point2, bool side,
+           bool large)
+      : id(id),
+        type(type),
+        b45(b45),
+        point(point),
+        point2(point2),
+        side(side),
+        large(large) {}
+  SweepVal() : id(0), type(POLYGON) {}
+  size_t id;
+  GeomType type : 4;
+  util::geo::I32Box b45;
+  util::geo::I32Point point, point2;
+  bool side;
+  bool large;
+};
+
+struct JobVal {
+  size_t id;
+  GeomType type : 4;
+  util::geo::I32Point point, point2;
+  bool large;
+  int32_t val;
+
+  JobVal() : id(0), type(POLYGON) {}
+  JobVal(const BoxVal& bv)
+      : id(bv.id),
+        type(bv.type),
+        point(bv.point),
+        point2(bv.val, bv.point.getY() == bv.loY ? bv.upY : bv.loY),
+        large(bv.large),
+        val(bv.val){};
+  JobVal(const SweepVal& sv)
+      : id(sv.id),
+        type(sv.type),
+        point(sv.point),
+        point2(sv.point2),
+        large(sv.large),
+        val(0){};
+};
+
+inline bool operator==(const JobVal& a, const JobVal& b) {
+  return a.id == b.id && a.type == b.type;
+}
+
+inline bool operator==(const SweepVal& a, const SweepVal& b) {
+  return a.id == b.id && a.type == b.type;
+}
+
+inline bool operator<(const SweepVal& a, const SweepVal& b) {
+  return a.id < b.id || (a.id == b.id && a.type < b.type);
+}
+
+struct Job {
+  JobVal boxVal, sweepVal;
+  std::string multiOut;
+};
+
+inline bool operator==(const Job& a, const Job& b) {
+  return a.boxVal == b.boxVal && a.sweepVal == b.sweepVal &&
+         a.multiOut == b.multiOut;
+}
+
+typedef std::vector<Job> JobBatch;
+
+// intersects, contains, covers, touches, crosses / overlaps
+typedef std::tuple<bool, bool, bool, bool, bool> GeomCheckRes;
+
+struct SweeperCfg {
+  size_t numThreads;
+  size_t numCacheThreads;
+  size_t geomCacheMaxSize;
+  size_t geomCacheMaxNumElements;
+  std::string sepIsect;
+  std::string sepContains;
+  std::string sepCovers;
+  std::string sepTouches;
+  std::string sepEquals;
+  std::string sepOverlaps;
+  std::string sepCrosses;
+  bool useBoxIds;
+  bool useArea;
+  bool useOBB;
+  bool useDiagBox;
+  bool useFastSweepSkip;
+  bool noGeometryChecks;
+  double withinDist;
+  bool euclideanDist;
+  bool haversineApprox;
+  bool computeDE9IM;
+  util::geo::DE9IMFilter de9imFilter;
+  bool forceTwoSided;
+  std::function<void(size_t t, const char* a, size_t an, const char* b,
+                     size_t bn, const char* pred, size_t predn)>
+      writeRelCb;
+  std::function<void(const std::string&)> logCb;
+  std::function<void(const std::string&)> statsCb;
+  std::function<void(size_t)> sweepProgressCb;
+  std::function<void()> sweepCancellationCb;
+};
+
+// buffer size _must_ be multiples of sizeof(BoxVal) and should hold at least
+// one element
+static const ssize_t BUFFER_S =
+    ((16 * 1024 * 1024 + sizeof(BoxVal)) / sizeof(BoxVal)) * sizeof(BoxVal);
+
+static const size_t MAX_OUT_LINE_LENGTH = 1000;
+
+static const size_t POINT_CACHE_MAX_ELEMENTS = 10000;
+static const size_t SIMPLE_LINE_CACHE_MAX_ELEMENTS = 10000;
+
+// only use large geom cache for extreme geometries
+static const size_t GEOM_LARGENESS_THRESHOLD = 1024 * 1024 * 1024;
+
+class GeometryCacheManager {
  public:
-  Sweeper(SweeperCfg cfg, const std::string& cache)
-      : Sweeper(cfg, cache, ".spatialjoin") {}
-  Sweeper(SweeperCfg cfg, const std::string& cache,
+  GeometryCacheManager(SweeperCfg cfg, const std::string& cache)
+      : GeometryCacheManager(cfg, cache, ".spatialjoin") {}
+  GeometryCacheManager(SweeperCfg cfg, const std::string& cache,
           const std::string& tmpPrefix)
       : _cfg(cfg),
         _obufpos(0),
@@ -82,9 +280,53 @@ class Sweeper {
     if (_cfg.forceTwoSided) _numSides = 2;
   };
 
-  ~Sweeper() { close(_file); }
+  ~GeometryCacheManager() { close(_file); }
 
   void log(const std::string& msg);
+
+  util::geo::I32Box add(const util::geo::I32MultiPolygon& a,
+                        const std::string& gid, bool side,
+                        WriteBatch& batch) const;
+  util::geo::I32Box add(const util::geo::I32MultiPolygon& a,
+                        const std::string& gid, size_t, bool side,
+                        WriteBatch& batch) const;
+  util::geo::I32Box add(const util::geo::I32Polygon& a, const std::string& gid,
+                        bool side, WriteBatch& batch) const;
+  util::geo::I32Box add(const util::geo::I32Polygon& a, const std::string& gid,
+                        size_t subId, bool side, WriteBatch& batch) const;
+
+  util::geo::I32Box add(const util::geo::I32MultiLine& a,
+                        const std::string& gid, size_t, bool side,
+                        WriteBatch& batch) const;
+  util::geo::I32Box add(const util::geo::I32MultiLine& a,
+                        const std::string& gid, bool side,
+                        WriteBatch& batch) const;
+  util::geo::I32Box add(const util::geo::I32Line& a, const std::string& gid,
+                        bool side, WriteBatch& batch) const;
+  util::geo::I32Box add(const util::geo::I32Line& a, const std::string& gid,
+                        size_t subid, bool side, WriteBatch& batch) const;
+
+  util::geo::I32Box add(const util::geo::I32Point& a, const std::string& gid,
+                        bool side, WriteBatch& batch) const;
+  util::geo::I32Box add(const util::geo::I32Point& a, const std::string& gid,
+                        size_t subid, bool side, WriteBatch& batch) const;
+  util::geo::I32Box add(const util::geo::I32MultiPoint& a,
+                        const std::string& gid, size_t, bool side,
+                        WriteBatch& batch) const;
+  util::geo::I32Box add(const util::geo::I32MultiPoint& a,
+                        const std::string& gid, bool side,
+                        WriteBatch& batch) const;
+
+  void add(const std::string& a, const util::geo::I32Box& box,
+           const std::string& gid, size_t subid, bool side,
+           WriteBatch& batch) const;
+  void add(const std::string& a, size_t parentSubId,
+           const util::geo::I32Box& box, const std::string& gid, size_t subid,
+           bool side, WriteBatch& batch) const;
+
+  void addBatch(WriteBatch& cands);
+
+  void flush();
 
   RelStats sweep();
 
