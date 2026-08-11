@@ -758,59 +758,59 @@ void GeometryCacheManager::addBatch(WriteBatch& cands) {
   {
     std::unique_lock<std::mutex> lock(_sweepEventWriteMtx);
     for (const auto& cand : cands.foldedPoints) {
-      diskAdd(cand.boxvalIn);
-      diskAdd(cand.boxvalOut);
-      if (_curSweepId / 2 % 1000000 == 0)
-        log("@ " + std::to_string(_curSweepId / 2));
+      _events.add(cand.boxvalIn);
+      _events.add(cand.boxvalOut);
+      if (_events.numObjects() % 1000000 == 0)
+        log("@ " + std::to_string(_events.numObjects()));
     }
     for (const auto& cand : cands.points) {
-      diskAdd(cand.boxvalIn);
-      diskAdd(cand.boxvalOut);
-      if (_curSweepId / 2 % 1000000 == 0)
-        log("@ " + std::to_string(_curSweepId / 2));
+      _events.add(cand.boxvalIn);
+      _events.add(cand.boxvalOut);
+      if (_events.numObjects() % 1000000 == 0)
+        log("@ " + std::to_string(_events.numObjects()));
     }
     for (const auto& cand : cands.foldedSimpleLines) {
-      diskAdd(cand.boxvalIn);
-      diskAdd(cand.boxvalOut);
-      if (_curSweepId / 2 % 1000000 == 0)
-        log("@ " + std::to_string(_curSweepId / 2));
+      _events.add(cand.boxvalIn);
+      _events.add(cand.boxvalOut);
+      if (_events.numObjects() % 1000000 == 0)
+        log("@ " + std::to_string(_events.numObjects()));
     }
     for (const auto& cand : cands.foldedBoxAreas) {
-      diskAdd(cand.boxvalIn);
-      diskAdd(cand.boxvalOut);
-      if (_curSweepId / 2 % 1000000 == 0)
-        log("@ " + std::to_string(_curSweepId / 2));
+      _events.add(cand.boxvalIn);
+      _events.add(cand.boxvalOut);
+      if (_events.numObjects() % 1000000 == 0)
+        log("@ " + std::to_string(_events.numObjects()));
     }
     for (const auto& cand : cands.simpleLines) {
-      diskAdd(cand.boxvalIn);
-      diskAdd(cand.boxvalOut);
-      if (_curSweepId / 2 % 1000000 == 0)
-        log("@ " + std::to_string(_curSweepId / 2));
+      _events.add(cand.boxvalIn);
+      _events.add(cand.boxvalOut);
+      if (_events.numObjects() % 1000000 == 0)
+        log("@ " + std::to_string(_events.numObjects()));
     }
     for (const auto& cand : cands.lines) {
-      diskAdd(cand.boxvalIn);
-      diskAdd(cand.boxvalOut);
-      if (_curSweepId / 2 % 1000000 == 0)
-        log("@ " + std::to_string(_curSweepId / 2));
+      _events.add(cand.boxvalIn);
+      _events.add(cand.boxvalOut);
+      if (_events.numObjects() % 1000000 == 0)
+        log("@ " + std::to_string(_events.numObjects()));
     }
     for (const auto& cand : cands.simpleAreas) {
-      diskAdd(cand.boxvalIn);
-      diskAdd(cand.boxvalOut);
-      if (_curSweepId / 2 % 1000000 == 0)
-        log("@ " + std::to_string(_curSweepId / 2));
+      _events.add(cand.boxvalIn);
+      _events.add(cand.boxvalOut);
+      if (_events.numObjects() % 1000000 == 0)
+        log("@ " + std::to_string(_events.numObjects()));
     }
     for (const auto& cand : cands.areas) {
-      diskAdd(cand.boxvalIn);
-      diskAdd(cand.boxvalOut);
-      if (_curSweepId / 2 % 1000000 == 0)
-        log("@ " + std::to_string(_curSweepId / 2));
+      _events.add(cand.boxvalIn);
+      _events.add(cand.boxvalOut);
+      if (_events.numObjects() % 1000000 == 0)
+        log("@ " + std::to_string(_events.numObjects()));
     }
     for (const auto& cand : cands.refs) {
       _refs[cand.raw][0][cand.gid] = cand.subid;
       _selfCheckBounds[cand.raw] = util::geo::getBoundingBox(
           I32Point{cand.boxvalIn.val, cand.boxvalIn.loY});
-      if (_curSweepId / 2 % 1000000 == 0)
-        log("@ " + std::to_string(_curSweepId / 2));
+      if (_events.numObjects() % 1000000 == 0)
+        log("@ " + std::to_string(_events.numObjects()));
     }
   }
 }
@@ -826,7 +826,7 @@ void GeometryCacheManager::flush() {
     for (const auto& sub : ref.second) {
       _selfChecks.push_back({ref.first, sub.first});
 
-      diskAdd({_selfChecks.size() - 1,
+      _events.add({_selfChecks.size() - 1,
                1,
                0,
                _selfCheckBounds[ref.first].getLowerLeft().getX(),
@@ -844,7 +844,7 @@ void GeometryCacheManager::flush() {
 
   for (size_t side = 0; side < 2; side++) {
     for (size_t i = 0; i < _multiIds[side].size(); i++) {
-      diskAdd({i,
+      _events.add({i,
                1,
                0,
                _multiLeftX[side][i] - 1,
@@ -860,18 +860,6 @@ void GeometryCacheManager::flush() {
     }
   }
 
-  ssize_t r = writeAll(_file, _outBuffer, _obufpos);
-  if (r < 0) {
-    std::stringstream ss;
-    ss << "Could not write to events file '" << _fname << "'\n";
-    ss << strerror(errno) << std::endl;
-    throw std::runtime_error(ss.str());
-  }
-
-  delete[] _outBuffer;
-
-  _obufpos = 0;
-
   _pointCache.flush();
   _areaCache.flush();
   _simpleAreaCache.flush();
@@ -880,41 +868,12 @@ void GeometryCacheManager::flush() {
 
   log("Sorting events...");
 
-  std::string newFName = util::getTmpFName(_cache, ".spatialjoin", "sorttmp");
-  int newFile = open(newFName.c_str(), O_RDWR | O_CREAT, 0666);
-  unlink(newFName.c_str());
-
-  if (newFile < 0) {
-    throw std::runtime_error("Could not open temporary file " + newFName);
-    exit(1);
-  }
-
-#ifdef __unix__
-  posix_fadvise(newFile, 0, 0, POSIX_FADV_SEQUENTIAL);
-#endif
-  r = util::externalSort(_file, newFile, sizeof(BoxVal), _curSweepId,
-                         _cfg.numThreads, boxCmp);
-
-  if (r < 0) {
-    std::stringstream ss;
-    ss << "Could not sort events file '" << _fname << "'\n";
-    ss << strerror(errno) << std::endl;
-    throw std::runtime_error(ss.str());
-  }
-
-  fsync(newFile);
-
-  close(_file);
-
-  _file = newFile;
-
-#ifdef __unix__
-  posix_fadvise(_file, 0, 0, POSIX_FADV_SEQUENTIAL);
-#endif
+  _events.flush();
 
   log("...done");
 
-  duplicatesToReferences();
+  // TODO!
+  // duplicatesToReferences();
 
   log(std::to_string(_refs.size()) + " reference geometries");
 }
@@ -948,7 +907,7 @@ void GeometryCacheManager::duplicatesToReferences() {
       pos += len;
       if (len < 0) {
         std::stringstream ss;
-        ss << "Could not read from events file '" << _fname << "'\n";
+        ss << "Could not read from events file \n";
         ss << strerror(errno) << std::endl;
         throw std::runtime_error(ss.str());
       }
@@ -1061,24 +1020,6 @@ void GeometryCacheManager::duplicatesToReferences() {
   delete[] buf;
 
   log("...done");
-}
-
-// _____________________________________________________________________________
-void GeometryCacheManager::diskAdd(const BoxVal& bv) {
-  memcpy(_outBuffer + _obufpos, &bv, sizeof(BoxVal));
-  _obufpos += sizeof(BoxVal);
-
-  if (_obufpos + sizeof(BoxVal) > BUFFER_S) {
-    ssize_t r = writeAll(_file, _outBuffer, _obufpos);
-    if (r < 0) {
-      std::stringstream ss;
-      ss << "Could not write to events file '" << _fname << "'\n";
-      ss << strerror(errno) << std::endl;
-      throw std::runtime_error(ss.str());
-    }
-    _obufpos = 0;
-  }
-  _curSweepId++;
 }
 
 // _____________________________________________________________________________

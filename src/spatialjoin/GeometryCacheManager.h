@@ -20,6 +20,7 @@
 #include <unordered_set>
 
 #include "GeometryCache.h"
+#include "SweepEventList.h"
 #include "Stats.h"
 #include "util/JobQueue.h"
 #include "util/geo/Geo.h"
@@ -30,38 +31,6 @@
 #endif
 
 namespace sj {
-
-enum GeomType : uint8_t {
-  POLYGON = 0,
-  LINE = 1,
-  POINT = 2,
-  SIMPLE_LINE = 3,
-  SIMPLE_POLYGON = 4,
-  FOLDED_POINT = 5,
-  FOLDED_SIMPLE_LINE = 6,
-  FOLDED_BOX_POLYGON = 7,
-  DELETED = 8,
-  SELF_CHECK = 9,
-  SELF_CHECK_AREA = 10,
-  SELF_CHECK_LINE = 11,
-  SELF_CHECK_POINT = 12
-};
-
-struct BoxVal {
-  size_t id;  // the ID returned from the GeometryCache (offset into file)
-  int32_t loY;  // the lower Y value of the box
-  int32_t upY;  // the upper Y value of the box
-  int32_t val;  // the left X value of the box
-  bool out : 1; // whether this is an IN or OUT event
-  GeomType type : 4;  // geometry type
-  double areaOrLen;  // area or len
-  util::geo::I32Point point;
-  size_t numAnchors;  // DUPLICATE REMOVAL: used as hash value
-  util::geo::I32Box b45;  // oriented bounding box
-  bool side;
-  bool large;
-  int32_t size;  // DUPLICATE REMOVAL: size of geom
-};
 
 inline std::string toString(const BoxVal& bv) {
   std::stringstream ret;
@@ -217,11 +186,6 @@ struct SweeperCfg {
   std::function<void()> sweepCancellationCb;
 };
 
-// buffer size _must_ be multiples of sizeof(BoxVal) and should hold at least
-// one element
-static const ssize_t BUFFER_S =
-    ((16 * 1024 * 1024 + sizeof(BoxVal)) / sizeof(BoxVal)) * sizeof(BoxVal);
-
 static const size_t MAX_OUT_LINE_LENGTH = 1000;
 
 static const size_t POINT_CACHE_MAX_ELEMENTS = 10000;
@@ -237,6 +201,7 @@ class GeometryCacheManager {
   GeometryCacheManager(SweeperCfg cfg, const std::string& cache,
                        const std::string& tmpPrefix)
       : _cfg(cfg),
+        _events(cache, tmpPrefix, _cfg.numThreads),
         _obufpos(0),
         _pointCache({cfg.useOBB}, cfg.geomCacheMaxSize,
                     POINT_CACHE_MAX_ELEMENTS, cfg.numCacheThreads, cache,
@@ -255,29 +220,8 @@ class GeometryCacheManager {
                          cache, tmpPrefix),
         _cache(cache),
         _numSides(1) {
-    // OUTFACTOR 1
-    _fname = util::getTmpFName(_cache, tmpPrefix, "events");
-    _file = open(_fname.c_str(), O_RDWR | O_CREAT | O_TRUNC, 0666);
-
-    if (_file < 0) {
-      throw std::runtime_error("Could not open temporary file " + _fname);
-    }
-
-    // immediately unlink
-    unlink(_fname.c_str());
-
-#ifdef __unix__
-    posix_fadvise(_file, 0, 0, POSIX_FADV_SEQUENTIAL);
-#endif
-
-    // OUTFACTOR 1
-
-    _outBuffer = new unsigned char[BUFFER_S];
-
     if (_cfg.forceTwoSided) _numSides = 2;
   };
-
-  ~GeometryCacheManager() { close(_file); }
 
   void log(const std::string& msg);
 
@@ -325,9 +269,7 @@ class GeometryCacheManager {
 
   void flush();
 
-  size_t numElements() const { return _curSweepId / 2; }
-
-  int events() const { return _file; }
+  const SweepEventList& events() const { return _events; }
 
   size_t numReferences() const {
     size_t ret = 0;
@@ -496,10 +438,8 @@ class GeometryCacheManager {
   }
 
   const SweeperCfg _cfg;
-  size_t _curSweepId = 0;
-  std::string _fname;
   int _file;
-  unsigned char* _outBuffer;
+  SweepEventList _events;
   ssize_t _obufpos;
 
   std::vector<size_t> _checks;

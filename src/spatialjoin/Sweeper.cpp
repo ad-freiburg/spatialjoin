@@ -20,6 +20,7 @@
 #include <sstream>
 
 #include "BoxIds.h"
+#include "SweepEventList.h"
 #include "Sweeper.h"
 #include "util/Misc.h"
 #include "util/geo/IntervalIdx.h"
@@ -387,19 +388,14 @@ void Sweeper::multiOut(size_t tOut, const std::string& gidA) {
 }
 
 // _____________________________________________________________________________
-RelStats Sweeper::sweep(int events) {
+RelStats Sweeper::sweep(const SweepEventList& events) {
   // start at beginning of _file
-  lseek(events, 0, SEEK_SET);
+  events.resetPos();
 
   _cancelled = false;
 
   const size_t batchSize = 100000;
   JobBatch curBatch;
-
-  const size_t RBUF_SIZE = 100000;
-  unsigned char* buf = new unsigned char[sizeof(BoxVal) * RBUF_SIZE];
-
-  ssize_t len;
 
   util::geo::IntervalIdx<int32_t, SweepVal> actives[2];
 
@@ -440,105 +436,90 @@ RelStats Sweeper::sweep(int events) {
   for (size_t i = 0; i < thrds.size(); i++)
     thrds[i] = std::thread(&Sweeper::processQueue, this, i);
 
+  const BoxVal* cur = 0;
+
   try {
-    while ((len = readAll(events, buf, sizeof(BoxVal) * RBUF_SIZE)) != 0) {
-      if (len < 0) {
-        std::stringstream ss;
-        ss << "Could not read from events file\n";
-        ss << strerror(errno) << std::endl;
-        throw std::runtime_error(ss.str());
+    while ((cur = events.next()) != 0) {
+      if (_cfg.sweepCancellationCb && jj % 10000 == 0) {
+        _cfg.sweepCancellationCb();
       }
 
-      if (len % sizeof(BoxVal))
-        throw std::runtime_error("Corrupted events file");
+      jj++;
 
-      for (ssize_t i = 0; i < len; i += sizeof(BoxVal)) {
-        auto cur = reinterpret_cast<const BoxVal*>(buf + i);
+      if (jj % 200000 == 0) clearMultis(false);
 
-        if (_cfg.sweepCancellationCb && jj % 10000 == 0) {
-          _cfg.sweepCancellationCb();
+      if (cur->type == DELETED) {
+        continue;
+      } else if (cur->type == SELF_CHECK || cur->type == SELF_CHECK_AREA ||
+                 cur->type == SELF_CHECK_LINE ||
+                 cur->type == SELF_CHECK_POINT) {
+        // self checks, required if we have reference geoms
+        curBatch.push_back({*cur, *cur, ""});
+      } else if (!cur->out && cur->loY == 1 && cur->upY == 0 &&
+                 cur->type == POINT) {
+        // special multi-IN
+        _activeMultis[cur->side].insert(cur->id);
+      } else if (!cur->out) {
+        // IN event
+        actives[cur->side].insert(
+            {cur->loY, cur->upY},
+            {cur->id,
+             cur->type,
+             cur->b45,
+             cur->point,
+             {cur->val, cur->point.getY() == cur->loY ? cur->upY : cur->loY},
+             cur->side,
+             cur->large});
+
+        if (jj % 500000 == 0) {
+          auto lon = webMercToLatLng<double>((1.0 * cur->val) / PREC, 0).getX();
+          totalCheckCount += checkPairs;
+
+          auto cacheSize = _cacheManager->size();
+
+          log(std::to_string(jj / 2) + " / " + std::to_string(events.numObjects()) +
+              " (" +
+              std::to_string((((1.0 * jj) / (1.0 * events.numEvents())) * 100)) +
+              "%, " +
+              std::to_string((500000.0 / double(TOOK(t))) * 1000000000.0) +
+              " geoms/s, " +
+              std::to_string((checkPairs / double(TOOK(t))) * 1000000000.0) +
+              " pairs/s), avg. " +
+              std::to_string(((1.0 * totalCheckCount) / (1.0 * counts))) +
+              " checks/geom, sweepLon=" + std::to_string(lon) + "°, |A|=" +
+              std::to_string(actives[0].size() + actives[1].size()) +
+              ", |JQ|=" + std::to_string(_jobs.size()) + " (x" +
+              std::to_string(batchSize) + "), |A_mult|=" +
+              std::to_string(_activeMultis[0].size() +
+                             _activeMultis[1].size()) +
+              ", |C|=" + std::to_string(cacheSize.first) + " (" +
+              util::readableSize(cacheSize.second) + ")");
+          t = TIME();
+          checkPairs = 0;
         }
 
-        jj++;
+        if ((jj % 100 == 0) && _cfg.sweepProgressCb)
+          _cfg.sweepProgressCb(jj / 2);
+      } else {
+        // OUT event
+        actives[cur->side].erase({cur->loY, cur->upY}, {cur->id, cur->type});
 
-        if (jj % 200000 == 0) clearMultis(false);
+        counts++;
 
-        if (cur->type == DELETED) {
-          continue;
-        } else if (cur->type == SELF_CHECK || cur->type == SELF_CHECK_AREA ||
-                   cur->type == SELF_CHECK_LINE ||
-                   cur->type == SELF_CHECK_POINT) {
-          // self checks, required if we have reference geoms
-          curBatch.push_back({*cur, *cur, ""});
-        } else if (!cur->out && cur->loY == 1 && cur->upY == 0 &&
-                   cur->type == POINT) {
-          // special multi-IN
-          _activeMultis[cur->side].insert(cur->id);
-        } else if (!cur->out) {
-          // IN event
-          actives[cur->side].insert(
-              {cur->loY, cur->upY},
-              {cur->id,
-               cur->type,
-               cur->b45,
-               cur->point,
-               {cur->val, cur->point.getY() == cur->loY ? cur->upY : cur->loY},
-               cur->side,
-               cur->large});
+        int sideB = ((int)(cur->side) + 1) % _cacheManager->numSides();
 
-          if (jj % 500000 == 0) {
-            auto lon =
-                webMercToLatLng<double>((1.0 * cur->val) / PREC, 0).getX();
-            totalCheckCount += checkPairs;
+        fillBatch(&curBatch, &actives[sideB], cur);
 
-            auto cacheSize = _cacheManager->size();
-
-            log(std::to_string(jj / 2) + " / " +
-                std::to_string(_curSweepId / 2) + " (" +
-                std::to_string((((1.0 * jj) / (1.0 * _curSweepId)) * 100)) +
-                "%, " +
-                std::to_string((500000.0 / double(TOOK(t))) * 1000000000.0) +
-                " geoms/s, " +
-                std::to_string((checkPairs / double(TOOK(t))) * 1000000000.0) +
-                " pairs/s), avg. " +
-                std::to_string(((1.0 * totalCheckCount) / (1.0 * counts))) +
-                " checks/geom, sweepLon=" + std::to_string(lon) + "°, |A|=" +
-                std::to_string(actives[0].size() + actives[1].size()) +
-                ", |JQ|=" + std::to_string(_jobs.size()) + " (x" +
-                std::to_string(batchSize) + "), |A_mult|=" +
-                std::to_string(_activeMultis[0].size() +
-                               _activeMultis[1].size()) +
-                ", |C|=" + std::to_string(cacheSize.first) + " (" +
-                util::readableSize(cacheSize.second) + ")");
-            t = TIME();
-            checkPairs = 0;
-          }
-
-          if ((jj % 100 == 0) && _cfg.sweepProgressCb)
-            _cfg.sweepProgressCb(jj / 2);
-        } else {
-          // OUT event
-          actives[cur->side].erase({cur->loY, cur->upY}, {cur->id, cur->type});
-
-          counts++;
-
-          int sideB = ((int)(cur->side) + 1) % _cacheManager->numSides();
-
-          fillBatch(&curBatch, &actives[sideB], cur);
-
-          if (curBatch.size() > batchSize) {
-            checkPairs += curBatch.size();
-            if (!_cfg.noGeometryChecks) _jobs.add(std::move(curBatch));
-            curBatch.clear();  // std doesnt guarantee that after move
-            curBatch.reserve(batchSize + 100);
-          }
+        if (curBatch.size() > batchSize) {
+          checkPairs += curBatch.size();
+          if (!_cfg.noGeometryChecks) _jobs.add(std::move(curBatch));
+          curBatch.clear();  // std doesnt guarantee that after move
+          curBatch.reserve(batchSize + 100);
         }
       }
     }
   } catch (...) {
     // graceful handling of an exception during sweep
-
-    delete[] buf;
 
     // set the cancelled variable to true
     _cancelled = true;
@@ -553,8 +534,6 @@ RelStats Sweeper::sweep(int events) {
     // rethrow exception
     throw;
   }
-
-  delete[] buf;
 
   if (!_cfg.noGeometryChecks && curBatch.size()) _jobs.add(std::move(curBatch));
 
