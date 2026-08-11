@@ -7,6 +7,7 @@
 
 #include "spatialjoin/BoxIds.h"
 #include "spatialjoin/OutputWriter.h"
+#include "spatialjoin/GeometryCacheManager.h"
 #include "spatialjoin/Sweeper.h"
 #include "spatialjoin/WKTParse.h"
 #include "util/Test.h"
@@ -14,6 +15,7 @@
 #include "util/log/Log.h"
 
 using sj::ParseBatch;
+using sj::GeometryCacheManager;
 using sj::Sweeper;
 
 size_t NUM_THREADS = 1;
@@ -32,8 +34,8 @@ std::string fullRun(const std::string& file, sj::SweeperCfg cfg,
                                   size_t predn) {
       outWriter.writeRelCb(t, a, an, b, bn, pred, predn);
     };
-    Sweeper sweeper(cfg, ".");
-    sweeper.DUPLICATE_REMOVAL_MIN_SIZE = 0;
+    GeometryCacheManager cacheManager(cfg, ".");
+    cacheManager.DUPLICATE_REMOVAL_MIN_SIZE = 0;
 
     // very small buffer size 1 here for test purposes to force buffer overflows
     // during parsing
@@ -45,7 +47,7 @@ std::string fullRun(const std::string& file, sj::SweeperCfg cfg,
     int f = open(file.c_str(), O_RDONLY);
     TEST(f >= 0);
 
-    sj::WKTParser parser(&sweeper, 1);
+    sj::WKTParser parser(&cacheManager, 1);
 
     while ((len = read(f, buf, BUFF_SIZE)) > 0) {
       parser.parse(buf, len, 0);
@@ -54,11 +56,12 @@ std::string fullRun(const std::string& file, sj::SweeperCfg cfg,
 
     delete[] buf;
 
-    sweeper.flush();
+    cacheManager.flush();
 
-    sweeper.sweep();
+    Sweeper sweeper(cfg, &cacheManager);
+    sweeper.sweep(cacheManager.events());
 
-    stats->numReferences = sweeper.numReferences();
+    stats->numReferences = cacheManager.numReferences();
 
     close(f);
   }
