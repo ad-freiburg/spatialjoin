@@ -48,19 +48,19 @@ enum GeomType : uint8_t {
 };
 
 struct BoxVal {
-  size_t id;
-  int32_t loY;
-  int32_t upY;
-  int32_t val;
-  bool out : 1;
-  GeomType type : 4;
-  double areaOrLen;
+  size_t id;  // the ID returned from the GeometryCache (offset into file)
+  int32_t loY;  // the lower Y value of the box
+  int32_t upY;  // the upper Y value of the box
+  int32_t val;  // the left X value of the box
+  bool out : 1; // whether this is an IN or OUT event
+  GeomType type : 4;  // geometry type
+  double areaOrLen;  // area or len
   util::geo::I32Point point;
-  size_t numAnchors;
-  util::geo::I32Box b45;
+  size_t numAnchors;  // DUPLICATE REMOVAL: used as hash value
+  util::geo::I32Box b45;  // oriented bounding box
   bool side;
   bool large;
-  int32_t size;
+  int32_t size;  // DUPLICATE REMOVAL: size of geom
 };
 
 inline std::string toString(const BoxVal& bv) {
@@ -254,10 +254,7 @@ class GeometryCacheManager {
                          SIMPLE_LINE_CACHE_MAX_ELEMENTS, cfg.numCacheThreads,
                          cache, tmpPrefix),
         _cache(cache),
-        _jobs(100),
-        _numSides(1),
-        _dontNeedFullDE9IM(!_cfg.computeDE9IM &&
-                           _cfg.de9imFilter == util::geo::FANY) {
+        _numSides(1) {
     // OUTFACTOR 1
     _fname = util::getTmpFName(_cache, tmpPrefix, "events");
     _file = open(_fname.c_str(), O_RDWR | O_CREAT | O_TRUNC, 0666);
@@ -520,26 +517,6 @@ class GeometryCacheManager {
   GeometryCache<Line> _lineCache;
   GeometryCache<SimpleLine> _simpleLineCache;
 
-  std::vector<std::map<std::string, std::map<std::string, double>>>
-      _subDistance;
-  std::vector<
-      std::map<std::string, std::map<std::string, util::geo::DE9IMatrix>>>
-      _subDE9IM;
-  std::vector<std::map<std::string, std::map<std::string, std::set<size_t>>>>
-      _subContains;
-  std::vector<std::map<std::string, std::map<std::string, std::set<size_t>>>>
-      _subCovered;
-  std::vector<std::map<std::string, std::map<std::string, std::set<size_t>>>>
-      _subEquals;
-  std::vector<std::map<std::string, std::set<std::string>>> _subTouches;
-  std::vector<std::map<std::string, std::set<std::string>>> _subNotTouches;
-  std::vector<std::map<std::string, std::set<std::string>>> _subCrosses;
-  std::vector<std::map<std::string, std::set<std::string>>> _subNotCrosses;
-  std::vector<std::map<std::string, std::set<std::string>>> _subOverlaps;
-  std::vector<std::map<std::string, std::set<std::string>>> _subNotOverlaps;
-
-  std::set<size_t> _activeMultis[2];
-
   // these are written during the geometry add phase
   std::vector<std::string> _multiIds[2];
   std::vector<int32_t> _multiRightX[2];
@@ -550,21 +527,7 @@ class GeometryCacheManager {
 
   std::string _cache;
 
-  util::JobQueue<JobBatch> _jobs;
-
   std::atomic<uint8_t> _numSides;
-
-  std::vector<std::mutex> _mutsEquals;
-  std::vector<std::mutex> _mutsCovers;
-  std::vector<std::mutex> _mutsContains;
-  std::vector<std::mutex> _mutsTouches;
-  std::vector<std::mutex> _mutsNotTouches;
-  std::vector<std::mutex> _mutsCrosses;
-  std::vector<std::mutex> _mutsNotCrosses;
-  std::vector<std::mutex> _mutsOverlaps;
-  std::vector<std::mutex> _mutsNotOverlaps;
-  std::vector<std::mutex> _mutsDistance;
-  std::vector<std::mutex> _mutsDE9IM;
 
   mutable std::mutex _multiAddMtx;
   mutable std::mutex _sweepEventWriteMtx;
@@ -587,7 +550,6 @@ class GeometryCacheManager {
                                    std::numeric_limits<int32_t>::lowest()},
                                   {std::numeric_limits<int32_t>::max(),
                                    std::numeric_limits<int32_t>::max()}};
-  bool _dontNeedFullDE9IM;
 };
 
 }  // namespace sj
