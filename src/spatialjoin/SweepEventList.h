@@ -5,6 +5,7 @@
 #define SPATIALJOINS_SWEEPEVENTLIST_H_
 
 #include <fcntl.h>
+
 #include "util/Misc.h"
 
 namespace sj {
@@ -112,6 +113,55 @@ static const size_t RBUF_SIZE = 100000 * sizeof(BoxVal);
 
 class SweepEventList {
  public:
+  // reader for streaming the event list
+  class Reader {
+   public:
+    Reader(int file, size_t bufSize) : _file(file), _buf(bufSize) {}
+
+    // returns 0 at the end of the event list. Returned pointer is
+    // valid until a call to next() or reset().
+    const BoxVal* next() {
+      if (_readPtr >= _readBlockLen) {
+        _readBlockLen =
+            util::preadAll(_file, _buf.data(), _buf.size(), _fileOffset);
+        _readPtr = 0;
+
+        if (_readBlockLen == 0) return 0;  // end of file
+
+        if (_readBlockLen < 0) {
+          std::stringstream ss;
+          ss << "Could not read from events file\n";
+          ss << strerror(errno) << std::endl;
+          throw std::runtime_error(ss.str());
+        }
+
+        if (_readBlockLen % sizeof(BoxVal))
+          throw std::runtime_error("Corrupted events file");
+
+        _fileOffset += _readBlockLen;
+      }
+
+      auto ret = reinterpret_cast<const BoxVal*>(_buf.data() + _readPtr);
+
+      _readPtr += sizeof(BoxVal);
+
+      return ret;
+    }
+
+    void reset() {
+      _fileOffset = 0;
+      _readPtr = 0;
+      _readBlockLen = 0;
+    }
+
+   private:
+    int _file;
+    std::vector<unsigned char> _buf;
+    size_t _fileOffset = 0;
+    ssize_t _readPtr = 0;
+    ssize_t _readBlockLen = 0;
+  };
+
   SweepEventList(const std::string& cacheDir, const std::string& tmpPrefix,
                  size_t numThreads)
       : _obufpos(0), _cacheDir(cacheDir), _numThreads(numThreads) {
@@ -130,13 +180,9 @@ class SweepEventList {
 #ifdef __unix__
     posix_fadvise(_file, 0, 0, POSIX_FADV_SEQUENTIAL);
 #endif
-    _buf = new unsigned char[RBUF_SIZE];
   }
 
-  ~SweepEventList() {
-    close(_file);
-    if (_buf) delete[](_buf);
-  }
+  ~SweepEventList() { close(_file); }
 
   void add(const BoxVal& bv) {
     memcpy(_outBuffer + _obufpos, &bv, sizeof(BoxVal));
@@ -158,36 +204,11 @@ class SweepEventList {
   size_t numObjects() const { return _curSweepId / 2; }
   size_t numEvents() const { return _curSweepId; }
 
-  // TODO: should be own reader class
-  void resetPos() const {
-    lseek(_file, 0, SEEK_SET);
-    _readPtr = 0;
-  }
-
-  // TODO: should be own reader class
-  const BoxVal* next() const {
-    if (_readPtr >= _readBlockLen) {
-      _readPtr = 0;
-      _readBlockLen = util::readAll(_file, _buf, RBUF_SIZE);
-
-      if (_readBlockLen == 0) return 0;  // end of file
-
-      if (_readBlockLen < 0) {
-        std::stringstream ss;
-        ss << "Could not read from events file\n";
-        ss << strerror(errno) << std::endl;
-        throw std::runtime_error(ss.str());
-      }
-
-      if (_readBlockLen % sizeof(BoxVal))
-        throw std::runtime_error("Corrupted events file");
-    }
-
-    auto ret = reinterpret_cast<const BoxVal*>(_buf + _readPtr);
-
-    _readPtr += sizeof(BoxVal);
-
-    return ret;
+  Reader newReader(size_t bufSize = RBUF_SIZE) const {
+    // the buffer size must be a multiple of sizeof(BoxVal) and must
+    // hold _at least_ 1 element
+    if (bufSize < sizeof(BoxVal)) bufSize = sizeof(BoxVal);
+    return Reader(_file, (bufSize / sizeof(BoxVal)) * sizeof(BoxVal));
   }
 
   void flush() {
@@ -241,13 +262,10 @@ class SweepEventList {
   unsigned char* _outBuffer;
   ssize_t _obufpos;
   std::string _cacheDir;
-  mutable int _file;
+  int _file;
   size_t _numThreads;
 
-  mutable size_t _curSweepId = 0;
-  mutable ssize_t _readPtr = 0;
-  mutable ssize_t _readBlockLen = 0;
-  mutable unsigned char* _buf = 0;
+  size_t _curSweepId = 0;
 };
 
 }  // namespace sj

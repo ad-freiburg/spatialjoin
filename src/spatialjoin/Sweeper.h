@@ -34,8 +34,7 @@ namespace sj {
 
 class Sweeper {
  public:
-  Sweeper(SweeperCfg cfg,
-          const GeometryCacheManager* cacheManager)
+  Sweeper(SweeperCfg cfg, const GeometryCacheManager* cacheManager)
       : _cfg(cfg),
         _obufpos(0),
         _cacheManager(cacheManager),
