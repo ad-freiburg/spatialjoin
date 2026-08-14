@@ -1108,15 +1108,33 @@ int main(int, char**) {
       TEST(res.find("$Kappel\t0\tKappel$") == std::string::npos);
       TEST(res.find("$Kappel2\t0\tKappel2$") == std::string::npos);
 
-      std::regex pattern("\\$Kappel\\t3306.36\\d*\\\tHerdern\\$");
+      std::regex pattern("\\$Kappel\\t3306.61\\d*\\\tHerdern\\$");
       TEST(std::regex_search(res, pattern));
-      std::regex pattern2("\\$Herdern\\t3306.36\\d*\\\tKappel\\$");
+      std::regex pattern2("\\$Herdern\\t3306.61\\d*\\\tKappel\\$");
       TEST(std::regex_search(res, pattern2));
 
-      std::regex pattern3("\\$Kappel2\\t3306.36\\d*\\\tHerdern\\$");
+      std::regex pattern3("\\$Kappel2\\t3306.61\\d*\\\tHerdern\\$");
       TEST(std::regex_search(res, pattern3));
-      std::regex pattern4("\\$Herdern\\t3306.36\\d*\\\tKappel2\\$");
+      std::regex pattern4("\\$Herdern\\t3306.61\\d*\\\tKappel2\\$");
       TEST(std::regex_search(res, pattern4));
+    }
+
+    cfg.withinDist = 100;
+    {
+      RunStats stats;
+      auto res = fullRun(TEST_DATASET_DIR "/brokenlinepointdistance", cfg, &stats);
+
+      std::regex pattern1("\\$point2\\t9.4\\d*\\\tway\\$");
+      TEST(std::regex_search(res, pattern1));
+
+      std::regex pattern2("\\$way\\t9.4\\d*\\\tpoint2\\$");
+      TEST(std::regex_search(res, pattern2));
+
+      std::regex pattern3("\\$point\\t.*\\tway\\$");
+      TEST(!std::regex_search(res, pattern3));
+
+      std::regex pattern4("\\$way\\t.*\\tpoint\\$");
+      TEST(!std::regex_search(res, pattern4));
     }
   }
 }
