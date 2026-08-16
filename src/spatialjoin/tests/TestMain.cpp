@@ -1136,5 +1136,19 @@ int main(int, char**) {
       std::regex pattern4("\\$way\\t.*\\tpoint\\$");
       TEST(!std::regex_search(res, pattern4));
     }
+
+    cfg.withinDist = 1000000;
+    {
+      RunStats stats;
+      auto res = fullRun(TEST_DATASET_DIR "/util-issue-13", cfg, &stats);
+
+      std::regex pattern1("\\$germany\\t426521.\\d*\\\tlondon\\$");
+      std::regex pattern1("\\$london\\t426521.\\d*\\\tgermany\\$");
+      std::regex pattern1("\\$germany\\314975.\\d*\\\teiffel\\$");
+      std::regex pattern1("\\$eiffel\\314975.\\d*\\\tgermany\\$");
+      std::regex pattern1("\\$eiffel\\t340875.\\d*\\\tlondon\\$");
+      std::regex pattern1("\\$london\\t340875.\\d*\\\teiffel\\$");
+      TEST(std::regex_search(res, pattern1));
+    }
   }
 }

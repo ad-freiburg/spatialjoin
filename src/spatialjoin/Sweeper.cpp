@@ -4308,7 +4308,7 @@ size_t Sweeper::foldString(const std::string& s) {
   ret |= (s.size() << 56);
 
   return ret;
-};
+}
 
 // _____________________________________________________________________________
 std::string Sweeper::unfoldString(size_t folded) {
@@ -4323,4 +4323,4 @@ std::string Sweeper::unfoldString(size_t folded) {
   }
 
   return ret;
-};
+}
