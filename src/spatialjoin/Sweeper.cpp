@@ -197,11 +197,9 @@ I32Box Sweeper::add(const I32Polygon& poly, const std::string& gidR,
     if (_cfg.de9imFilter.maxInteriorDim() < 2) return {};
     if (side && _cfg.de9imFilter.maxRightInteriorDim() < 2) return {};
     if (side && _cfg.de9imFilter.minRightBoundaryDim() > 1) return {};
-    if (_numSides > 1 && !side &&
-        _cfg.de9imFilter.maxLeftInteriorDim() < 2)
+    if (_numSides > 1 && !side && _cfg.de9imFilter.maxLeftInteriorDim() < 2)
       return {};
-    if (_numSides > 1 && !side &&
-        _cfg.de9imFilter.minLeftBoundaryDim() > 1)
+    if (_numSides > 1 && !side && _cfg.de9imFilter.minLeftBoundaryDim() > 1)
       return {};
   }
 
@@ -329,8 +327,7 @@ I32Box Sweeper::add(const I32Polygon& poly, const std::string& gidR,
     auto rightPoint = spoly.getOuter().rawRing().back().p;
 
     std::stringstream str;
-    _areaCache.writeTo(
-        {std::move(spoly), gid, subid, boxIds, obb}, str);
+    _areaCache.writeTo({std::move(spoly), gid, subid, boxIds, obb}, str);
     ;
 
     size_t estimatedSize = spoly.getOuter().rawRing().size() *
@@ -398,14 +395,11 @@ I32Box Sweeper::add(const I32Line& line, const std::string& gidR, size_t subid,
     if (side && _cfg.de9imFilter.minRightInteriorDim() > 1) return {};
     if (side && _cfg.de9imFilter.minRightBoundaryDim() > 0) return {};
     if (side && _cfg.de9imFilter.maxRightInteriorDim() < 1) return {};
-    if (_numSides > 1 && !side &&
-        _cfg.de9imFilter.minLeftInteriorDim() > 1)
+    if (_numSides > 1 && !side && _cfg.de9imFilter.minLeftInteriorDim() > 1)
       return {};
-    if (_numSides > 1 && !side &&
-        _cfg.de9imFilter.maxLeftInteriorDim() < 1)
+    if (_numSides > 1 && !side && _cfg.de9imFilter.maxLeftInteriorDim() < 1)
       return {};
-    if (_numSides > 1 && !side &&
-        _cfg.de9imFilter.minLeftBoundaryDim() > 0)
+    if (_numSides > 1 && !side && _cfg.de9imFilter.minLeftBoundaryDim() > 0)
       return {};
   }
   if (_cfg.de9imFilter.maxExteriorDim() < 2) return {};
@@ -564,14 +558,11 @@ I32Box Sweeper::add(const I32Point& point, const std::string& gidR,
     if (side && _cfg.de9imFilter.minRightInteriorDim() > 0) return {};
     if (side && _cfg.de9imFilter.maxRightInteriorDim() < 0) return {};
     if (side && _cfg.de9imFilter.minRightBoundaryDim() >= 0) return {};
-    if (_numSides > 1 && !side &&
-        _cfg.de9imFilter.minLeftInteriorDim() > 0)
+    if (_numSides > 1 && !side && _cfg.de9imFilter.minLeftInteriorDim() > 0)
       return {};
-    if (_numSides > 1 && !side &&
-        _cfg.de9imFilter.maxLeftInteriorDim() < 0)
+    if (_numSides > 1 && !side && _cfg.de9imFilter.maxLeftInteriorDim() < 0)
       return {};
-    if (_numSides > 1 && !side &&
-        _cfg.de9imFilter.minLeftBoundaryDim() >= 0)
+    if (_numSides > 1 && !side && _cfg.de9imFilter.minLeftBoundaryDim() >= 0)
       return {};
   }
 
@@ -1247,8 +1238,10 @@ void Sweeper::duplicatesToReferences() {
   const size_t RBUF_SIZE = 100000;
   unsigned char* buf = new unsigned char[sizeof(BoxVal) * RBUF_SIZE];
 
-  std::unordered_set<size_t> deleted;
-  std::unordered_set<size_t> referenced;
+  std::unordered_set<size_t> deletedLines;
+  std::unordered_set<size_t> referencedLines;
+  std::unordered_set<size_t> deletedPolys;
+  std::unordered_set<size_t> referencedPolys;
 
   log("Removing duplicates...");
 
@@ -1288,13 +1281,25 @@ void Sweeper::duplicatesToReferences() {
         jj++;
 
         if (cur->out) {
-          if ((cur->type == POLYGON || cur->type == LINE) &&
-              deleted.erase(cur->id)) {
-            // erase it if present, to avoid unnecessary memory consumption
-            cur->type = DELETED;
-            updated = true;
+
+          if (cur->type == POLYGON) {
+            if (deletedPolys.erase(cur->id)) {
+              // erase it if present, to avoid unnecessary memory consumption
+              cur->type = DELETED;
+              updated = true;
+            }
+            referencedPolys.erase(cur->id);
           }
-          referenced.erase(cur->id);
+
+          if (cur->type == LINE) {
+            if (deletedLines.erase(cur->id)) {
+              // erase it if present, to avoid unnecessary memory consumption
+              cur->type = DELETED;
+              updated = true;
+            }
+            referencedLines.erase(cur->id);
+          }
+
           continue;
         }
 
@@ -1315,8 +1320,8 @@ void Sweeper::duplicatesToReferences() {
                                     existing->second.second ? -1 : 0);
 
             if (a->geom == b->geom) {
-              deleted.insert(cur->id);
-              if (referenced.insert(existing->second.first).second) {
+              deletedPolys.insert(cur->id);
+              if (referencedPolys.insert(existing->second.first).second) {
                 // for the first element referencing this, modify this
                 // event to the self check of the referenced geom
                 cur->type = SELF_CHECK_AREA;
@@ -1344,8 +1349,8 @@ void Sweeper::duplicatesToReferences() {
                                     existing->second.second ? -1 : 0);
 
             if (a->geom == b->geom) {
-              deleted.insert(cur->id);
-              if (referenced.insert(existing->second.first).second) {
+              deletedLines.insert(cur->id);
+              if (referencedLines.insert(existing->second.first).second) {
                 // for the first element referencing this, modify this
                 // event to the self check of the referenced geom
                 cur->type = SELF_CHECK_LINE;
@@ -1750,7 +1755,7 @@ util::geo::DE9IMatrix Sweeper::DE9IMCheck(const Line* a, const Line* b,
   // cheap equivalence check
   if (a->geom == b->geom) {
     // equivalent!
-    return util::geo::M10FF0FFF2;
+    return util::geo::M1FFF0FFF2;
   }
 
   if (_cfg.useBoxIds) {
@@ -2005,11 +2010,14 @@ void Sweeper::writeDE9IM(size_t t, const std::string& a, size_t aSub,
     }
   }
 
-  if (referersA != _refs.end()) {
-    const auto& subs = referersA->second.find(aSub);
-    if (subs != referersA->second.end()) {
-      for (const auto& idA : subs->second) {
-        writeDE9IM(t, idA.first, idA.second, b, bSub, de9im);
+  // no need to check exactly the same direction again
+  if (a != b || aSub != bSub) {
+    if (referersA != _refs.end()) {
+      const auto& subs = referersA->second.find(aSub);
+      if (subs != referersA->second.end()) {
+        for (const auto& idA : subs->second) {
+          writeDE9IM(t, idA.first, idA.second, b, bSub, de9im);
+        }
       }
     }
   }
@@ -2107,7 +2115,7 @@ void Sweeper::selfCheck(const std::string& a, size_t subId, GeomType type,
                         size_t t) {
   if (_cfg.computeDE9IM) {
     if (type == SELF_CHECK_LINE)
-      writeDE9IM(t, a, subId, a, subId, util::geo::M10FF0FFF2);
+      writeDE9IM(t, a, subId, a, subId, util::geo::M1FFF0FFF2);
     else if (type == SELF_CHECK_AREA)
       writeDE9IM(t, a, subId, a, subId, util::geo::M2FFF1FFF2);
     else if (type == SELF_CHECK_POINT)
