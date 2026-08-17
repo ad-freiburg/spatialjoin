@@ -328,7 +328,6 @@ I32Box Sweeper::add(const I32Polygon& poly, const std::string& gidR,
 
     std::stringstream str;
     _areaCache.writeTo({std::move(spoly), gid, subid, boxIds, obb}, str);
-    ;
 
     size_t estimatedSize = spoly.getOuter().rawRing().size() *
                            sizeof(util::geo::XSortedTuple<int32_t>);

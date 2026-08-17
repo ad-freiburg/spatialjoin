@@ -1167,17 +1167,17 @@ int main(int, char**) {
       RunStats stats;
       auto res = fullRun(TEST_DATASET_DIR "/util-issue-13", cfg, &stats);
 
-      std::regex pattern1("\\$germany\\t426521.\\d*\\\tlondon\\$");
+      std::regex pattern1("\\$germany\\t426521\\.\\d*\\tlondon\\$");
       TEST(std::regex_search(res, pattern1));
-      std::regex pattern2("\\$london\\t426521.\\d*\\\tgermany\\$");
+      std::regex pattern2("\\$london\\t426521\\.\\d*\\tgermany\\$");
       TEST(std::regex_search(res, pattern2));
-      std::regex pattern3("\\$germany\\t314975.\\d*\\\teiffel\\$");
+      std::regex pattern3("\\$germany\\t314975\\.\\d*\\teiffel\\$");
       TEST(std::regex_search(res, pattern3));
-      std::regex pattern4("\\$eiffel\\t314975.\\d*\\\tgermany\\$");
+      std::regex pattern4("\\$eiffel\\t314975\\.\\d*\\tgermany\\$");
       TEST(std::regex_search(res, pattern4));
-      std::regex pattern5("\\$eiffel\\t340875.\\d*\\\tlondon\\$");
+      std::regex pattern5("\\$eiffel\\t340875\\.\\d*\\tlondon\\$");
       TEST(std::regex_search(res, pattern5));
-      std::regex pattern6("\\$london\\t340875.\\d*\\\teiffel\\$");
+      std::regex pattern6("\\$london\\t340875\\.\\d*\\teiffel\\$");
       TEST(std::regex_search(res, pattern6));
     }
   }
