@@ -1055,6 +1055,31 @@ int main(int, char**) {
     }
     {
       RunStats stats;
+      auto res = fullRun(TEST_DATASET_DIR "/issue-23", cfg, &stats);
+      TEST(stats.numReferences, ==, 2);
+
+      size_t a = res.find("$lsa\t1FFF0FFF2\tlsb$");
+      TEST(a != std::string::npos);
+      // no second time!
+      TEST(res.find("$lsa\t1FFF0FFF2\tlsb$", a+1) == std::string::npos);
+
+      size_t b = res.find("$lsb\t1FFF0FFF2\tlsa$");
+      TEST(b != std::string::npos);
+      // no second time!
+      TEST(res.find("$lsb\t1FFF0FFF2\tlsa$", b+1) == std::string::npos);
+
+      size_t c = res.find("$polya\t2FFF1FFF2\tpolyb$");
+      TEST(c != std::string::npos);
+      // no second time!
+      TEST(res.find("$polya\t2FFF1FFF2\tpolyb$", c+1) == std::string::npos);
+
+      size_t d = res.find("$polyb\t2FFF1FFF2\tpolya$");
+      TEST(d != std::string::npos);
+      // no second time!
+      TEST(res.find("$polyb\t2FFF1FFF2\tpolya$", d+1) == std::string::npos);
+    }
+    {
+      RunStats stats;
       auto res = fullRun(TEST_DATASET_DIR "/references", cfg, &stats);
       if (cfg.useBoxIds) {
         TEST(stats.numReferences, ==, 16);
@@ -1135,6 +1160,25 @@ int main(int, char**) {
 
       std::regex pattern4("\\$way\\t.*\\tpoint\\$");
       TEST(!std::regex_search(res, pattern4));
+    }
+
+    cfg.withinDist = 1000000;
+    {
+      RunStats stats;
+      auto res = fullRun(TEST_DATASET_DIR "/util-issue-13", cfg, &stats);
+
+      std::regex pattern1("\\$germany\\t426521\\.\\d*\\tlondon\\$");
+      TEST(std::regex_search(res, pattern1));
+      std::regex pattern2("\\$london\\t426521\\.\\d*\\tgermany\\$");
+      TEST(std::regex_search(res, pattern2));
+      std::regex pattern3("\\$germany\\t314975\\.\\d*\\teiffel\\$");
+      TEST(std::regex_search(res, pattern3));
+      std::regex pattern4("\\$eiffel\\t314975\\.\\d*\\tgermany\\$");
+      TEST(std::regex_search(res, pattern4));
+      std::regex pattern5("\\$eiffel\\t340875\\.\\d*\\tlondon\\$");
+      TEST(std::regex_search(res, pattern5));
+      std::regex pattern6("\\$london\\t340875\\.\\d*\\teiffel\\$");
+      TEST(std::regex_search(res, pattern6));
     }
   }
 }
