@@ -1081,6 +1081,8 @@ void Sweeper::multiOut(size_t tOut, const std::string& gidA) {
       auto gidB = b.first;
       if (b.second == _subSizes[gidA]) continue;
 
+      if (coversAll(gidA, gidB)) continue;
+
       if (!notOverlaps(gidA, gidB)) {
         _relStats[tOut].overlaps++;
         writeRel(tOut, gidA, gidB, _cfg.sepOverlaps);
@@ -1099,7 +1101,13 @@ void Sweeper::multiOut(size_t tOut, const std::string& gidA) {
       if (i != _subOverlaps[t].end()) {
         for (const auto& b : i->second) {
           auto gidB = b;
-          if (!notOverlaps(gidA, gidB)) overlapsTmp.push_back({gidA, gidB});
+
+          // if one of the two geometries covers the other completely, they do
+          // not overlap. notOverlaps may not capture this if gidB was flushed
+          // before
+          if (!notOverlaps(gidA, gidB) && !coversAll(gidA, gidB) &&
+              !coversAll(gidB, gidA))
+            overlapsTmp.push_back({gidA, gidB});
 
           {
             std::unique_lock<std::mutex> lock2(_mutsNotOverlaps[t]);
@@ -3676,6 +3684,27 @@ bool Sweeper::notTouches(const std::string& a, const std::string& b) {
   }
 
   return false;
+}
+
+// _____________________________________________________________________________
+bool Sweeper::coversAll(const std::string& a, const std::string& b) {
+  // does a cover *every* sub geometry of the multi geometry b? Note that this
+  // can already be answered while b is still being swept, as long as a is
+  // complete: no check between a and b can happen after a was flushed
+  const auto& size = _subSizes.find(b);
+  if (size == _subSizes.end()) return false;
+
+  size_t covered = 0;
+
+  for (size_t t = 0; t < _cfg.numThreads + 1; t++) {
+    std::unique_lock<std::mutex> lock(_mutsCovers[t]);
+    auto i = _subCovered[t].find(b);
+    if (i == _subCovered[t].end()) continue;
+    auto j = i->second.find(a);
+    if (j != i->second.end()) covered += j->second.size();
+  }
+
+  return covered == size->second;
 }
 
 // _____________________________________________________________________________

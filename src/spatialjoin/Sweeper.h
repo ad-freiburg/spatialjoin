@@ -532,6 +532,7 @@ class Sweeper {
   void processQueue(size_t t);
 
   bool notOverlaps(const std::string& a, const std::string& b);
+  bool coversAll(const std::string& a, const std::string& b);
   bool notTouches(const std::string& a, const std::string& b);
   bool notCrosses(const std::string& a, const std::string& b);
 
