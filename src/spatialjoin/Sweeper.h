@@ -486,34 +486,41 @@ class Sweeper {
   void clearMultis(bool force);
 
   void writeIntersect(size_t t, const std::string& a, size_t aSub,
-                      const std::string& b, size_t bSub);
+                      const std::string& b, size_t bSub, bool expandB = true,
+                      bool selfExp = false);
   void writeRel(size_t t, const std::string& a, const std::string& b,
                 const std::string& pred);
   void writeContains(size_t t, const std::string& a, size_t aSub,
-                     const std::string& b, size_t bSub);
+                     const std::string& b, size_t bSub, bool expandB = true);
   void writeCovers(size_t t, const std::string& a, size_t aSub,
-                   const std::string& b, size_t bSub);
+                   const std::string& b, size_t bSub, bool expandB = true);
   void writeEquals(size_t t, const std::string& a, size_t aSub,
-                   const std::string& b, size_t bSub);
+                   const std::string& b, size_t bSub, bool expandB = true,
+                   bool selfExp = false);
   void writeDE9IM(size_t t, const std::string& a, size_t aSub,
                   const std::string& b, size_t bSub,
-                  util::geo::DE9IMatrix de9im);
+                  util::geo::DE9IMatrix de9im, bool expandB = true,
+                  bool selfExp = false);
   void writeDist(size_t t, const std::string& a, size_t aSub,
-                 const std::string& b, size_t bSub, double dist);
+                 const std::string& b, size_t bSub, double dist,
+                 bool expandB = true, bool selfExp = false);
   void writeTouches(size_t t, const std::string& a, size_t aSub,
-                    const std::string& b, size_t bSub);
+                    const std::string& b, size_t bSub, bool expandB = true);
   void writeNotTouches(size_t t, const std::string& a, size_t aSub,
-                       const std::string& b, size_t bSub);
+                       const std::string& b, size_t bSub,
+                       bool expandB = true);
 
   void writeOverlaps(size_t t, const std::string& a, size_t aSub,
-                     const std::string& b, size_t bSub);
+                     const std::string& b, size_t bSub, bool expandB = true);
   void writeNotOverlaps(size_t t, const std::string& a, size_t aSub,
-                        const std::string& b, size_t bSub);
+                        const std::string& b, size_t bSub,
+                        bool expandB = true);
 
   void writeCrosses(size_t t, const std::string& a, size_t aSub,
-                    const std::string& b, size_t bSub);
+                    const std::string& b, size_t bSub, bool expandB = true);
   void writeNotCrosses(size_t t, const std::string& a, size_t aSub,
-                       const std::string& b, size_t bSub);
+                       const std::string& b, size_t bSub,
+                       bool expandB = true);
 
   void doCheck(JobVal cur, JobVal sv, size_t t);
   void doDistCheck(JobVal cur, JobVal sv, size_t t);

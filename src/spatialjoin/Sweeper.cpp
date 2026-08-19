@@ -1280,7 +1280,6 @@ void Sweeper::duplicatesToReferences() {
         jj++;
 
         if (cur->out) {
-
           if (cur->type == POLYGON) {
             if (deletedPolys.erase(cur->id)) {
               // erase it if present, to avoid unnecessary memory consumption
@@ -1941,8 +1940,11 @@ void Sweeper::writeRel(size_t t, const std::string& a, const std::string& b,
 // ____________________________________________________________________________
 void Sweeper::writeDE9IM(size_t t, const std::string& a, size_t aSub,
                          const std::string& b, size_t bSub,
-                         util::geo::DE9IMatrix de9im) {
-  if (a != b) {
+                         util::geo::DE9IMatrix de9im, bool expandB,
+                         bool selfExp) {
+  selfExp = selfExp || (a == b && aSub == bSub);
+
+  if (a != b && !(selfExp && (b < a || (b == a && bSub < aSub)))) {
     if (aSub > 0 && bSub == 0 && de9im.covers()) {
       // no need to lock and track the multigeometry here, we can directly
       // write that a contains b
@@ -2000,23 +2002,22 @@ void Sweeper::writeDE9IM(size_t t, const std::string& a, size_t aSub,
   auto referersA = _refs.find(a);
   auto referersB = _refs.find(b);
 
-  if (referersB != _refs.end()) {
+  if (expandB && referersB != _refs.end()) {
     const auto& subs = referersB->second.find(bSub);
     if (subs != referersB->second.end()) {
       for (const auto& idB : subs->second) {
-        writeDE9IM(t, a, aSub, idB.first, idB.second, de9im);
+        writeDE9IM(t, a, aSub, idB.first, idB.second, de9im, true, selfExp);
       }
     }
   }
 
-  // no need to check exactly the same direction again
-  if (a != b || aSub != bSub) {
-    if (referersA != _refs.end()) {
-      const auto& subs = referersA->second.find(aSub);
-      if (subs != referersA->second.end()) {
-        for (const auto& idA : subs->second) {
-          writeDE9IM(t, idA.first, idA.second, b, bSub, de9im);
-        }
+  // only expand the referers of a after b has been expanded completely,
+  // otherwise pairs would be reached twice
+  if (referersA != _refs.end()) {
+    const auto& subs = referersA->second.find(aSub);
+    if (subs != referersA->second.end()) {
+      for (const auto& idA : subs->second) {
+        writeDE9IM(t, idA.first, idA.second, b, bSub, de9im, false, selfExp);
       }
     }
   }
@@ -2024,8 +2025,11 @@ void Sweeper::writeDE9IM(size_t t, const std::string& a, size_t aSub,
 
 // ____________________________________________________________________________
 void Sweeper::writeDist(size_t t, const std::string& a, size_t aSub,
-                        const std::string& b, size_t bSub, double dist) {
-  if (a != b) {
+                        const std::string& b, size_t bSub, double dist,
+                        bool expandB, bool selfExp) {
+  selfExp = selfExp || (a == b && aSub == bSub);
+
+  if (a != b && !(selfExp && (b < a || (b == a && bSub < aSub)))) {
     if (bSub > 0 || aSub > 0) {
       std::unique_lock<std::mutex> lock(_mutsDistance[t]);
       if (bSub > 0 && (_subDistance[t][b].find(a) == _subDistance[t][b].end() ||
@@ -2048,23 +2052,22 @@ void Sweeper::writeDist(size_t t, const std::string& a, size_t aSub,
   auto referersA = _refs.find(a);
   auto referersB = _refs.find(b);
 
-  if (referersB != _refs.end()) {
+  if (expandB && referersB != _refs.end()) {
     const auto& subs = referersB->second.find(bSub);
     if (subs != referersB->second.end()) {
       for (const auto& idB : subs->second) {
-        writeDist(t, a, aSub, idB.first, idB.second, dist);
+        writeDist(t, a, aSub, idB.first, idB.second, dist, true, selfExp);
       }
     }
   }
 
-  // no need to check exactly the same direction again
-  if (a != b || aSub != bSub) {
-    if (referersA != _refs.end()) {
-      const auto& subs = referersA->second.find(aSub);
-      if (subs != referersA->second.end()) {
-        for (const auto& idA : subs->second) {
-          writeDist(t, idA.first, idA.second, b, bSub, dist);
-        }
+  // only expand the referers of a after b has been expanded completely,
+  // otherwise pairs would be reached twice
+  if (referersA != _refs.end()) {
+    const auto& subs = referersA->second.find(aSub);
+    if (subs != referersA->second.end()) {
+      for (const auto& idA : subs->second) {
+        writeDist(t, idA.first, idA.second, b, bSub, dist, false, selfExp);
       }
     }
   }
@@ -2072,8 +2075,11 @@ void Sweeper::writeDist(size_t t, const std::string& a, size_t aSub,
 
 // ____________________________________________________________________________
 void Sweeper::writeIntersect(size_t t, const std::string& a, size_t aSub,
-                             const std::string& b, size_t bSub) {
-  if (a != b) {
+                             const std::string& b, size_t bSub, bool expandB,
+                             bool selfExp) {
+  selfExp = selfExp || (a == b && aSub == bSub);
+
+  if (a != b && !(selfExp && (b < a || (b == a && bSub < aSub)))) {
     _relStats[t].intersects++;
     _relStats[t].intersects++;
     writeRel(t, a, b, _cfg.sepIsect);
@@ -2087,23 +2093,22 @@ void Sweeper::writeIntersect(size_t t, const std::string& a, size_t aSub,
   auto referersA = _refs.find(a);
   auto referersB = _refs.find(b);
 
-  if (referersB != _refs.end()) {
+  if (expandB && referersB != _refs.end()) {
     const auto& subs = referersB->second.find(bSub);
     if (subs != referersB->second.end()) {
       for (const auto& idB : subs->second) {
-        writeIntersect(t, a, aSub, idB.first, idB.second);
+        writeIntersect(t, a, aSub, idB.first, idB.second, true, selfExp);
       }
     }
   }
 
-  // no need to check exactly the same direction again
-  if (a != b || aSub != bSub) {
-    if (referersA != _refs.end()) {
-      const auto& subs = referersA->second.find(aSub);
-      if (subs != referersA->second.end()) {
-        for (const auto& idA : subs->second) {
-          writeIntersect(t, idA.first, idA.second, b, bSub);
-        }
+  // only expand the referers of a after b has been expanded completely,
+  // otherwise pairs would be reached twice
+  if (referersA != _refs.end()) {
+    const auto& subs = referersA->second.find(aSub);
+    if (subs != referersA->second.end()) {
+      for (const auto& idA : subs->second) {
+        writeIntersect(t, idA.first, idA.second, b, bSub, false, selfExp);
       }
     }
   }
@@ -3222,7 +3227,7 @@ void Sweeper::fillBatch(
 
 // _____________________________________________________________________________
 void Sweeper::writeOverlaps(size_t t, const std::string& a, size_t aSub,
-                            const std::string& b, size_t bSub) {
+                            const std::string& b, size_t bSub, bool expandB) {
   if (a != b) {
     if (aSub == 0 && bSub == 0) {
       _relStats[t].overlaps++;
@@ -3244,22 +3249,25 @@ void Sweeper::writeOverlaps(size_t t, const std::string& a, size_t aSub,
   auto referersA = _refs.find(a);
   auto referersB = _refs.find(b);
 
-  if (referersB != _refs.end()) {
+  if (expandB && referersB != _refs.end()) {
     const auto& subs = referersB->second.find(bSub);
     if (subs != referersB->second.end()) {
       for (const auto& idB : subs->second) {
-        writeOverlaps(t, a, aSub, idB.first, idB.second);
+        writeOverlaps(t, a, aSub, idB.first, idB.second, true);
       }
     }
   }
 
-  // no need to check exactly the same direction again
+  // only expand the referers of a after b has been expanded completely,
+  // otherwise pairs would be reached twice
+  //
+  // for a self pair, there is also no need to check the same direction again
   if (a != b || aSub != bSub) {
     if (referersA != _refs.end()) {
       const auto& subs = referersA->second.find(aSub);
       if (subs != referersA->second.end()) {
         for (const auto& idA : subs->second) {
-          writeOverlaps(t, idA.first, idA.second, b, bSub);
+          writeOverlaps(t, idA.first, idA.second, b, bSub, false);
         }
       }
     }
@@ -3268,7 +3276,8 @@ void Sweeper::writeOverlaps(size_t t, const std::string& a, size_t aSub,
 
 // _____________________________________________________________________________
 void Sweeper::writeNotOverlaps(size_t t, const std::string& a, size_t aSub,
-                               const std::string& b, size_t bSub) {
+                               const std::string& b, size_t bSub,
+                               bool expandB) {
   if (a != b && (aSub != 0 || bSub != 0)) {
     std::unique_lock<std::mutex> lock(_mutsNotOverlaps[t]);
 
@@ -3283,11 +3292,11 @@ void Sweeper::writeNotOverlaps(size_t t, const std::string& a, size_t aSub,
   auto referersA = _refs.find(a);
   auto referersB = _refs.find(b);
 
-  if (referersB != _refs.end()) {
+  if (expandB && referersB != _refs.end()) {
     const auto& subs = referersB->second.find(bSub);
     if (subs != referersB->second.end()) {
       for (const auto& idB : subs->second) {
-        writeNotOverlaps(t, a, aSub, idB.first, idB.second);
+        writeNotOverlaps(t, a, aSub, idB.first, idB.second, true);
       }
     }
   }
@@ -3296,7 +3305,7 @@ void Sweeper::writeNotOverlaps(size_t t, const std::string& a, size_t aSub,
     const auto& subs = referersA->second.find(aSub);
     if (subs != referersA->second.end()) {
       for (const auto& idA : subs->second) {
-        writeNotOverlaps(t, idA.first, idA.second, b, bSub);
+        writeNotOverlaps(t, idA.first, idA.second, b, bSub, false);
       }
     }
   }
@@ -3304,7 +3313,7 @@ void Sweeper::writeNotOverlaps(size_t t, const std::string& a, size_t aSub,
 
 // _____________________________________________________________________________
 void Sweeper::writeCrosses(size_t t, const std::string& a, size_t aSub,
-                           const std::string& b, size_t bSub) {
+                           const std::string& b, size_t bSub, bool expandB) {
   if (a == b) return;
 
   if (aSub == 0 && bSub == 0) {
@@ -3326,22 +3335,25 @@ void Sweeper::writeCrosses(size_t t, const std::string& a, size_t aSub,
   auto referersA = _refs.find(a);
   auto referersB = _refs.find(b);
 
-  if (referersB != _refs.end()) {
+  if (expandB && referersB != _refs.end()) {
     const auto& subs = referersB->second.find(bSub);
     if (subs != referersB->second.end()) {
       for (const auto& idB : subs->second) {
-        writeCrosses(t, a, aSub, idB.first, idB.second);
+        writeCrosses(t, a, aSub, idB.first, idB.second, true);
       }
     }
   }
 
-  // no need to check exactly the same direction again
+  // only expand the referers of a after b has been expanded completely,
+  // otherwise pairs would be reached twice
+  //
+  // for a self pair, there is also no need to check the same direction again
   if (a != b || aSub != bSub) {
     if (referersA != _refs.end()) {
       const auto& subs = referersA->second.find(aSub);
       if (subs != referersA->second.end()) {
         for (const auto& idA : subs->second) {
-          writeCrosses(t, idA.first, idA.second, b, bSub);
+          writeCrosses(t, idA.first, idA.second, b, bSub, false);
         }
       }
     }
@@ -3350,7 +3362,7 @@ void Sweeper::writeCrosses(size_t t, const std::string& a, size_t aSub,
 
 // _____________________________________________________________________________
 void Sweeper::writeNotCrosses(size_t t, const std::string& a, size_t aSub,
-                              const std::string& b, size_t bSub) {
+                              const std::string& b, size_t bSub, bool expandB) {
   if (a != b && (aSub != 0 || bSub != 0)) {
     std::unique_lock<std::mutex> lock(_mutsNotCrosses[t]);
 
@@ -3365,22 +3377,25 @@ void Sweeper::writeNotCrosses(size_t t, const std::string& a, size_t aSub,
   auto referersA = _refs.find(a);
   auto referersB = _refs.find(b);
 
-  if (referersB != _refs.end()) {
+  if (expandB && referersB != _refs.end()) {
     const auto& subs = referersB->second.find(bSub);
     if (subs != referersB->second.end()) {
       for (const auto& idB : subs->second) {
-        writeNotCrosses(t, a, aSub, idB.first, idB.second);
+        writeNotCrosses(t, a, aSub, idB.first, idB.second, true);
       }
     }
   }
 
-  // no need to check exactly the same direction again
+  // only expand the referers of a after b has been expanded completely,
+  // otherwise pairs would be reached twice
+  //
+  // for a self pair, there is also no need to check the same direction again
   if (a != b || aSub != bSub) {
     if (referersA != _refs.end()) {
       const auto& subs = referersA->second.find(aSub);
       if (subs != referersA->second.end()) {
         for (const auto& idA : subs->second) {
-          writeNotCrosses(t, idA.first, idA.second, b, bSub);
+          writeNotCrosses(t, idA.first, idA.second, b, bSub, false);
         }
       }
     }
@@ -3389,7 +3404,7 @@ void Sweeper::writeNotCrosses(size_t t, const std::string& a, size_t aSub,
 
 // _____________________________________________________________________________
 void Sweeper::writeTouches(size_t t, const std::string& a, size_t aSub,
-                           const std::string& b, size_t bSub) {
+                           const std::string& b, size_t bSub, bool expandB) {
   if (a == b) return;
 
   if (aSub == 0 && bSub == 0) {
@@ -3411,22 +3426,25 @@ void Sweeper::writeTouches(size_t t, const std::string& a, size_t aSub,
   auto referersA = _refs.find(a);
   auto referersB = _refs.find(b);
 
-  if (referersB != _refs.end()) {
+  if (expandB && referersB != _refs.end()) {
     const auto& subs = referersB->second.find(bSub);
     if (subs != referersB->second.end()) {
       for (const auto& idB : subs->second) {
-        writeTouches(t, a, aSub, idB.first, idB.second);
+        writeTouches(t, a, aSub, idB.first, idB.second, true);
       }
     }
   }
 
-  // no need to check exactly the same direction again
+  // only expand the referers of a after b has been expanded completely,
+  // otherwise pairs would be reached twice
+  //
+  // for a self pair, there is also no need to check the same direction again
   if (a != b || aSub != bSub) {
     if (referersA != _refs.end()) {
       const auto& subs = referersA->second.find(aSub);
       if (subs != referersA->second.end()) {
         for (const auto& idA : subs->second) {
-          writeTouches(t, idA.first, idA.second, b, bSub);
+          writeTouches(t, idA.first, idA.second, b, bSub, false);
         }
       }
     }
@@ -3435,7 +3453,7 @@ void Sweeper::writeTouches(size_t t, const std::string& a, size_t aSub,
 
 // _____________________________________________________________________________
 void Sweeper::writeNotTouches(size_t t, const std::string& a, size_t aSub,
-                              const std::string& b, size_t bSub) {
+                              const std::string& b, size_t bSub, bool expandB) {
   if (a != b && (aSub != 0 || bSub != 0)) {
     std::unique_lock<std::mutex> lock(_mutsNotTouches[t]);
 
@@ -3450,22 +3468,25 @@ void Sweeper::writeNotTouches(size_t t, const std::string& a, size_t aSub,
   auto referersA = _refs.find(a);
   auto referersB = _refs.find(b);
 
-  if (referersB != _refs.end()) {
+  if (expandB && referersB != _refs.end()) {
     const auto& subs = referersB->second.find(bSub);
     if (subs != referersB->second.end()) {
       for (const auto& idB : subs->second) {
-        writeNotTouches(t, a, aSub, idB.first, idB.second);
+        writeNotTouches(t, a, aSub, idB.first, idB.second, true);
       }
     }
   }
 
-  // no need to check exactly the same direction again
+  // only expand the referers of a after b has been expanded completely,
+  // otherwise pairs would be reached twice
+  //
+  // for a self pair, there is also no need to check the same direction again
   if (a != b || aSub != bSub) {
     if (referersA != _refs.end()) {
       const auto& subs = referersA->second.find(aSub);
       if (subs != referersA->second.end()) {
         for (const auto& idA : subs->second) {
-          writeNotTouches(t, idA.first, idA.second, b, bSub);
+          writeNotTouches(t, idA.first, idA.second, b, bSub, false);
         }
       }
     }
@@ -3474,8 +3495,11 @@ void Sweeper::writeNotTouches(size_t t, const std::string& a, size_t aSub,
 
 // _____________________________________________________________________________
 void Sweeper::writeEquals(size_t t, const std::string& a, size_t aSub,
-                          const std::string& b, size_t bSub) {
-  if (a != b) {
+                          const std::string& b, size_t bSub, bool expandB,
+                          bool selfExp) {
+  selfExp = selfExp || (a == b && aSub == bSub);
+
+  if (a != b && !(selfExp && (b < a || (b == a && bSub < aSub)))) {
     if (aSub == 0 && bSub == 0) {
       writeRel(t, a, b, _cfg.sepEquals);
       _relStats[t].equals++;
@@ -3499,23 +3523,22 @@ void Sweeper::writeEquals(size_t t, const std::string& a, size_t aSub,
   auto referersA = _refs.find(a);
   auto referersB = _refs.find(b);
 
-  if (referersB != _refs.end()) {
+  if (expandB && referersB != _refs.end()) {
     const auto& subs = referersB->second.find(bSub);
     if (subs != referersB->second.end()) {
       for (const auto& idB : subs->second) {
-        writeEquals(t, a, aSub, idB.first, idB.second);
+        writeEquals(t, a, aSub, idB.first, idB.second, true, selfExp);
       }
     }
   }
 
-  // no need to check exactly the same direction again
-  if (a != b || aSub != bSub) {
-    if (referersA != _refs.end()) {
-      const auto& subs = referersA->second.find(aSub);
-      if (subs != referersA->second.end()) {
-        for (const auto& idA : subs->second) {
-          writeEquals(t, idA.first, idA.second, b, bSub);
-        }
+  // only expand the referers of a after b has been expanded completely,
+  // otherwise pairs would be reached twice
+  if (referersA != _refs.end()) {
+    const auto& subs = referersA->second.find(aSub);
+    if (subs != referersA->second.end()) {
+      for (const auto& idA : subs->second) {
+        writeEquals(t, idA.first, idA.second, b, bSub, false, selfExp);
       }
     }
   }
@@ -3523,7 +3546,7 @@ void Sweeper::writeEquals(size_t t, const std::string& a, size_t aSub,
 
 // _____________________________________________________________________________
 void Sweeper::writeCovers(size_t t, const std::string& a, size_t aSub,
-                          const std::string& b, size_t bSub) {
+                          const std::string& b, size_t bSub, bool expandB) {
   if (a != b) {
     if (bSub > 0) {
       std::unique_lock<std::mutex> lock(_mutsCovers[t]);
@@ -3541,11 +3564,11 @@ void Sweeper::writeCovers(size_t t, const std::string& a, size_t aSub,
   auto referersA = _refs.find(a);
   auto referersB = _refs.find(b);
 
-  if (referersB != _refs.end()) {
+  if (expandB && referersB != _refs.end()) {
     const auto& subs = referersB->second.find(bSub);
     if (subs != referersB->second.end()) {
       for (const auto& idB : subs->second) {
-        writeCovers(t, a, aSub, idB.first, idB.second);
+        writeCovers(t, a, aSub, idB.first, idB.second, true);
       }
     }
   }
@@ -3554,7 +3577,7 @@ void Sweeper::writeCovers(size_t t, const std::string& a, size_t aSub,
     const auto& subs = referersA->second.find(aSub);
     if (subs != referersA->second.end()) {
       for (const auto& idA : subs->second) {
-        writeCovers(t, idA.first, idA.second, b, bSub);
+        writeCovers(t, idA.first, idA.second, b, bSub, false);
       }
     }
   }
@@ -3562,7 +3585,7 @@ void Sweeper::writeCovers(size_t t, const std::string& a, size_t aSub,
 
 // _____________________________________________________________________________
 void Sweeper::writeContains(size_t t, const std::string& a, size_t aSub,
-                            const std::string& b, size_t bSub) {
+                            const std::string& b, size_t bSub, bool expandB) {
   if (a != b) {
     if (bSub > 0) {
       std::unique_lock<std::mutex> lock(_mutsContains[t]);
@@ -3580,11 +3603,11 @@ void Sweeper::writeContains(size_t t, const std::string& a, size_t aSub,
   auto referersA = _refs.find(a);
   auto referersB = _refs.find(b);
 
-  if (referersB != _refs.end()) {
+  if (expandB && referersB != _refs.end()) {
     const auto& subs = referersB->second.find(bSub);
     if (subs != referersB->second.end()) {
       for (const auto& idB : subs->second) {
-        writeContains(t, a, aSub, idB.first, idB.second);
+        writeContains(t, a, aSub, idB.first, idB.second, true);
       }
     }
   }
@@ -3593,7 +3616,7 @@ void Sweeper::writeContains(size_t t, const std::string& a, size_t aSub,
     const auto& subs = referersA->second.find(aSub);
     if (subs != referersA->second.end()) {
       for (const auto& idA : subs->second) {
-        writeContains(t, idA.first, idA.second, b, bSub);
+        writeContains(t, idA.first, idA.second, b, bSub, false);
       }
     }
   }
