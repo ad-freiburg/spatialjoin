@@ -993,9 +993,10 @@ void Sweeper::multiOut(size_t tOut, const std::string& gidA) {
   // write covers
   for (auto i : subCovered) {
     if (i.second == _subSizes[gidA]) {
+      // CAREFUL: sub IDs are only flags here!!
       writeNotOverlaps(tOut, i.first,
                        _subSizes.find(i.first) != _subSizes.end() ? 1 : 0, gidA,
-                       1);
+                       1, false, false);
       writeRel(tOut, i.first, gidA, _cfg.sepCovers);
       _relStats[tOut].covers++;
     }
@@ -2695,8 +2696,7 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
 
     // crosses
     if (res.crosses1vs2()) {
-      _relStats[t].crosses++;
-      writeRel(t, a->id, b->id, _cfg.sepCrosses);
+      writeCrossesOneWay(t, a->id, a->subId, b->id, b->subId);
     }
   } else if (isSimpleLine(cur.type) && isArea(sv.type)) {
     std::shared_ptr<Area> b = getArea(sv, sv.large ? -1 : t);
@@ -2731,7 +2731,7 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
 
     // covers
     if (res.coveredBy()) {
-      writeCovers(t, b->id, 0, a->id, 0);
+      writeCovers(t, b->id, b->subId, a->id, 0);
     }
 
     // touches
@@ -2745,8 +2745,7 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
 
     // crosses
     if (res.crosses1vs2()) {
-      _relStats[t].crosses++;
-      writeRel(t, a->id, b->id, _cfg.sepCrosses);
+      writeCrossesOneWay(t, a->id, 0, b->id, b->subId);
     }
   } else if (isArea(cur.type) && sv.type == LINE) {
     std::shared_ptr<Area> a = getArea(cur, cur.large ? -1 : t);
@@ -2797,8 +2796,7 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
 
     // crosses
     if (res.crosses1vs2()) {
-      _relStats[t].crosses++;
-      writeRel(t, b->id, a->id, _cfg.sepCrosses);
+      writeCrossesOneWay(t, b->id, b->subId, a->id, a->subId);
     }
   } else if (isArea(cur.type) && isSimpleLine(sv.type)) {
     std::shared_ptr<Area> a = getArea(cur, cur.large ? -1 : t);
@@ -2845,8 +2843,7 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
 
     // crosses
     if (res.crosses1vs2()) {
-      _relStats[t].crosses++;
-      writeRel(t, b->id, a->id, _cfg.sepCrosses);
+      writeCrossesOneWay(t, b->id, 0, a->id, a->subId);
     }
   } else if (cur.type == LINE && sv.type == LINE) {
     auto ts = TIME();
@@ -3276,8 +3273,8 @@ void Sweeper::writeOverlaps(size_t t, const std::string& a, size_t aSub,
 
 // _____________________________________________________________________________
 void Sweeper::writeNotOverlaps(size_t t, const std::string& a, size_t aSub,
-                               const std::string& b, size_t bSub,
-                               bool expandB) {
+                               const std::string& b, size_t bSub, bool expandB,
+                               bool expandRefs) {
   if (a != b && (aSub != 0 || bSub != 0)) {
     std::unique_lock<std::mutex> lock(_mutsNotOverlaps[t]);
 
@@ -3285,7 +3282,7 @@ void Sweeper::writeNotOverlaps(size_t t, const std::string& a, size_t aSub,
     if (aSub != 0) _subNotOverlaps[t][a].insert(b);
   }
 
-  if (_refs.size() == 0) return;
+  if (!expandRefs || _refs.size() == 0) return;
 
   // handle references
 
@@ -3397,6 +3394,43 @@ void Sweeper::writeNotCrosses(size_t t, const std::string& a, size_t aSub,
         for (const auto& idA : subs->second) {
           writeNotCrosses(t, idA.first, idA.second, b, bSub, false);
         }
+      }
+    }
+  }
+}
+
+// _____________________________________________________________________________
+void Sweeper::writeCrossesOneWay(size_t t, const std::string& a, size_t aSub,
+                                 const std::string& b, size_t bSub,
+                                 bool expandB) {
+  if (a != b) {
+    _relStats[t].crosses++;
+    writeRel(t, a, b, _cfg.sepCrosses);
+  }
+
+  if (_refs.size() == 0) return;
+
+  // handle references
+
+  auto referersA = _refs.find(a);
+  auto referersB = _refs.find(b);
+
+  if (expandB && referersB != _refs.end()) {
+    const auto& subs = referersB->second.find(bSub);
+    if (subs != referersB->second.end()) {
+      for (const auto& idB : subs->second) {
+        writeCrossesOneWay(t, a, aSub, idB.first, idB.second, true);
+      }
+    }
+  }
+
+  // only expand the referers of a after b has been expanded completely,
+  // otherwise pairs would be reached twice
+  if (referersA != _refs.end()) {
+    const auto& subs = referersA->second.find(aSub);
+    if (subs != referersA->second.end()) {
+      for (const auto& idA : subs->second) {
+        writeCrossesOneWay(t, idA.first, idA.second, b, bSub, false);
       }
     }
   }
