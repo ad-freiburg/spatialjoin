@@ -1004,31 +1004,32 @@ void Sweeper::multiOut(size_t tOut, const std::string& gidA) {
 
   // write touches, aggregate first to avoid locking during I/O
   std::vector<std::pair<std::string, std::string>> touchesTmp;
+  std::set<std::string> touchesPartners;
 
   for (size_t t = 0; t < _cfg.numThreads + 1; t++) {
-    {
-      std::unique_lock<std::mutex> lock(_mutsTouches[t]);
-      auto i = _subTouches[t].find(gidA);
-      if (i != _subTouches[t].end()) {
-        for (const auto& b : i->second) {
-          auto gidB = b;
-          if (!notTouches(gidA, gidB)) touchesTmp.push_back({gidA, gidB});
-
-          {
-            std::unique_lock<std::mutex> lock2(_mutsNotTouches[t]);
-            auto j = _subNotTouches[t].find(gidB);
-            if (j != _subNotTouches[t].end()) j->second.erase(gidA);
-          }
-
-          auto k = _subTouches[t].find(gidB);
-          if (k != _subTouches[t].end()) k->second.erase(gidA);
-        }
-
-        _subTouches[t].erase(i);
-      }
+    std::unique_lock<std::mutex> lock(_mutsTouches[t]);
+    auto i = _subTouches[t].find(gidA);
+    if (i != _subTouches[t].end()) {
+      touchesPartners.insert(i->second.begin(), i->second.end());
+      _subTouches[t].erase(i);
     }
+  }
 
+  for (const auto& gidB : touchesPartners) {
+    if (!notTouches(gidA, gidB)) touchesTmp.push_back({gidA, gidB});
+  }
+
+  // the pairs are decided now, make sure the partners do not write them again
+  for (size_t t = 0; t < _cfg.numThreads + 1; t++) {
+    std::unique_lock<std::mutex> lock(_mutsTouches[t]);
     std::unique_lock<std::mutex> lock2(_mutsNotTouches[t]);
+    for (const auto& gidB : touchesPartners) {
+      auto j = _subNotTouches[t].find(gidB);
+      if (j != _subNotTouches[t].end()) j->second.erase(gidA);
+
+      auto k = _subTouches[t].find(gidB);
+      if (k != _subTouches[t].end()) k->second.erase(gidA);
+    }
     _subNotTouches[t].erase(gidA);
   }
 
@@ -1041,30 +1042,32 @@ void Sweeper::multiOut(size_t tOut, const std::string& gidA) {
 
   // write crosses, aggregate first to avoid locking during I/O
   std::vector<std::pair<std::string, std::string>> crossesTmp;
+  std::set<std::string> crossesPartners;
+
   for (size_t t = 0; t < _cfg.numThreads + 1; t++) {
-    {
-      std::unique_lock<std::mutex> lock(_mutsCrosses[t]);
-      auto i = _subCrosses[t].find(gidA);
-      if (i != _subCrosses[t].end()) {
-        for (const auto& b : i->second) {
-          auto gidB = b;
-          if (!notCrosses(gidA, gidB)) crossesTmp.push_back({gidA, gidB});
-
-          {
-            std::unique_lock<std::mutex> lock2(_mutsNotCrosses[t]);
-            auto j = _subNotCrosses[t].find(gidB);
-            if (j != _subNotCrosses[t].end()) j->second.erase(gidA);
-          }
-
-          auto k = _subCrosses[t].find(gidB);
-          if (k != _subCrosses[t].end()) k->second.erase(gidA);
-        }
-
-        _subCrosses[t].erase(i);
-      }
+    std::unique_lock<std::mutex> lock(_mutsCrosses[t]);
+    auto i = _subCrosses[t].find(gidA);
+    if (i != _subCrosses[t].end()) {
+      crossesPartners.insert(i->second.begin(), i->second.end());
+      _subCrosses[t].erase(i);
     }
+  }
 
+  for (const auto& gidB : crossesPartners) {
+    if (!notCrosses(gidA, gidB)) crossesTmp.push_back({gidA, gidB});
+  }
+
+  // the pairs are decided now, make sure the partners do not write them again
+  for (size_t t = 0; t < _cfg.numThreads + 1; t++) {
+    std::unique_lock<std::mutex> lock(_mutsCrosses[t]);
     std::unique_lock<std::mutex> lock2(_mutsNotCrosses[t]);
+    for (const auto& gidB : crossesPartners) {
+      auto j = _subNotCrosses[t].find(gidB);
+      if (j != _subNotCrosses[t].end()) j->second.erase(gidA);
+
+      auto k = _subCrosses[t].find(gidB);
+      if (k != _subCrosses[t].end()) k->second.erase(gidA);
+    }
     _subNotCrosses[t].erase(gidA);
   }
 
@@ -1094,35 +1097,36 @@ void Sweeper::multiOut(size_t tOut, const std::string& gidA) {
 
   // write overlaps, aggregate first to avoid locking during I/O
   std::vector<std::pair<std::string, std::string>> overlapsTmp;
+  std::set<std::string> overlapsPartners;
+
   for (size_t t = 0; t < _cfg.numThreads + 1; t++) {
-    {
-      std::unique_lock<std::mutex> lock(_mutsOverlaps[t]);
-      auto i = _subOverlaps[t].find(gidA);
-      if (i != _subOverlaps[t].end()) {
-        for (const auto& b : i->second) {
-          auto gidB = b;
-
-          // if one of the two geometries covers the other completely, they do
-          // not overlap. notOverlaps may not capture this if gidB was flushed
-          // before
-          if (!notOverlaps(gidA, gidB) && !coversAll(gidA, gidB) &&
-              !coversAll(gidB, gidA))
-            overlapsTmp.push_back({gidA, gidB});
-
-          {
-            std::unique_lock<std::mutex> lock2(_mutsNotOverlaps[t]);
-            auto j = _subNotOverlaps[t].find(gidB);
-            if (j != _subNotOverlaps[t].end()) j->second.erase(gidA);
-          }
-
-          auto k = _subOverlaps[t].find(gidB);
-          if (k != _subOverlaps[t].end()) k->second.erase(gidA);
-        }
-
-        _subOverlaps[t].erase(i);
-      }
+    std::unique_lock<std::mutex> lock(_mutsOverlaps[t]);
+    auto i = _subOverlaps[t].find(gidA);
+    if (i != _subOverlaps[t].end()) {
+      overlapsPartners.insert(i->second.begin(), i->second.end());
+      _subOverlaps[t].erase(i);
     }
+  }
+
+  for (const auto& gidB : overlapsPartners) {
+    // if one of the two geometries covers the other completely, they do not
+    // overlap. notOverlaps may not capture this if gidB was flushed before
+    if (!notOverlaps(gidA, gidB) && !coversAll(gidA, gidB) &&
+        !coversAll(gidB, gidA))
+      overlapsTmp.push_back({gidA, gidB});
+  }
+
+  // the pairs are decided now, make sure the partners do not write them again
+  for (size_t t = 0; t < _cfg.numThreads + 1; t++) {
+    std::unique_lock<std::mutex> lock(_mutsOverlaps[t]);
     std::unique_lock<std::mutex> lock2(_mutsNotOverlaps[t]);
+    for (const auto& gidB : overlapsPartners) {
+      auto j = _subNotOverlaps[t].find(gidB);
+      if (j != _subNotOverlaps[t].end()) j->second.erase(gidA);
+
+      auto k = _subOverlaps[t].find(gidB);
+      if (k != _subOverlaps[t].end()) k->second.erase(gidA);
+    }
     _subNotOverlaps[t].erase(gidA);
   }
 
