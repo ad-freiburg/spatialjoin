@@ -858,6 +858,22 @@ int main(int, char**) {
 
     {
       RunStats stats;
+      auto res = fullRun(TEST_DATASET_DIR "/issue-23", cfg, &stats);
+      TEST(stats.numReferences, ==, 4);
+
+      size_t a = res.find("$lsa equals lsb$");
+      TEST(a != std::string::npos);
+      // no second time!
+      TEST(res.find("$lsa\tequals\tlsb$", a+1) == std::string::npos);
+
+      size_t aa = res.find("$lsb equals lsc$");
+      TEST(aa != std::string::npos);
+      // no second time!
+      TEST(res.find("$lsb equals lsc$", aa+1) == std::string::npos);
+    }
+
+    {
+      RunStats stats;
       auto res = fullRun(TEST_DATASET_DIR "/references", cfg, &stats);
       // without box IDs, two polygons are converted into box polygons
       if (cfg.useBoxIds) {
@@ -1056,12 +1072,17 @@ int main(int, char**) {
     {
       RunStats stats;
       auto res = fullRun(TEST_DATASET_DIR "/issue-23", cfg, &stats);
-      TEST(stats.numReferences, ==, 2);
+      TEST(stats.numReferences, ==, 4);
 
       size_t a = res.find("$lsa\t1FFF0FFF2\tlsb$");
       TEST(a != std::string::npos);
       // no second time!
       TEST(res.find("$lsa\t1FFF0FFF2\tlsb$", a+1) == std::string::npos);
+
+      size_t aa = res.find("$lsb\t1FFF0FFF2\tlsc$");
+      TEST(aa != std::string::npos);
+      // no second time!
+      TEST(res.find("$lsb\t1FFF0FFF2\tlsc$", aa+1) == std::string::npos);
 
       size_t b = res.find("$lsb\t1FFF0FFF2\tlsa$");
       TEST(b != std::string::npos);
@@ -1077,6 +1098,11 @@ int main(int, char**) {
       TEST(d != std::string::npos);
       // no second time!
       TEST(res.find("$polyb\t2FFF1FFF2\tpolya$", d+1) == std::string::npos);
+
+      size_t e = res.find("$polyc\t2FFF1FFF2\tpolyb$");
+      TEST(d != std::string::npos);
+      // no second time!
+      TEST(res.find("$polyc\t2FFF1FFF2\tpolyb$", e+1) == std::string::npos);
     }
     {
       RunStats stats;
