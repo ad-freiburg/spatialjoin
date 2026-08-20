@@ -2891,6 +2891,9 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
         writeEquals(t, a->id, a->subId, b->id, b->subId);
 
         writeCovers(t, a->id, a->subId, b->id, b->subId);
+
+        writeContains(t, a->id, a->subId, b->id, b->subId);
+        writeContains(t, b->id, b->subId, a->id, a->subId);
       }
     }
 
