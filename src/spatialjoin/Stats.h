@@ -184,47 +184,51 @@ inline std::string Stats::toString() {
   return ss.str();
 }
 
-inline Stats operator+(const Stats& a, const Stats& b) {
-  return Stats{
-      a.timeGeoCacheRetrievalArea + b.timeGeoCacheRetrievalArea,
-      a.timeGeoCacheRetrievalLine + b.timeGeoCacheRetrievalLine,
-      a.timeGeoCacheRetrievalSimpleLine + b.timeGeoCacheRetrievalSimpleLine,
-      a.timeGeoCacheRetrievalPoint + b.timeGeoCacheRetrievalPoint,
-      a.timeWrite + b.timeWrite,
-      a.timeBoxIdIsectAreaArea + b.timeBoxIdIsectAreaArea,
-      a.timeBoxIdIsectAreaLine + b.timeBoxIdIsectAreaLine,
-      a.timeBoxIdIsectAreaPoint + b.timeBoxIdIsectAreaPoint,
-      a.timeBoxIdIsectLineLine + b.timeBoxIdIsectLineLine,
-      a.timeBoxIdIsectLinePoint + b.timeBoxIdIsectLinePoint,
-      a.timeOBBIsectAreaArea + b.timeOBBIsectAreaArea,
-      a.timeOBBIsectAreaLine + b.timeOBBIsectAreaLine,
-      a.timeOBBIsectAreaPoint + b.timeOBBIsectAreaPoint,
-      a.timeOBBIsectLineLine + b.timeOBBIsectLineLine,
-      a.timeFullGeoCheckAreaArea + b.timeFullGeoCheckAreaArea,
-      a.timeFullGeoCheckAreaLine + b.timeFullGeoCheckAreaLine,
-      a.timeFullGeoCheckAreaPoint + b.timeFullGeoCheckAreaPoint,
-      a.timeFullGeoCheckLineLine + b.timeFullGeoCheckLineLine,
-      a.timeFullGeoCheckLinePoint + b.timeFullGeoCheckLinePoint,
-      a.timeInnerOuterCheckAreaArea + b.timeInnerOuterCheckAreaArea,
-      a.timeInnerOuterCheckAreaLine + b.timeInnerOuterCheckAreaLine,
-      a.timeInnerOuterCheckAreaPoint + b.timeInnerOuterCheckAreaPoint,
-      a.fullGeoChecksAreaArea + b.fullGeoChecksAreaArea,
-      a.fullGeoChecksAreaLine + b.fullGeoChecksAreaLine,
-      a.fullGeoChecksAreaPoint + b.fullGeoChecksAreaPoint,
-      a.fullGeoChecksLineLine + b.fullGeoChecksLineLine,
-      a.fullGeoChecksLinePoint + b.fullGeoChecksLinePoint,
-      a.innerOuterChecksAreaArea + b.innerOuterChecksAreaArea,
-      a.innerOuterChecksAreaLine + b.innerOuterChecksAreaLine,
-      a.innerOuterChecksAreaPoint + b.innerOuterChecksAreaPoint,
-      a.totalComps + b.totalComps,
-      a.areaSizeSum + b.areaSizeSum,
-      a.areaCmps + b.areaCmps,
-      a.lineLenSum + b.lineLenSum,
-      a.lineCmps + b.lineCmps,
-      a.anchorSum + b.anchorSum};
+inline Stats& operator+=(Stats& a, const Stats& b) {
+  a.timeGeoCacheRetrievalArea += b.timeGeoCacheRetrievalArea;
+  a.timeGeoCacheRetrievalLine += b.timeGeoCacheRetrievalLine;
+  a.timeGeoCacheRetrievalSimpleLine += b.timeGeoCacheRetrievalSimpleLine;
+  a.timeGeoCacheRetrievalPoint += b.timeGeoCacheRetrievalPoint;
+  a.timeWrite += b.timeWrite;
+  a.timeBoxIdIsectAreaArea += b.timeBoxIdIsectAreaArea;
+  a.timeBoxIdIsectAreaLine += b.timeBoxIdIsectAreaLine;
+  a.timeBoxIdIsectAreaPoint += b.timeBoxIdIsectAreaPoint;
+  a.timeBoxIdIsectLineLine += b.timeBoxIdIsectLineLine;
+  a.timeBoxIdIsectLinePoint += b.timeBoxIdIsectLinePoint;
+  a.timeOBBIsectAreaArea += b.timeOBBIsectAreaArea;
+  a.timeOBBIsectAreaLine += b.timeOBBIsectAreaLine;
+  a.timeOBBIsectAreaPoint += b.timeOBBIsectAreaPoint;
+  a.timeOBBIsectLineLine += b.timeOBBIsectLineLine;
+  a.timeFullGeoCheckAreaArea += b.timeFullGeoCheckAreaArea;
+  a.timeFullGeoCheckAreaLine += b.timeFullGeoCheckAreaLine;
+  a.timeFullGeoCheckAreaPoint += b.timeFullGeoCheckAreaPoint;
+  a.timeFullGeoCheckLineLine += b.timeFullGeoCheckLineLine;
+  a.timeFullGeoCheckLinePoint += b.timeFullGeoCheckLinePoint;
+  a.timeInnerOuterCheckAreaArea += b.timeInnerOuterCheckAreaArea;
+  a.timeInnerOuterCheckAreaLine += b.timeInnerOuterCheckAreaLine;
+  a.timeInnerOuterCheckAreaPoint += b.timeInnerOuterCheckAreaPoint;
+  a.fullGeoChecksAreaArea += b.fullGeoChecksAreaArea;
+  a.fullGeoChecksAreaLine += b.fullGeoChecksAreaLine;
+  a.fullGeoChecksAreaPoint += b.fullGeoChecksAreaPoint;
+  a.fullGeoChecksLineLine += b.fullGeoChecksLineLine;
+  a.fullGeoChecksLinePoint += b.fullGeoChecksLinePoint;
+  a.innerOuterChecksAreaArea += b.innerOuterChecksAreaArea;
+  a.innerOuterChecksAreaLine += b.innerOuterChecksAreaLine;
+  a.innerOuterChecksAreaPoint += b.innerOuterChecksAreaPoint;
+  a.totalComps += b.totalComps;
+  a.areaSizeSum += b.areaSizeSum;
+  a.areaCmps += b.areaCmps;
+  a.lineLenSum += b.lineLenSum;
+  a.lineCmps += b.lineCmps;
+  a.anchorSum += b.anchorSum;
+  return a;
 }
 
-inline void operator+=(Stats& a, const Stats& b) { a = a + b; }
+inline Stats operator+(const Stats& a, const Stats& b) {
+  Stats ret = a;
+  ret += b;
+  return ret;
+}
 }  // namespace sj
    //
 
@@ -248,13 +252,22 @@ struct RelStats {
   }
 };
 
-inline RelStats operator+(const RelStats& a, const RelStats& b) {
-  return {a.intersects + b.intersects, a.equals + b.equals,
-          a.covers + b.covers,         a.contains + b.contains,
-          a.overlaps + b.overlaps,     a.crosses + b.crosses,
-          a.touches + b.touches,       a.de9im + b.de9im};
+inline RelStats& operator+=(RelStats& a, const RelStats& b) {
+  a.intersects += b.intersects;
+  a.equals += b.equals;
+  a.covers += b.covers;
+  a.contains += b.contains;
+  a.overlaps += b.overlaps;
+  a.crosses += b.crosses;
+  a.touches += b.touches;
+  a.de9im += b.de9im;
+  return a;
 }
 
-inline void operator+=(RelStats& a, const RelStats& b) { a = a + b; }
+inline RelStats operator+(const RelStats& a, const RelStats& b) {
+  RelStats ret = a;
+  ret += b;
+  return ret;
+}
 
 #endif
