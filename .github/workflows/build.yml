@@ -121,6 +121,8 @@ jobs:
     steps:
       - name: Checkout repository code
         uses: actions/checkout@v2
+      - name: Allow git to use the workspace
+        run: git config --global --add safe.directory '*'
       - name: Checkout submodules
         run: git submodule update --init --recursive
       - name: install dependencies
