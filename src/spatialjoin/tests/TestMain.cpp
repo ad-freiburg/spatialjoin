@@ -952,18 +952,24 @@ int main(int, char**) {
   {
     auto cfg = all;
 
-    RunStats singleStats;
-    const auto& single =
-        fullRun(TEST_DATASET_DIR "/multi-threaded", cfg, &singleStats);
+    for (std::string dataset :
+         {"duplicate-references", "multitests", "collectiontests", "freiburg",
+          "references", "issue-23", "multi-threaded"}) {
+      RunStats singleStats;
+      const auto& single =
+          fullRun(TEST_DATASET_DIR "/" + dataset, cfg, &singleStats);
 
-    cfg.numThreads = 4;
-    cfg.numCacheThreads = 4;
+      cfg.numThreads = 4;
+      cfg.numCacheThreads = 4;
 
-    for (size_t i = 0; i < 3; i++) {
-      RunStats multiStats;
-      TEST(sortedRels(single) ==
-           sortedRels(
-               fullRun(TEST_DATASET_DIR "/multi-threaded", cfg, &multiStats)));
+      for (size_t i = 0; i < 3; i++) {
+        cfg.numThreads = 4 - i;
+        cfg.numCacheThreads = 4 - i;
+        RunStats multiStats;
+        TEST(sortedRels(single) ==
+             sortedRels(
+                 fullRun(TEST_DATASET_DIR "/" + dataset, cfg, &multiStats)));
+      }
     }
   }
 
@@ -1032,6 +1038,44 @@ int main(int, char**) {
       TEST(res.find("$TestA\t0F1FF0102\tTestB$") != std::string::npos);
       TEST(res.find("$TestB\t0F1FF0102\tRefB$") != std::string::npos);
       TEST(res.find("$RefB\t0F1FF0102\tTestB$") != std::string::npos);
+    }
+    for (std::string dataset :
+         {"duplicate-references", "multitests", "collectiontests", "freiburg",
+          "references", "issue-23"}) {
+      RunStats withDups, withoutDups;
+
+      const auto& withDupRemoval =
+          fullRun(TEST_DATASET_DIR "/" + dataset, cfg, &withDups);
+      const auto& withoutDupRemoval =
+          fullRun(TEST_DATASET_DIR "/" + dataset, cfg, &withoutDups,
+                  std::numeric_limits<double>::max());
+
+      TEST(withDups.numReferences > withoutDups.numReferences);
+      TEST(sortedRels(withDupRemoval) == sortedRels(withoutDupRemoval));
+    }
+
+    {
+      auto cfg = all;
+
+      for (std::string dataset :
+           {"duplicate-references", "multitests", "collectiontests", "freiburg",
+            "references", "issue-23", "multi-threaded"}) {
+        RunStats singleStats;
+        const auto& single =
+            fullRun(TEST_DATASET_DIR "/" + dataset, cfg, &singleStats);
+
+        cfg.numThreads = 4;
+        cfg.numCacheThreads = 4;
+
+        for (size_t i = 0; i < 3; i++) {
+          cfg.numThreads = 4 - i;
+          cfg.numCacheThreads = 4 - i;
+          RunStats multiStats;
+          TEST(sortedRels(single) ==
+               sortedRels(
+                   fullRun(TEST_DATASET_DIR "/" + dataset, cfg, &multiStats)));
+        }
+      }
     }
   }
 
