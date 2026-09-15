@@ -121,6 +121,8 @@ jobs:
     steps:
       - name: Checkout repository code
         uses: actions/checkout@v4
+      - name: Checkout submodules
+        run: git submodule update --init --recursive
       - name: install dependencies
         run: apt-get update && apt-get install -y cmake libbz2-dev zlib1g-dev
       - name: cmake
@@ -139,6 +141,8 @@ jobs:
     steps:
       - name: Checkout repository code
         uses: actions/checkout@v2
+      - name: Checkout submodules
+        run: git submodule update --init --recursive
       - name: install clang
         run: |
           wget -qO llvm.sh https://apt.llvm.org/llvm.sh
