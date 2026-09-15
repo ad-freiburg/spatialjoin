@@ -993,9 +993,10 @@ void Sweeper::multiOut(size_t tOut, const std::string& gidA) {
   // write covers
   for (auto i : subCovered) {
     if (i.second == _subSizes[gidA]) {
+      // CAREFUL: sub IDs are only flags here!!
       writeNotOverlaps(tOut, i.first,
                        _subSizes.find(i.first) != _subSizes.end() ? 1 : 0, gidA,
-                       1);
+                       1, false, false);
       writeRel(tOut, i.first, gidA, _cfg.sepCovers);
       _relStats[tOut].covers++;
     }
@@ -1003,31 +1004,32 @@ void Sweeper::multiOut(size_t tOut, const std::string& gidA) {
 
   // write touches, aggregate first to avoid locking during I/O
   std::vector<std::pair<std::string, std::string>> touchesTmp;
+  std::set<std::string> touchesPartners;
 
   for (size_t t = 0; t < _cfg.numThreads + 1; t++) {
-    {
-      std::unique_lock<std::mutex> lock(_mutsTouches[t]);
-      auto i = _subTouches[t].find(gidA);
-      if (i != _subTouches[t].end()) {
-        for (const auto& b : i->second) {
-          auto gidB = b;
-          if (!notTouches(gidA, gidB)) touchesTmp.push_back({gidA, gidB});
-
-          {
-            std::unique_lock<std::mutex> lock2(_mutsNotTouches[t]);
-            auto j = _subNotTouches[t].find(gidB);
-            if (j != _subNotTouches[t].end()) j->second.erase(gidA);
-          }
-
-          auto k = _subTouches[t].find(gidB);
-          if (k != _subTouches[t].end()) k->second.erase(gidA);
-        }
-
-        _subTouches[t].erase(i);
-      }
+    std::unique_lock<std::mutex> lock(_mutsTouches[t]);
+    auto i = _subTouches[t].find(gidA);
+    if (i != _subTouches[t].end()) {
+      touchesPartners.insert(i->second.begin(), i->second.end());
+      _subTouches[t].erase(i);
     }
+  }
 
+  for (const auto& gidB : touchesPartners) {
+    if (!notTouches(gidA, gidB)) touchesTmp.push_back({gidA, gidB});
+  }
+
+  // the pairs are decided now, make sure the partners do not write them again
+  for (size_t t = 0; t < _cfg.numThreads + 1; t++) {
+    std::unique_lock<std::mutex> lock(_mutsTouches[t]);
     std::unique_lock<std::mutex> lock2(_mutsNotTouches[t]);
+    for (const auto& gidB : touchesPartners) {
+      auto j = _subNotTouches[t].find(gidB);
+      if (j != _subNotTouches[t].end()) j->second.erase(gidA);
+
+      auto k = _subTouches[t].find(gidB);
+      if (k != _subTouches[t].end()) k->second.erase(gidA);
+    }
     _subNotTouches[t].erase(gidA);
   }
 
@@ -1040,30 +1042,32 @@ void Sweeper::multiOut(size_t tOut, const std::string& gidA) {
 
   // write crosses, aggregate first to avoid locking during I/O
   std::vector<std::pair<std::string, std::string>> crossesTmp;
+  std::set<std::string> crossesPartners;
+
   for (size_t t = 0; t < _cfg.numThreads + 1; t++) {
-    {
-      std::unique_lock<std::mutex> lock(_mutsCrosses[t]);
-      auto i = _subCrosses[t].find(gidA);
-      if (i != _subCrosses[t].end()) {
-        for (const auto& b : i->second) {
-          auto gidB = b;
-          if (!notCrosses(gidA, gidB)) crossesTmp.push_back({gidA, gidB});
-
-          {
-            std::unique_lock<std::mutex> lock2(_mutsNotCrosses[t]);
-            auto j = _subNotCrosses[t].find(gidB);
-            if (j != _subNotCrosses[t].end()) j->second.erase(gidA);
-          }
-
-          auto k = _subCrosses[t].find(gidB);
-          if (k != _subCrosses[t].end()) k->second.erase(gidA);
-        }
-
-        _subCrosses[t].erase(i);
-      }
+    std::unique_lock<std::mutex> lock(_mutsCrosses[t]);
+    auto i = _subCrosses[t].find(gidA);
+    if (i != _subCrosses[t].end()) {
+      crossesPartners.insert(i->second.begin(), i->second.end());
+      _subCrosses[t].erase(i);
     }
+  }
 
+  for (const auto& gidB : crossesPartners) {
+    if (!notCrosses(gidA, gidB)) crossesTmp.push_back({gidA, gidB});
+  }
+
+  // the pairs are decided now, make sure the partners do not write them again
+  for (size_t t = 0; t < _cfg.numThreads + 1; t++) {
+    std::unique_lock<std::mutex> lock(_mutsCrosses[t]);
     std::unique_lock<std::mutex> lock2(_mutsNotCrosses[t]);
+    for (const auto& gidB : crossesPartners) {
+      auto j = _subNotCrosses[t].find(gidB);
+      if (j != _subNotCrosses[t].end()) j->second.erase(gidA);
+
+      auto k = _subCrosses[t].find(gidB);
+      if (k != _subCrosses[t].end()) k->second.erase(gidA);
+    }
     _subNotCrosses[t].erase(gidA);
   }
 
@@ -1080,6 +1084,8 @@ void Sweeper::multiOut(size_t tOut, const std::string& gidA) {
       auto gidB = b.first;
       if (b.second == _subSizes[gidA]) continue;
 
+      if (coversAll(gidA, gidB)) continue;
+
       if (!notOverlaps(gidA, gidB)) {
         _relStats[tOut].overlaps++;
         writeRel(tOut, gidA, gidB, _cfg.sepOverlaps);
@@ -1091,29 +1097,36 @@ void Sweeper::multiOut(size_t tOut, const std::string& gidA) {
 
   // write overlaps, aggregate first to avoid locking during I/O
   std::vector<std::pair<std::string, std::string>> overlapsTmp;
+  std::set<std::string> overlapsPartners;
+
   for (size_t t = 0; t < _cfg.numThreads + 1; t++) {
-    {
-      std::unique_lock<std::mutex> lock(_mutsOverlaps[t]);
-      auto i = _subOverlaps[t].find(gidA);
-      if (i != _subOverlaps[t].end()) {
-        for (const auto& b : i->second) {
-          auto gidB = b;
-          if (!notOverlaps(gidA, gidB)) overlapsTmp.push_back({gidA, gidB});
-
-          {
-            std::unique_lock<std::mutex> lock2(_mutsNotOverlaps[t]);
-            auto j = _subNotOverlaps[t].find(gidB);
-            if (j != _subNotOverlaps[t].end()) j->second.erase(gidA);
-          }
-
-          auto k = _subOverlaps[t].find(gidB);
-          if (k != _subOverlaps[t].end()) k->second.erase(gidA);
-        }
-
-        _subOverlaps[t].erase(i);
-      }
+    std::unique_lock<std::mutex> lock(_mutsOverlaps[t]);
+    auto i = _subOverlaps[t].find(gidA);
+    if (i != _subOverlaps[t].end()) {
+      overlapsPartners.insert(i->second.begin(), i->second.end());
+      _subOverlaps[t].erase(i);
     }
+  }
+
+  for (const auto& gidB : overlapsPartners) {
+    // if one of the two geometries covers the other completely, they do not
+    // overlap. notOverlaps may not capture this if gidB was flushed before
+    if (!notOverlaps(gidA, gidB) && !coversAll(gidA, gidB) &&
+        !coversAll(gidB, gidA))
+      overlapsTmp.push_back({gidA, gidB});
+  }
+
+  // the pairs are decided now, make sure the partners do not write them again
+  for (size_t t = 0; t < _cfg.numThreads + 1; t++) {
+    std::unique_lock<std::mutex> lock(_mutsOverlaps[t]);
     std::unique_lock<std::mutex> lock2(_mutsNotOverlaps[t]);
+    for (const auto& gidB : overlapsPartners) {
+      auto j = _subNotOverlaps[t].find(gidB);
+      if (j != _subNotOverlaps[t].end()) j->second.erase(gidA);
+
+      auto k = _subOverlaps[t].find(gidB);
+      if (k != _subOverlaps[t].end()) k->second.erase(gidA);
+    }
     _subNotOverlaps[t].erase(gidA);
   }
 
@@ -2695,8 +2708,7 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
 
     // crosses
     if (res.crosses1vs2()) {
-      _relStats[t].crosses++;
-      writeRel(t, a->id, b->id, _cfg.sepCrosses);
+      writeCrossesOneWay(t, a->id, a->subId, b->id, b->subId);
     }
   } else if (isSimpleLine(cur.type) && isArea(sv.type)) {
     std::shared_ptr<Area> b = getArea(sv, sv.large ? -1 : t);
@@ -2731,7 +2743,7 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
 
     // covers
     if (res.coveredBy()) {
-      writeCovers(t, b->id, 0, a->id, 0);
+      writeCovers(t, b->id, b->subId, a->id, 0);
     }
 
     // touches
@@ -2745,8 +2757,7 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
 
     // crosses
     if (res.crosses1vs2()) {
-      _relStats[t].crosses++;
-      writeRel(t, a->id, b->id, _cfg.sepCrosses);
+      writeCrossesOneWay(t, a->id, 0, b->id, b->subId);
     }
   } else if (isArea(cur.type) && sv.type == LINE) {
     std::shared_ptr<Area> a = getArea(cur, cur.large ? -1 : t);
@@ -2797,8 +2808,7 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
 
     // crosses
     if (res.crosses1vs2()) {
-      _relStats[t].crosses++;
-      writeRel(t, b->id, a->id, _cfg.sepCrosses);
+      writeCrossesOneWay(t, b->id, b->subId, a->id, a->subId);
     }
   } else if (isArea(cur.type) && isSimpleLine(sv.type)) {
     std::shared_ptr<Area> a = getArea(cur, cur.large ? -1 : t);
@@ -2845,8 +2855,7 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
 
     // crosses
     if (res.crosses1vs2()) {
-      _relStats[t].crosses++;
-      writeRel(t, b->id, a->id, _cfg.sepCrosses);
+      writeCrossesOneWay(t, b->id, 0, a->id, a->subId);
     }
   } else if (cur.type == LINE && sv.type == LINE) {
     auto ts = TIME();
@@ -2882,6 +2891,9 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
         writeEquals(t, a->id, a->subId, b->id, b->subId);
 
         writeCovers(t, a->id, a->subId, b->id, b->subId);
+
+        writeContains(t, a->id, a->subId, b->id, b->subId);
+        writeContains(t, b->id, b->subId, a->id, a->subId);
       }
     }
 
@@ -3276,8 +3288,8 @@ void Sweeper::writeOverlaps(size_t t, const std::string& a, size_t aSub,
 
 // _____________________________________________________________________________
 void Sweeper::writeNotOverlaps(size_t t, const std::string& a, size_t aSub,
-                               const std::string& b, size_t bSub,
-                               bool expandB) {
+                               const std::string& b, size_t bSub, bool expandB,
+                               bool expandRefs) {
   if (a != b && (aSub != 0 || bSub != 0)) {
     std::unique_lock<std::mutex> lock(_mutsNotOverlaps[t]);
 
@@ -3285,7 +3297,7 @@ void Sweeper::writeNotOverlaps(size_t t, const std::string& a, size_t aSub,
     if (aSub != 0) _subNotOverlaps[t][a].insert(b);
   }
 
-  if (_refs.size() == 0) return;
+  if (!expandRefs || _refs.size() == 0) return;
 
   // handle references
 
@@ -3397,6 +3409,43 @@ void Sweeper::writeNotCrosses(size_t t, const std::string& a, size_t aSub,
         for (const auto& idA : subs->second) {
           writeNotCrosses(t, idA.first, idA.second, b, bSub, false);
         }
+      }
+    }
+  }
+}
+
+// _____________________________________________________________________________
+void Sweeper::writeCrossesOneWay(size_t t, const std::string& a, size_t aSub,
+                                 const std::string& b, size_t bSub,
+                                 bool expandB) {
+  if (a != b) {
+    _relStats[t].crosses++;
+    writeRel(t, a, b, _cfg.sepCrosses);
+  }
+
+  if (_refs.size() == 0) return;
+
+  // handle references
+
+  auto referersA = _refs.find(a);
+  auto referersB = _refs.find(b);
+
+  if (expandB && referersB != _refs.end()) {
+    const auto& subs = referersB->second.find(bSub);
+    if (subs != referersB->second.end()) {
+      for (const auto& idB : subs->second) {
+        writeCrossesOneWay(t, a, aSub, idB.first, idB.second, true);
+      }
+    }
+  }
+
+  // only expand the referers of a after b has been expanded completely,
+  // otherwise pairs would be reached twice
+  if (referersA != _refs.end()) {
+    const auto& subs = referersA->second.find(aSub);
+    if (subs != referersA->second.end()) {
+      for (const auto& idA : subs->second) {
+        writeCrossesOneWay(t, idA.first, idA.second, b, bSub, false);
       }
     }
   }
@@ -3642,6 +3691,27 @@ bool Sweeper::notTouches(const std::string& a, const std::string& b) {
   }
 
   return false;
+}
+
+// _____________________________________________________________________________
+bool Sweeper::coversAll(const std::string& a, const std::string& b) {
+  // does a cover *every* sub geometry of the multi geometry b? Note that this
+  // can already be answered while b is still being swept, as long as a is
+  // complete: no check between a and b can happen after a was flushed
+  const auto& size = _subSizes.find(b);
+  if (size == _subSizes.end()) return false;
+
+  size_t covered = 0;
+
+  for (size_t t = 0; t < _cfg.numThreads + 1; t++) {
+    std::unique_lock<std::mutex> lock(_mutsCovers[t]);
+    auto i = _subCovered[t].find(b);
+    if (i == _subCovered[t].end()) continue;
+    auto j = i->second.find(a);
+    if (j != i->second.end()) covered += j->second.size();
+  }
+
+  return covered == size->second;
 }
 
 // _____________________________________________________________________________

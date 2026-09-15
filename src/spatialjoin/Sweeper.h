@@ -513,14 +513,17 @@ class Sweeper {
   void writeOverlaps(size_t t, const std::string& a, size_t aSub,
                      const std::string& b, size_t bSub, bool expandB = true);
   void writeNotOverlaps(size_t t, const std::string& a, size_t aSub,
-                        const std::string& b, size_t bSub,
-                        bool expandB = true);
+                        const std::string& b, size_t bSub, bool expandB = true,
+                        bool expandRefs = true);
 
   void writeCrosses(size_t t, const std::string& a, size_t aSub,
                     const std::string& b, size_t bSub, bool expandB = true);
   void writeNotCrosses(size_t t, const std::string& a, size_t aSub,
                        const std::string& b, size_t bSub,
                        bool expandB = true);
+  void writeCrossesOneWay(size_t t, const std::string& a, size_t aSub,
+                          const std::string& b, size_t bSub,
+                          bool expandB = true);
 
   void doCheck(JobVal cur, JobVal sv, size_t t);
   void doDistCheck(JobVal cur, JobVal sv, size_t t);
@@ -529,6 +532,7 @@ class Sweeper {
   void processQueue(size_t t);
 
   bool notOverlaps(const std::string& a, const std::string& b);
+  bool coversAll(const std::string& a, const std::string& b);
   bool notTouches(const std::string& a, const std::string& b);
   bool notCrosses(const std::string& a, const std::string& b);
 
@@ -631,6 +635,12 @@ class Sweeper {
          boxb->type == FOLDED_SIMPLE_LINE) &&
         boxa->areaOrLen > boxb->areaOrLen)
       return 1;
+
+    // make ordernig of equal geoms deterministic
+    if (boxa->type != boxb->type) return boxa->type < boxb->type ? -1 : 1;
+    if (boxa->side != boxb->side) return boxa->side ? 1 : -1;
+    if (boxa->large != boxb->large) return boxa->large ? 1 : -1;
+    if (boxa->id != boxb->id) return boxa->id < boxb->id ? -1 : 1;
 
     return 0;
   }
