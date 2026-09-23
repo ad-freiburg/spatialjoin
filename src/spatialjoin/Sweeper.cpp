@@ -1450,6 +1450,8 @@ RelStats Sweeper::sweep() {
   _mutsDE9IM = std::vector<std::mutex>(_cfg.numThreads + 1);
   _atomicCurX = std::vector<std::atomic<int32_t>>(_cfg.numThreads + 1);
 
+  for (auto& curX : _atomicCurX) curX = std::numeric_limits<int32_t>::min();
+
   size_t counts = 0, totalCheckCount = 0, jj = 0, checkPairs = 0;
   auto t = TIME();
 
