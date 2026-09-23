@@ -1,0 +1,6 @@
+gridpoly	POLYGON((0 0, 10 0, 10 10, 5 5, 0 10, 0 0))
+onedge	POINT(5 0)
+onvertex	POINT(0 0)
+insidepoint	POINT(5 2)
+edgeline	LINESTRING(3 0, 7 0)
+insideline	LINESTRING(3 2, 7 2)

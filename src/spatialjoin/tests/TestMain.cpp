@@ -1049,6 +1049,32 @@ int main(int, char**) {
       TEST(res.find("$germany covers bawue$") != std::string::npos);
       TEST(res.find("$germany contains bawue$") != std::string::npos);
     }
+
+    {
+      RunStats stats;
+      auto res = fullRun(TEST_DATASET_DIR "/boxidborder", cfg, &stats);
+
+      TEST(res.find("$gridpoly covers onedge$") != std::string::npos);
+      TEST(res.find("$gridpoly touches onedge$") != std::string::npos);
+      TEST(res.find("$gridpoly contains onedge$") == std::string::npos);
+
+      TEST(res.find("$gridpoly covers onvertex$") != std::string::npos);
+      TEST(res.find("$gridpoly touches onvertex$") != std::string::npos);
+      TEST(res.find("$gridpoly contains onvertex$") == std::string::npos);
+
+      TEST(res.find("$gridpoly covers edgeline$") != std::string::npos);
+      TEST(res.find("$gridpoly touches edgeline$") != std::string::npos);
+      TEST(res.find("$gridpoly contains edgeline$") == std::string::npos);
+
+      // geometries which really are in the interior are unaffected
+      TEST(res.find("$gridpoly covers insidepoint$") != std::string::npos);
+      TEST(res.find("$gridpoly contains insidepoint$") != std::string::npos);
+      TEST(res.find("$gridpoly touches insidepoint$") == std::string::npos);
+
+      TEST(res.find("$gridpoly covers insideline$") != std::string::npos);
+      TEST(res.find("$gridpoly contains insideline$") != std::string::npos);
+      TEST(res.find("$gridpoly touches insideline$") == std::string::npos);
+    }
   }
 
   // DE9IM
