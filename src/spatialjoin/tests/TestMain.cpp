@@ -1,6 +1,7 @@
 // Copyright 2024
 // Author: Patrick Brosi
 
+#include <fstream>
 #include <iostream>
 #include <regex>
 #include <string>
@@ -73,6 +74,19 @@ std::string fullRun(const std::string& file, sj::SweeperCfg cfg,
   unlink(".resTmp");
 
   return ss.str();
+}
+
+// _____________________________________________________________________________
+void writeMultiFlushDataset(const std::string& path) {
+  // write a dataset triggering
+  // https://github.com/ad-freiburg/spatialjoin/issues/28, see there for details
+  std::ofstream ofs(path);
+  ofs << "a\tPOLYGON((-10 -10, -1 -10, -1 -1, -10 -1, -10 -10))\n";
+  ofs << "b\tMULTIPOINT((-5 -5), (-4 -4), (-3 -3))\n";
+
+  for (size_t i = 0; i < 100000; i++) {
+    ofs << "f" << i << "\tPOINT(" << (10.0 + i * 0.0008) << " 50)\n";
+  }
 }
 
 // _____________________________________________________________________________
@@ -1117,6 +1131,19 @@ int main(int, char**) {
       TEST(res.find("$TestB\t0F1FF0102\tRefB$") != std::string::npos);
       TEST(res.find("$RefB\t0F1FF0102\tTestB$") != std::string::npos);
     }
+  }
+
+  {
+    // multi geometries with x < 0 (left of the meridian) must not be
+    // multiOut`ed before their candidates are checked, see #28
+    RunStats stats;
+    writeMultiFlushDataset(".multiFlushTmp");
+    auto res = fullRun(".multiFlushTmp", all, &stats);
+    unlink(".multiFlushTmp");
+
+    TEST(res.find("$a intersects b$") != std::string::npos);
+    TEST(res.find("$a contains b$") != std::string::npos);
+    TEST(res.find("$a covers b$") != std::string::npos);
   }
 
   // distance
