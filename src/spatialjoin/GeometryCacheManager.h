@@ -434,6 +434,12 @@ class GeometryCacheManager {
         boxa->areaOrLen > boxb->areaOrLen)
       return 1;
 
+    // make ordernig of equal geoms deterministic
+    if (boxa->type != boxb->type) return boxa->type < boxb->type ? -1 : 1;
+    if (boxa->side != boxb->side) return boxa->side ? 1 : -1;
+    if (boxa->large != boxb->large) return boxa->large ? 1 : -1;
+    if (boxa->id != boxb->id) return boxa->id < boxb->id ? -1 : 1;
+
     return 0;
   }
 

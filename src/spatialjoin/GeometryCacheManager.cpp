@@ -886,8 +886,10 @@ void GeometryCacheManager::duplicatesToReferences() {
   const size_t RBUF_SIZE = 100000;
   unsigned char* buf = new unsigned char[sizeof(BoxVal) * RBUF_SIZE];
 
-  std::unordered_set<size_t> deleted;
-  std::unordered_set<size_t> referenced;
+  std::unordered_set<size_t> deletedLines;
+  std::unordered_set<size_t> referencedLines;
+  std::unordered_set<size_t> deletedPolys;
+  std::unordered_set<size_t> referencedPolys;
 
   log("Removing duplicates...");
 
@@ -927,13 +929,24 @@ void GeometryCacheManager::duplicatesToReferences() {
         jj++;
 
         if (cur->out) {
-          if ((cur->type == POLYGON || cur->type == LINE) &&
-              deleted.erase(cur->id)) {
-            // erase it if present, to avoid unnecessary memory consumption
-            cur->type = DELETED;
-            updated = true;
+          if (cur->type == POLYGON) {
+            if (deletedPolys.erase(cur->id)) {
+              // erase it if present, to avoid unnecessary memory consumption
+              cur->type = DELETED;
+              updated = true;
+            }
+            referencedPolys.erase(cur->id);
           }
-          referenced.erase(cur->id);
+
+          if (cur->type == LINE) {
+            if (deletedLines.erase(cur->id)) {
+              // erase it if present, to avoid unnecessary memory consumption
+              cur->type = DELETED;
+              updated = true;
+            }
+            referencedLines.erase(cur->id);
+          }
+
           continue;
         }
 
@@ -954,8 +967,8 @@ void GeometryCacheManager::duplicatesToReferences() {
                                     existing->second.second ? -1 : 0);
 
             if (a->geom == b->geom) {
-              deleted.insert(cur->id);
-              if (referenced.insert(existing->second.first).second) {
+              deletedPolys.insert(cur->id);
+              if (referencedPolys.insert(existing->second.first).second) {
                 // for the first element referencing this, modify this
                 // event to the self check of the referenced geom
                 cur->type = SELF_CHECK_AREA;
@@ -983,8 +996,8 @@ void GeometryCacheManager::duplicatesToReferences() {
                                     existing->second.second ? -1 : 0);
 
             if (a->geom == b->geom) {
-              deleted.insert(cur->id);
-              if (referenced.insert(existing->second.first).second) {
+              deletedLines.insert(cur->id);
+              if (referencedLines.insert(existing->second.first).second) {
                 // for the first element referencing this, modify this
                 // event to the self check of the referenced geom
                 cur->type = SELF_CHECK_LINE;
@@ -1127,4 +1140,4 @@ size_t GeometryCacheManager::foldString(const std::string& s) {
   ret |= (s.size() << 56);
 
   return ret;
-};
+}

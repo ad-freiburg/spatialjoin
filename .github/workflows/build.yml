@@ -55,6 +55,25 @@ jobs:
         run: cd build && make
       - name: tests
         run: cd build && ctest --output-on-failure
+  macos-latest-build-std:
+    runs-on: macOS-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        std: [14, 17, 20, 23]
+    steps:
+      - name: Checkout repository code
+        uses: actions/checkout@v2
+      - name: Checkout submodules
+        run: git submodule update --init --recursive
+      - name: install dependencies
+        run: brew install cmake
+      - name: cmake
+        run: mkdir build && cd build && cmake .. -DCMAKE_CXX_STANDARD=${{ matrix.std }}
+      - name: make
+        run: cd build && make
+      - name: tests
+        run: cd build && ctest --output-on-failure
   macos-14-build:
     runs-on: macOS-14
     steps:
@@ -66,6 +85,79 @@ jobs:
         run: brew install cmake
       - name: cmake
         run: mkdir build && cd build && cmake ..
+      - name: make
+        run: cd build && make
+      - name: tests
+        run: cd build && ctest --output-on-failure
+  ubuntu-latest-build-gcc-std:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        std: [14, 17, 20, 23]
+    steps:
+      - name: Checkout repository code
+        uses: actions/checkout@v2
+      - name: Checkout submodules
+        run: git submodule update --init --recursive
+      - name: update apt
+        run: sudo apt update
+      - name: install dependencies
+        run: sudo apt install -y cmake gcc g++ libbz2-dev
+      - name: cmake
+        run: mkdir build && cd build && cmake .. -DCMAKE_CXX_STANDARD=${{ matrix.std }}
+      - name: make
+        run: cd build && make
+      - name: tests
+        run: cd build && ctest --output-on-failure
+  gcc-version-build:
+    runs-on: ubuntu-latest
+    container: gcc:${{ matrix.gcc }}
+    strategy:
+      fail-fast: false
+      matrix:
+        gcc: [15, 16]
+        std: [11, 17, 23]
+    steps:
+      - name: Checkout repository code
+        uses: actions/checkout@v2
+      - name: Allow git to use the workspace
+        run: git config --global --add safe.directory '*'
+      - name: Checkout submodules
+        run: git submodule update --init --recursive
+      - name: install dependencies
+        run: apt-get update && apt-get install -y cmake libbz2-dev zlib1g-dev
+      - name: cmake
+        run: mkdir build && cd build && cmake .. -DCMAKE_CXX_STANDARD=${{ matrix.std }}
+      - name: make
+        run: cd build && make
+      - name: tests
+        run: cd build && ctest --output-on-failure
+  clang-version-build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        clang: [22]
+        std: [11, 17, 23]
+    steps:
+      - name: Checkout repository code
+        uses: actions/checkout@v2
+      - name: Checkout submodules
+        run: git submodule update --init --recursive
+      - name: install clang
+        run: |
+          wget -qO llvm.sh https://apt.llvm.org/llvm.sh
+          chmod +x llvm.sh
+          sudo ./llvm.sh ${{ matrix.clang }}
+      - name: install dependencies
+        run: sudo apt install -y cmake libbz2-dev
+      - name: cmake
+        run: mkdir build && cd build && cmake .. -DCMAKE_CXX_STANDARD=${{ matrix.std }}
+        shell: bash
+        env:
+          CC: clang-${{ matrix.clang }}
+          CXX: clang++-${{ matrix.clang }}
       - name: make
         run: cd build && make
       - name: tests

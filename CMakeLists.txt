@@ -12,6 +12,9 @@ endif()
 
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_CURRENT_SOURCE_DIR}/cmake/")
 
+set(CMAKE_CXX_STANDARD 14 CACHE STRING "C++ standard to build with")
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
 # set compiler flags, see http://stackoverflow.com/questions/7724569/debug-vs-release-in-cmake
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3 -fno-signed-zeros -fno-trapping-math -Wall -Wno-format-extra-args -Wextra -Wformat-nonliteral -Wformat-security -Wformat=2 -Wextra -Wno-implicit-fallthrough -Wnarrowing -pedantic")
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O3 -fno-signed-zeros -fno-trapping-math -Wall -Wno-format-extra-args -Wextra -Wformat-nonliteral -Wformat-security -Wformat=2 -Wextra -Wno-implicit-fallthrough -Wnarrowing -pedantic")
@@ -34,23 +37,6 @@ endif()
 
 # export compile commands to tools like clang
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
-
-# Compiler-specific C++14 activation.
-if ("${CMAKE_CXX_COMPILER_ID}" MATCHES "GNU")
-	execute_process(
-		COMMAND ${CMAKE_CXX_COMPILER} -dumpversion OUTPUT_VARIABLE GCC_VERSION)
-	if ((GCC_VERSION VERSION_GREATER 4.8 OR GCC_VERSION VERSION_EQUAL 4.8))
-		set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++14")
-	else ()
-		message(FATAL_ERROR "${PROJECT_NAME} requires g++ 4.8 or greater!")
-	endif ()
-elseif ("${CMAKE_CXX_COMPILER_ID}" MATCHES "Clang")
-	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++14")
-else ()
-	message(FATAL_ERROR "Your C++ compiler does not support C++14.")
-endif ()
-
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
 
 # http://brianmilco.blogspot.de/2012/11/cmake-automatically-use-git-tags-as.html
 include(GetGitRevisionDescription OPTIONAL RESULT_VARIABLE _get_git_revision)
