@@ -2,6 +2,7 @@
 // Author: Patrick Brosi
 
 #include <algorithm>
+#include <fstream>
 #include <iostream>
 #include <limits>
 #include <regex>
@@ -105,6 +106,19 @@ void testNoContradictions(const std::string& res) {
   for (const auto& o : overlapping) {
     TEST(!(coveringContains.count(o) ||
            coveringContains.count({o.second, o.first})));
+  }
+}
+
+// _____________________________________________________________________________
+void writeMultiFlushDataset(const std::string& path) {
+  // write a dataset triggering
+  // https://github.com/ad-freiburg/spatialjoin/issues/28, see there for details
+  std::ofstream ofs(path);
+  ofs << "a\tPOLYGON((-10 -10, -1 -10, -1 -1, -10 -1, -10 -10))\n";
+  ofs << "b\tMULTIPOINT((-5 -5), (-4 -4), (-3 -3))\n";
+
+  for (size_t i = 0; i < 100000; i++) {
+    ofs << "f" << i << "\tPOINT(" << (10.0 + i * 0.0008) << " 50)\n";
   }
 }
 
@@ -947,6 +961,32 @@ int main(int, char**) {
       TEST(res.find("$germany covers bawue$") != std::string::npos);
       TEST(res.find("$germany contains bawue$") != std::string::npos);
     }
+
+    {
+      RunStats stats;
+      auto res = fullRun(TEST_DATASET_DIR "/boxidborder", cfg, &stats);
+
+      TEST(res.find("$gridpoly covers onedge$") != std::string::npos);
+      TEST(res.find("$gridpoly touches onedge$") != std::string::npos);
+      TEST(res.find("$gridpoly contains onedge$") == std::string::npos);
+
+      TEST(res.find("$gridpoly covers onvertex$") != std::string::npos);
+      TEST(res.find("$gridpoly touches onvertex$") != std::string::npos);
+      TEST(res.find("$gridpoly contains onvertex$") == std::string::npos);
+
+      TEST(res.find("$gridpoly covers edgeline$") != std::string::npos);
+      TEST(res.find("$gridpoly touches edgeline$") != std::string::npos);
+      TEST(res.find("$gridpoly contains edgeline$") == std::string::npos);
+
+      // geometries which really are in the interior are unaffected
+      TEST(res.find("$gridpoly covers insidepoint$") != std::string::npos);
+      TEST(res.find("$gridpoly contains insidepoint$") != std::string::npos);
+      TEST(res.find("$gridpoly touches insidepoint$") == std::string::npos);
+
+      TEST(res.find("$gridpoly covers insideline$") != std::string::npos);
+      TEST(res.find("$gridpoly contains insideline$") != std::string::npos);
+      TEST(res.find("$gridpoly touches insideline$") == std::string::npos);
+    }
   }
 
   {
@@ -1077,6 +1117,19 @@ int main(int, char**) {
         }
       }
     }
+  }
+
+  {
+    // multi geometries with x < 0 (left of the meridian) must not be
+    // multiOut`ed before their candidates are checked, see #28
+    RunStats stats;
+    writeMultiFlushDataset(".multiFlushTmp");
+    auto res = fullRun(".multiFlushTmp", all, &stats);
+    unlink(".multiFlushTmp");
+
+    TEST(res.find("$a intersects b$") != std::string::npos);
+    TEST(res.find("$a contains b$") != std::string::npos);
+    TEST(res.find("$a covers b$") != std::string::npos);
   }
 
   // distance
