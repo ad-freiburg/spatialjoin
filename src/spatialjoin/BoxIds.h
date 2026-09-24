@@ -118,9 +118,9 @@ inline void getBoxIds(const util::geo::I32XSortedPolygon& poly,
 
       const util::geo::I32XSortedPolygon boxPoly{util::geo::I32Polygon(box)};
 
-      const auto& check = util::geo::DE9IM(boxPoly, poly, &firstInA, &firstInB);
+      const auto& de9im = util::geo::DE9IM(boxPoly, poly, &firstInA, &firstInB);
 
-      if (check.within() && !check.BB() && !check.IB()) {
+      if (de9im.within() && !de9im.BB()) {
         // we can insert all at once
         for (int32_t ly = y; ly < y + localYHeight; ly++) {
           int a = 1;
@@ -132,7 +132,7 @@ inline void getBoxIds(const util::geo::I32XSortedPolygon& poly,
             a++;
           }
         }
-      } else if (check.intersects()) {
+      } else if (de9im.intersects()) {
         if (localXWidth == 1 && localYHeight == 1) {
           // only intersecting
           int32_t newId = -(y * NUM_GRID_CELLS + x + 1);
