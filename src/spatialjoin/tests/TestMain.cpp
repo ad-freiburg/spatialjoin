@@ -1075,6 +1075,14 @@ int main(int, char**) {
       TEST(res.find("$gridpoly contains insideline$") != std::string::npos);
       TEST(res.find("$gridpoly touches insideline$") == std::string::npos);
     }
+
+    {
+      RunStats stats;
+      auto res = fullRun(TEST_DATASET_DIR "/refsinmulti", cfg, &stats);
+
+      TEST(res.find("$a touches b$") != std::string::npos);
+      TEST(res.find("$b touches a$") != std::string::npos);
+    }
   }
 
   // DE9IM
