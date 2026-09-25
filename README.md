@@ -11,7 +11,7 @@ The methods behind this tool are described in [this SIGSPATIAL'25 paper](https:/
 
 ## Reproducibility materials for 2026 TSAS Special Issue on 2025 SIGSPATIAL
 
-Additional materials for our submission to the TSAS Special Issue on the 2025 SIGSPATIAL can be found  [here](https://github.com/ad-freiburg/spatialjoin/tree/geos-evaluation-v2/tsas-reproducibilityhttps://github.com/ad-freiburg/spatialjoin/tree/geos-evaluation-v2/tsas-reproducibility).
+Additional materials for our submission to the TSAS Special Issue on the 2025 SIGSPATIAL can be found  [here](https://github.com/ad-freiburg/spatialjoin/tree/geos-evaluation-v2/tsas-reproducibility).
 
 
 ## Reproducibility materials for SIGSPATIAL'25 submission 143
