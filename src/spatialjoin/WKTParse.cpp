@@ -12,8 +12,8 @@ using sj::WKTParser;
 using sj::WKTParserBase;
 
 // _____________________________________________________________________________
-WKTParser::WKTParser(sj::Sweeper *sweeper, size_t numThreads)
-    : WKTParserBase<ParseJob>(sweeper, numThreads) {
+WKTParser::WKTParser(sj::GeometryCacheManager *cacheManager, size_t numThreads)
+    : WKTParserBase<ParseJob>(cacheManager, numThreads) {
   for (size_t i = 0; i < _thrds.size(); i++) {
     _thrds[i] = std::thread(&WKTParser::processQueue, this, i);
   }
@@ -37,12 +37,12 @@ void WKTParser::processQueue(size_t t) {
         util::geo::I32Point addPoint{static_cast<int>(mercPoint.getX() * PREC),
                                      static_cast<int>(mercPoint.getY() * PREC)};
         _bboxes[t] = util::geo::extendBox(
-            _sweeper->add(addPoint, std::to_string(job.line), job.side, w),
+            _cacheManager->add(addPoint, std::to_string(job.line), job.side, w),
             _bboxes[t]);
       }
     }
 
-    _sweeper->addBatch(w);
+    _cacheManager->addBatch(w);
   }
 }
 
