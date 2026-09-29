@@ -615,7 +615,7 @@ util::geo::DE9IMatrix Sweeper::DE9IMCheck(const Area* a, const Area* b,
                                           size_t t) const {
   _stats[t].totalComps++;
   // cheap equivalence check
-  if (a->geom == b->geom) {
+  if (a == b || a->geom == b->geom) {
     // equivalent!
     return util::geo::M2FFF1FFF2;
   }
@@ -715,7 +715,7 @@ util::geo::DE9IMatrix Sweeper::DE9IMCheck(const Line* a, const Line* b,
                                           size_t t) const {
   _stats[t].totalComps++;
   // cheap equivalence check
-  if (a->geom == b->geom) {
+  if (a == b || a->geom == b->geom) {
     // equivalent!
     return util::geo::M1FFF0FFF2;
   }
@@ -2798,6 +2798,9 @@ double Sweeper::distCheck(const I32Point& a, const Point* aMeta, const Area* b,
 
     // all boxes of a are fully contained in b, we are contained
     if (r.first) return 0;
+
+    // no box shared, we cannot be within distance 0
+    if (_cfg.withinDist == 0  && r.first + r.second == 0) return _cfg.withinDist + 1;
   }
 
   auto ts = TIME();
@@ -2940,6 +2943,16 @@ double Sweeper::distCheck(const LineSegment<int32_t>& a,
 double Sweeper::distCheck(const LineSegment<int32_t>& a, const Line* b,
                           size_t t) {
   auto ts = TIME();
+
+  if (_cfg.useBoxIds && _cfg.withinDist == 0) {
+    auto ts = TIME();
+    auto r = boxIdIsect({{1, 0}, {getBoxId(a.first), 0}}, b->boxIds);
+    _stats[t].timeBoxIdIsectLineLine += TOOK(ts);
+
+    // no box shared, we cannot be within distance 0
+    if (r.first + r.second == 0) return _cfg.withinDist + 1;
+  }
+
   auto scale =
       _cfg.euclideanDist && !_cfg.haversineApprox
           ? std::pair<double, double>{1.0, 1.0}
@@ -2965,7 +2978,21 @@ double Sweeper::distCheck(const LineSegment<int32_t>& a, const Line* b,
 // _____________________________________________________________________________
 double Sweeper::distCheck(const Line* a, const Line* b, size_t t) {
   auto ts = TIME();
-  if (a == b) return 0;
+
+  // cheap equivalence check
+  if (a == b || a->geom == b->geom) {
+    // equivalent!
+    return 0;
+  }
+
+  if (_cfg.useBoxIds && _cfg.withinDist == 0) {
+    auto ts = TIME();
+    auto r = boxIdIsect(a->boxIds, b->boxIds);
+    _stats[t].timeBoxIdIsectLineLine += TOOK(ts);
+
+    // no box shared, we cannot be within distance 0
+    if (r.first + r.second == 0) return _cfg.withinDist + 1;
+  }
 
   double maxD = _cfg.withinDist;
 
@@ -3005,6 +3032,9 @@ double Sweeper::distCheck(const LineSegment<int32_t>& a, const Area* b,
     _stats[t].timeBoxIdIsectAreaLine += TOOK(ts);
 
     if (r.first) return 0;
+
+    // no box shared, we cannot be within dist 0
+    if (_cfg.withinDist == 0 && r.first + r.second == 0) return _cfg.withinDist + 1;
   }
 
   auto scale =
@@ -3041,6 +3071,9 @@ double Sweeper::distCheck(const Line* a, const Area* b, size_t t) {
     // all boxes of a are fully contained in b, we intersect and we are
     // contained
     if (r.first) return 0;
+
+    // no box shared, we cannot be within distance 0
+    if (_cfg.withinDist == 0  && r.first + r.second == 0) return _cfg.withinDist + 1;
   }
 
   double maxD = _cfg.withinDist;
@@ -3076,7 +3109,7 @@ double Sweeper::distCheck(const Area* a, const Area* b, size_t t) {
   auto ts = TIME();
 
   // cheap equivalence check
-  if (a->geom == b->geom) {
+  if (a == b || a->geom == b->geom) {
     return 0;
   }
 
@@ -3088,6 +3121,9 @@ double Sweeper::distCheck(const Area* a, const Area* b, size_t t) {
     // all boxes of a are fully contained in b, we intersect and we are
     // contained and we do not touch or overlap
     if (r.first) return 0;
+
+    // no box shared, we cannot be within distance 0
+    if (_cfg.withinDist == 0  && r.first + r.second == 0) return _cfg.withinDist + 1;
   }
 
   double maxD = _cfg.withinDist;
