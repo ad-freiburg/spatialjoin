@@ -92,6 +92,13 @@ std::vector<std::string> sortedRels(const std::string& res) {
 }
 
 // _____________________________________________________________________________
+size_t countMatches(const std::string& res, const std::string& pattern) {
+  std::regex re(pattern);
+  return std::distance(std::sregex_iterator(res.begin(), res.end(), re),
+                       std::sregex_iterator());
+}
+
+// _____________________________________________________________________________
 void testNoContradictions(const std::string& res) {
   std::set<std::pair<std::string, std::string>> coveringContains, overlapping;
 
@@ -1036,6 +1043,20 @@ int main(int, char**) {
     }
     {
       RunStats stats;
+      auto res = fullRun(TEST_DATASET_DIR "/multide9im", cfg, &stats);
+
+      TEST(countMatches(res, "\\$coll\\t[0-9F]{9}\\tway\\$"), ==, 1);
+      TEST(countMatches(res, "\\$way\\t[0-9F]{9}\\tcoll\\$"), ==, 1);
+      TEST(countMatches(res, "\\$coll\\t[0-9F]{9}\\tpoint\\$"), ==, 1);
+      TEST(countMatches(res, "\\$point\\t[0-9F]{9}\\tcoll\\$"), ==, 1);
+
+      TEST(res.find("$coll\t1F1F00FF2\tway$") != std::string::npos);
+      TEST(res.find("$way\t1FFF0F102\tcoll$") != std::string::npos);
+      TEST(res.find("$coll\tFF10F0FF2\tpoint$") != std::string::npos);
+      TEST(res.find("$point\tF0FFFF102\tcoll$") != std::string::npos);
+    }
+    {
+      RunStats stats;
       auto res = fullRun(TEST_DATASET_DIR "/issue-23", cfg, &stats);
       // TEST(stats.numReferences, ==, 4);
 
@@ -1175,14 +1196,14 @@ int main(int, char**) {
       TEST(res.find("$Kappel\t0\tKappel$") == std::string::npos);
       TEST(res.find("$Kappel2\t0\tKappel2$") == std::string::npos);
 
-      std::regex pattern("\\$Kappel\\t3306.61\\d*\\\tHerdern\\$");
+      std::regex pattern("\\$Kappel\\t3306.55\\d*\\\tHerdern\\$");
       TEST(std::regex_search(res, pattern));
-      std::regex pattern2("\\$Herdern\\t3306.61\\d*\\\tKappel\\$");
+      std::regex pattern2("\\$Herdern\\t3306.55\\d*\\\tKappel\\$");
       TEST(std::regex_search(res, pattern2));
 
-      std::regex pattern3("\\$Kappel2\\t3306.61\\d*\\\tHerdern\\$");
+      std::regex pattern3("\\$Kappel2\\t3306.55\\d*\\\tHerdern\\$");
       TEST(std::regex_search(res, pattern3));
-      std::regex pattern4("\\$Herdern\\t3306.61\\d*\\\tKappel2\\$");
+      std::regex pattern4("\\$Herdern\\t3306.55\\d*\\\tKappel2\\$");
       TEST(std::regex_search(res, pattern4));
     }
 
@@ -1192,10 +1213,10 @@ int main(int, char**) {
       auto res =
           fullRun(TEST_DATASET_DIR "/brokenlinepointdistance", cfg, &stats);
 
-      std::regex pattern1("\\$point2\\t9.4\\d*\\\tway\\$");
+      std::regex pattern1("\\$point2\\t9.6\\d*\\\tway\\$");
       TEST(std::regex_search(res, pattern1));
 
-      std::regex pattern2("\\$way\\t9.4\\d*\\\tpoint2\\$");
+      std::regex pattern2("\\$way\\t9.6\\d*\\\tpoint2\\$");
       TEST(std::regex_search(res, pattern2));
 
       std::regex pattern3("\\$point\\t.*\\tway\\$");
@@ -1222,6 +1243,46 @@ int main(int, char**) {
       TEST(std::regex_search(res, pattern5));
       std::regex pattern6("\\$london\\t340875\\.\\d*\\teiffel\\$");
       TEST(std::regex_search(res, pattern6));
+    }
+
+    cfg.withinDist = 10;
+    cfg.euclideanDist = true;
+    {
+      RunStats stats;
+      auto res = fullRun(TEST_DATASET_DIR "/simplelinepadding", cfg, &stats);
+
+      TEST(countMatches(res, "\\$line\\t7\\.62\\d*\\tpoly\\$"), ==, 1);
+      TEST(countMatches(res, "\\$poly\\t7\\.62\\d*\\tline\\$"), ==, 1);
+    }
+    cfg.euclideanDist = false;
+
+    {
+      RunStats stats;
+      auto res = fullRun(TEST_DATASET_DIR "/multimeterprecision", cfg, &stats);
+
+      TEST(countMatches(res, "\\$coll\\t5\\.929\\d*\\tpoly\\$"), ==, 1);
+      TEST(countMatches(res, "\\$poly\\t5\\.929\\d*\\tcoll\\$"), ==, 1);
+    }
+
+    cfg.withinDist = 20;
+    {
+      // a pair of two multi geometries must be written exactly once in each
+      // dir
+      RunStats stats;
+      auto res = fullRun(TEST_DATASET_DIR "/multimultidist", cfg, &stats);
+
+      TEST(countMatches(res, "\\$a\\t11\\.1\\d*\\tb\\$"), ==, 1);
+      TEST(countMatches(res, "\\$b\\t11\\.1\\d*\\ta\\$"), ==, 1);
+    }
+
+    cfg.withinDist = 30;
+    {
+      cfg.euclideanDist = true;
+      RunStats stats;
+      auto res = fullRun(TEST_DATASET_DIR "/foldedboxpadding", cfg, &stats);
+
+      TEST(countMatches(res, "\\$house\\t11\\.1\\d*\\tlake\\$"), ==, 1);
+      TEST(countMatches(res, "\\$lake\\t11\\.1\\d*\\thouse\\$"), ==, 1);
     }
   }
 }

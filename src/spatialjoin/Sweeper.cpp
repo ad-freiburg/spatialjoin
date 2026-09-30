@@ -71,7 +71,7 @@ const static double cos45 = 1.0 / sqrt(2);
 // _____________________________________________________________________________
 void Sweeper::clearMultis(bool force) {
   JobBatch curBatch;
-  size_t batchSize = 1000;
+  size_t batchSize = _cfg.withinDist >= 0 || _cfg.computeDE9IM ? 10 : 1000;
   int32_t curMinThreadX = std::numeric_limits<int32_t>::max();
 
   for (size_t i = 0; i < _cfg.numThreads; i++) {
@@ -95,7 +95,7 @@ void Sweeper::clearMultis(bool force) {
         a++;
       }
 
-      if (curBatch.size() > batchSize) {
+      if (curBatch.size() >= batchSize) {
         _jobs.add(std::move(curBatch));
         curBatch.clear();  // std doesnt guarantee that after move
         curBatch.reserve(batchSize);
@@ -126,19 +126,12 @@ void Sweeper::multiOut(size_t tOut, const std::string& gidA) {
     }
 
     for (const auto& a : subDistance) {
-      writeRel(tOut, gidA, a.first, "\t" + std::to_string(a.second) + "\t");
-      writeRel(tOut, a.first, gidA, "\t" + std::to_string(a.second) + "\t");
+      // avoid double writing of distance
+      if (_cacheManager->isMulti(a.first) && a.first < gidA) continue;
 
-      for (size_t t = 0; t < _cfg.numThreads + 1; t++) {
-        std::unique_lock<std::mutex> lock(_mutsDistance[t]);
-        auto j = _subDistance[t].find(a.first);
-        if (j != _subDistance[t].end()) {
-          auto k = j->second.find(gidA);
-          if (k != j->second.end()) {
-            j->second.erase(gidA);
-          }
-        }
-      }
+      const auto& dStr = util::formatFloat(a.second, 4);
+      writeRel(tOut, gidA, a.first, "\t" + dStr + "\t");
+      writeRel(tOut, a.first, gidA, "\t" + dStr + "\t");
     }
     return;
   }
@@ -152,26 +145,24 @@ void Sweeper::multiOut(size_t tOut, const std::string& gidA) {
       auto i = _subDE9IM[t].find(gidA);
       if (i != _subDE9IM[t].end()) {
         for (const auto& a : i->second) {
-          subDE9IM[a.first] += a.second;
+          // aggregate over the parts of gidA, see writeDE9IM()
+          auto j = subDE9IM.find(a.first);
+          if (j == subDE9IM.end()) {
+            subDE9IM[a.first] = a.second;
+          } else if (_cacheManager->isMulti(a.first)) {
+            j->second.elementwiseMax(a.second);
+          } else {
+            j->second.uniteRowGeoms(a.second);
+          }
         }
         _subDE9IM[t].erase(i);
       }
     }
 
-    for (size_t t = 0; t < _cfg.numThreads + 1; t++) {
-      std::unique_lock<std::mutex> lock(_mutsDE9IM[t]);
-      for (const auto& a : subDE9IM) {
-        auto j = _subDE9IM[t].find(a.first);
-        if (j != _subDE9IM[t].end()) {
-          auto k = j->second.find(gidA);
-          if (k != j->second.end()) {
-            j->second.erase(gidA);
-          }
-        }
-      }
-    }
-
     for (const auto& a : subDE9IM) {
+      // avoid double writing of de9im matrix
+      if (_cacheManager->isMulti(a.first) && a.first < gidA) continue;
+
       if (_cfg.de9imFilter.matches(a.second)) {
         writeRel(tOut, gidA, a.first, "\t" + a.second.toString() + "\t");
         _relStats[tOut].de9im++;
@@ -476,15 +467,9 @@ RelStats Sweeper::sweep(const SweepEventList& events) {
         _activeMultis[cur->side].insert(cur->id);
       } else if (!cur->out) {
         // IN event
-        actives[cur->side].insert(
-            {cur->loY, cur->upY},
-            {cur->id,
-             cur->type,
-             cur->b45,
-             cur->point,
-             {cur->val, cur->point.getY() == cur->loY ? cur->upY : cur->loY},
-             cur->side,
-             cur->large});
+        actives[cur->side].insert({cur->loY, cur->upY},
+                                  {cur->id, cur->type, cur->b45, cur->point,
+                                   getOtherPoint(*cur), cur->side, cur->large});
 
         if (jj % 500000 == 0) {
           auto lon = webMercToLatLng<double>((1.0 * cur->val) / PREC, 0).getX();
@@ -909,42 +894,28 @@ void Sweeper::writeDE9IM(size_t t, const std::string& a, size_t aSub,
   selfExp = selfExp || (a == b && aSub == bSub);
 
   if (a != b && !(selfExp && (b < a || (b == a && bSub < aSub)))) {
-    if (aSub > 0 && bSub == 0 && de9im.covers()) {
-      // no need to lock and track the multigeometry here, we can directly
-      // write that a contains b
-      if (_cfg.de9imFilter.matches(de9im)) {
-        _relStats[t].de9im++;
-        writeRel(t, a, b, "\t" + de9im.toString() + "\t");
-      }
-      if (_cfg.de9imFilter.matches(de9im.transpose())) {
-        _relStats[t].de9im++;
-        writeRel(t, b, a, "\t" + de9im.transpose().toString() + "\t");
-      }
-    } else if (bSub > 0 && aSub == 0 && de9im.transpose().covers()) {
-      // no need to lock and track the multigeometry here, we can directly
-      // write that b contains a
-      if (_cfg.de9imFilter.matches(de9im)) {
-        _relStats[t].de9im++;
-        writeRel(t, a, b, "\t" + de9im.toString() + "\t");
-      }
-      if (_cfg.de9imFilter.matches(de9im.transpose())) {
-        _relStats[t].de9im++;
-        writeRel(t, b, a, "\t" + de9im.transpose().toString() + "\t");
-      }
-    } else if ((bSub > 0 || aSub > 0)) {
+    if ((bSub > 0 || aSub > 0)) {
       std::unique_lock<std::mutex> lock(_mutsDE9IM[t]);
       if (bSub > 0) {
-        if (_subDE9IM[t][b].find(a) == _subDE9IM[t][b].end()) {
-          _subDE9IM[t][b][a] = de9im.transpose();
+        auto& m = _subDE9IM[t][b];
+        auto i = m.find(a);
+        if (i == m.end()) {
+          m[a] = de9im.transpose();
+        } else if (aSub > 0) {
+          i->second.elementwiseMax(de9im.transpose());
         } else {
-          _subDE9IM[t][b][a] += de9im.transpose();
+          i->second.uniteRowGeoms(de9im.transpose());
         }
       }
       if (aSub > 0) {
-        if (_subDE9IM[t][a].find(b) == _subDE9IM[t][a].end()) {
-          _subDE9IM[t][a][b] = de9im;
+        auto& m = _subDE9IM[t][a];
+        auto i = m.find(b);
+        if (i == m.end()) {
+          m[b] = de9im;
+        } else if (bSub > 0) {
+          i->second.elementwiseMax(de9im);
         } else {
-          _subDE9IM[t][a][b] += de9im;
+          i->second.uniteRowGeoms(de9im);
         }
       }
     } else {
@@ -2692,16 +2663,8 @@ double Sweeper::localSearchPadding(double euclideanDistanceUpperBound,
 
   double factorNew2 = max / min;
 
-  double minEuclideanXDist = util::geo::dist(
-      LineSegment<int32_t>{I32Point{boxA.getLowerLeft().getX(), 0},
-                           I32Point{boxA.getUpperRight().getX(), 0}},
-      LineSegment<int32_t>{I32Point{boxB.getLowerLeft().getX(), 0},
-                           I32Point{boxB.getUpperRight().getX(), 0}});
-  double minEuclideanYDist = util::geo::dist(
-      LineSegment<int32_t>{I32Point{0, boxA.getLowerLeft().getY()},
-                           I32Point{0, boxA.getUpperRight().getY()}},
-      LineSegment<int32_t>{I32Point{0, boxB.getLowerLeft().getY()},
-                           I32Point{0, boxB.getUpperRight().getY()}});
+  double minEuclideanXDist = util::geo::distX(boxA, boxB);
+  double minEuclideanYDist = util::geo::distY(boxA, boxB);
 
   double padding = factorNew2 * euclideanDistanceUpperBound;
   auto xPadding = (sqrt(std::max(
@@ -2765,10 +2728,10 @@ double Sweeper::euclideanDist(const I32Point& p1, const I32Point& p2, double) {
 // _____________________________________________________________________________
 double Sweeper::meterDist(const I32Point& p1, const I32Point& p2,
                           double maxDist) {
-  auto fp1 = FPoint{static_cast<float>((p1.getX() * 1.0) / (PREC * 1.0)),
-                    static_cast<float>((p1.getY() * 1.0) / (PREC * 1.0))};
-  auto fp2 = FPoint{static_cast<float>((p2.getX() * 1.0) / (PREC * 1.0)),
-                    static_cast<float>((p2.getY() * 1.0) / (PREC * 1.0))};
+  auto fp1 = DPoint{(p1.getX() * 1.0) / (PREC * 1.0),
+                    (p1.getY() * 1.0) / (PREC * 1.0)};
+  auto fp2 = DPoint{(p2.getX() * 1.0) / (PREC * 1.0),
+                    (p2.getY() * 1.0) / (PREC * 1.0)};
 
   double dX = fp2.getX() - fp1.getX();
   double dY = fp2.getY() - fp1.getY();
@@ -2800,7 +2763,8 @@ double Sweeper::distCheck(const I32Point& a, const Point* aMeta, const Area* b,
     if (r.first) return 0;
 
     // no box shared, we cannot be within distance 0
-    if (_cfg.withinDist == 0  && r.first + r.second == 0) return _cfg.withinDist + 1;
+    if (_cfg.withinDist == 0 && r.first + r.second == 0)
+      return _cfg.withinDist + 1;
   }
 
   auto ts = TIME();
@@ -3034,7 +2998,8 @@ double Sweeper::distCheck(const LineSegment<int32_t>& a, const Area* b,
     if (r.first) return 0;
 
     // no box shared, we cannot be within dist 0
-    if (_cfg.withinDist == 0 && r.first + r.second == 0) return _cfg.withinDist + 1;
+    if (_cfg.withinDist == 0 && r.first + r.second == 0)
+      return _cfg.withinDist + 1;
   }
 
   auto scale =
@@ -3073,7 +3038,8 @@ double Sweeper::distCheck(const Line* a, const Area* b, size_t t) {
     if (r.first) return 0;
 
     // no box shared, we cannot be within distance 0
-    if (_cfg.withinDist == 0  && r.first + r.second == 0) return _cfg.withinDist + 1;
+    if (_cfg.withinDist == 0 && r.first + r.second == 0)
+      return _cfg.withinDist + 1;
   }
 
   double maxD = _cfg.withinDist;
@@ -3123,7 +3089,8 @@ double Sweeper::distCheck(const Area* a, const Area* b, size_t t) {
     if (r.first) return 0;
 
     // no box shared, we cannot be within distance 0
-    if (_cfg.withinDist == 0  && r.first + r.second == 0) return _cfg.withinDist + 1;
+    if (_cfg.withinDist == 0 && r.first + r.second == 0)
+      return _cfg.withinDist + 1;
   }
 
   double maxD = _cfg.withinDist;

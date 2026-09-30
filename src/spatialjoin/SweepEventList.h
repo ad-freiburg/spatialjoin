@@ -35,12 +35,38 @@ struct BoxVal {
   GeomType type : 4;  // geometry type
   double areaOrLen;   // area or len
   util::geo::I32Point point;
-  size_t numAnchors;      // DUPLICATE REMOVAL: used as hash value
+  size_t numAnchors;      // for polygons and lines: number of anchor points,
+                          // used for DUPLICATE REMOVAL
+                          // for simple lines: the other endpoint, for folded
+                          // box polygons: the other box corner, see
+                          // packPoint()
   util::geo::I32Box b45;  // oriented bounding box
   bool side;
   bool large;
-  int32_t size;  // DUPLICATE REMOVAL: size of geom
 };
+
+// _____________________________________________________________________________
+inline size_t packPoint(const util::geo::I32Point& p) {
+  return (static_cast<size_t>(static_cast<uint32_t>(p.getX())) << 32) |
+         static_cast<uint32_t>(p.getY());
+}
+
+// _____________________________________________________________________________
+inline util::geo::I32Point unpackPoint(size_t v) {
+  return {static_cast<int32_t>(static_cast<uint32_t>(v >> 32)),
+          static_cast<int32_t>(static_cast<uint32_t>(v))};
+}
+
+// _____________________________________________________________________________
+inline util::geo::I32Point getOtherPoint(const BoxVal& bv) {
+  // for simple lines the second endpoint, and for folded box polygons the
+  // second box corner cannot be reconstructed from the box because it may be
+  // padded in case withinDist > 0
+  if (bv.type == SIMPLE_LINE || bv.type == FOLDED_SIMPLE_LINE ||
+      bv.type == FOLDED_BOX_POLYGON)
+    return unpackPoint(bv.numAnchors);
+  return {bv.val, bv.point.getY() == bv.loY ? bv.upY : bv.loY};
+}
 
 static int boxCmp(const void* a, const void* b) {
   const auto& boxa = static_cast<const BoxVal*>(a);

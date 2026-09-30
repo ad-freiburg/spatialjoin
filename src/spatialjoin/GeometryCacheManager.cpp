@@ -249,12 +249,11 @@ I32Box GeometryCacheManager::add(const I32Polygon& poly,
                     false,
                     FOLDED_BOX_POLYGON,
                     areaSize,
-                    box.getUpperRight(),
-                    4,
+                    rawBox.getUpperRight(),
+                    packPoint(rawBox.getLowerLeft()),
                     box45,
                     side,
-                    false,
-                    0};
+                    false};
     cur.boxvalOut = {0,  // placeholder, will be overwritten later on
                      box.getLowerLeft().getY(),
                      box.getUpperRight().getY(),
@@ -262,12 +261,11 @@ I32Box GeometryCacheManager::add(const I32Polygon& poly,
                      true,
                      FOLDED_BOX_POLYGON,
                      areaSize,
-                     box.getLowerLeft(),
-                     4,
+                     rawBox.getLowerLeft(),
+                     packPoint(rawBox.getUpperRight()),
                      box45,
                      side,
-                     false,
-                     0};
+                     false};
     batch.foldedBoxAreas.emplace_back(cur);
   } else if (poly.getInners().size() == 0 && poly.getOuter().size() < 10 &&
              subid == 0 && (!_cfg.useBoxIds || boxIds.front().first == 1)) {
@@ -295,8 +293,7 @@ I32Box GeometryCacheManager::add(const I32Polygon& poly,
                     poly.size(),
                     box45,
                     side,
-                    estimatedSize > GEOM_LARGENESS_THRESHOLD,
-                    0};
+                    estimatedSize > GEOM_LARGENESS_THRESHOLD};
     cur.boxvalOut = {0,  // placeholder, will be overwritten later on
                      box.getLowerLeft().getY(),
                      box.getUpperRight().getY(),
@@ -308,8 +305,7 @@ I32Box GeometryCacheManager::add(const I32Polygon& poly,
                      poly.size(),
                      box45,
                      side,
-                     estimatedSize > GEOM_LARGENESS_THRESHOLD,
-                     0};
+                     estimatedSize > GEOM_LARGENESS_THRESHOLD};
     batch.simpleAreas.emplace_back(cur);
   } else {
     if (!_cfg.useFastSweepSkip) {
@@ -346,10 +342,6 @@ I32Box GeometryCacheManager::add(const I32Polygon& poly,
 
     cur.raw = str.str();
 
-    int32_t polySizeCapped = polySize < std::numeric_limits<int32_t>::max()
-                                 ? static_cast<int32_t>(polySize)
-                                 : std::numeric_limits<int32_t>::max();
-
     cur.boxvalIn = {0,  // placeholder, will be overwritten later on
                     box.getLowerLeft().getY(),
                     box.getUpperRight().getY(),
@@ -361,8 +353,7 @@ I32Box GeometryCacheManager::add(const I32Polygon& poly,
                     polySize,
                     box45,
                     side,
-                    estimatedSize > GEOM_LARGENESS_THRESHOLD,
-                    polySizeCapped};
+                    estimatedSize > GEOM_LARGENESS_THRESHOLD};
     cur.boxvalOut = {0,  // placeholder, will be overwritten later on
                      box.getLowerLeft().getY(),
                      box.getUpperRight().getY(),
@@ -374,8 +365,7 @@ I32Box GeometryCacheManager::add(const I32Polygon& poly,
                      polySize,
                      box45,
                      side,
-                     estimatedSize > GEOM_LARGENESS_THRESHOLD,
-                     polySizeCapped};
+                     estimatedSize > GEOM_LARGENESS_THRESHOLD};
     batch.areas.emplace_back(cur);
   }
 
@@ -453,11 +443,11 @@ I32Box GeometryCacheManager::add(const I32Line& line, const std::string& gidR,
         SIMPLE_LINE,
         len,
         line.front().getX() < line.back().getX() ? line.back() : line.front(),
-        2,
+        packPoint(line.front().getX() < line.back().getX() ? line.front()
+                                                           : line.back()),
         box45,
         side,
-        false,
-        0};
+        false};
     cur.boxvalOut = {
         0,  // placeholder, will be overwritten later on,
         box.getLowerLeft().getY(),
@@ -467,11 +457,11 @@ I32Box GeometryCacheManager::add(const I32Line& line, const std::string& gidR,
         SIMPLE_LINE,
         len,
         line.front().getX() < line.back().getX() ? line.front() : line.back(),
-        2,
+        packPoint(line.front().getX() < line.back().getX() ? line.back()
+                                                           : line.front()),
         box45,
         side,
-        false,
-        0};
+        false};
 
     // check if we can fold the gid into the offset id, because the gid is all
     // we store in the cache for points
@@ -512,10 +502,6 @@ I32Box GeometryCacheManager::add(const I32Line& line, const std::string& gidR,
     size_t estimatedSize =
         line.size() * sizeof(util::geo::XSortedTuple<int32_t>);
 
-    int32_t lineSizeCapped = lineSize < std::numeric_limits<int32_t>::max()
-                                 ? static_cast<int32_t>(lineSize)
-                                 : std::numeric_limits<int32_t>::max();
-
     cur.boxvalIn = {0,  // placeholder, will be overwritten later on
                     box.getLowerLeft().getY(),
                     box.getUpperRight().getY(),
@@ -527,8 +513,7 @@ I32Box GeometryCacheManager::add(const I32Line& line, const std::string& gidR,
                     lineSize,
                     box45,
                     side,
-                    estimatedSize > GEOM_LARGENESS_THRESHOLD,
-                    lineSizeCapped};
+                    estimatedSize > GEOM_LARGENESS_THRESHOLD};
     cur.boxvalOut = {0,  // placeholder, will be overwritten later on
                      box.getLowerLeft().getY(),
                      box.getUpperRight().getY(),
@@ -540,8 +525,7 @@ I32Box GeometryCacheManager::add(const I32Line& line, const std::string& gidR,
                      lineSize,
                      box45,
                      side,
-                     estimatedSize > GEOM_LARGENESS_THRESHOLD,
-                     lineSizeCapped};
+                     estimatedSize > GEOM_LARGENESS_THRESHOLD};
     batch.lines.emplace_back(cur);
   }
 
@@ -600,8 +584,7 @@ I32Box GeometryCacheManager::add(const I32Point& point, const std::string& gidR,
                   1,
                   getPaddedBoundingBox(pointR, rawBox),
                   side,
-                  false,
-                  0};
+                  false};
   cur.boxvalOut = {0,  // placeholder, will be overwritten later on
                    box.getLowerLeft().getY(),
                    box.getUpperRight().getY(),
@@ -613,8 +596,7 @@ I32Box GeometryCacheManager::add(const I32Point& point, const std::string& gidR,
                    1,
                    getPaddedBoundingBox(pointR, rawBox),
                    side,
-                   false,
-                   0};
+                   false};
 
   cur.gid = gid;
 
@@ -837,8 +819,7 @@ void GeometryCacheManager::flush() {
                0,
                {},
                false,
-               false,
-               0});
+               false});
     }
   }
 
@@ -855,8 +836,7 @@ void GeometryCacheManager::flush() {
                0,
                {},
                static_cast<bool>(side),
-               false,
-               0});
+               false});
     }
   }
 
@@ -957,7 +937,7 @@ void GeometryCacheManager::duplicatesToReferences() {
           curX = cur->val;
         }
 
-        if (cur->type == POLYGON && cur->size >= DUPLICATE_REMOVAL_MIN_SIZE) {
+        if (cur->type == POLYGON && cur->numAnchors >= DUPLICATE_REMOVAL_MIN_SIZE) {
           size_t h = cur->numAnchors;
           const auto& existing = duplicatePolys.find(h);
 
@@ -986,7 +966,7 @@ void GeometryCacheManager::duplicatesToReferences() {
           }
         }
 
-        if (cur->type == LINE && cur->size >= DUPLICATE_REMOVAL_MIN_SIZE) {
+        if (cur->type == LINE && cur->numAnchors >= DUPLICATE_REMOVAL_MIN_SIZE) {
           size_t h = cur->numAnchors;
           const auto& existing = duplicateLines.find(h);
 

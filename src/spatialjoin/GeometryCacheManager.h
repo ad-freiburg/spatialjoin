@@ -114,7 +114,7 @@ struct JobVal {
       : id(bv.id),
         type(bv.type),
         point(bv.point),
-        point2(bv.val, bv.point.getY() == bv.loY ? bv.upY : bv.loY),
+        point2(getOtherPoint(bv)),
         large(bv.large),
         val(bv.val){};
   JobVal(const SweepVal& sv)
