@@ -213,7 +213,7 @@ I32Box GeometryCacheManager::add(const I32Polygon& poly,
   std::string gid = (side ? ("B" + gidR) : ("A" + gidR));
 
   WriteCand cur;
-  I32XSortedPolygon spoly(poly);
+  I32XSortedPolygon spoly(util::geo::densifyX(poly, 500 * PREC));
   const auto& rawBox = spoly.boundingBox();
   const auto& box = getPaddedBoundingBox(rawBox);
   if (!util::geo::intersects(box, _filterBox)) return {};
@@ -406,7 +406,7 @@ I32Box GeometryCacheManager::add(const I32Line& line, const std::string& gidR,
 
   WriteCand cur;
 
-  I32XSortedLine sline(line);
+  I32XSortedLine sline(util::geo::densifyX(line, 500 * PREC));
 
   const auto& rawBox = sline.boundingBox();
   const auto& box = getPaddedBoundingBox(rawBox);
