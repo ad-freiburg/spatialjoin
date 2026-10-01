@@ -168,6 +168,45 @@ int main(int, char**) {
     TEST(!inCellWithPadding(box5, GRID_W));
   }
 
+  {
+    using sj::boxids::BoxIdList;
+    using sj::boxids::boxIdIsectPadded;
+    using sj::boxids::GRID_W;
+    using sj::boxids::NUM_GRID_CELLS;
+
+    const int32_t N = NUM_GRID_CELLS;
+
+    // cell (1000, 2000)
+    int32_t c = 2000 * N + 1000 + 1;
+    BoxIdList a{{1, 0}, {c, 0}};
+
+    // padding by 1 cell
+    TEST(boxIdIsectPadded(a, {{1, 0}, {c, 0}}, 100));
+    TEST(boxIdIsectPadded(a, {{1, 0}, {c + 1, 0}}, 100));
+    TEST(boxIdIsectPadded(a, {{1, 0}, {c - 1, 0}}, 100));
+    TEST(boxIdIsectPadded(a, {{1, 0}, {c + N + 1, 0}}, 100));
+    TEST(boxIdIsectPadded(a, {{1, 0}, {-(c - N - 1), 0}}, 100));
+    TEST(!boxIdIsectPadded(a, {{1, 0}, {c + 2, 0}}, 100));
+    TEST(!boxIdIsectPadded(a, {{1, 0}, {c - 2, 0}}, 100));
+    TEST(!boxIdIsectPadded(a, {{1, 0}, {c + 2 * N, 0}}, 100));
+    TEST(!boxIdIsectPadded(a, {{1, 0}, {-(c - 2 * N + 1), 0}}, 100));
+
+    TEST(!boxIdIsectPadded(a, {{4, 0}, {c - 5, 3}}, 100));
+    TEST(boxIdIsectPadded(a, {{5, 0}, {c - 5, 4}}, 100));
+    TEST(!boxIdIsectPadded(a, {{4, 0}, {-(c + N + 2), 3}}, 100));
+    TEST(boxIdIsectPadded(a, {{4, 0}, {-(c + N - 4), 3}}, 100));
+
+    // padding by 2 cells
+    TEST(boxIdIsectPadded(a, {{1, 0}, {c + 2, 0}}, GRID_W * 1.5));
+    TEST(boxIdIsectPadded(a, {{1, 0}, {c - 2 * N - 2, 0}}, GRID_W * 1.5));
+    TEST(!boxIdIsectPadded(a, {{1, 0}, {c + 3, 0}}, GRID_W * 1.5));
+    TEST(!boxIdIsectPadded(a, {{1, 0}, {c + 3 * N, 0}}, GRID_W * 1.5));
+
+    // undtermined
+    TEST(boxIdIsectPadded(a, {{1, 0}, {c + 100, 0}}, GRID_W * 10));
+    TEST(boxIdIsectPadded(a, {{0, 0}}, 100));
+  }
+
   sj::SweeperCfg baseline{
       NUM_THREADS,  NUM_THREADS, 1000,        1000,       " intersects ",
       " contains ", " covers ",  " touches ", " equals ", " overlaps ",

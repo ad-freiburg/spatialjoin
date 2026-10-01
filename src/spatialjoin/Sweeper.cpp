@@ -30,6 +30,7 @@ using sj::GeomCheckRes;
 using sj::GeomType;
 using sj::Sweeper;
 using sj::boxids::boxIdIsect;
+using sj::boxids::boxIdIsectPadded;
 using sj::boxids::BoxIdList;
 using sj::boxids::getBoxId;
 using sj::boxids::getBoxIds;
@@ -2785,11 +2786,18 @@ double Sweeper::distCheck(const I32Point& a, const Point* aMeta, const Area* b,
   double maxEuclideanDist = maxD / scale.first * PREC;
 
   // no box shared, and a or b is contained in a single cell with at least the
-  // search distance to its borders, we cannot be within distance
-  if (noSharedBox &&
-      (inCellWithPadding(util::geo::getBoundingBox(a), maxEuclideanDist) ||
-       inCellWithPadding(b->geom.boundingBox(), maxEuclideanDist)))
-    return _cfg.withinDist + 1;
+  // search distance to its borders, or no box of b is within the search
+  // distance of a box of a, we cannot be within distance
+  if (noSharedBox) {
+    auto ts = TIME();
+    bool tooFar =
+        inCellWithPadding(util::geo::getBoundingBox(a), maxEuclideanDist) ||
+        inCellWithPadding(b->geom.boundingBox(), maxEuclideanDist) ||
+        !boxIdIsectPadded({{1, 0}, {getBoxId(a), 0}}, b->boxIds,
+                          maxEuclideanDist);
+    _stats[t].timeBoxIdIsectAreaPoint += TOOK(ts);
+    if (tooFar) return _cfg.withinDist + 1;
+  }
 
   auto dist = util::geo::withinDist<int32_t>(
       a, b->geom, maxD,
@@ -2862,11 +2870,18 @@ double Sweeper::distCheck(const I32Point& a, const Point* aMeta, const Line* b,
   double maxEuclideanDist = maxD / scale.first * PREC;
 
   // no box shared, and a or b is contained in a single cell with at least the
-  // search distance to its borders, we cannot be within distance
-  if (noSharedBox &&
-      (inCellWithPadding(util::geo::getBoundingBox(a), maxEuclideanDist) ||
-       inCellWithPadding(b->geom.boundingBox(), maxEuclideanDist)))
-    return _cfg.withinDist + 1;
+  // search distance to its borders, or no box of b is within the search
+  // distance of a box of a, we cannot be within distance
+  if (noSharedBox) {
+    auto ts = TIME();
+    bool tooFar =
+        inCellWithPadding(util::geo::getBoundingBox(a), maxEuclideanDist) ||
+        inCellWithPadding(b->geom.boundingBox(), maxEuclideanDist) ||
+        !boxIdIsectPadded({{1, 0}, {getBoxId(a), 0}}, b->boxIds,
+                          maxEuclideanDist);
+    _stats[t].timeBoxIdIsectLinePoint += TOOK(ts);
+    if (tooFar) return _cfg.withinDist + 1;
+  }
 
   auto dist = util::geo::withinDist<int32_t>(
       a, b->geom, maxD,
@@ -2953,11 +2968,18 @@ double Sweeper::distCheck(const LineSegment<int32_t>& a, const Line* b,
   double maxEuclideanDist = _cfg.withinDist / scale.first * PREC;
 
   // no box shared, and a or b is contained in a single cell with at least the
-  // search distance to its borders, we cannot be within distance
-  if (noSharedBox &&
-      (inCellWithPadding(util::geo::getBoundingBox(a), maxEuclideanDist) ||
-       inCellWithPadding(b->geom.boundingBox(), maxEuclideanDist)))
-    return _cfg.withinDist + 1;
+  // search distance to its borders, or no box of b is within the search
+  // distance of a box of a, we cannot be within distance
+  if (noSharedBox) {
+    auto ts = TIME();
+    bool tooFar =
+        inCellWithPadding(util::geo::getBoundingBox(a), maxEuclideanDist) ||
+        inCellWithPadding(b->geom.boundingBox(), maxEuclideanDist) ||
+        !boxIdIsectPadded({{1, 0}, {getBoxId(a.first), 0}}, b->boxIds,
+                          maxEuclideanDist);
+    _stats[t].timeBoxIdIsectLineLine += TOOK(ts);
+    if (tooFar) return _cfg.withinDist + 1;
+  }
 
   auto dist = util::geo::withinDist<int32_t>(
       I32XSortedLine(a), b->geom, _cfg.withinDist,
@@ -3008,11 +3030,17 @@ double Sweeper::distCheck(const Line* a, const Line* b, size_t t) {
   double maxEuclideanDist = maxD / scale.first * PREC;
 
   // no box shared, and a or b is contained in a single cell with at least the
-  // search distance to its borders, we cannot be within distance
-  if (noSharedBox &&
-      (inCellWithPadding(a->geom.boundingBox(), maxEuclideanDist) ||
-       inCellWithPadding(b->geom.boundingBox(), maxEuclideanDist)))
-    return _cfg.withinDist + 1;
+  // search distance to its borders, or no box of b is within the search
+  // distance of a box of a, we cannot be within distance
+  if (noSharedBox) {
+    auto ts = TIME();
+    bool tooFar =
+        inCellWithPadding(a->geom.boundingBox(), maxEuclideanDist) ||
+        inCellWithPadding(b->geom.boundingBox(), maxEuclideanDist) ||
+        !boxIdIsectPadded(a->boxIds, b->boxIds, maxEuclideanDist);
+    _stats[t].timeBoxIdIsectLineLine += TOOK(ts);
+    if (tooFar) return _cfg.withinDist + 1;
+  }
 
   auto dist = util::geo::withinDist<int32_t>(
       a->geom, b->geom, maxD,
@@ -3056,11 +3084,18 @@ double Sweeper::distCheck(const LineSegment<int32_t>& a, const Area* b,
   double maxEuclideanDist = _cfg.withinDist / scale.first * PREC;
 
   // no box shared, and a or b is contained in a single cell with at least the
-  // search distance to its borders, we cannot be within distance
-  if (noSharedBox &&
-      (inCellWithPadding(util::geo::getBoundingBox(a), maxEuclideanDist) ||
-       inCellWithPadding(b->geom.boundingBox(), maxEuclideanDist)))
-    return _cfg.withinDist + 1;
+  // search distance to its borders, or no box of b is within the search
+  // distance of a box of a, we cannot be within distance
+  if (noSharedBox) {
+    auto ts = TIME();
+    bool tooFar =
+        inCellWithPadding(util::geo::getBoundingBox(a), maxEuclideanDist) ||
+        inCellWithPadding(b->geom.boundingBox(), maxEuclideanDist) ||
+        !boxIdIsectPadded({{1, 0}, {getBoxId(a.first), 0}}, b->boxIds,
+                          maxEuclideanDist);
+    _stats[t].timeBoxIdIsectAreaLine += TOOK(ts);
+    if (tooFar) return _cfg.withinDist + 1;
+  }
 
   auto dist = util::geo::withinDist<int32_t>(
       I32XSortedLine(a), b->geom, _cfg.withinDist,
@@ -3111,11 +3146,17 @@ double Sweeper::distCheck(const Line* a, const Area* b, size_t t) {
   double maxEuclideanDist = maxD / scale.first * PREC;
 
   // no box shared, and a or b is contained in a single cell with at least the
-  // search distance to its borders, we cannot be within distance
-  if (noSharedBox &&
-      (inCellWithPadding(a->geom.boundingBox(), maxEuclideanDist) ||
-       inCellWithPadding(b->geom.boundingBox(), maxEuclideanDist)))
-    return _cfg.withinDist + 1;
+  // search distance to its borders, or no box of b is within the search
+  // distance of a box of a, we cannot be within distance
+  if (noSharedBox) {
+    auto ts = TIME();
+    bool tooFar =
+        inCellWithPadding(a->geom.boundingBox(), maxEuclideanDist) ||
+        inCellWithPadding(b->geom.boundingBox(), maxEuclideanDist) ||
+        !boxIdIsectPadded(a->boxIds, b->boxIds, maxEuclideanDist);
+    _stats[t].timeBoxIdIsectAreaLine += TOOK(ts);
+    if (tooFar) return _cfg.withinDist + 1;
+  }
 
   auto dist = util::geo::withinDist<int32_t>(
       a->geom, b->geom, maxD,
@@ -3171,11 +3212,17 @@ double Sweeper::distCheck(const Area* a, const Area* b, size_t t) {
   double maxEuclideanDist = maxD / scale.first * PREC;
 
   // no box shared, and a or b is contained in a single cell with at least the
-  // search distance to its borders, we cannot be within distance
-  if (noSharedBox &&
-      (inCellWithPadding(a->geom.boundingBox(), maxEuclideanDist) ||
-       inCellWithPadding(b->geom.boundingBox(), maxEuclideanDist)))
-    return _cfg.withinDist + 1;
+  // search distance to its borders, or no box of b is within the search
+  // distance of a box of a, we cannot be within distance
+  if (noSharedBox) {
+    auto ts = TIME();
+    bool tooFar =
+        inCellWithPadding(a->geom.boundingBox(), maxEuclideanDist) ||
+        inCellWithPadding(b->geom.boundingBox(), maxEuclideanDist) ||
+        !boxIdIsectPadded(a->boxIds, b->boxIds, maxEuclideanDist);
+    _stats[t].timeBoxIdIsectAreaArea += TOOK(ts);
+    if (tooFar) return _cfg.withinDist + 1;
+  }
 
   auto dist = util::geo::withinDist<int32_t>(
       a->geom, b->geom, maxD,

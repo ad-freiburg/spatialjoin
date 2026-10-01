@@ -364,6 +364,76 @@ inline std::pair<int32_t, int32_t> boxIdIsect(const BoxIdList& idsA,
   return {fullContained, partContained};
 }
 
+// ____________________________________________________________________________
+inline bool boxIdIsectPadded(const BoxIdList& idsA, const BoxIdList& idsB,
+                             double d) {
+  if (idsA.size() < 2 || idsB.size() < 2) return true;
+
+  // pad the smaller list
+  if (idsA.size() > idsB.size()) return boxIdIsectPadded(idsB, idsA, d);
+
+  double kDbl = std::ceil((d + 2) / GRID_W);
+
+  // this is to safe us from large paddings, in that case we simply return
+  // true and it goes to the full geometry check, maybe make this into a
+  // configurable threshold
+  if (kDbl > 10) return true;
+
+  int32_t k = kDbl;
+
+  // basic idea here: go over all rows, offset row by +- k, and padd each row
+  // at both ends by k. note that this produces the same cell ID very often, but
+  // seems to work for now
+  for (int32_t r = -k; r <= k; r++) {
+    int32_t off = r * NUM_GRID_CELLS;
+    size_t i = 1;
+    size_t j = 1;
+
+    while (i < idsA.size() && j < idsB.size()) {
+      int32_t aStart = abs(idsA[i].first) + off - k;
+      int32_t aEnd = abs(idsA[i].first) + idsA[i].second + off + k;
+      int32_t bStart = abs(idsB[j].first);
+      int32_t bEnd = bStart + idsB[j].second;
+
+      const BoxIdList* ids;
+      size_t* pos;
+      int32_t target;
+
+      if (aEnd < bStart) {
+        ids = &idsA;
+        pos = &i;
+        target = bStart - off - k;
+      } else if (bEnd < aStart) {
+        ids = &idsB;
+        pos = &j;
+        target = aStart;
+      } else {
+        return true;
+      }
+
+      size_t step = 1;
+      while (*pos + step < ids->size() &&
+             abs((*ids)[*pos + step].first) < target) {
+        step *= 2;
+      }
+
+      auto it = std::lower_bound(
+          ids->begin() + *pos + step / 2 + 1,
+          ids->begin() + std::min(*pos + step, ids->size()),
+          target, BoxIdCmp());
+
+      if (it - 1 != ids->begin() + *pos &&
+          abs((it - 1)->first) + (it - 1)->second >= target) {
+        it--;
+      }
+
+      *pos = it - ids->begin();
+    }
+  }
+
+  return false;
+}
+
 }  // namespace boxids
 }  // namespace sj
 
