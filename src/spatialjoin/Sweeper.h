@@ -56,12 +56,39 @@ struct BoxVal {
   GeomType type : 4;
   double areaOrLen;
   util::geo::I32Point point;
-  size_t numAnchors;
+  size_t numAnchors;  // for polygons and lines: number of anchor points,
+                      // used for DUPLICATE REMOVAL
+                      // for simple lines: the other endpoint, for folded
+                      // box polygons: the other box corner, see
+                      // packPoint()
   util::geo::I32Box b45;
   bool side;
   bool large;
   int32_t size;
 };
+
+// _____________________________________________________________________________
+inline size_t packPoint(const util::geo::I32Point& p) {
+  return (static_cast<size_t>(static_cast<uint32_t>(p.getX())) << 32) |
+         static_cast<uint32_t>(p.getY());
+}
+
+// _____________________________________________________________________________
+inline util::geo::I32Point unpackPoint(size_t v) {
+  return {static_cast<int32_t>(static_cast<uint32_t>(v >> 32)),
+          static_cast<int32_t>(static_cast<uint32_t>(v))};
+}
+
+// _____________________________________________________________________________
+inline util::geo::I32Point getOtherPoint(const BoxVal& bv) {
+  // for simple lines the second endpoint, and for folded box polygons the
+  // second box corner cannot be reconstructed from the box because it may be
+  // padded in case withinDist > 0
+  if (bv.type == SIMPLE_LINE || bv.type == FOLDED_SIMPLE_LINE ||
+      bv.type == FOLDED_BOX_POLYGON)
+    return unpackPoint(bv.numAnchors);
+  return {bv.val, bv.point.getY() == bv.loY ? bv.upY : bv.loY};
+}
 
 inline std::string toString(const BoxVal& bv) {
   std::stringstream ret;
@@ -147,7 +174,7 @@ struct JobVal {
       : id(bv.id),
         type(bv.type),
         point(bv.point),
-        point2(bv.val, bv.point.getY() == bv.loY ? bv.upY : bv.loY),
+        point2(getOtherPoint(bv)),
         large(bv.large),
         val(bv.val){};
   JobVal(const SweepVal& sv)

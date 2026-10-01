@@ -76,6 +76,13 @@ std::string fullRun(const std::string& file, sj::SweeperCfg cfg,
 }
 
 // _____________________________________________________________________________
+size_t countMatches(const std::string& res, const std::string& pattern) {
+  std::regex re(pattern);
+  return std::distance(std::sregex_iterator(res.begin(), res.end(), re),
+                       std::sregex_iterator());
+}
+
+// _____________________________________________________________________________
 int main(int, char**) {
   sj::SweeperCfg baseline{
       NUM_THREADS,  NUM_THREADS, 1000,        1000,       " intersects ",
@@ -907,5 +914,27 @@ int main(int, char**) {
       std::regex pattern4("\\$Herdern\\t3306.61\\d*\\\tKappel2\\$");
       TEST(std::regex_search(res, pattern4));
     }
+
+    cfg.withinDist = 10;
+    cfg.euclideanDist = true;
+    {
+      RunStats stats;
+      auto res = fullRun("../src/spatialjoin/tests/datasets/simplelinepadding",
+                         cfg, &stats);
+
+      TEST(countMatches(res, "\\$line\\t7\\.62\\d*\\tpoly\\$"), ==, 1);
+      TEST(countMatches(res, "\\$poly\\t7\\.62\\d*\\tline\\$"), ==, 1);
+    }
+
+    cfg.withinDist = 30;
+    {
+      RunStats stats;
+      auto res = fullRun("../src/spatialjoin/tests/datasets/foldedboxpadding",
+                         cfg, &stats);
+
+      TEST(countMatches(res, "\\$house\\t11\\.1\\d*\\tlake\\$"), ==, 1);
+      TEST(countMatches(res, "\\$lake\\t11\\.1\\d*\\thouse\\$"), ==, 1);
+    }
+    cfg.euclideanDist = false;
   }
 }
