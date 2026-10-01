@@ -134,6 +134,40 @@ void writeMultiFlushDataset(const std::string& path) {
 
 // _____________________________________________________________________________
 int main(int, char**) {
+  {
+    using sj::boxids::GRID_H;
+    using sj::boxids::GRID_W;
+    using sj::boxids::inCellWithPadding;
+    using sj::boxids::WORLD_H;
+    using sj::boxids::WORLD_W;
+    using util::geo::I32Box;
+
+    int cx = std::ceil(1000 * GRID_W - WORLD_W / 2.0);
+    int cy = std::ceil(2000 * GRID_H - WORLD_H / 2.0);
+
+    I32Box box({cx + 100, cy + 100}, {cx + 200, cy + 200});
+    TEST(inCellWithPadding(box, 0));
+    TEST(inCellWithPadding(box, 50));
+    TEST(inCellWithPadding(box, 98));
+    TEST(!inCellWithPadding(box, 101));
+
+    I32Box box2({cx - 10, cy + 100}, {cx + 10, cy + 200});
+    TEST(!inCellWithPadding(box2, 0));
+
+    int ux = std::floor(1001 * GRID_W - WORLD_W / 2.0);
+    int uy = std::floor(2001 * GRID_H - WORLD_H / 2.0);
+    I32Box box3({ux - 200, uy - 200}, {ux - 100, uy - 100});
+    TEST(inCellWithPadding(box3, 98));
+    TEST(!inCellWithPadding(box3, 101));
+    I32Box box4({ux - 200, uy - 200}, {ux + 10, uy - 100});
+    TEST(!inCellWithPadding(box4, 0));
+
+    I32Box box5({cx + 4000, cy + 4000}, {cx + 4000, cy + 4000});
+    TEST(inCellWithPadding(box5, 3000));
+    TEST(!inCellWithPadding(box5, 4000));
+    TEST(!inCellWithPadding(box5, GRID_W));
+  }
+
   sj::SweeperCfg baseline{
       NUM_THREADS,  NUM_THREADS, 1000,        1000,       " intersects ",
       " contains ", " covers ",  " touches ", " equals ", " overlaps ",

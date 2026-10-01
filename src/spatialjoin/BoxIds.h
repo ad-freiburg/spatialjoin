@@ -46,6 +46,23 @@ inline int32_t getBoxId(const util::geo::I32Point& p) {
 }
 
 // ____________________________________________________________________________
+inline bool inCellWithPadding(const util::geo::I32Box& box, double d) {
+  double llX = 1.0 * box.getLowerLeft().getX() + WORLD_W / 2.0;
+  double llY = 1.0 * box.getLowerLeft().getY() + WORLD_H / 2.0;
+  double urX = 1.0 * box.getUpperRight().getX() + WORLD_W / 2.0;
+  double urY = 1.0 * box.getUpperRight().getY() + WORLD_H / 2.0;
+
+  double x = floor(llX / GRID_W);
+  double y = floor(llY / GRID_H);
+
+  double minDist = d + 1;
+
+  return llX - x * GRID_W >= minDist && llY - y * GRID_H >= minDist &&
+         (x + 1) * GRID_W - urX >= minDist &&
+         (y + 1) * GRID_H - urY >= minDist;
+}
+
+// ____________________________________________________________________________
 inline void getBoxIds(const util::geo::I32XSortedLine& line,
                       const util::geo::I32Box& envelope, int xFrom, int xTo,
                       int yFrom, int yTo, int xWidth, int yHeight,
