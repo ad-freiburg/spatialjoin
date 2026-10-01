@@ -84,6 +84,79 @@ size_t countMatches(const std::string& res, const std::string& pattern) {
 
 // _____________________________________________________________________________
 int main(int, char**) {
+  {
+    using sj::boxids::GRID_H;
+    using sj::boxids::GRID_W;
+    using sj::boxids::inCellWithPadding;
+    using sj::boxids::WORLD_H;
+    using sj::boxids::WORLD_W;
+    using util::geo::I32Box;
+
+    int cx = std::ceil(1000 * GRID_W - WORLD_W / 2.0);
+    int cy = std::ceil(2000 * GRID_H - WORLD_H / 2.0);
+
+    I32Box box({cx + 100, cy + 100}, {cx + 200, cy + 200});
+    TEST(inCellWithPadding(box, 0));
+    TEST(inCellWithPadding(box, 50));
+    TEST(inCellWithPadding(box, 98));
+    TEST(!inCellWithPadding(box, 101));
+
+    I32Box box2({cx - 10, cy + 100}, {cx + 10, cy + 200});
+    TEST(!inCellWithPadding(box2, 0));
+
+    int ux = std::floor(1001 * GRID_W - WORLD_W / 2.0);
+    int uy = std::floor(2001 * GRID_H - WORLD_H / 2.0);
+    I32Box box3({ux - 200, uy - 200}, {ux - 100, uy - 100});
+    TEST(inCellWithPadding(box3, 98));
+    TEST(!inCellWithPadding(box3, 101));
+    I32Box box4({ux - 200, uy - 200}, {ux + 10, uy - 100});
+    TEST(!inCellWithPadding(box4, 0));
+
+    I32Box box5({cx + 4000, cy + 4000}, {cx + 4000, cy + 4000});
+    TEST(inCellWithPadding(box5, 3000));
+    TEST(!inCellWithPadding(box5, 4000));
+    TEST(!inCellWithPadding(box5, GRID_W));
+  }
+
+  {
+    using sj::boxids::BoxIdList;
+    using sj::boxids::boxIdIsectPadded;
+    using sj::boxids::GRID_W;
+    using sj::boxids::NUM_GRID_CELLS;
+
+    const int32_t N = NUM_GRID_CELLS;
+
+    // cell (1000, 2000)
+    int32_t c = 2000 * N + 1000 + 1;
+    BoxIdList a{{1, 0}, {c, 0}};
+
+    // padding by 1 cell
+    TEST(boxIdIsectPadded(a, {{1, 0}, {c, 0}}, 100));
+    TEST(boxIdIsectPadded(a, {{1, 0}, {c + 1, 0}}, 100));
+    TEST(boxIdIsectPadded(a, {{1, 0}, {c - 1, 0}}, 100));
+    TEST(boxIdIsectPadded(a, {{1, 0}, {c + N + 1, 0}}, 100));
+    TEST(boxIdIsectPadded(a, {{1, 0}, {-(c - N - 1), 0}}, 100));
+    TEST(!boxIdIsectPadded(a, {{1, 0}, {c + 2, 0}}, 100));
+    TEST(!boxIdIsectPadded(a, {{1, 0}, {c - 2, 0}}, 100));
+    TEST(!boxIdIsectPadded(a, {{1, 0}, {c + 2 * N, 0}}, 100));
+    TEST(!boxIdIsectPadded(a, {{1, 0}, {-(c - 2 * N + 1), 0}}, 100));
+
+    TEST(!boxIdIsectPadded(a, {{4, 0}, {c - 5, 3}}, 100));
+    TEST(boxIdIsectPadded(a, {{5, 0}, {c - 5, 4}}, 100));
+    TEST(!boxIdIsectPadded(a, {{4, 0}, {-(c + N + 2), 3}}, 100));
+    TEST(boxIdIsectPadded(a, {{4, 0}, {-(c + N - 4), 3}}, 100));
+
+    // padding by 2 cells
+    TEST(boxIdIsectPadded(a, {{1, 0}, {c + 2, 0}}, GRID_W * 1.5));
+    TEST(boxIdIsectPadded(a, {{1, 0}, {c - 2 * N - 2, 0}}, GRID_W * 1.5));
+    TEST(!boxIdIsectPadded(a, {{1, 0}, {c + 3, 0}}, GRID_W * 1.5));
+    TEST(!boxIdIsectPadded(a, {{1, 0}, {c + 3 * N, 0}}, GRID_W * 1.5));
+
+    // undtermined
+    TEST(boxIdIsectPadded(a, {{1, 0}, {c + 100, 0}}, GRID_W * 10));
+    TEST(boxIdIsectPadded(a, {{0, 0}}, 100));
+  }
+
   sj::SweeperCfg baseline{
       NUM_THREADS,  NUM_THREADS, 1000,        1000,       " intersects ",
       " contains ", " covers ",  " touches ", " equals ", " overlaps ",
@@ -735,12 +808,9 @@ int main(int, char**) {
       RunStats stats;
       auto res =
           fullRun("../src/spatialjoin/tests/datasets/references", cfg, &stats);
-      // without box IDs, two polygons are converted into box polygons
-      if (cfg.useBoxIds) {
-        TEST(stats.numReferences, ==, 16);
-      } else {
-        TEST(stats.numReferences, ==, 14);
-      }
+      // two polygons would be converted into box polygons without box IDs,
+      // but they are densified and thus not considered as boxes anymore
+      TEST(stats.numReferences, ==, 16);
 
       TEST(res.find("$RefA crosses TestC$") != std::string::npos);
       TEST(res.find("$TestC crosses RefA$") != std::string::npos);
@@ -851,11 +921,8 @@ int main(int, char**) {
       RunStats stats;
       auto res =
           fullRun("../src/spatialjoin/tests/datasets/references", cfg, &stats);
-      if (cfg.useBoxIds) {
-        TEST(stats.numReferences, ==, 16);
-      } else {
-        TEST(stats.numReferences, ==, 14);
-      }
+      // densified, see above
+      TEST(stats.numReferences, ==, 16);
       TEST(res.find("$TestB\t0F1FF0102\tTestA$") != std::string::npos);
       TEST(res.find("$TestA\t0F1FF0102\tTestB$") != std::string::npos);
       TEST(res.find("$TestB\t0F1FF0102\tRefB$") != std::string::npos);

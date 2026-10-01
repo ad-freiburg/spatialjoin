@@ -8,6 +8,8 @@
 #include <stdarg.h>
 #include <stdio.h>
 
+#include <limits>
+
 #include "util/geo/Geo.h"
 #include "util/log/Log.h"
 
@@ -577,6 +579,31 @@ inline util::geo::DE9IMatrix GEOSRelate_r(GEOSContextHandle_t h,
   GEOSFree_r(h, de9im);
   GEOSGeom_destroy_r(h, point);
   return res.transpose();
+}
+
+// _____________________________________________________________________________
+inline util::geo::I32Box GEOSGetBoundingBox_r(GEOSContextHandle_t h,
+                                              const GEOSGeometry* g) {
+  double xmin, ymin, xmax, ymax;
+#if GEOS_VERSION_MAJOR > 3 || GEOS_VERSION_MINOR >= 11
+  bool ok = g && GEOSGeom_getExtent_r(h, g, &xmin, &ymin, &xmax, &ymax);
+#else
+  bool ok = g && GEOSGeom_getXMin_r(h, g, &xmin) &&
+            GEOSGeom_getYMin_r(h, g, &ymin) &&
+            GEOSGeom_getXMax_r(h, g, &xmax) && GEOSGeom_getYMax_r(h, g, &ymax);
+#endif
+
+  // on failure (e.g. empty geometry), return a box spanning the entire
+  // coordinate space, which never triggers any box-based filter
+  if (!ok)
+    return {{std::numeric_limits<int32_t>::lowest(),
+             std::numeric_limits<int32_t>::lowest()},
+            {std::numeric_limits<int32_t>::max(),
+             std::numeric_limits<int32_t>::max()}};
+
+  // coordinates were created from int32_t values, so this is exact
+  return {{static_cast<int32_t>(xmin), static_cast<int32_t>(ymin)},
+          {static_cast<int32_t>(xmax), static_cast<int32_t>(ymax)}};
 }
 }  // namespace sj
 

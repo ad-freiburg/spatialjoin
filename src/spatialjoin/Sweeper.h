@@ -615,6 +615,12 @@ class Sweeper {
                                    const util::geo::I32Box& aBox,
                                    const util::geo::I32Box& bBox);
 
+  static bool tooFarForWithinDist(const util::geo::I32Box& aBox,
+                                  const sj::boxids::BoxIdList& aIds,
+                                  const util::geo::I32Box& bBox,
+                                  const sj::boxids::BoxIdList& bIds,
+                                  double maxEuclideanDist);
+
   void fillBatch(JobBatch* batch,
                  const util::geo::IntervalIdx<int32_t, SweepVal>* actives,
                  const BoxVal* cur) const;

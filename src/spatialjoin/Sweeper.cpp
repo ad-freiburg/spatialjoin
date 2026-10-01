@@ -30,9 +30,11 @@ using sj::GeomCheckRes;
 using sj::GeomType;
 using sj::Sweeper;
 using sj::boxids::boxIdIsect;
+using sj::boxids::boxIdIsectPadded;
 using sj::boxids::BoxIdList;
 using sj::boxids::getBoxId;
 using sj::boxids::getBoxIds;
+using sj::boxids::inCellWithPadding;
 using sj::boxids::packBoxIds;
 using sj::innerouter::Mode;
 using util::preadAll;
@@ -195,7 +197,8 @@ I32Box Sweeper::add(const I32Polygon& poly, const std::string& gidR,
   std::string gid = (side ? ("B" + gidR) : ("A" + gidR));
 
   WriteCand cur;
-  I32XSortedPolygon spoly(poly);
+  const auto& densePoly = util::geo::densifyX(poly, 500 * PREC);
+  I32XSortedPolygon spoly(densePoly);
 
   GEOSPolygon geosPoly;
 
@@ -235,6 +238,7 @@ I32Box Sweeper::add(const I32Polygon& poly, const std::string& gidR,
   cur.gid = gid;
 
   if (poly.getInners().size() == 0 && subid == 0 && gid.size() < 8 &&
+      poly.getOuter().size() == densePoly.getOuter().size() &&
       (!_cfg.useBoxIds || boxIds.front().first == 1) &&
       area(rawBox) == areaSize) {
     cur.boxvalIn = {0,  // placeholder, will be overwritten later on
@@ -265,6 +269,7 @@ I32Box Sweeper::add(const I32Polygon& poly, const std::string& gidR,
                      0};
     batch.foldedBoxAreas.emplace_back(cur);
   } else if (poly.getInners().size() == 0 && poly.getOuter().size() < 10 &&
+             poly.getOuter().size() == densePoly.getOuter().size() &&
              subid == 0 && (!_cfg.useBoxIds || boxIds.front().first == 1)) {
     std::stringstream str;
     _simpleAreaCache.writeTo({poly.getOuter(), gid}, str, batch.geosHndl);
@@ -412,7 +417,8 @@ I32Box Sweeper::add(const I32Line& line, const std::string& gidR, size_t subid,
 
   WriteCand cur;
 
-  I32XSortedLine sline(line);
+  const auto& denseLine = util::geo::densifyX(line, 500 * PREC);
+  I32XSortedLine sline(denseLine);
 
   const auto& rawBox = sline.boundingBox();
   const auto& box = getPaddedBoundingBox(rawBox);
@@ -436,8 +442,8 @@ I32Box Sweeper::add(const I32Line& line, const std::string& gidR, size_t subid,
   cur.subid = subid;
   cur.gid = gid;
 
-  if (line.size() == 2 && (!_cfg.useBoxIds || boxIds.front().first == 1) &&
-      subid == 0) {
+  if (line.size() == 2 && denseLine.size() == line.size() &&
+      (!_cfg.useBoxIds || boxIds.front().first == 1) && subid == 0) {
     // simple line
 
     cur.boxvalIn = {
@@ -4443,12 +4449,26 @@ double Sweeper::meterDist(const I32Point& p1, const I32Point& p2,
 }
 
 // _____________________________________________________________________________
+bool Sweeper::tooFarForWithinDist(const I32Box& aBox, const BoxIdList& aIds,
+                                  const I32Box& bBox, const BoxIdList& bIds,
+                                  double maxEuclideanDist) {
+  // only valid if a and b share no box! a or b is contained in a single cell
+  // with at least the search distance to its borders, or no box of b is within
+  // the search distance of a box of a, we cannot be within distance
+  return inCellWithPadding(aBox, maxEuclideanDist) ||
+         inCellWithPadding(bBox, maxEuclideanDist) ||
+         !boxIdIsectPadded(aIds, bIds, maxEuclideanDist);
+}
+
+// _____________________________________________________________________________
 double Sweeper::distCheck(const I32Point& a, const Point* aMeta, const Area* b,
                           size_t t) {
+  bool noSharedBox = false;
   if (_cfg.useBoxIds) {
     auto ts = TIME();
     auto r = boxIdIsect({{1, 0}, {getBoxId(a), 0}}, b->boxIds);
     _stats[t].timeBoxIdIsectAreaPoint += TOOK(ts);
+    noSharedBox = r.first + r.second == 0;
 
     // all boxes of a are fully contained in b, we are contained
     if (r.first) return 0;
@@ -4460,6 +4480,18 @@ double Sweeper::distCheck(const I32Point& a, const Point* aMeta, const Area* b,
 
   if (_useGeos) {
     double maxEuclideanDist = maxD * PREC;
+
+    if (noSharedBox) {
+      auto ts = TIME();
+      bool tooFar = tooFarForWithinDist(
+          util::geo::getBoundingBox(a), {{1, 0}, {getBoxId(a), 0}},
+          GEOSGetBoundingBox_r(_GEOScontextHandles[t],
+                               b->geosGeom.getGEOSGeom()),
+          b->boxIds, maxEuclideanDist);
+      _stats[t].timeBoxIdIsectAreaPoint += TOOK(ts);
+      if (tooFar) return _cfg.withinDist + 1;
+    }
+
     GEOSDistanceWithin_r(_GEOScontextHandles[t], a, b->geosGeom,
                          maxEuclideanDist, &dist);
     dist = dist / PREC;
@@ -4473,6 +4505,15 @@ double Sweeper::distCheck(const I32Point& a, const Point* aMeta, const Area* b,
                                                   b->geom.boundingBox(), maxD);
 
     double maxEuclideanDist = maxD / scale.first * PREC;
+
+    if (noSharedBox) {
+      auto ts = TIME();
+      bool tooFar = tooFarForWithinDist(
+          util::geo::getBoundingBox(a), {{1, 0}, {getBoxId(a), 0}},
+          b->geom.boundingBox(), b->boxIds, maxEuclideanDist);
+      _stats[t].timeBoxIdIsectAreaPoint += TOOK(ts);
+      if (tooFar) return _cfg.withinDist + 1;
+    }
 
     dist = util::geo::withinDist<int32_t>(
         a, b->geom, maxD,
@@ -4569,12 +4610,32 @@ util::geo::DE9IMatrix Sweeper::DE9IMCheck(const I32Point& a, const Area* b,
 // _____________________________________________________________________________
 double Sweeper::distCheck(const I32Point& a, const Point* aMeta, const Line* b,
                           size_t t) {
+  bool noSharedBox = false;
+  if (_cfg.useBoxIds) {
+    auto ts = TIME();
+    auto r = boxIdIsect({{1, 0}, {getBoxId(a), 0}}, b->boxIds);
+    _stats[t].timeBoxIdIsectLinePoint += TOOK(ts);
+    noSharedBox = r.first + r.second == 0;
+  }
+
   auto ts = TIME();
   double maxD = _cfg.withinDist;
   double dist;
 
   if (_useGeos) {
     double maxEuclideanDist = maxD * PREC;
+
+    if (noSharedBox) {
+      auto ts = TIME();
+      bool tooFar = tooFarForWithinDist(
+          util::geo::getBoundingBox(a), {{1, 0}, {getBoxId(a), 0}},
+          GEOSGetBoundingBox_r(_GEOScontextHandles[t],
+                               b->geosGeom.getGEOSGeom()),
+          b->boxIds, maxEuclideanDist);
+      _stats[t].timeBoxIdIsectLinePoint += TOOK(ts);
+      if (tooFar) return _cfg.withinDist + 1;
+    }
+
     GEOSDistanceWithin_r(_GEOScontextHandles[t], a, b->geosGeom,
                          maxEuclideanDist, &dist);
     dist = dist / PREC;
@@ -4589,6 +4650,15 @@ double Sweeper::distCheck(const I32Point& a, const Point* aMeta, const Line* b,
                                                   b->geom.boundingBox(), maxD);
 
     double maxEuclideanDist = maxD / scale.first * PREC;
+
+    if (noSharedBox) {
+      auto ts = TIME();
+      bool tooFar = tooFarForWithinDist(
+          util::geo::getBoundingBox(a), {{1, 0}, {getBoxId(a), 0}},
+          b->geom.boundingBox(), b->boxIds, maxEuclideanDist);
+      _stats[t].timeBoxIdIsectLinePoint += TOOK(ts);
+      if (tooFar) return _cfg.withinDist + 1;
+    }
 
     dist = util::geo::withinDist<int32_t>(
         a, b->geom, maxD,
@@ -4656,11 +4726,31 @@ double Sweeper::distCheck(const LineSegment<int32_t>& a, const Line* b,
                           size_t t) {
   auto ts = TIME();
 
+  bool noSharedBox = false;
+  if (_cfg.useBoxIds) {
+    auto ts = TIME();
+    auto r = boxIdIsect({{1, 0}, {getBoxId(a.first), 0}}, b->boxIds);
+    _stats[t].timeBoxIdIsectLineLine += TOOK(ts);
+    noSharedBox = r.first + r.second == 0;
+  }
+
   double maxD = _cfg.withinDist;
   double dist;
 
   if (_useGeos) {
     double maxEuclideanDist = maxD * PREC;
+
+    if (noSharedBox) {
+      auto ts = TIME();
+      bool tooFar = tooFarForWithinDist(
+          util::geo::getBoundingBox(a), {{1, 0}, {getBoxId(a.first), 0}},
+          GEOSGetBoundingBox_r(_GEOScontextHandles[t],
+                               b->geosGeom.getGEOSGeom()),
+          b->boxIds, maxEuclideanDist);
+      _stats[t].timeBoxIdIsectLineLine += TOOK(ts);
+      if (tooFar) return _cfg.withinDist + 1;
+    }
+
     const auto& line = lineFromSimpleLine(a, t);
     GEOSDistanceWithin_r(_GEOScontextHandles[t], line.geosGeom, b->geosGeom,
                          maxEuclideanDist, &dist);
@@ -4673,6 +4763,15 @@ double Sweeper::distCheck(const LineSegment<int32_t>& a, const Line* b,
                                                   _cfg.withinDist);
 
     double maxEuclideanDist = maxD / scale.first * PREC;
+
+    if (noSharedBox) {
+      auto ts = TIME();
+      bool tooFar = tooFarForWithinDist(
+          util::geo::getBoundingBox(a), {{1, 0}, {getBoxId(a.first), 0}},
+          b->geom.boundingBox(), b->boxIds, maxEuclideanDist);
+      _stats[t].timeBoxIdIsectLineLine += TOOK(ts);
+      if (tooFar) return _cfg.withinDist + 1;
+    }
 
     dist = util::geo::withinDist<int32_t>(
         I32XSortedLine(a), b->geom, _cfg.withinDist,
@@ -4701,11 +4800,33 @@ double Sweeper::distCheck(const Line* a, const Line* b, size_t t) {
     return 0;
   }
 
+  bool noSharedBox = false;
+  if (_cfg.useBoxIds) {
+    auto ts = TIME();
+    auto r = boxIdIsect(a->boxIds, b->boxIds);
+    _stats[t].timeBoxIdIsectLineLine += TOOK(ts);
+    noSharedBox = r.first + r.second == 0;
+  }
+
   double maxD = _cfg.withinDist;
   double dist;
 
   if (_useGeos) {
     double maxEuclideanDist = maxD * PREC;
+
+    if (noSharedBox) {
+      auto ts = TIME();
+      bool tooFar =
+          tooFarForWithinDist(GEOSGetBoundingBox_r(_GEOScontextHandles[t],
+                                                   a->geosGeom.getGEOSGeom()),
+                              a->boxIds,
+                              GEOSGetBoundingBox_r(_GEOScontextHandles[t],
+                                                   b->geosGeom.getGEOSGeom()),
+                              b->boxIds, maxEuclideanDist);
+      _stats[t].timeBoxIdIsectLineLine += TOOK(ts);
+      if (tooFar) return _cfg.withinDist + 1;
+    }
+
     GEOSDistanceWithin_r(_GEOScontextHandles[t], a->geosGeom, b->geosGeom,
                          maxEuclideanDist, &dist);
     dist = dist / PREC;
@@ -4719,6 +4840,15 @@ double Sweeper::distCheck(const Line* a, const Line* b, size_t t) {
                      : getMinMaxLocalScaleFactors(a->geom.boundingBox(),
                                                   b->geom.boundingBox(), maxD);
     double maxEuclideanDist = maxD / scale.first * PREC;
+
+    if (noSharedBox) {
+      auto ts = TIME();
+      bool tooFar = tooFarForWithinDist(a->geom.boundingBox(), a->boxIds,
+                                        b->geom.boundingBox(), b->boxIds,
+                                        maxEuclideanDist);
+      _stats[t].timeBoxIdIsectLineLine += TOOK(ts);
+      if (tooFar) return _cfg.withinDist + 1;
+    }
 
     dist = util::geo::withinDist<int32_t>(
         a->geom, b->geom, maxD,
@@ -4739,10 +4869,12 @@ double Sweeper::distCheck(const LineSegment<int32_t>& a, const Area* b,
                           size_t t) {
   auto ts = TIME();
 
+  bool noSharedBox = false;
   if (_cfg.useBoxIds) {
     auto ts = TIME();
     auto r = boxIdIsect({{1, 0}, {getBoxId(a.first), 0}}, b->boxIds);
     _stats[t].timeBoxIdIsectAreaLine += TOOK(ts);
+    noSharedBox = r.first + r.second == 0;
 
     if (r.first) return 0;
   }
@@ -4752,6 +4884,18 @@ double Sweeper::distCheck(const LineSegment<int32_t>& a, const Area* b,
 
   if (_useGeos) {
     double maxEuclideanDist = maxD * PREC;
+
+    if (noSharedBox) {
+      auto ts = TIME();
+      bool tooFar = tooFarForWithinDist(
+          util::geo::getBoundingBox(a), {{1, 0}, {getBoxId(a.first), 0}},
+          GEOSGetBoundingBox_r(_GEOScontextHandles[t],
+                               b->geosGeom.getGEOSGeom()),
+          b->boxIds, maxEuclideanDist);
+      _stats[t].timeBoxIdIsectAreaLine += TOOK(ts);
+      if (tooFar) return _cfg.withinDist + 1;
+    }
+
     const auto& line = lineFromSimpleLine(a, t);
     GEOSDistanceWithin_r(_GEOScontextHandles[t], b->geosGeom, line.geosGeom,
                          maxEuclideanDist, &dist);
@@ -4764,6 +4908,15 @@ double Sweeper::distCheck(const LineSegment<int32_t>& a, const Area* b,
                                                   _cfg.withinDist);
 
     double maxEuclideanDist = maxD / scale.first * PREC;
+
+    if (noSharedBox) {
+      auto ts = TIME();
+      bool tooFar = tooFarForWithinDist(
+          util::geo::getBoundingBox(a), {{1, 0}, {getBoxId(a.first), 0}},
+          b->geom.boundingBox(), b->boxIds, maxEuclideanDist);
+      _stats[t].timeBoxIdIsectAreaLine += TOOK(ts);
+      if (tooFar) return _cfg.withinDist + 1;
+    }
 
     dist = util::geo::withinDist<int32_t>(
         I32XSortedLine(a), b->geom, _cfg.withinDist,
@@ -4784,10 +4937,12 @@ double Sweeper::distCheck(const LineSegment<int32_t>& a, const Area* b,
 double Sweeper::distCheck(const Line* a, const Area* b, size_t t) {
   auto ts = TIME();
 
+  bool noSharedBox = false;
   if (_cfg.useBoxIds) {
     auto ts = TIME();
     auto r = boxIdIsect(a->boxIds, b->boxIds);
     _stats[t].timeBoxIdIsectAreaLine += TOOK(ts);
+    noSharedBox = r.first + r.second == 0;
 
     // all boxes of a are fully contained in b, we intersect and we are
     // contained
@@ -4817,6 +4972,20 @@ double Sweeper::distCheck(const Line* a, const Area* b, size_t t) {
 
   if (_useGeos) {
     double maxEuclideanDist = maxD * PREC;
+
+    if (noSharedBox) {
+      auto ts = TIME();
+      bool tooFar =
+          tooFarForWithinDist(GEOSGetBoundingBox_r(_GEOScontextHandles[t],
+                                                   a->geosGeom.getGEOSGeom()),
+                              a->boxIds,
+                              GEOSGetBoundingBox_r(_GEOScontextHandles[t],
+                                                   b->geosGeom.getGEOSGeom()),
+                              b->boxIds, maxEuclideanDist);
+      _stats[t].timeBoxIdIsectAreaLine += TOOK(ts);
+      if (tooFar) return _cfg.withinDist + 1;
+    }
+
     GEOSDistanceWithin_r(_GEOScontextHandles[t], b->geosGeom, a->geosGeom,
                          maxEuclideanDist, &dist);
     dist = dist / PREC;
@@ -4831,6 +5000,15 @@ double Sweeper::distCheck(const Line* a, const Area* b, size_t t) {
                      : getMinMaxLocalScaleFactors(a->geom.boundingBox(),
                                                   b->geom.boundingBox(), maxD);
     double maxEuclideanDist = maxD / scale.first * PREC;
+
+    if (noSharedBox) {
+      auto ts = TIME();
+      bool tooFar = tooFarForWithinDist(a->geom.boundingBox(), a->boxIds,
+                                        b->geom.boundingBox(), b->boxIds,
+                                        maxEuclideanDist);
+      _stats[t].timeBoxIdIsectAreaLine += TOOK(ts);
+      if (tooFar) return _cfg.withinDist + 1;
+    }
 
     dist = util::geo::withinDist<int32_t>(
         a->geom, b->geom, maxD,
@@ -4863,10 +5041,12 @@ double Sweeper::distCheck(const Area* a, const Area* b, size_t t) {
     return 0;
   }
 
+  bool noSharedBox = false;
   if (_cfg.useBoxIds) {
     auto ts = TIME();
     auto r = boxIdIsect(a->boxIds, b->boxIds);
     _stats[t].timeBoxIdIsectAreaArea += TOOK(ts);
+    noSharedBox = r.first + r.second == 0;
 
     // at least one box is fully contained in b
     if (r.first) return 0;
@@ -4915,6 +5095,20 @@ double Sweeper::distCheck(const Area* a, const Area* b, size_t t) {
 
   if (_useGeos) {
     double maxEuclideanDist = maxD * PREC;
+
+    if (noSharedBox) {
+      auto ts = TIME();
+      bool tooFar =
+          tooFarForWithinDist(GEOSGetBoundingBox_r(_GEOScontextHandles[t],
+                                                   a->geosGeom.getGEOSGeom()),
+                              a->boxIds,
+                              GEOSGetBoundingBox_r(_GEOScontextHandles[t],
+                                                   b->geosGeom.getGEOSGeom()),
+                              b->boxIds, maxEuclideanDist);
+      _stats[t].timeBoxIdIsectAreaArea += TOOK(ts);
+      if (tooFar) return _cfg.withinDist + 1;
+    }
+
     GEOSDistanceWithin_r(_GEOScontextHandles[t], a->geosGeom, b->geosGeom,
                          maxEuclideanDist, &dist);
     dist = dist / PREC;
@@ -4929,6 +5123,15 @@ double Sweeper::distCheck(const Area* a, const Area* b, size_t t) {
                      : getMinMaxLocalScaleFactors(a->geom.boundingBox(),
                                                   b->geom.boundingBox(), maxD);
     double maxEuclideanDist = maxD / scale.first * PREC;
+
+    if (noSharedBox) {
+      auto ts = TIME();
+      bool tooFar = tooFarForWithinDist(a->geom.boundingBox(), a->boxIds,
+                                        b->geom.boundingBox(), b->boxIds,
+                                        maxEuclideanDist);
+      _stats[t].timeBoxIdIsectAreaArea += TOOK(ts);
+      if (tooFar) return _cfg.withinDist + 1;
+    }
 
     dist = util::geo::withinDist<int32_t>(
         a->geom, b->geom, maxD,
