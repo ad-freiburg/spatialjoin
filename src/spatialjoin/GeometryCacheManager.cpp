@@ -213,7 +213,8 @@ I32Box GeometryCacheManager::add(const I32Polygon& poly,
   std::string gid = (side ? ("B" + gidR) : ("A" + gidR));
 
   WriteCand cur;
-  I32XSortedPolygon spoly(util::geo::densifyX(poly, 500 * PREC));
+  const auto& densePoly = util::geo::densifyX(poly, 500 * PREC);
+  I32XSortedPolygon spoly(densePoly);
   const auto& rawBox = spoly.boundingBox();
   const auto& box = getPaddedBoundingBox(rawBox);
   if (!util::geo::intersects(box, _filterBox)) return {};
@@ -240,6 +241,7 @@ I32Box GeometryCacheManager::add(const I32Polygon& poly,
   cur.gid = gid;
 
   if (poly.getInners().size() == 0 && subid == 0 && gid.size() < 8 &&
+      poly.getOuter().size() == densePoly.getOuter().size() &&
       (!_cfg.useBoxIds || boxIds.front().first == 1) &&
       area(rawBox) == areaSize) {
     cur.boxvalIn = {0,  // placeholder, will be overwritten later on
@@ -268,6 +270,7 @@ I32Box GeometryCacheManager::add(const I32Polygon& poly,
                      false};
     batch.foldedBoxAreas.emplace_back(cur);
   } else if (poly.getInners().size() == 0 && poly.getOuter().size() < 10 &&
+             poly.getOuter().size() == densePoly.getOuter().size() &&
              subid == 0 && (!_cfg.useBoxIds || boxIds.front().first == 1)) {
     std::stringstream str;
     _simpleAreaCache.writeTo({poly.getOuter(), gid}, str);
@@ -406,7 +409,8 @@ I32Box GeometryCacheManager::add(const I32Line& line, const std::string& gidR,
 
   WriteCand cur;
 
-  I32XSortedLine sline(util::geo::densifyX(line, 500 * PREC));
+  const auto& denseLine = util::geo::densifyX(line, 500 * PREC);
+  I32XSortedLine sline(denseLine);
 
   const auto& rawBox = sline.boundingBox();
   const auto& box = getPaddedBoundingBox(rawBox);
@@ -430,8 +434,8 @@ I32Box GeometryCacheManager::add(const I32Line& line, const std::string& gidR,
   cur.subid = subid;
   cur.gid = gid;
 
-  if (line.size() == 2 && (!_cfg.useBoxIds || boxIds.front().first == 1) &&
-      subid == 0) {
+  if (line.size() == 2 && denseLine.size() == line.size() &&
+      (!_cfg.useBoxIds || boxIds.front().first == 1) && subid == 0) {
     // simple line
 
     cur.boxvalIn = {
@@ -809,34 +813,34 @@ void GeometryCacheManager::flush() {
       _selfChecks.push_back({ref.first, sub.first});
 
       _events.add({_selfChecks.size() - 1,
-               1,
-               0,
-               _selfCheckBounds[ref.first].getLowerLeft().getX(),
-               false,
-               SELF_CHECK,
-               0.0,
-               {},
-               0,
-               {},
-               false,
-               false});
+                   1,
+                   0,
+                   _selfCheckBounds[ref.first].getLowerLeft().getX(),
+                   false,
+                   SELF_CHECK,
+                   0.0,
+                   {},
+                   0,
+                   {},
+                   false,
+                   false});
     }
   }
 
   for (size_t side = 0; side < 2; side++) {
     for (size_t i = 0; i < _multiIds[side].size(); i++) {
       _events.add({i,
-               1,
-               0,
-               _multiLeftX[side][i] - 1,
-               false,
-               POINT,
-               0.0,
-               {},
-               0,
-               {},
-               static_cast<bool>(side),
-               false});
+                   1,
+                   0,
+                   _multiLeftX[side][i] - 1,
+                   false,
+                   POINT,
+                   0.0,
+                   {},
+                   0,
+                   {},
+                   static_cast<bool>(side),
+                   false});
     }
   }
 
@@ -937,7 +941,8 @@ void GeometryCacheManager::duplicatesToReferences() {
           curX = cur->val;
         }
 
-        if (cur->type == POLYGON && cur->numAnchors >= DUPLICATE_REMOVAL_MIN_SIZE) {
+        if (cur->type == POLYGON &&
+            cur->numAnchors >= DUPLICATE_REMOVAL_MIN_SIZE) {
           size_t h = cur->numAnchors;
           const auto& existing = duplicatePolys.find(h);
 
@@ -966,7 +971,8 @@ void GeometryCacheManager::duplicatesToReferences() {
           }
         }
 
-        if (cur->type == LINE && cur->numAnchors >= DUPLICATE_REMOVAL_MIN_SIZE) {
+        if (cur->type == LINE &&
+            cur->numAnchors >= DUPLICATE_REMOVAL_MIN_SIZE) {
           size_t h = cur->numAnchors;
           const auto& existing = duplicateLines.find(h);
 
