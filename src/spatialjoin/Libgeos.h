@@ -221,7 +221,7 @@ class GEOSPolygon {
         _prepGeom(0),
         _geosHndlDestroy(geosHndl),
         _size(0) {
-    _size = poly.getSize();
+    _size = poly.size();
   }
   GEOSPolygon(GEOSContextHandle_t geosHndl, const Ring<int32_t>& ring)
       : _geom(makeGeosPolygon(geosHndl, ring)),

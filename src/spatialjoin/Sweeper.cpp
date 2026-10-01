@@ -215,7 +215,7 @@ I32Box Sweeper::add(const I32Polygon& poly, const std::string& gidR,
 
   if (spoly.empty()) return box;
 
-  size_t polySize = poly.getSize();
+  size_t polySize = poly.size();
   double areaSize = area(poly);
 
   double outerAreaSize = outerArea(poly);
@@ -287,7 +287,7 @@ I32Box Sweeper::add(const I32Polygon& poly, const std::string& gidR,
                     SIMPLE_POLYGON,
                     areaSize,
                     {},
-                    poly.getSize(),
+                    poly.size(),
                     box45,
                     side,
                     estimatedSize > GEOM_LARGENESS_THRESHOLD,
@@ -300,7 +300,7 @@ I32Box Sweeper::add(const I32Polygon& poly, const std::string& gidR,
                      SIMPLE_POLYGON,
                      areaSize,
                      rightPoint,
-                     poly.getSize(),
+                     poly.size(),
                      box45,
                      side,
                      estimatedSize > GEOM_LARGENESS_THRESHOLD,
@@ -889,7 +889,15 @@ void Sweeper::multiOut(size_t tOut, const std::string& gidA) {
       auto i = _subDE9IM[t].find(gidA);
       if (i != _subDE9IM[t].end()) {
         for (const auto& a : i->second) {
-          subDE9IM[a.first] += a.second;
+          // aggregate over the parts of gidA, see writeDE9IM()
+          auto j = subDE9IM.find(a.first);
+          if (j == subDE9IM.end()) {
+            subDE9IM[a.first] = a.second;
+          } else if (_subSizes.find(a.first) != _subSizes.end()) {
+            j->second.elementwiseMax(a.second);
+          } else {
+            j->second.uniteRowGeoms(a.second);
+          }
         }
         _subDE9IM[t].erase(i);
       }
@@ -2540,17 +2548,25 @@ void Sweeper::writeDE9IM(size_t t, const std::string& a, size_t aSub,
     } else if ((bSub > 0 || aSub > 0)) {
       std::unique_lock<std::mutex> lock(_mutsDE9IM[t]);
       if (bSub > 0) {
-        if (_subDE9IM[t][b].find(a) == _subDE9IM[t][b].end()) {
-          _subDE9IM[t][b][a] = de9im.transpose();
+        auto& m = _subDE9IM[t][b];
+        auto i = m.find(a);
+        if (i == m.end()) {
+          m[a] = de9im.transpose();
+        } else if (aSub > 0) {
+          i->second.elementwiseMax(de9im.transpose());
         } else {
-          _subDE9IM[t][b][a] += de9im.transpose();
+          i->second.uniteRowGeoms(de9im.transpose());
         }
       }
       if (aSub > 0) {
-        if (_subDE9IM[t][a].find(b) == _subDE9IM[t][a].end()) {
-          _subDE9IM[t][a][b] = de9im;
+        auto& m = _subDE9IM[t][a];
+        auto i = m.find(b);
+        if (i == m.end()) {
+          m[b] = de9im;
+        } else if (bSub > 0) {
+          i->second.elementwiseMax(de9im);
         } else {
-          _subDE9IM[t][a][b] += de9im;
+          i->second.uniteRowGeoms(de9im);
         }
       }
     } else {

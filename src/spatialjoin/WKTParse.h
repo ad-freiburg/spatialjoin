@@ -104,8 +104,9 @@ class WKTParserBase {
     }
   };
 
-  static util::geo::I32Point projFunc(const util::geo::DPoint &p) {
-    auto projPoint = latLngToWebMerc(p);
+  static util::geo::I32Point projFunc(const util::geo::DPoint &p,
+                                      util::geo::CRSType sourceCRS) {
+    auto projPoint = projectToWebMerc(p, sourceCRS);
     return {static_cast<int>(projPoint.getX() * PREC),
             static_cast<int>(projPoint.getY() * PREC)};
   }
