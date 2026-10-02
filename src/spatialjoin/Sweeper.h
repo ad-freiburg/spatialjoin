@@ -420,24 +420,33 @@ class Sweeper {
   GeometryCache<Line> _lineCache;
   GeometryCache<SimpleLine> _simpleLineCache;
 
-  std::vector<std::map<std::string, std::map<std::string, double>>>
+  std::vector<std::unordered_map<std::string, std::map<std::string, double>>>
       _subDistance;
-  std::vector<
-      std::map<std::string, std::map<std::string, util::geo::DE9IMatrix>>>
+  std::vector<std::unordered_map<std::string,
+                                 std::map<std::string, util::geo::DE9IMatrix>>>
       _subDE9IM;
-  std::vector<std::map<std::string, std::map<std::string, std::set<size_t>>>>
+  std::vector<
+      std::unordered_map<std::string, std::map<std::string, std::set<size_t>>>>
       _subContains;
-  std::vector<std::map<std::string, std::map<std::string, std::set<size_t>>>>
+  std::vector<
+      std::unordered_map<std::string, std::map<std::string, std::set<size_t>>>>
       _subCovered;
-  std::vector<std::map<std::string, std::map<std::string, std::set<size_t>>>>
+  std::vector<
+      std::unordered_map<std::string, std::map<std::string, std::set<size_t>>>>
       _subEquals;
-  std::vector<std::map<std::string, std::set<std::string>>> _subTouches;
-  std::vector<std::map<std::string, std::set<std::string>>> _subNotTouches;
-  std::vector<std::map<std::string, std::set<std::string>>> _subCrosses;
-  std::vector<std::map<std::string, std::set<std::string>>> _subNotCrosses;
-  std::vector<std::map<std::string, std::set<std::string>>> _subOverlaps;
-  std::vector<std::map<std::string, std::set<std::string>>> _subNotOverlaps;
-  std::map<std::string, size_t> _subSizes;
+  std::vector<std::unordered_map<std::string, std::set<std::string>>>
+      _subTouches;
+  std::vector<std::unordered_map<std::string, std::set<std::string>>>
+      _subNotTouches;
+  std::vector<std::unordered_map<std::string, std::set<std::string>>>
+      _subCrosses;
+  std::vector<std::unordered_map<std::string, std::set<std::string>>>
+      _subNotCrosses;
+  std::vector<std::unordered_map<std::string, std::set<std::string>>>
+      _subOverlaps;
+  std::vector<std::unordered_map<std::string, std::set<std::string>>>
+      _subNotOverlaps;
+  std::unordered_map<std::string, size_t> _subSizes;
 
   bool isMulti(const std::string& id) const {
     return _subSizes.find(id) != _subSizes.end();
@@ -446,9 +455,9 @@ class Sweeper {
   std::set<size_t> _activeMultis[2];
   std::vector<std::string> _multiIds[2];
   std::vector<int32_t> _multiRightX[2];
-  std::map<std::string, util::geo::I32Point> _multiRightPoint;
+  std::unordered_map<std::string, util::geo::I32Point> _multiRightPoint;
   std::vector<int32_t> _multiLeftX[2];
-  std::map<std::string, size_t> _multiGidToId[2];
+  std::unordered_map<std::string, size_t> _multiGidToId[2];
 
   std::string _cache;
 
