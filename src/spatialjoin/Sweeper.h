@@ -185,6 +185,9 @@ class Sweeper {
   static double euclideanDist(const util::geo::I32Point& p1,
                               const util::geo::I32Point& p2, double maxDist);
 
+  static const util::geo::DistFunc<int32_t> EUCLIDEAN_DIST_FUNC;
+  static const util::geo::DistFunc<int32_t> METER_DIST_FUNC;
+
   static double localSearchPadding(double euclideanDistanceUpperBound,
                                    double distanceUpperBound,
                                    const util::geo::I32Box& aBox,
