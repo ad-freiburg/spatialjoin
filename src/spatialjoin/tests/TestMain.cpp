@@ -920,6 +920,23 @@ int main(int, char**) {
     {
       RunStats stats;
       auto res =
+          fullRun("../src/spatialjoin/tests/datasets/multide9im", cfg, &stats);
+
+      TEST(countMatches(res, "\\$coll\\t[0-9F]{9}\\tway\\$"), ==, 1);
+      TEST(countMatches(res, "\\$way\\t[0-9F]{9}\\tcoll\\$"), ==, 1);
+      TEST(countMatches(res, "\\$coll\\t[0-9F]{9}\\tpoint\\$"), ==, 1);
+      TEST(countMatches(res, "\\$point\\t[0-9F]{9}\\tcoll\\$"), ==, 1);
+
+      // requires the fix for byte-identical geometries from upstream
+      // e7f5fda (#24), not yet on this branch
+      // TEST(res.find("$coll\t1F1F00FF2\tway$") != std::string::npos);
+      // TEST(res.find("$way\t1FFF0F102\tcoll$") != std::string::npos);
+      TEST(res.find("$coll\tFF10F0FF2\tpoint$") != std::string::npos);
+      TEST(res.find("$point\tF0FFFF102\tcoll$") != std::string::npos);
+    }
+    {
+      RunStats stats;
+      auto res =
           fullRun("../src/spatialjoin/tests/datasets/references", cfg, &stats);
       // densified, see above
       TEST(stats.numReferences, ==, 16);
@@ -971,14 +988,14 @@ int main(int, char**) {
       TEST(res.find("$Kappel\t0\tKappel$") == std::string::npos);
       TEST(res.find("$Kappel2\t0\tKappel2$") == std::string::npos);
 
-      std::regex pattern("\\$Kappel\\t3306.61\\d*\\\tHerdern\\$");
+      std::regex pattern("\\$Kappel\\t3306.55\\d*\\\tHerdern\\$");
       TEST(std::regex_search(res, pattern));
-      std::regex pattern2("\\$Herdern\\t3306.61\\d*\\\tKappel\\$");
+      std::regex pattern2("\\$Herdern\\t3306.55\\d*\\\tKappel\\$");
       TEST(std::regex_search(res, pattern2));
 
-      std::regex pattern3("\\$Kappel2\\t3306.61\\d*\\\tHerdern\\$");
+      std::regex pattern3("\\$Kappel2\\t3306.55\\d*\\\tHerdern\\$");
       TEST(std::regex_search(res, pattern3));
-      std::regex pattern4("\\$Herdern\\t3306.61\\d*\\\tKappel2\\$");
+      std::regex pattern4("\\$Herdern\\t3306.55\\d*\\\tKappel2\\$");
       TEST(std::regex_search(res, pattern4));
     }
 
@@ -992,8 +1009,31 @@ int main(int, char**) {
       TEST(countMatches(res, "\\$line\\t7\\.62\\d*\\tpoly\\$"), ==, 1);
       TEST(countMatches(res, "\\$poly\\t7\\.62\\d*\\tline\\$"), ==, 1);
     }
+    cfg.euclideanDist = false;
+
+    {
+      RunStats stats;
+      auto res = fullRun("../src/spatialjoin/tests/datasets/multimeterprecision",
+                         cfg, &stats);
+
+      TEST(countMatches(res, "\\$coll\\t5\\.929\\d*\\tpoly\\$"), ==, 1);
+      TEST(countMatches(res, "\\$poly\\t5\\.929\\d*\\tcoll\\$"), ==, 1);
+    }
+
+    cfg.withinDist = 20;
+    {
+      // a pair of two multi geometries must be written exactly once in each
+      // dir
+      RunStats stats;
+      auto res = fullRun("../src/spatialjoin/tests/datasets/multimultidist",
+                         cfg, &stats);
+
+      TEST(countMatches(res, "\\$a\\t11\\.1\\d*\\tb\\$"), ==, 1);
+      TEST(countMatches(res, "\\$b\\t11\\.1\\d*\\ta\\$"), ==, 1);
+    }
 
     cfg.withinDist = 30;
+    cfg.euclideanDist = true;
     {
       RunStats stats;
       auto res = fullRun("../src/spatialjoin/tests/datasets/foldedboxpadding",

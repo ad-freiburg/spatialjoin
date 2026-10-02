@@ -813,7 +813,7 @@ void Sweeper::addBatch(WriteBatch& cands) {
 // _____________________________________________________________________________
 void Sweeper::clearMultis(bool force) {
   JobBatch curBatch;
-  size_t batchSize = 1000;
+  size_t batchSize = _cfg.withinDist >= 0 || _cfg.computeDE9IM ? 10 : 1000;
   int32_t curMinThreadX = std::numeric_limits<int32_t>::max();
 
   for (size_t i = 0; i < _cfg.numThreads; i++) {
@@ -837,7 +837,7 @@ void Sweeper::clearMultis(bool force) {
         a++;
       }
 
-      if (curBatch.size() > batchSize) {
+      if (curBatch.size() >= batchSize) {
         _jobs.add(std::move(curBatch));
         curBatch.clear();  // std doesnt guarantee that after move
         curBatch.reserve(batchSize);
@@ -855,37 +855,43 @@ void Sweeper::multiOut(size_t tOut, const std::string& gidA) {
   if (_cfg.withinDist >= 0) {
     std::map<std::string, double> subDistance;
     for (size_t t = 0; t < _cfg.numThreads + 1; t++) {
-      std::unique_lock<std::mutex> lock(_mutsDistance[t]);
-      auto i = _subDistance[t].find(gidA);
-      if (i != _subDistance[t].end()) {
-        for (const auto& a : i->second) {
-          if (subDistance.find(a.first) == subDistance.end())
-            subDistance[a.first] = a.second;
-          else if (subDistance[a.first] > a.second)
-            subDistance[a.first] = a.second;
-        }
+      std::map<std::string, double> cur;
+      {
+        std::unique_lock<std::mutex> lock(_mutsDistance[t]);
+        auto i = _subDistance[t].find(gidA);
+        if (i == _subDistance[t].end()) continue;
+
+        // swap i->second into cur, is deleted anyhow, and free
+        // the lock immediately after
+        cur.swap(i->second);
         _subDistance[t].erase(i);
+      }
+
+      if (subDistance.empty()) {
+        subDistance.swap(cur);
+        continue;
+      }
+
+      // merge the maps to get smallest distances acrsoss multigeoms
+      auto it = subDistance.begin();
+      for (const auto& a : cur) {
+        while (it != subDistance.end() && it->first < a.first) it++;
+        if (it != subDistance.end() && it->first == a.first) {
+          if (a.second < it->second) it->second = a.second;
+        } else {
+          it = subDistance.emplace_hint(it, a.first, a.second);
+        }
       }
     }
 
     for (const auto& a : subDistance) {
+      // avoid double writing of distance
+      if (isMulti(a.first) && a.first < gidA) continue;
+
       const auto& dStr =
           util::formatFloat(euclidean ? a.second / PREC : a.second, 4);
       writeRel(tOut, gidA, a.first, "\t" + dStr + "\t");
       writeRel(tOut, a.first, gidA, "\t" + dStr + "\t");
-    }
-
-    for (size_t t = 0; t < _cfg.numThreads + 1; t++) {
-      std::unique_lock<std::mutex> lock(_mutsDistance[t]);
-      for (const auto& a : subDistance) {
-        auto j = _subDistance[t].find(a.first);
-        if (j != _subDistance[t].end()) {
-          auto k = j->second.find(gidA);
-          if (k != j->second.end()) {
-            j->second.erase(gidA);
-          }
-        }
-      }
     }
     return;
   }
@@ -903,7 +909,7 @@ void Sweeper::multiOut(size_t tOut, const std::string& gidA) {
           auto j = subDE9IM.find(a.first);
           if (j == subDE9IM.end()) {
             subDE9IM[a.first] = a.second;
-          } else if (_subSizes.find(a.first) != _subSizes.end()) {
+          } else if (isMulti(a.first)) {
             j->second.elementwiseMax(a.second);
           } else {
             j->second.uniteRowGeoms(a.second);
@@ -913,20 +919,10 @@ void Sweeper::multiOut(size_t tOut, const std::string& gidA) {
       }
     }
 
-    for (size_t t = 0; t < _cfg.numThreads + 1; t++) {
-      std::unique_lock<std::mutex> lock(_mutsDE9IM[t]);
-      for (const auto& a : subDE9IM) {
-        auto j = _subDE9IM[t].find(a.first);
-        if (j != _subDE9IM[t].end()) {
-          auto k = j->second.find(gidA);
-          if (k != j->second.end()) {
-            j->second.erase(gidA);
-          }
-        }
-      }
-    }
-
     for (const auto& a : subDE9IM) {
+      // avoid double writing of de9im matrix
+      if (isMulti(a.first) && a.first < gidA) continue;
+
       writeRel(tOut, gidA, a.first, "\t" + a.second.toString() + "\t");
       _relStats[tOut].de9im++;
       writeRel(tOut, a.first, gidA,
@@ -2541,21 +2537,7 @@ void Sweeper::writeDE9IM(size_t t, const std::string& a, size_t aSub,
                          const std::string& b, size_t bSub,
                          util::geo::DE9IMatrix de9im) {
   if (a != b) {
-    if (aSub > 0 && bSub == 0 && de9im.covers()) {
-      // no need to lock and track the multigeometry here, we can directly
-      // write that a contains b
-      writeRel(t, a, b, "\t" + de9im.toString() + "\t");
-      _relStats[t].de9im++;
-      writeRel(t, b, a, "\t" + de9im.transpose().toString() + "\t");
-      _relStats[t].de9im++;
-    } else if (bSub > 0 && aSub == 0 && de9im.transpose().covers()) {
-      // no need to lock and track the multigeometry here, we can directly
-      // write that b contains a
-      writeRel(t, a, b, "\t" + de9im.toString() + "\t");
-      _relStats[t].de9im++;
-      writeRel(t, b, a, "\t" + de9im.transpose().toString() + "\t");
-      _relStats[t].de9im++;
-    } else if ((bSub > 0 || aSub > 0)) {
+    if ((bSub > 0 || aSub > 0)) {
       std::unique_lock<std::mutex> lock(_mutsDE9IM[t]);
       if (bSub > 0) {
         auto& m = _subDE9IM[t][b];
@@ -2620,12 +2602,26 @@ void Sweeper::writeDist(size_t t, const std::string& a, size_t aSub,
   if (a != b) {
     if (bSub > 0 || aSub > 0) {
       std::unique_lock<std::mutex> lock(_mutsDistance[t]);
-      if (bSub > 0 && (_subDistance[t][b].find(a) == _subDistance[t][b].end() ||
-                       _subDistance[t][b][a] > dist))
-        _subDistance[t][b][a] = dist;
-      if (aSub > 0 && (_subDistance[t][a].find(b) == _subDistance[t][a].end() ||
-                       _subDistance[t][a][b] > dist))
-        _subDistance[t][a][b] = dist;
+      auto& subDistance = _subDistance[t];
+
+      if (bSub > 0) {
+        auto& m = subDistance[b];
+        auto i = m.lower_bound(a);
+        if (i == m.end() || i->first != a) {
+          m.emplace_hint(i, a, dist);
+        } else if (dist < i->second) {
+          i->second = dist;
+        }
+      }
+      if (aSub > 0) {
+        auto& m = subDistance[a];
+        auto i = m.lower_bound(b);
+        if (i == m.end() || i->first != b) {
+          m.emplace_hint(i, b, dist);
+        } else if (dist < i->second) {
+          i->second = dist;
+        }
+      }
     } else {
       const auto& dStr =
           util::formatFloat(euclidean ? dist / PREC : dist, 4);
@@ -4359,16 +4355,8 @@ double Sweeper::localSearchPadding(double euclideanDistanceUpperBound,
 
   double factorNew2 = max / min;
 
-  double minEuclideanXDist = util::geo::dist(
-      LineSegment<int32_t>{I32Point{boxA.getLowerLeft().getX(), 0},
-                           I32Point{boxA.getUpperRight().getX(), 0}},
-      LineSegment<int32_t>{I32Point{boxB.getLowerLeft().getX(), 0},
-                           I32Point{boxB.getUpperRight().getX(), 0}});
-  double minEuclideanYDist = util::geo::dist(
-      LineSegment<int32_t>{I32Point{0, boxA.getLowerLeft().getY()},
-                           I32Point{0, boxA.getUpperRight().getY()}},
-      LineSegment<int32_t>{I32Point{0, boxB.getLowerLeft().getY()},
-                           I32Point{0, boxB.getUpperRight().getY()}});
+  double minEuclideanXDist = util::geo::distX(boxA, boxB);
+  double minEuclideanYDist = util::geo::distY(boxA, boxB);
 
   double padding = factorNew2 * euclideanDistanceUpperBound;
   auto xPadding = (sqrt(std::max(
@@ -4441,10 +4429,10 @@ double Sweeper::euclideanDist(const I32Point& p1, const I32Point& p2, double) {
 // _____________________________________________________________________________
 double Sweeper::meterDist(const I32Point& p1, const I32Point& p2,
                           double maxDist) {
-  auto fp1 = FPoint{static_cast<float>((p1.getX() * 1.0) / (PREC * 1.0)),
-                    static_cast<float>((p1.getY() * 1.0) / (PREC * 1.0))};
-  auto fp2 = FPoint{static_cast<float>((p2.getX() * 1.0) / (PREC * 1.0)),
-                    static_cast<float>((p2.getY() * 1.0) / (PREC * 1.0))};
+  auto fp1 = DPoint{(p1.getX() * 1.0) / (PREC * 1.0),
+                    (p1.getY() * 1.0) / (PREC * 1.0)};
+  auto fp2 = DPoint{(p2.getX() * 1.0) / (PREC * 1.0),
+                    (p2.getY() * 1.0) / (PREC * 1.0)};
 
   double dX = fp2.getX() - fp1.getX();
   double dY = fp2.getY() - fp1.getY();
@@ -5223,16 +5211,14 @@ double Sweeper::getMaxMultiDist(const std::string& idA, size_t aSub,
   double maxD = euclidean ? _cfg.withinDist * PREC : _cfg.withinDist;
   // for multigeometries, we may already have a minimum distance above which we
   // are not required to search
+  if (aSub == 0 && bSub == 0) return maxD;
+
   if (aSub > 0) {
     double d =
         euclidean
             ? Sweeper::euclideanDist(_multiRightPoint[idA], leftBPoint, maxD)
             : Sweeper::meterDist(_multiRightPoint[idA], leftBPoint, maxD);
     maxD = std::min(maxD, d);
-    std::unique_lock<std::mutex> lock(_mutsDistance[t]);
-    if (_subDistance[t][idA].find(idB) != _subDistance[t][idA].end()) {
-      maxD = std::min(maxD, _subDistance[t][idA][idB]);
-    }
   }
   if (bSub > 0) {
     double d =
@@ -5240,9 +5226,23 @@ double Sweeper::getMaxMultiDist(const std::string& idA, size_t aSub,
             ? Sweeper::euclideanDist(_multiRightPoint[idB], leftAPoint, maxD)
             : Sweeper::meterDist(_multiRightPoint[idB], leftAPoint, maxD);
     maxD = std::min(maxD, d);
-    std::unique_lock<std::mutex> lock(_mutsDistance[t]);
-    if (_subDistance[t][idB].find(idA) != _subDistance[t][idB].end()) {
-      maxD = std::min(maxD, _subDistance[t][idB][idA]);
+  }
+
+  std::unique_lock<std::mutex> lock(_mutsDistance[t]);
+  const auto& subDistance = _subDistance[t];
+
+  if (aSub > 0) {
+    auto i = subDistance.find(idA);
+    if (i != subDistance.end()) {
+      auto j = i->second.find(idB);
+      if (j != i->second.end()) maxD = std::min(maxD, j->second);
+    }
+  }
+  if (bSub > 0) {
+    auto i = subDistance.find(idB);
+    if (i != subDistance.end()) {
+      auto j = i->second.find(idA);
+      if (j != i->second.end()) maxD = std::min(maxD, j->second);
     }
   }
 

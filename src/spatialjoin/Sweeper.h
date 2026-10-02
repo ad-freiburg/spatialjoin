@@ -439,6 +439,10 @@ class Sweeper {
   std::vector<std::map<std::string, std::set<std::string>>> _subNotOverlaps;
   std::map<std::string, size_t> _subSizes;
 
+  bool isMulti(const std::string& id) const {
+    return _subSizes.find(id) != _subSizes.end();
+  }
+
   std::set<size_t> _activeMultis[2];
   std::vector<std::string> _multiIds[2];
   std::vector<int32_t> _multiRightX[2];
