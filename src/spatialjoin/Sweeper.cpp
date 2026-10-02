@@ -115,16 +115,32 @@ void Sweeper::multiOut(size_t tOut, const std::string& gidA) {
   if (_cfg.withinDist >= 0) {
     std::map<std::string, double> subDistance;
     for (size_t t = 0; t < _cfg.numThreads + 1; t++) {
-      std::unique_lock<std::mutex> lock(_mutsDistance[t]);
-      auto i = _subDistance[t].find(gidA);
-      if (i != _subDistance[t].end()) {
-        for (const auto& a : i->second) {
-          if (subDistance.find(a.first) == subDistance.end())
-            subDistance[a.first] = a.second;
-          else if (subDistance[a.first] > a.second)
-            subDistance[a.first] = a.second;
-        }
+      std::map<std::string, double> cur;
+      {
+        std::unique_lock<std::mutex> lock(_mutsDistance[t]);
+        auto i = _subDistance[t].find(gidA);
+        if (i == _subDistance[t].end()) continue;
+
+        // swap i->second into cur, is deleted anyhow, and free
+        // the lock immediately after
+        cur.swap(i->second);
         _subDistance[t].erase(i);
+      }
+
+      if (subDistance.empty()) {
+        subDistance.swap(cur);
+        continue;
+      }
+
+      // merge the maps to get smallest distances acrsoss multigeoms
+      auto it = subDistance.begin();
+      for (const auto& a : cur) {
+        while (it != subDistance.end() && it->first < a.first) it++;
+        if (it != subDistance.end() && it->first == a.first) {
+          if (a.second < it->second) it->second = a.second;
+        } else {
+          it = subDistance.emplace_hint(it, a.first, a.second);
+        }
       }
     }
 
@@ -966,12 +982,26 @@ void Sweeper::writeDist(size_t t, const std::string& a, size_t aSub,
   if (a != b && !(selfExp && (b < a || (b == a && bSub < aSub)))) {
     if (bSub > 0 || aSub > 0) {
       std::unique_lock<std::mutex> lock(_mutsDistance[t]);
-      if (bSub > 0 && (_subDistance[t][b].find(a) == _subDistance[t][b].end() ||
-                       _subDistance[t][b][a] > dist))
-        _subDistance[t][b][a] = dist;
-      if (aSub > 0 && (_subDistance[t][a].find(b) == _subDistance[t][a].end() ||
-                       _subDistance[t][a][b] > dist))
-        _subDistance[t][a][b] = dist;
+      auto& subDistance = _subDistance[t];
+
+      if (bSub > 0) {
+        auto& m = subDistance[b];
+        auto i = m.lower_bound(a);
+        if (i == m.end() || i->first != a) {
+          m.emplace_hint(i, a, dist);
+        } else if (dist < i->second) {
+          i->second = dist;
+        }
+      }
+      if (aSub > 0) {
+        auto& m = subDistance[a];
+        auto i = m.lower_bound(b);
+        if (i == m.end() || i->first != b) {
+          m.emplace_hint(i, b, dist);
+        } else if (dist < i->second) {
+          i->second = dist;
+        }
+      }
     } else {
       const auto& dStr =
           util::formatFloat(euclidean ? dist / PREC : dist, 4);
@@ -3312,16 +3342,14 @@ double Sweeper::getMaxMultiDist(const std::string& idA, size_t aSub,
   double maxD = euclidean ? _cfg.withinDist * PREC : _cfg.withinDist;
   // for multigeometries, we may already have a minimum distance above which we
   // are not required to search
+  if (aSub == 0 && bSub == 0) return maxD;
+
   if (aSub > 0) {
     const auto& rightPointA = _cacheManager->multiRightPoint(idA);
     double d = euclidean
                    ? Sweeper::euclideanDist(rightPointA, leftBPoint, maxD)
                    : Sweeper::meterDist(rightPointA, leftBPoint, maxD);
     maxD = std::min(maxD, d);
-    std::unique_lock<std::mutex> lock(_mutsDistance[t]);
-    if (_subDistance[t][idA].find(idB) != _subDistance[t][idA].end()) {
-      maxD = std::min(maxD, _subDistance[t][idA][idB]);
-    }
   }
   if (bSub > 0) {
     const auto& rightPointB = _cacheManager->multiRightPoint(idB);
@@ -3329,9 +3357,23 @@ double Sweeper::getMaxMultiDist(const std::string& idA, size_t aSub,
                    ? Sweeper::euclideanDist(rightPointB, leftAPoint, maxD)
                    : Sweeper::meterDist(rightPointB, leftAPoint, maxD);
     maxD = std::min(maxD, d);
-    std::unique_lock<std::mutex> lock(_mutsDistance[t]);
-    if (_subDistance[t][idB].find(idA) != _subDistance[t][idB].end()) {
-      maxD = std::min(maxD, _subDistance[t][idB][idA]);
+  }
+
+  std::unique_lock<std::mutex> lock(_mutsDistance[t]);
+  const auto& subDistance = _subDistance[t];
+
+  if (aSub > 0) {
+    auto i = subDistance.find(idA);
+    if (i != subDistance.end()) {
+      auto j = i->second.find(idB);
+      if (j != i->second.end()) maxD = std::min(maxD, j->second);
+    }
+  }
+  if (bSub > 0) {
+    auto i = subDistance.find(idB);
+    if (i != subDistance.end()) {
+      auto j = i->second.find(idA);
+      if (j != i->second.end()) maxD = std::min(maxD, j->second);
     }
   }
 
