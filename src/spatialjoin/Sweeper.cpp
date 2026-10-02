@@ -850,6 +850,7 @@ void Sweeper::clearMultis(bool force) {
 
 // _____________________________________________________________________________
 void Sweeper::multiOut(size_t tOut, const std::string& gidA) {
+  const bool euclidean = _cfg.euclideanDist && !_cfg.haversineApprox;
   // collect dist, if requested
   if (_cfg.withinDist >= 0) {
     std::map<std::string, double> subDistance;
@@ -868,7 +869,8 @@ void Sweeper::multiOut(size_t tOut, const std::string& gidA) {
     }
 
     for (const auto& a : subDistance) {
-      const auto& dStr = util::formatFloat(a.second, 4);
+      const auto& dStr =
+          util::formatFloat(euclidean ? a.second / PREC : a.second, 4);
       writeRel(tOut, gidA, a.first, "\t" + dStr + "\t");
       writeRel(tOut, a.first, gidA, "\t" + dStr + "\t");
     }
@@ -2614,6 +2616,7 @@ void Sweeper::writeDE9IM(size_t t, const std::string& a, size_t aSub,
 // ____________________________________________________________________________
 void Sweeper::writeDist(size_t t, const std::string& a, size_t aSub,
                         const std::string& b, size_t bSub, double dist) {
+  const bool euclidean = _cfg.euclideanDist && !_cfg.haversineApprox;
   if (a != b) {
     if (bSub > 0 || aSub > 0) {
       std::unique_lock<std::mutex> lock(_mutsDistance[t]);
@@ -2624,7 +2627,8 @@ void Sweeper::writeDist(size_t t, const std::string& a, size_t aSub,
                        _subDistance[t][a][b] > dist))
         _subDistance[t][a][b] = dist;
     } else {
-      const auto& dStr = util::formatFloat(dist, 4);
+      const auto& dStr =
+          util::formatFloat(euclidean ? dist / PREC : dist, 4);
       writeRel(t, a, b, "\t" + dStr + "\t");
       writeRel(t, b, a, "\t" + dStr + "\t");
     }
@@ -2968,6 +2972,8 @@ void Sweeper::doDE9IMCheck(const JobVal cur, const JobVal sv, size_t t) {
 
 // ____________________________________________________________________________
 void Sweeper::doDistCheck(const JobVal cur, const JobVal sv, size_t t) {
+  const bool euclidean = _cfg.euclideanDist && !_cfg.haversineApprox;
+  double maxD = euclidean ? _cfg.withinDist * PREC : _cfg.withinDist;
   _checks[t]++;
   _curX[t] = cur.val;
 
@@ -2985,9 +2991,10 @@ void Sweeper::doDistCheck(const JobVal cur, const JobVal sv, size_t t) {
     auto p1 = cur.point;
     auto p2 = sv.point;
 
-    auto dist = meterDist(p1, p2, _cfg.withinDist);
+    auto dist = euclidean ? euclideanDist(p1, p2, maxD)
+                           : meterDist(p1, p2, maxD);
 
-    if (dist <= _cfg.withinDist) {
+    if (dist <= maxD) {
       auto a = getPoint(cur.id, cur.type, cur.large ? -1 : t);
       auto b = getPoint(sv.id, sv.type, sv.large ? -1 : t);
 
@@ -3004,7 +3011,7 @@ void Sweeper::doDistCheck(const JobVal cur, const JobVal sv, size_t t) {
 
     double dist = distCheck(p, b.get(), a.get(), t);
 
-    if (dist <= _cfg.withinDist) {
+    if (dist <= maxD) {
       writeDist(t, a->id, a->subId, b->id, b->subId, dist);
     }
   } else if (isArea(cur.type) && isPoint(sv.type)) {
@@ -3015,7 +3022,7 @@ void Sweeper::doDistCheck(const JobVal cur, const JobVal sv, size_t t) {
 
     double dist = distCheck(p, b.get(), a.get(), t);
 
-    if (dist <= _cfg.withinDist) {
+    if (dist <= maxD) {
       writeDist(t, a->id, a->subId, b->id, b->subId, dist);
     }
   } else if (isLine(cur.type) && isPoint(sv.type)) {
@@ -3026,7 +3033,7 @@ void Sweeper::doDistCheck(const JobVal cur, const JobVal sv, size_t t) {
     if (isSimpleLine(cur.type)) {
       dist = distCheck(p, {cur.point, cur.point2}, t);
 
-      if (dist <= _cfg.withinDist) {
+      if (dist <= maxD) {
         auto a = getPoint(sv.id, sv.type, sv.large ? -1 : t);
         auto b = getSimpleLine(cur, cur.large ? -1 : t);
         writeDist(t, a->id, a->subId, b->id, 0, dist);
@@ -3036,7 +3043,7 @@ void Sweeper::doDistCheck(const JobVal cur, const JobVal sv, size_t t) {
       auto a = getPoint(sv.id, sv.type, sv.large ? -1 : t);
       dist = distCheck(p, a.get(), b.get(), t);
 
-      if (dist <= _cfg.withinDist) {
+      if (dist <= maxD) {
         writeDist(t, a->id, a->subId, b->id, b->subId, dist);
       }
     }
@@ -3048,7 +3055,7 @@ void Sweeper::doDistCheck(const JobVal cur, const JobVal sv, size_t t) {
     if (isSimpleLine(sv.type)) {
       dist = distCheck(p, {sv.point, sv.point2}, t);
 
-      if (dist <= _cfg.withinDist) {
+      if (dist <= maxD) {
         auto a = getPoint(cur.id, cur.type, cur.large ? -1 : t);
         auto b = getSimpleLine(sv, sv.large ? -1 : t);
         writeDist(t, a->id, a->subId, b->id, 0, dist);
@@ -3059,7 +3066,7 @@ void Sweeper::doDistCheck(const JobVal cur, const JobVal sv, size_t t) {
 
       dist = distCheck(p, a.get(), b.get(), t);
 
-      if (dist <= _cfg.withinDist) {
+      if (dist <= maxD) {
         writeDist(t, a->id, a->subId, b->id, b->subId, dist);
       }
     }
@@ -3072,13 +3079,13 @@ void Sweeper::doDistCheck(const JobVal cur, const JobVal sv, size_t t) {
 
     auto dist = distCheck(a.get(), b.get(), t);
 
-    if (dist <= _cfg.withinDist) {
+    if (dist <= maxD) {
       writeDist(t, a->id, a->subId, b->id, b->subId, dist);
     }
   } else if (isSimpleLine(sv.type) && isSimpleLine(cur.type)) {
     auto dist = distCheck({sv.point, sv.point2}, {cur.point, cur.point2}, t);
 
-    if (dist <= _cfg.withinDist) {
+    if (dist <= maxD) {
       auto a = getSimpleLine(sv, sv.large ? -1 : t);
       auto b = getSimpleLine(cur, cur.large ? -1 : t);
       writeDist(t, a->id, 0, b->id, 0, dist);
@@ -3088,7 +3095,7 @@ void Sweeper::doDistCheck(const JobVal cur, const JobVal sv, size_t t) {
     auto b = _lineCache.get(cur.id, cur.large ? -1 : t);
     auto dist = distCheck({sv.point, sv.point2}, b.get(), t);
 
-    if (dist <= _cfg.withinDist) {
+    if (dist <= maxD) {
       writeDist(t, a->id, 0, b->id, b->subId, dist);
     }
   } else if (sv.type == LINE && isSimpleLine(cur.type)) {
@@ -3096,7 +3103,7 @@ void Sweeper::doDistCheck(const JobVal cur, const JobVal sv, size_t t) {
 
     auto dist = distCheck({cur.point, cur.point2}, a.get(), t);
 
-    if (dist <= _cfg.withinDist) {
+    if (dist <= maxD) {
       auto b = getSimpleLine(cur, cur.large ? -1 : t);
       writeDist(t, a->id, a->subId, b->id, 0, dist);
     }
@@ -3109,7 +3116,7 @@ void Sweeper::doDistCheck(const JobVal cur, const JobVal sv, size_t t) {
 
     auto dist = distCheck(a.get(), b.get(), t);
 
-    if (dist <= _cfg.withinDist) {
+    if (dist <= maxD) {
       writeDist(t, a->id, a->subId, b->id, b->subId, dist);
     }
   } else if (sv.type == LINE && isArea(cur.type)) {
@@ -3122,7 +3129,7 @@ void Sweeper::doDistCheck(const JobVal cur, const JobVal sv, size_t t) {
 
     auto dist = distCheck(a.get(), b.get(), t);
 
-    if (dist <= _cfg.withinDist) {
+    if (dist <= maxD) {
       writeDist(t, a->id, a->subId, b->id, b->subId, dist);
     }
   } else if (isArea(sv.type) && cur.type == LINE) {
@@ -3135,7 +3142,7 @@ void Sweeper::doDistCheck(const JobVal cur, const JobVal sv, size_t t) {
 
     auto dist = distCheck(b.get(), a.get(), t);
 
-    if (dist <= _cfg.withinDist) {
+    if (dist <= maxD) {
       writeDist(t, a->id, a->subId, b->id, b->subId, dist);
     }
   } else if (isSimpleLine(sv.type) && isArea(cur.type)) {
@@ -3143,7 +3150,7 @@ void Sweeper::doDistCheck(const JobVal cur, const JobVal sv, size_t t) {
 
     auto dist = distCheck({sv.point, sv.point2}, b.get(), t);
 
-    if (dist <= _cfg.withinDist) {
+    if (dist <= maxD) {
       auto a = getSimpleLine(sv, sv.large ? -1 : t);
       writeDist(t, a->id, 0, b->id, b->subId, dist);
     }
@@ -3152,7 +3159,7 @@ void Sweeper::doDistCheck(const JobVal cur, const JobVal sv, size_t t) {
 
     auto dist = distCheck({cur.point, cur.point2}, a.get(), t);
 
-    if (dist <= _cfg.withinDist) {
+    if (dist <= maxD) {
       auto b = getSimpleLine(cur, cur.large ? -1 : t);
       writeDist(t, a->id, a->subId, b->id, 0, dist);
     }
@@ -4418,8 +4425,17 @@ double Sweeper::getMaxScaleFactor(const I32Point& p) const {
 }
 
 // _____________________________________________________________________________
+const util::geo::DistFunc<int32_t> Sweeper::EUCLIDEAN_DIST_FUNC{
+    &Sweeper::euclideanDist, true};
+
+// _____________________________________________________________________________
+const util::geo::DistFunc<int32_t> Sweeper::METER_DIST_FUNC{&Sweeper::meterDist,
+                                                            false};
+
+// _____________________________________________________________________________
 double Sweeper::euclideanDist(const I32Point& p1, const I32Point& p2, double) {
-  return util::geo::dist(p1, p2) / PREC;
+  // in raw coordinate units, the maximum distance is then withinDist * PREC
+  return util::geo::dist(p1, p2);
 }
 
 // _____________________________________________________________________________
@@ -4463,6 +4479,8 @@ bool Sweeper::tooFarForWithinDist(const I32Box& aBox, const BoxIdList& aIds,
 // _____________________________________________________________________________
 double Sweeper::distCheck(const I32Point& a, const Point* aMeta, const Area* b,
                           size_t t) {
+  const bool euclidean = _cfg.euclideanDist && !_cfg.haversineApprox;
+  double maxD = euclidean ? _cfg.withinDist * PREC : _cfg.withinDist;
   bool noSharedBox = false;
   if (_cfg.useBoxIds) {
     auto ts = TIME();
@@ -4475,11 +4493,10 @@ double Sweeper::distCheck(const I32Point& a, const Point* aMeta, const Area* b,
   }
 
   auto ts = TIME();
-  double maxD = _cfg.withinDist;
   double dist = 0;
 
   if (_useGeos) {
-    double maxEuclideanDist = maxD * PREC;
+    double maxEuclideanDist = euclidean ? maxD : maxD * PREC;
 
     if (noSharedBox) {
       auto ts = TIME();
@@ -4489,22 +4506,22 @@ double Sweeper::distCheck(const I32Point& a, const Point* aMeta, const Area* b,
                                b->geosGeom.getGEOSGeom()),
           b->boxIds, maxEuclideanDist);
       _stats[t].timeBoxIdIsectAreaPoint += TOOK(ts);
-      if (tooFar) return _cfg.withinDist + 1;
+      if (tooFar) return maxD + 1;
     }
 
     GEOSDistanceWithin_r(_GEOScontextHandles[t], a, b->geosGeom,
                          maxEuclideanDist, &dist);
-    dist = dist / PREC;
+    if (!euclidean) dist = dist / PREC;
   } else {
     maxD = std::min(maxD,
                     getMaxMultiDist(aMeta->id, aMeta->subId, a, b->id, b->subId,
                                     b->geom.getOuter().rawRing().front().p, t));
-    auto scale = _cfg.euclideanDist && !_cfg.haversineApprox
+    auto scale = euclidean
                      ? std::pair<double, double>{1, 1}
                      : getMinMaxLocalScaleFactors(util::geo::getBoundingBox(a),
                                                   b->geom.boundingBox(), maxD);
 
-    double maxEuclideanDist = maxD / scale.first * PREC;
+    double maxEuclideanDist = euclidean ? maxD : maxD / scale.first * PREC;
 
     if (noSharedBox) {
       auto ts = TIME();
@@ -4512,7 +4529,7 @@ double Sweeper::distCheck(const I32Point& a, const Point* aMeta, const Area* b,
           util::geo::getBoundingBox(a), {{1, 0}, {getBoxId(a), 0}},
           b->geom.boundingBox(), b->boxIds, maxEuclideanDist);
       _stats[t].timeBoxIdIsectAreaPoint += TOOK(ts);
-      if (tooFar) return _cfg.withinDist + 1;
+      if (tooFar) return maxD + 1;
     }
 
     dist = util::geo::withinDist<int32_t>(
@@ -4520,8 +4537,7 @@ double Sweeper::distCheck(const I32Point& a, const Point* aMeta, const Area* b,
         _cfg.euclideanDist ? &Sweeper::noSearchPadding
                            : &Sweeper::localSearchPadding,
         maxEuclideanDist,
-        _cfg.euclideanDist && !_cfg.haversineApprox ? &Sweeper::euclideanDist
-                                                    : &Sweeper::meterDist);
+        euclidean ? EUCLIDEAN_DIST_FUNC : METER_DIST_FUNC);
   }
   _stats[t].timeFullGeoCheckAreaPoint += TOOK(ts);
   _stats[t].fullGeoChecksAreaPoint++;
@@ -4610,6 +4626,8 @@ util::geo::DE9IMatrix Sweeper::DE9IMCheck(const I32Point& a, const Area* b,
 // _____________________________________________________________________________
 double Sweeper::distCheck(const I32Point& a, const Point* aMeta, const Line* b,
                           size_t t) {
+  const bool euclidean = _cfg.euclideanDist && !_cfg.haversineApprox;
+  double maxD = euclidean ? _cfg.withinDist * PREC : _cfg.withinDist;
   bool noSharedBox = false;
   if (_cfg.useBoxIds) {
     auto ts = TIME();
@@ -4619,11 +4637,10 @@ double Sweeper::distCheck(const I32Point& a, const Point* aMeta, const Line* b,
   }
 
   auto ts = TIME();
-  double maxD = _cfg.withinDist;
   double dist;
 
   if (_useGeos) {
-    double maxEuclideanDist = maxD * PREC;
+    double maxEuclideanDist = euclidean ? maxD : maxD * PREC;
 
     if (noSharedBox) {
       auto ts = TIME();
@@ -4633,23 +4650,23 @@ double Sweeper::distCheck(const I32Point& a, const Point* aMeta, const Line* b,
                                b->geosGeom.getGEOSGeom()),
           b->boxIds, maxEuclideanDist);
       _stats[t].timeBoxIdIsectLinePoint += TOOK(ts);
-      if (tooFar) return _cfg.withinDist + 1;
+      if (tooFar) return maxD + 1;
     }
 
     GEOSDistanceWithin_r(_GEOScontextHandles[t], a, b->geosGeom,
                          maxEuclideanDist, &dist);
-    dist = dist / PREC;
+    if (!euclidean) dist = dist / PREC;
   } else {
     maxD = std::min(maxD,
                     getMaxMultiDist(aMeta->id, aMeta->subId, a, b->id, b->subId,
                                     b->geom.rawLine().front().p, t));
 
-    auto scale = _cfg.euclideanDist && !_cfg.haversineApprox
+    auto scale = euclidean
                      ? std::pair<double, double>{1.0, 1.0}
                      : getMinMaxLocalScaleFactors(util::geo::getBoundingBox(a),
                                                   b->geom.boundingBox(), maxD);
 
-    double maxEuclideanDist = maxD / scale.first * PREC;
+    double maxEuclideanDist = euclidean ? maxD : maxD / scale.first * PREC;
 
     if (noSharedBox) {
       auto ts = TIME();
@@ -4657,7 +4674,7 @@ double Sweeper::distCheck(const I32Point& a, const Point* aMeta, const Line* b,
           util::geo::getBoundingBox(a), {{1, 0}, {getBoxId(a), 0}},
           b->geom.boundingBox(), b->boxIds, maxEuclideanDist);
       _stats[t].timeBoxIdIsectLinePoint += TOOK(ts);
-      if (tooFar) return _cfg.withinDist + 1;
+      if (tooFar) return maxD + 1;
     }
 
     dist = util::geo::withinDist<int32_t>(
@@ -4665,8 +4682,7 @@ double Sweeper::distCheck(const I32Point& a, const Point* aMeta, const Line* b,
         _cfg.euclideanDist ? &Sweeper::noSearchPadding
                            : &Sweeper::localSearchPadding,
         maxEuclideanDist,
-        _cfg.euclideanDist && !_cfg.haversineApprox ? &Sweeper::euclideanDist
-                                                    : &Sweeper::meterDist);
+        euclidean ? EUCLIDEAN_DIST_FUNC : METER_DIST_FUNC);
   }
 
   _stats[t].timeFullGeoCheckLinePoint += TOOK(ts);
@@ -4691,13 +4707,14 @@ util::geo::DE9IMatrix Sweeper::DE9IMCheck(const I32Point& a,
 // _____________________________________________________________________________
 double Sweeper::distCheck(const I32Point& a, const LineSegment<int32_t>& b,
                           size_t t) {
+  const bool euclidean = _cfg.euclideanDist && !_cfg.haversineApprox;
+  double maxD = euclidean ? _cfg.withinDist * PREC : _cfg.withinDist;
   auto ts = TIME();
 
   auto p2 = projectOn(b.first, a, b.second);
 
-  auto dist = _cfg.euclideanDist && !_cfg.haversineApprox
-                  ? Sweeper::euclideanDist(a, p2, _cfg.withinDist)
-                  : Sweeper::meterDist(a, p2, _cfg.withinDist);
+  auto dist = euclidean ? Sweeper::euclideanDist(a, p2, maxD)
+                         : Sweeper::meterDist(a, p2, maxD);
 
   _stats[t].timeFullGeoCheckLinePoint += TOOK(ts);
   _stats[t].fullGeoChecksLinePoint++;
@@ -4708,12 +4725,12 @@ double Sweeper::distCheck(const I32Point& a, const LineSegment<int32_t>& b,
 // _____________________________________________________________________________
 double Sweeper::distCheck(const LineSegment<int32_t>& a,
                           const LineSegment<int32_t>& b, size_t t) {
+  const bool euclidean = _cfg.euclideanDist && !_cfg.haversineApprox;
   auto ts = TIME();
 
   auto dist = util::geo::dist<int32_t>(
       a, b,
-      _cfg.euclideanDist && !_cfg.haversineApprox ? &Sweeper::euclideanDist
-                                                  : &Sweeper::meterDist);
+      euclidean ? EUCLIDEAN_DIST_FUNC : METER_DIST_FUNC);
 
   _stats[t].timeFullGeoCheckLineLine += TOOK(ts);
   _stats[t].fullGeoChecksLineLine++;
@@ -4724,6 +4741,8 @@ double Sweeper::distCheck(const LineSegment<int32_t>& a,
 // _____________________________________________________________________________
 double Sweeper::distCheck(const LineSegment<int32_t>& a, const Line* b,
                           size_t t) {
+  const bool euclidean = _cfg.euclideanDist && !_cfg.haversineApprox;
+  double maxD = euclidean ? _cfg.withinDist * PREC : _cfg.withinDist;
   auto ts = TIME();
 
   bool noSharedBox = false;
@@ -4734,11 +4753,10 @@ double Sweeper::distCheck(const LineSegment<int32_t>& a, const Line* b,
     noSharedBox = r.first + r.second == 0;
   }
 
-  double maxD = _cfg.withinDist;
   double dist;
 
   if (_useGeos) {
-    double maxEuclideanDist = maxD * PREC;
+    double maxEuclideanDist = euclidean ? maxD : maxD * PREC;
 
     if (noSharedBox) {
       auto ts = TIME();
@@ -4748,21 +4766,21 @@ double Sweeper::distCheck(const LineSegment<int32_t>& a, const Line* b,
                                b->geosGeom.getGEOSGeom()),
           b->boxIds, maxEuclideanDist);
       _stats[t].timeBoxIdIsectLineLine += TOOK(ts);
-      if (tooFar) return _cfg.withinDist + 1;
+      if (tooFar) return maxD + 1;
     }
 
     const auto& line = lineFromSimpleLine(a, t);
     GEOSDistanceWithin_r(_GEOScontextHandles[t], line.geosGeom, b->geosGeom,
                          maxEuclideanDist, &dist);
-    dist = dist / PREC;
+    if (!euclidean) dist = dist / PREC;
   } else {
-    auto scale = _cfg.euclideanDist && !_cfg.haversineApprox
+    auto scale = euclidean
                      ? std::pair<double, double>{1.0, 1.0}
                      : getMinMaxLocalScaleFactors(util::geo::getBoundingBox(a),
                                                   b->geom.boundingBox(),
-                                                  _cfg.withinDist);
+                                                  maxD);
 
-    double maxEuclideanDist = maxD / scale.first * PREC;
+    double maxEuclideanDist = euclidean ? maxD : maxD / scale.first * PREC;
 
     if (noSharedBox) {
       auto ts = TIME();
@@ -4770,16 +4788,15 @@ double Sweeper::distCheck(const LineSegment<int32_t>& a, const Line* b,
           util::geo::getBoundingBox(a), {{1, 0}, {getBoxId(a.first), 0}},
           b->geom.boundingBox(), b->boxIds, maxEuclideanDist);
       _stats[t].timeBoxIdIsectLineLine += TOOK(ts);
-      if (tooFar) return _cfg.withinDist + 1;
+      if (tooFar) return maxD + 1;
     }
 
     dist = util::geo::withinDist<int32_t>(
-        I32XSortedLine(a), b->geom, _cfg.withinDist,
+        I32XSortedLine(a), b->geom, maxD,
         _cfg.euclideanDist ? &Sweeper::noSearchPadding
                            : &Sweeper::localSearchPadding,
         maxEuclideanDist,
-        _cfg.euclideanDist && !_cfg.haversineApprox ? &Sweeper::euclideanDist
-                                                    : &Sweeper::meterDist);
+        euclidean ? EUCLIDEAN_DIST_FUNC : METER_DIST_FUNC);
   }
 
   _stats[t].timeFullGeoCheckAreaLine += TOOK(ts);
@@ -4790,6 +4807,8 @@ double Sweeper::distCheck(const LineSegment<int32_t>& a, const Line* b,
 
 // _____________________________________________________________________________
 double Sweeper::distCheck(const Line* a, const Line* b, size_t t) {
+  const bool euclidean = _cfg.euclideanDist && !_cfg.haversineApprox;
+  double maxD = euclidean ? _cfg.withinDist * PREC : _cfg.withinDist;
   auto ts = TIME();
   if (a == b) return 0;
 
@@ -4808,11 +4827,10 @@ double Sweeper::distCheck(const Line* a, const Line* b, size_t t) {
     noSharedBox = r.first + r.second == 0;
   }
 
-  double maxD = _cfg.withinDist;
   double dist;
 
   if (_useGeos) {
-    double maxEuclideanDist = maxD * PREC;
+    double maxEuclideanDist = euclidean ? maxD : maxD * PREC;
 
     if (noSharedBox) {
       auto ts = TIME();
@@ -4824,22 +4842,22 @@ double Sweeper::distCheck(const Line* a, const Line* b, size_t t) {
                                                    b->geosGeom.getGEOSGeom()),
                               b->boxIds, maxEuclideanDist);
       _stats[t].timeBoxIdIsectLineLine += TOOK(ts);
-      if (tooFar) return _cfg.withinDist + 1;
+      if (tooFar) return maxD + 1;
     }
 
     GEOSDistanceWithin_r(_GEOScontextHandles[t], a->geosGeom, b->geosGeom,
                          maxEuclideanDist, &dist);
-    dist = dist / PREC;
+    if (!euclidean) dist = dist / PREC;
   } else {
     maxD = std::min(
         maxD, getMaxMultiDist(a->id, a->subId, a->geom.rawLine().front().p,
                               b->id, b->subId, b->geom.rawLine().front().p, t));
 
-    auto scale = _cfg.euclideanDist && !_cfg.haversineApprox
+    auto scale = euclidean
                      ? std::pair<double, double>{1.0, 1.0}
                      : getMinMaxLocalScaleFactors(a->geom.boundingBox(),
                                                   b->geom.boundingBox(), maxD);
-    double maxEuclideanDist = maxD / scale.first * PREC;
+    double maxEuclideanDist = euclidean ? maxD : maxD / scale.first * PREC;
 
     if (noSharedBox) {
       auto ts = TIME();
@@ -4847,7 +4865,7 @@ double Sweeper::distCheck(const Line* a, const Line* b, size_t t) {
                                         b->geom.boundingBox(), b->boxIds,
                                         maxEuclideanDist);
       _stats[t].timeBoxIdIsectLineLine += TOOK(ts);
-      if (tooFar) return _cfg.withinDist + 1;
+      if (tooFar) return maxD + 1;
     }
 
     dist = util::geo::withinDist<int32_t>(
@@ -4855,8 +4873,7 @@ double Sweeper::distCheck(const Line* a, const Line* b, size_t t) {
         _cfg.euclideanDist ? &Sweeper::noSearchPadding
                            : &Sweeper::localSearchPadding,
         maxEuclideanDist,
-        _cfg.euclideanDist && !_cfg.haversineApprox ? &Sweeper::euclideanDist
-                                                    : &Sweeper::meterDist);
+        euclidean ? EUCLIDEAN_DIST_FUNC : METER_DIST_FUNC);
   }
   _stats[t].timeFullGeoCheckLineLine += TOOK(ts);
   _stats[t].fullGeoChecksLineLine++;
@@ -4867,6 +4884,8 @@ double Sweeper::distCheck(const Line* a, const Line* b, size_t t) {
 // _____________________________________________________________________________
 double Sweeper::distCheck(const LineSegment<int32_t>& a, const Area* b,
                           size_t t) {
+  const bool euclidean = _cfg.euclideanDist && !_cfg.haversineApprox;
+  double maxD = euclidean ? _cfg.withinDist * PREC : _cfg.withinDist;
   auto ts = TIME();
 
   bool noSharedBox = false;
@@ -4879,11 +4898,10 @@ double Sweeper::distCheck(const LineSegment<int32_t>& a, const Area* b,
     if (r.first) return 0;
   }
 
-  double maxD = _cfg.withinDist;
   double dist;
 
   if (_useGeos) {
-    double maxEuclideanDist = maxD * PREC;
+    double maxEuclideanDist = euclidean ? maxD : maxD * PREC;
 
     if (noSharedBox) {
       auto ts = TIME();
@@ -4893,21 +4911,21 @@ double Sweeper::distCheck(const LineSegment<int32_t>& a, const Area* b,
                                b->geosGeom.getGEOSGeom()),
           b->boxIds, maxEuclideanDist);
       _stats[t].timeBoxIdIsectAreaLine += TOOK(ts);
-      if (tooFar) return _cfg.withinDist + 1;
+      if (tooFar) return maxD + 1;
     }
 
     const auto& line = lineFromSimpleLine(a, t);
     GEOSDistanceWithin_r(_GEOScontextHandles[t], b->geosGeom, line.geosGeom,
                          maxEuclideanDist, &dist);
-    dist = dist / PREC;
+    if (!euclidean) dist = dist / PREC;
   } else {
-    auto scale = _cfg.euclideanDist && !_cfg.haversineApprox
+    auto scale = euclidean
                      ? std::pair<double, double>{1.0, 1.0}
                      : getMinMaxLocalScaleFactors(util::geo::getBoundingBox(a),
                                                   b->geom.boundingBox(),
-                                                  _cfg.withinDist);
+                                                  maxD);
 
-    double maxEuclideanDist = maxD / scale.first * PREC;
+    double maxEuclideanDist = euclidean ? maxD : maxD / scale.first * PREC;
 
     if (noSharedBox) {
       auto ts = TIME();
@@ -4915,16 +4933,15 @@ double Sweeper::distCheck(const LineSegment<int32_t>& a, const Area* b,
           util::geo::getBoundingBox(a), {{1, 0}, {getBoxId(a.first), 0}},
           b->geom.boundingBox(), b->boxIds, maxEuclideanDist);
       _stats[t].timeBoxIdIsectAreaLine += TOOK(ts);
-      if (tooFar) return _cfg.withinDist + 1;
+      if (tooFar) return maxD + 1;
     }
 
     dist = util::geo::withinDist<int32_t>(
-        I32XSortedLine(a), b->geom, _cfg.withinDist,
+        I32XSortedLine(a), b->geom, maxD,
         _cfg.euclideanDist ? &Sweeper::noSearchPadding
                            : &Sweeper::localSearchPadding,
         maxEuclideanDist,
-        _cfg.euclideanDist && !_cfg.haversineApprox ? &Sweeper::euclideanDist
-                                                    : &Sweeper::meterDist);
+        euclidean ? EUCLIDEAN_DIST_FUNC : METER_DIST_FUNC);
   }
 
   _stats[t].timeFullGeoCheckAreaLine += TOOK(ts);
@@ -4935,6 +4952,8 @@ double Sweeper::distCheck(const LineSegment<int32_t>& a, const Area* b,
 
 // _____________________________________________________________________________
 double Sweeper::distCheck(const Line* a, const Area* b, size_t t) {
+  const bool euclidean = _cfg.euclideanDist && !_cfg.haversineApprox;
+  double maxD = euclidean ? _cfg.withinDist * PREC : _cfg.withinDist;
   auto ts = TIME();
 
   bool noSharedBox = false;
@@ -4967,11 +4986,10 @@ double Sweeper::distCheck(const Line* a, const Area* b, size_t t) {
     }
   }
 
-  double maxD = _cfg.withinDist;
   double dist;
 
   if (_useGeos) {
-    double maxEuclideanDist = maxD * PREC;
+    double maxEuclideanDist = euclidean ? maxD : maxD * PREC;
 
     if (noSharedBox) {
       auto ts = TIME();
@@ -4983,23 +5001,23 @@ double Sweeper::distCheck(const Line* a, const Area* b, size_t t) {
                                                    b->geosGeom.getGEOSGeom()),
                               b->boxIds, maxEuclideanDist);
       _stats[t].timeBoxIdIsectAreaLine += TOOK(ts);
-      if (tooFar) return _cfg.withinDist + 1;
+      if (tooFar) return maxD + 1;
     }
 
     GEOSDistanceWithin_r(_GEOScontextHandles[t], b->geosGeom, a->geosGeom,
                          maxEuclideanDist, &dist);
-    dist = dist / PREC;
+    if (!euclidean) dist = dist / PREC;
   } else {
     maxD = std::min(
         maxD,
         getMaxMultiDist(a->id, a->subId, a->geom.rawLine().front().p, b->id,
                         b->subId, b->geom.getOuter().rawRing().front().p, t));
 
-    auto scale = _cfg.euclideanDist && !_cfg.haversineApprox
+    auto scale = euclidean
                      ? std::pair<double, double>{1.0, 1.0}
                      : getMinMaxLocalScaleFactors(a->geom.boundingBox(),
                                                   b->geom.boundingBox(), maxD);
-    double maxEuclideanDist = maxD / scale.first * PREC;
+    double maxEuclideanDist = euclidean ? maxD : maxD / scale.first * PREC;
 
     if (noSharedBox) {
       auto ts = TIME();
@@ -5007,7 +5025,7 @@ double Sweeper::distCheck(const Line* a, const Area* b, size_t t) {
                                         b->geom.boundingBox(), b->boxIds,
                                         maxEuclideanDist);
       _stats[t].timeBoxIdIsectAreaLine += TOOK(ts);
-      if (tooFar) return _cfg.withinDist + 1;
+      if (tooFar) return maxD + 1;
     }
 
     dist = util::geo::withinDist<int32_t>(
@@ -5015,8 +5033,7 @@ double Sweeper::distCheck(const Line* a, const Area* b, size_t t) {
         _cfg.euclideanDist ? &Sweeper::noSearchPadding
                            : &Sweeper::localSearchPadding,
         maxEuclideanDist,
-        _cfg.euclideanDist && !_cfg.haversineApprox ? &Sweeper::euclideanDist
-                                                    : &Sweeper::meterDist);
+        euclidean ? EUCLIDEAN_DIST_FUNC : METER_DIST_FUNC);
   }
 
   _stats[t].timeFullGeoCheckAreaLine += TOOK(ts);
@@ -5027,6 +5044,8 @@ double Sweeper::distCheck(const Line* a, const Area* b, size_t t) {
 
 // _____________________________________________________________________________
 double Sweeper::distCheck(const Area* a, const Area* b, size_t t) {
+  const bool euclidean = _cfg.euclideanDist && !_cfg.haversineApprox;
+  double maxD = euclidean ? _cfg.withinDist * PREC : _cfg.withinDist;
   auto ts = TIME();
 
   // cheap pointer equivalence check
@@ -5090,11 +5109,10 @@ double Sweeper::distCheck(const Area* a, const Area* b, size_t t) {
     }
   }
 
-  double maxD = _cfg.withinDist;
   double dist;
 
   if (_useGeos) {
-    double maxEuclideanDist = maxD * PREC;
+    double maxEuclideanDist = euclidean ? maxD : maxD * PREC;
 
     if (noSharedBox) {
       auto ts = TIME();
@@ -5106,23 +5124,23 @@ double Sweeper::distCheck(const Area* a, const Area* b, size_t t) {
                                                    b->geosGeom.getGEOSGeom()),
                               b->boxIds, maxEuclideanDist);
       _stats[t].timeBoxIdIsectAreaArea += TOOK(ts);
-      if (tooFar) return _cfg.withinDist + 1;
+      if (tooFar) return maxD + 1;
     }
 
     GEOSDistanceWithin_r(_GEOScontextHandles[t], a->geosGeom, b->geosGeom,
                          maxEuclideanDist, &dist);
-    dist = dist / PREC;
+    if (!euclidean) dist = dist / PREC;
   } else {
     maxD = std::min(
         maxD, getMaxMultiDist(
                   a->id, a->subId, a->geom.getOuter().rawRing().front().p,
                   b->id, b->subId, b->geom.getOuter().rawRing().front().p, t));
 
-    auto scale = _cfg.euclideanDist && !_cfg.haversineApprox
+    auto scale = euclidean
                      ? std::pair<double, double>{1.0, 1.0}
                      : getMinMaxLocalScaleFactors(a->geom.boundingBox(),
                                                   b->geom.boundingBox(), maxD);
-    double maxEuclideanDist = maxD / scale.first * PREC;
+    double maxEuclideanDist = euclidean ? maxD : maxD / scale.first * PREC;
 
     if (noSharedBox) {
       auto ts = TIME();
@@ -5130,7 +5148,7 @@ double Sweeper::distCheck(const Area* a, const Area* b, size_t t) {
                                         b->geom.boundingBox(), b->boxIds,
                                         maxEuclideanDist);
       _stats[t].timeBoxIdIsectAreaArea += TOOK(ts);
-      if (tooFar) return _cfg.withinDist + 1;
+      if (tooFar) return maxD + 1;
     }
 
     dist = util::geo::withinDist<int32_t>(
@@ -5138,8 +5156,7 @@ double Sweeper::distCheck(const Area* a, const Area* b, size_t t) {
         _cfg.euclideanDist ? &Sweeper::noSearchPadding
                            : &Sweeper::localSearchPadding,
         maxEuclideanDist,
-        _cfg.euclideanDist && !_cfg.haversineApprox ? &Sweeper::euclideanDist
-                                                    : &Sweeper::meterDist);
+        euclidean ? EUCLIDEAN_DIST_FUNC : METER_DIST_FUNC);
   }
   _stats[t].timeFullGeoCheckAreaArea += TOOK(ts);
   _stats[t].fullGeoChecksAreaArea++;
@@ -5202,12 +5219,13 @@ double Sweeper::getMaxMultiDist(const std::string& idA, size_t aSub,
                                 const I32Point& leftAPoint,
                                 const std::string& idB, size_t bSub,
                                 const I32Point& leftBPoint, size_t t) {
-  double maxD = _cfg.withinDist;
+  const bool euclidean = _cfg.euclideanDist && !_cfg.haversineApprox;
+  double maxD = euclidean ? _cfg.withinDist * PREC : _cfg.withinDist;
   // for multigeometries, we may already have a minimum distance above which we
   // are not required to search
   if (aSub > 0) {
     double d =
-        _cfg.euclideanDist && !_cfg.haversineApprox
+        euclidean
             ? Sweeper::euclideanDist(_multiRightPoint[idA], leftBPoint, maxD)
             : Sweeper::meterDist(_multiRightPoint[idA], leftBPoint, maxD);
     maxD = std::min(maxD, d);
@@ -5218,7 +5236,7 @@ double Sweeper::getMaxMultiDist(const std::string& idA, size_t aSub,
   }
   if (bSub > 0) {
     double d =
-        _cfg.euclideanDist && !_cfg.haversineApprox
+        euclidean
             ? Sweeper::euclideanDist(_multiRightPoint[idB], leftAPoint, maxD)
             : Sweeper::meterDist(_multiRightPoint[idB], leftAPoint, maxD);
     maxD = std::min(maxD, d);
