@@ -466,10 +466,10 @@ class GeometryCacheManager {
   // these are written during the geometry add phase
   std::vector<std::string> _multiIds[2];
   std::vector<int32_t> _multiRightX[2];
-  std::map<std::string, util::geo::I32Point> _multiRightPoint;
+  std::unordered_map<std::string, util::geo::I32Point> _multiRightPoint;
   std::vector<int32_t> _multiLeftX[2];
-  std::map<std::string, size_t> _multiGidToId[2];
-  std::map<std::string, size_t> _subSizes;
+  std::unordered_map<std::string, size_t> _multiGidToId[2];
+  std::unordered_map<std::string, size_t> _subSizes;
 
   std::string _cache;
 

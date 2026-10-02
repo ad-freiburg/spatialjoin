@@ -284,23 +284,32 @@ class Sweeper {
 
   mutable std::vector<Stats> _stats;
 
-  std::vector<std::map<std::string, std::map<std::string, double>>>
+  std::vector<std::unordered_map<std::string, std::map<std::string, double>>>
       _subDistance;
-  std::vector<
-      std::map<std::string, std::map<std::string, util::geo::DE9IMatrix>>>
+  std::vector<std::unordered_map<std::string,
+                                 std::map<std::string, util::geo::DE9IMatrix>>>
       _subDE9IM;
-  std::vector<std::map<std::string, std::map<std::string, std::set<size_t>>>>
+  std::vector<
+      std::unordered_map<std::string, std::map<std::string, std::set<size_t>>>>
       _subContains;
-  std::vector<std::map<std::string, std::map<std::string, std::set<size_t>>>>
+  std::vector<
+      std::unordered_map<std::string, std::map<std::string, std::set<size_t>>>>
       _subCovered;
-  std::vector<std::map<std::string, std::map<std::string, std::set<size_t>>>>
+  std::vector<
+      std::unordered_map<std::string, std::map<std::string, std::set<size_t>>>>
       _subEquals;
-  std::vector<std::map<std::string, std::set<std::string>>> _subTouches;
-  std::vector<std::map<std::string, std::set<std::string>>> _subNotTouches;
-  std::vector<std::map<std::string, std::set<std::string>>> _subCrosses;
-  std::vector<std::map<std::string, std::set<std::string>>> _subNotCrosses;
-  std::vector<std::map<std::string, std::set<std::string>>> _subOverlaps;
-  std::vector<std::map<std::string, std::set<std::string>>> _subNotOverlaps;
+  std::vector<std::unordered_map<std::string, std::set<std::string>>>
+      _subTouches;
+  std::vector<std::unordered_map<std::string, std::set<std::string>>>
+      _subNotTouches;
+  std::vector<std::unordered_map<std::string, std::set<std::string>>>
+      _subCrosses;
+  std::vector<std::unordered_map<std::string, std::set<std::string>>>
+      _subNotCrosses;
+  std::vector<std::unordered_map<std::string, std::set<std::string>>>
+      _subOverlaps;
+  std::vector<std::unordered_map<std::string, std::set<std::string>>>
+      _subNotOverlaps;
 
   std::set<size_t> _activeMultis[2];
 
