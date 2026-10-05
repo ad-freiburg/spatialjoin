@@ -899,21 +899,36 @@ void Sweeper::multiOut(size_t tOut, const std::string& gidA) {
     std::map<std::string, util::geo::DE9IMatrix> subDE9IM;
 
     for (size_t t = 0; t < _cfg.numThreads + 1; t++) {
-      std::unique_lock<std::mutex> lock(_mutsDE9IM[t]);
-      auto i = _subDE9IM[t].find(gidA);
-      if (i != _subDE9IM[t].end()) {
-        for (const auto& a : i->second) {
-          // aggregate over the parts of gidA, see writeDE9IM()
-          auto j = subDE9IM.find(a.first);
-          if (j == subDE9IM.end()) {
-            subDE9IM[a.first] = a.second;
-          } else if (isMulti(a.first)) {
-            j->second.elementwiseMax(a.second);
-          } else {
-            j->second.uniteRowGeoms(a.second);
-          }
-        }
+      std::map<std::string, util::geo::DE9IMatrix> cur;
+      {
+        std::unique_lock<std::mutex> lock(_mutsDE9IM[t]);
+        auto i = _subDE9IM[t].find(gidA);
+        if (i == _subDE9IM[t].end()) continue;
+
+        // swap i->second into cur, is deleted anyhow, and free
+        // the lock immediately after
+        cur.swap(i->second);
         _subDE9IM[t].erase(i);
+      }
+
+      if (subDE9IM.empty()) {
+        subDE9IM.swap(cur);
+        continue;
+      }
+
+      // aggregate over the parts of gidA, see writeDE9IM()
+      auto it = subDE9IM.begin();
+      for (const auto& a : cur) {
+        while (it != subDE9IM.end() && it->first < a.first) it++;
+        if (it != subDE9IM.end() && it->first == a.first) {
+          if (isMulti(a.first)) {
+            it->second.elementwiseMax(a.second);
+          } else {
+            it->second.uniteRowGeoms(a.second);
+          }
+        } else {
+          it = subDE9IM.emplace_hint(it, a.first, a.second);
+        }
       }
     }
 
@@ -2539,9 +2554,9 @@ void Sweeper::writeDE9IM(size_t t, const std::string& a, size_t aSub,
       std::unique_lock<std::mutex> lock(_mutsDE9IM[t]);
       if (bSub > 0) {
         auto& m = _subDE9IM[t][b];
-        auto i = m.find(a);
-        if (i == m.end()) {
-          m[a] = de9im.transpose();
+        auto i = m.lower_bound(a);
+        if (i == m.end() || i->first != a) {
+          m.emplace_hint(i, a, de9im.transpose());
         } else if (aSub > 0) {
           i->second.elementwiseMax(de9im.transpose());
         } else {
@@ -2550,9 +2565,9 @@ void Sweeper::writeDE9IM(size_t t, const std::string& a, size_t aSub,
       }
       if (aSub > 0) {
         auto& m = _subDE9IM[t][a];
-        auto i = m.find(b);
-        if (i == m.end()) {
-          m[b] = de9im;
+        auto i = m.lower_bound(b);
+        if (i == m.end() || i->first != b) {
+          m.emplace_hint(i, b, de9im);
         } else if (bSub > 0) {
           i->second.elementwiseMax(de9im);
         } else {
