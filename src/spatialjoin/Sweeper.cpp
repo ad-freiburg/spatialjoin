@@ -1985,7 +1985,7 @@ util::geo::DE9IMatrix Sweeper::DE9IMCheck(const Line* a, const Area* b,
           GEOSContains_r(_GEOScontextHandles[t], b->innerGeosGeom, a->geosGeom);
       _stats[t].timeInnerOuterCheckAreaLine += TOOK(ts);
       _stats[t].innerOuterChecksAreaLine++;
-      if (!contains) return util::geo::M1FF0FF212;
+      if (contains) return util::geo::M1FF0FF212;
     } else {
       auto ts = TIME();
       auto r = util::geo::intersectsContainsCovers(a->geom, b->inner);
@@ -2195,7 +2195,7 @@ util::geo::DE9IMatrix Sweeper::DE9IMCheck(const LineSegment<int32_t>& a,
                                      line.geosGeom);
       _stats[t].timeInnerOuterCheckAreaLine += TOOK(ts);
       _stats[t].innerOuterChecksAreaLine++;
-      if (!contains) return util::geo::M1FF0FF212;
+      if (contains) return util::geo::M1FF0FF212;
     } else {
       auto ts = TIME();
       auto r = util::geo::intersectsContainsCovers(I32XSortedLine(a), b->inner);
