@@ -150,7 +150,7 @@ def compute(args: argparse.Namespace):
                 executable="/bin/bash",
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.PIPE,
-                timeout=3600 * 30
+                timeout=3600 * 12
             )
         except subprocess.TimeoutExpired:
             print(f"{name}\tinf\tinf\tinf", flush=True)

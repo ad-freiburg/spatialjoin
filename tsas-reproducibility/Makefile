@@ -20,11 +20,13 @@ help:
 	@echo "  make eval-table5\n     compute results for Table 5 (dist heuristic effects on OURS)"
 	@echo "  make eval-table6\n     compute results for Table 6 (dist heuristic effects on GEOS)"
 	@echo "  make eval-table7\n     compute results for Table 7 (dist heuristic effects on GEOS-PREPARED)"
+	@echo "  make eval-table9\n     compute results for Table 9 (meter dist heuristic effects on OURS)"
 	@echo "  make eval-table2-<DATASET>\n     compute results for <DATASET> in Table 2"
 	@echo "  make eval-table3-<DATASET>\n     compute results for <DATASET> in Table 3"
 	@echo "  make eval-table8-ours-<DATASET>\n     compute results for <DATASET> and OURS in Table 8"
 	@echo "  make eval-table8-geos-<DATASET>\n     compute results for <DATASET> and GEOS in Table 8"
 	@echo "  make eval-table8-geos-prepared<DATASET>\n     compute results for <DATASET> and GEOS in Table 8"
+	@echo "  make eval-table9-<DATASET>\n     compute results for <DATASET> in Table 9"
 
 check:
 	@echo -n "Data dir for files:           "
@@ -111,11 +113,11 @@ Q%-OURS.spatialjoin-evaluation.tsv: $(DATA_DIR)/Q%-OURS.spatialjoin-input.tsv
 
 Q%-GEOS.spatialjoin-evaluation.tsv: $(DATA_DIR)/Q%-GEOS.spatialjoin-input.tsv
 	@echo "*** Evaluating dataset" Q$* "on GEOS"
-	@python3 $(SPATIALJOIN_EVAL_SCRIPT) Q$*-GEOS --combinations BdoI --core-library libgeos 2>&1 | tee Q$*-GEOS.spatialjoin-evaluation.tsv || echo "Run failed, see Q$*-GEOS.spatialjoin-evaluation.log for details"
+	@python3 $(SPATIALJOIN_EVAL_SCRIPT) Q$*-GEOS --combinations BDoi --core-library libgeos 2>&1 | tee Q$*-GEOS.spatialjoin-evaluation.tsv || echo "Run failed, see Q$*-GEOS.spatialjoin-evaluation.log for details"
 
 Q%-GEOS-PREPARED.spatialjoin-evaluation.tsv: $(DATA_DIR)/Q%-GEOS-PREPARED.spatialjoin-input.tsv
 	@echo "*** Evaluating dataset" Q$* "on GEOS PREPARED"
-	@python3 $(SPATIALJOIN_EVAL_SCRIPT) Q$*-GEOS-PREPARED --combinations BdoI --core-library libgeos-prepared 2>&1 | tee Q$*-GEOS-PREPARED.spatialjoin-evaluation.tsv || echo "Run failed, see Q$*-GEOS-PREPARED.spatialjoin-evaluation.log for details"
+	@python3 $(SPATIALJOIN_EVAL_SCRIPT) Q$*-GEOS-PREPARED --combinations BDoi --core-library libgeos-prepared 2>&1 | tee Q$*-GEOS-PREPARED.spatialjoin-evaluation.tsv || echo "Run failed, see Q$*-GEOS-PREPARED.spatialjoin-evaluation.log for details"
 
 eval-table2-%: %-OURS.spatialjoin-evaluation.tsv
 	@echo "*** Table 2 entries (OURS) on dataset" $*
@@ -163,11 +165,11 @@ eval-table8-ours-%: %-OURS.spatialjoin-evaluation.tsv
 
 eval-table8-geos-%: %-GEOS.spatialjoin-evaluation.tsv
 	@echo "*** Table 8 entries (GEOS) on dataset" $*
-	@python3 $(SPATIALJOIN_EVAL_SCRIPT) $*-GEOS --combinations BdoI --analyze total --core-library libgeos  --minutes
+	@python3 $(SPATIALJOIN_EVAL_SCRIPT) $*-GEOS --combinations BDoi --analyze total --core-library libgeos  --minutes
 
 eval-table8-geos-prepared-%: %-GEOS-PREPARED.spatialjoin-evaluation.tsv
 	@echo "*** Table 7 entries (GEOS-PREPARED) on dataset" $*
-	@python3 $(SPATIALJOIN_EVAL_SCRIPT) $*-GEOS-PREPARED --combinations BdoI --analyze total --core-library libgeos-prepared  --minutes
+	@python3 $(SPATIALJOIN_EVAL_SCRIPT) $*-GEOS-PREPARED --combinations BDoi --analyze total --core-library libgeos-prepared  --minutes
 
 eval-table2: eval-table2-FIN eval-table2-GER eval-table2-OHM eval-table2-OSM
 eval-table3: eval-table3-FIN eval-table3-GER eval-table3-OHM eval-table3-OSM
