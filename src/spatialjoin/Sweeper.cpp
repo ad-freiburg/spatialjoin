@@ -889,7 +889,12 @@ void Sweeper::multiOut(size_t tOut, const std::string& gidA) {
       auto i = _subDE9IM[t].find(gidA);
       if (i != _subDE9IM[t].end()) {
         for (const auto& a : i->second) {
-          subDE9IM[a.first] += a.second;
+          auto j = subDE9IM.find(a.first);
+          if (j == subDE9IM.end()) {
+            subDE9IM[a.first] = a.second;
+          } else {
+            j->second.uniteRowGeoms(a.second);
+          }
         }
         _subDE9IM[t].erase(i);
       }
@@ -1988,14 +1993,14 @@ void Sweeper::writeDE9IM(size_t t, const std::string& a, size_t aSub,
         if (_subDE9IM[t][b].find(a) == _subDE9IM[t][b].end()) {
           _subDE9IM[t][b][a] = de9im.transpose();
         } else {
-          _subDE9IM[t][b][a] += de9im.transpose();
+          _subDE9IM[t][b][a].uniteRowGeoms(de9im.transpose());
         }
       }
       if (aSub > 0) {
         if (_subDE9IM[t][a].find(b) == _subDE9IM[t][a].end()) {
           _subDE9IM[t][a][b] = de9im;
         } else {
-          _subDE9IM[t][a][b] += de9im;
+          _subDE9IM[t][a][b].uniteRowGeoms(de9im);
         }
       }
     } else {
