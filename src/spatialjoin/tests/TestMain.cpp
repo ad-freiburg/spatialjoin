@@ -25,11 +25,13 @@ size_t NUM_THREADS = 1;
 
 struct RunStats {
   size_t numReferences;
+  size_t numInvalid;
 };
 
 // _____________________________________________________________________________
 std::string fullRun(const std::string& file, sj::SweeperCfg cfg,
-                    RunStats* stats, double dupRemovalMinSize = 0) {
+                    RunStats* stats, double dupRemovalMinSize = 0,
+                    bool strict = false) {
   {
     sj::OutputWriter outWriter(cfg.numThreads, "$", "$\n", ".resTmp", ".");
     cfg.writeRelCb = [&outWriter](size_t t, const char* a, size_t an,
@@ -50,7 +52,7 @@ std::string fullRun(const std::string& file, sj::SweeperCfg cfg,
     int f = open(file.c_str(), O_RDONLY);
     TEST(f >= 0);
 
-    sj::WKTParser parser(&sweeper, 1);
+    sj::WKTParser parser(&sweeper, 1, strict);
 
     while ((len = read(f, buf, BUFF_SIZE)) > 0) {
       parser.parse(buf, len, 0);
@@ -64,6 +66,7 @@ std::string fullRun(const std::string& file, sj::SweeperCfg cfg,
     sweeper.sweep();
 
     stats->numReferences = sweeper.numReferences();
+    stats->numInvalid = parser.getNumInvalid();
 
     close(f);
   }
@@ -1130,6 +1133,32 @@ int main(int, char**) {
     TEST(res.find("$a intersects b$") != std::string::npos);
     TEST(res.find("$a contains b$") != std::string::npos);
     TEST(res.find("$a covers b$") != std::string::npos);
+  }
+
+  {
+    // strict parsing skips and counts invalid WKT, lenient parsing parses it
+    // partially (here: `c`, `d` and `e` as a point at (-5 -5))
+    std::ofstream ofs(".strictTmp");
+    ofs << "a\tPOLYGON((-10 -10, 10 -10, 10 10, -10 10, -10 -10))\n";
+    ofs << "b\tPOINT(-4e0 +4E-0)\n";
+    ofs << "c\tPOINT(-5 -5, 1 1)\n";
+    ofs << "d\tPOINT(-5 -5 foo)\n";
+    ofs << "e\tLINESTRING(-5 -5, 1 a)\n";
+    ofs << "f\tFOO(-5 -5)\n";
+    ofs.close();
+
+    RunStats stats;
+    auto res = fullRun(".strictTmp", all, &stats, 0, true);
+    TEST(stats.numInvalid, ==, 4);
+    TEST(res.find("$a contains b$") != std::string::npos);
+    TEST(res.find("$a contains c$") == std::string::npos);
+    TEST(res.find("$a contains d$") == std::string::npos);
+    TEST(res.find("$a contains e$") == std::string::npos);
+
+    res = fullRun(".strictTmp", all, &stats);
+    unlink(".strictTmp");
+    TEST(stats.numInvalid, ==, 0);
+    TEST(res.find("$a contains c$") != std::string::npos);
   }
 
   // distance
