@@ -190,9 +190,10 @@ class WKTParserBase {
   };
 
   // Parse a single WKT geometry (with an optional CRS IRI prefix) and add it to
-  // the sweeper under `id`. Unlike `parseLine`, there is no id, side or
-  // reference geometry handling. In strict mode, invalid WKT is skipped and
-  // counted in `_numInvalid`, instead of being parsed partially.
+  // the sweeper under `id` and `side`. Unlike `parseLine`, `c` is only the WKT:
+  // there is no tab-separated id or side prefix and no reference geometries.
+  // In strict mode, invalid WKT is skipped and counted in `_numInvalid`,
+  // instead of being parsed partially.
   void parseWKTGeometry(const char *c, const std::string &id, size_t t,
                         sj::WriteBatch &batch, bool side, bool strict) {
     using namespace util::geo;
