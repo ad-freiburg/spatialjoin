@@ -89,7 +89,7 @@ class WKTParserBase {
   util::geo::I32Box getBoundingBox() const { return _bbox; }
 
   // Number of geometries skipped because they were invalid or had an
-  // unsupported CRS in strict mode.
+  // unsupported CRS in strict mode. Only valid after `done()`.
   size_t getNumInvalid() const {
     size_t ret = 0;
     for (auto n : _numInvalid) ret += n;
@@ -151,11 +151,20 @@ class WKTParserBase {
     }
 
     const char *afterCrs;
-    getCRSType(c, &afterCrs);
+    auto crsType = getCRSType(c, &afterCrs);
 
-    if (lastC - afterCrs > 2 && *afterCrs == '<') {
+    // An unsupported CRS IRI also starts with '<', but is followed by WKT.
+    bool isRef = lastC - afterCrs > 2 && *afterCrs == '<' &&
+                 !(crsType == util::geo::CRSType::UNSUPPORTED &&
+                   getWKTType(afterCrs) != util::geo::WKTType::NONE);
+
+    if (isRef) {
       // handle reference geometries
       c = afterCrs;
+      if (strict && !strchr(c, '>')) {
+        _numInvalid[t]++;  // unterminated reference
+        return;
+      }
       const char *end = strchr(c, ',');
       size_t subId = 0;
       c += 1;
@@ -215,44 +224,56 @@ class WKTParserBase {
 
     // All parsing happens before anything is added to the sweeper, so on an
     // exception, nothing of this geometry has been added.
+    const char *end = nullptr;
+    // `checkWKTEnd(nullptr)` is a no-op, so trailing input is only rejected in
+    // strict mode.
+    const char **endr = strict ? &end : nullptr;
     try {
       if (wktType == util::geo::WKTType::POINT) {
         const auto &point =
-            pointFromWKTProj<int32_t>(c, 0, &projFunc, crsType, strict);
+            pointFromWKTProj<int32_t>(c, endr, &projFunc, crsType, strict);
+        checkWKTEnd(end);
         _bboxes[t] = util::geo::extendBox(_sweeper->add(point, id, side, batch),
                                           _bboxes[t]);
       } else if (wktType == util::geo::WKTType::MULTIPOINT) {
         const auto &mp =
-            multiPointFromWKTProj<int32_t>(c, 0, &projFunc, crsType, strict);
+            multiPointFromWKTProj<int32_t>(c, endr, &projFunc, crsType, strict);
+        checkWKTEnd(end);
         if (mp.size() != 0)
           _bboxes[t] = util::geo::extendBox(_sweeper->add(mp, id, side, batch),
                                             _bboxes[t]);
       } else if (wktType == util::geo::WKTType::LINESTRING) {
         const auto &line =
-            lineFromWKTProj<int32_t>(c, 0, &projFunc, crsType, strict);
+            lineFromWKTProj<int32_t>(c, endr, &projFunc, crsType, strict);
+        checkWKTEnd(end);
         if (line.size() > 1)
           _bboxes[t] = util::geo::extendBox(
               _sweeper->add(line, id, side, batch), _bboxes[t]);
       } else if (wktType == util::geo::WKTType::MULTILINESTRING) {
         const auto &ml =
-            multiLineFromWKTProj<int32_t>(c, 0, &projFunc, crsType, strict);
+            multiLineFromWKTProj<int32_t>(c, endr, &projFunc, crsType, strict);
+        checkWKTEnd(end);
         _bboxes[t] = util::geo::extendBox(_sweeper->add(ml, id, side, batch),
                                           _bboxes[t]);
       } else if (wktType == util::geo::WKTType::POLYGON) {
         const auto &poly =
-            polygonFromWKTProj<int32_t>(c, 0, &projFunc, crsType, strict);
+            polygonFromWKTProj<int32_t>(c, endr, &projFunc, crsType, strict);
+        checkWKTEnd(end);
         if (poly.getOuter().size() > 1)
           _bboxes[t] = util::geo::extendBox(
               _sweeper->add(poly, id, side, batch), _bboxes[t]);
       } else if (wktType == util::geo::WKTType::MULTIPOLYGON) {
         const auto &mp =
-            multiPolygonFromWKTProj<int32_t>(c, 0, &projFunc, crsType, strict);
+            multiPolygonFromWKTProj<int32_t>(c, endr, &projFunc, crsType,
+                                             strict);
+        checkWKTEnd(end);
         if (mp.size())
           _bboxes[t] = util::geo::extendBox(_sweeper->add(mp, id, side, batch),
                                             _bboxes[t]);
       } else if (wktType == util::geo::WKTType::COLLECTION) {
         const auto &col =
-            collectionFromWKTProj<int32_t>(c, 0, &projFunc, crsType, strict);
+            collectionFromWKTProj<int32_t>(c, endr, &projFunc, crsType, strict);
+        checkWKTEnd(end);
 
         size_t numGeoms = 0;
         for (const auto &a : col) {

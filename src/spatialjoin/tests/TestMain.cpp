@@ -1145,11 +1145,21 @@ int main(int, char**) {
     ofs << "d\tPOINT(-5 -5 foo)\n";
     ofs << "e\tLINESTRING(-5 -5, 1 a)\n";
     ofs << "f\tFOO(-5 -5)\n";
+    ofs << "g\tPOINT(-5 -5) foo\n";
+    ofs << "h\tPOINT(-5 -5))\n";
+    ofs << "u\t<http://www.opengis.net/def/crs/EPSG/0/3035> POINT(-5 -5)\n";
+    ofs << "http://www.opengis.net/def/crs/EPSG/0/3035\tPOINT(-5 -5)\n";
+    ofs << "x\t<b\n";
+    ofs << "r\t<b>\n";
     ofs.close();
 
     RunStats stats;
     auto res = fullRun(".strictTmp", all, &stats, 0, true);
-    TEST(stats.numInvalid, ==, 4);
+    TEST(stats.numInvalid, ==, 8);
+    TEST(res.find("$a contains g$") == std::string::npos);
+    TEST(res.find("$a contains h$") == std::string::npos);
+    TEST(res.find("$a contains u$") == std::string::npos);
+    TEST(res.find("$a contains r$") != std::string::npos);
     TEST(res.find("$a contains b$") != std::string::npos);
     TEST(res.find("$a contains c$") == std::string::npos);
     TEST(res.find("$a contains d$") == std::string::npos);
@@ -1159,6 +1169,8 @@ int main(int, char**) {
     unlink(".strictTmp");
     TEST(stats.numInvalid, ==, 0);
     TEST(res.find("$a contains c$") != std::string::npos);
+    TEST(res.find("$a contains g$") != std::string::npos);
+    TEST(res.find("$a contains u$") == std::string::npos);
   }
 
   // distance
