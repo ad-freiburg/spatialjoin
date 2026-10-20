@@ -72,6 +72,7 @@ class WKTParserBase {
         _jobs(1000),
         _thrds(numThreads),
         _bboxes(numThreads),
+        _numInvalid(numThreads),
         _cancelled(false){};
   ~WKTParserBase() {
     // graceful shutdown of all threads, should they be still running
@@ -86,6 +87,14 @@ class WKTParserBase {
   };
 
   util::geo::I32Box getBoundingBox() const { return _bbox; }
+
+  // Number of geometries skipped because they were invalid or had an
+  // unsupported CRS in strict mode. Only valid after `done()`.
+  size_t getNumInvalid() const {
+    size_t ret = 0;
+    for (auto n : _numInvalid) ret += n;
+    return ret;
+  }
 
   void done() {
     if (_curBatch.size()) {
@@ -112,7 +121,8 @@ class WKTParserBase {
 
  protected:
   void parseLine(const char *c, size_t len, size_t gid, size_t t,
-                 sj::WriteBatch &batch, bool side, bool useIdEnhance) {
+                 sj::WriteBatch &batch, bool side, bool useIdEnhance,
+                 bool strict = false) {
     using namespace util::geo;
 
     const char *lastC = c + len;
@@ -140,10 +150,21 @@ class WKTParserBase {
       c = idp + 1;
     }
 
-    auto crsType = getCRSType(c, &c);
+    const char *afterCrs;
+    auto crsType = getCRSType(c, &afterCrs);
 
-    if (lastC - c > 2 && *c == '<') {
+    // An unsupported CRS IRI also starts with '<', but is followed by WKT.
+    bool isRef = lastC - afterCrs > 2 && *afterCrs == '<' &&
+                 !(crsType == util::geo::CRSType::UNSUPPORTED &&
+                   getWKTType(afterCrs) != util::geo::WKTType::NONE);
+
+    if (isRef) {
       // handle reference geometries
+      c = afterCrs;
+      if (strict && !strchr(c, '>')) {
+        _numInvalid[t]++;  // unterminated reference
+        return;
+      }
       const char *end = strchr(c, ',');
       size_t subId = 0;
       c += 1;
@@ -174,41 +195,85 @@ class WKTParserBase {
         c = end + 1;
       } while (c < lastC && ((end = strchr(c, ',')) || (end = strchr(c, '>'))));
     } else {
-      // erroneous line / crs type, ignore
-      if (crsType == util::geo::CRSType::UNSUPPORTED) return; 
+      parseWKTGeometry(c, id, t, batch, side, strict);
+    }
+  };
 
-      auto wktType = getWKTType(c, &c);
+  // Parse a single WKT geometry (with an optional CRS IRI prefix) and add it to
+  // the sweeper under `id` and `side`. Unlike `parseLine`, `c` is only the WKT:
+  // there is no tab-separated id or side prefix and no reference geometries.
+  // In strict mode, invalid WKT (or WKT with an unsupported CRS) is skipped
+  // and counted in `_numInvalid`, instead of being parsed partially.
+  void parseWKTGeometry(const char *c, const std::string &id, size_t t,
+                        sj::WriteBatch &batch, bool side, bool strict) {
+    using namespace util::geo;
+
+    auto crsType = getCRSType(c, &c);
+
+    // unsupported crs type, ignore
+    if (crsType == util::geo::CRSType::UNSUPPORTED) {
+      if (strict) _numInvalid[t]++;
+      return;
+    }
+
+    auto wktType = getWKTType(c, &c, strict);
+    if (strict && wktType == util::geo::WKTType::NONE) {
+      _numInvalid[t]++;
+      return;
+    }
+
+    // All parsing happens before anything is added to the sweeper, so on an
+    // exception, nothing of this geometry has been added.
+    const char *end = nullptr;
+    // `checkWKTEnd(nullptr)` is a no-op, so trailing input is only rejected in
+    // strict mode.
+    const char **endr = strict ? &end : nullptr;
+    try {
       if (wktType == util::geo::WKTType::POINT) {
-        const auto &point = pointFromWKTProj<int32_t>(c, 0, &projFunc, crsType);
+        const auto &point =
+            pointFromWKTProj<int32_t>(c, endr, &projFunc, crsType, strict);
+        checkWKTEnd(end);
         _bboxes[t] = util::geo::extendBox(_sweeper->add(point, id, side, batch),
                                           _bboxes[t]);
       } else if (wktType == util::geo::WKTType::MULTIPOINT) {
-        const auto &mp = multiPointFromWKTProj<int32_t>(c, 0, &projFunc, crsType);
+        const auto &mp =
+            multiPointFromWKTProj<int32_t>(c, endr, &projFunc, crsType, strict);
+        checkWKTEnd(end);
         if (mp.size() != 0)
           _bboxes[t] = util::geo::extendBox(_sweeper->add(mp, id, side, batch),
                                             _bboxes[t]);
       } else if (wktType == util::geo::WKTType::LINESTRING) {
-        const auto &line = lineFromWKTProj<int32_t>(c, 0, &projFunc, crsType);
+        const auto &line =
+            lineFromWKTProj<int32_t>(c, endr, &projFunc, crsType, strict);
+        checkWKTEnd(end);
         if (line.size() > 1)
           _bboxes[t] = util::geo::extendBox(
               _sweeper->add(line, id, side, batch), _bboxes[t]);
       } else if (wktType == util::geo::WKTType::MULTILINESTRING) {
-        const auto &ml = multiLineFromWKTProj<int32_t>(c, 0, &projFunc, crsType);
+        const auto &ml =
+            multiLineFromWKTProj<int32_t>(c, endr, &projFunc, crsType, strict);
+        checkWKTEnd(end);
         _bboxes[t] = util::geo::extendBox(_sweeper->add(ml, id, side, batch),
                                           _bboxes[t]);
       } else if (wktType == util::geo::WKTType::POLYGON) {
-        const auto &poly = polygonFromWKTProj<int32_t>(c, 0, &projFunc, crsType);
+        const auto &poly =
+            polygonFromWKTProj<int32_t>(c, endr, &projFunc, crsType, strict);
+        checkWKTEnd(end);
         if (poly.getOuter().size() > 1)
           _bboxes[t] = util::geo::extendBox(
               _sweeper->add(poly, id, side, batch), _bboxes[t]);
       } else if (wktType == util::geo::WKTType::MULTIPOLYGON) {
-        const auto &mp = multiPolygonFromWKTProj<int32_t>(c, 0, &projFunc, crsType);
+        const auto &mp =
+            multiPolygonFromWKTProj<int32_t>(c, endr, &projFunc, crsType,
+                                             strict);
+        checkWKTEnd(end);
         if (mp.size())
           _bboxes[t] = util::geo::extendBox(_sweeper->add(mp, id, side, batch),
                                             _bboxes[t]);
       } else if (wktType == util::geo::WKTType::COLLECTION) {
-
-        const auto &col = collectionFromWKTProj<int32_t>(c, 0, &projFunc, crsType);
+        const auto &col =
+            collectionFromWKTProj<int32_t>(c, endr, &projFunc, crsType, strict);
+        checkWKTEnd(end);
 
         size_t numGeoms = 0;
         for (const auto &a : col) {
@@ -249,6 +314,9 @@ class WKTParserBase {
           subId++;
         }
       }
+    } catch (const util::geo::WKTParseException &) {
+      if (!strict) throw;
+      _numInvalid[t]++;
     }
   };
   virtual void processQueue(size_t t) = 0;
@@ -265,13 +333,14 @@ class WKTParserBase {
   std::vector<std::thread> _thrds;
 
   std::vector<util::geo::I32Box> _bboxes;
+  std::vector<size_t> _numInvalid;
 
   std::atomic<bool> _cancelled;
 };
 
 class WKTParser : public WKTParserBase<ParseJob> {
  public:
-  WKTParser(sj::Sweeper *sweeper, size_t numThreads);
+  WKTParser(sj::Sweeper *sweeper, size_t numThreads, bool strict = false);
   void parse(char *c, size_t size, bool side);
   void parseWKT(const char *c, size_t id, bool side);
   void parseWKT(const std::string &str, size_t id, bool side);
@@ -282,6 +351,9 @@ class WKTParser : public WKTParserBase<ParseJob> {
 
  protected:
   void processQueue(size_t t) override;
+
+ private:
+  bool _strict;
 };
 
 }  // namespace sj

@@ -12,8 +12,8 @@ using sj::WKTParser;
 using sj::WKTParserBase;
 
 // _____________________________________________________________________________
-WKTParser::WKTParser(sj::Sweeper *sweeper, size_t numThreads)
-    : WKTParserBase<ParseJob>(sweeper, numThreads) {
+WKTParser::WKTParser(sj::Sweeper *sweeper, size_t numThreads, bool strict)
+    : WKTParserBase<ParseJob>(sweeper, numThreads), _strict(strict) {
   for (size_t i = 0; i < _thrds.size(); i++) {
     _thrds[i] = std::thread(&WKTParser::processQueue, this, i);
   }
@@ -29,7 +29,7 @@ void WKTParser::processQueue(size_t t) {
 
       if (job.str.size()) {
         parseLine(job.str.c_str(), job.str.size(), job.line, t, w, job.side,
-                  true);
+                  true, _strict);
       } else {
         // parse point directly
         auto mercPoint = latLngToWebMerc(job.point);
