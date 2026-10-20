@@ -88,7 +88,8 @@ class WKTParserBase {
 
   util::geo::I32Box getBoundingBox() const { return _bbox; }
 
-  // Number of geometries skipped because they were invalid in strict mode.
+  // Number of geometries skipped because they were invalid or had an
+  // unsupported CRS in strict mode.
   size_t getNumInvalid() const {
     size_t ret = 0;
     for (auto n : _numInvalid) ret += n;
@@ -192,8 +193,8 @@ class WKTParserBase {
   // Parse a single WKT geometry (with an optional CRS IRI prefix) and add it to
   // the sweeper under `id` and `side`. Unlike `parseLine`, `c` is only the WKT:
   // there is no tab-separated id or side prefix and no reference geometries.
-  // In strict mode, invalid WKT is skipped and counted in `_numInvalid`,
-  // instead of being parsed partially.
+  // In strict mode, invalid WKT (or WKT with an unsupported CRS) is skipped
+  // and counted in `_numInvalid`, instead of being parsed partially.
   void parseWKTGeometry(const char *c, const std::string &id, size_t t,
                         sj::WriteBatch &batch, bool side, bool strict) {
     using namespace util::geo;
@@ -201,7 +202,10 @@ class WKTParserBase {
     auto crsType = getCRSType(c, &c);
 
     // unsupported crs type, ignore
-    if (crsType == util::geo::CRSType::UNSUPPORTED) return;
+    if (crsType == util::geo::CRSType::UNSUPPORTED) {
+      if (strict) _numInvalid[t]++;
+      return;
+    }
 
     auto wktType = getWKTType(c, &c, strict);
     if (strict && wktType == util::geo::WKTType::NONE) {
