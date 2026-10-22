@@ -1261,5 +1261,13 @@ int main(int, char**) {
       std::regex pattern6("\\$london\\t340875\\.\\d*\\teiffel\\$");
       TEST(std::regex_search(res, pattern6));
     }
+
+    cfg.withinDist = 50;
+    {
+      RunStats stats;
+      auto res = fullRun(TEST_DATASET_DIR "/empty", cfg, &stats);
+
+      TEST(res, == , "");
+    }
   }
 }

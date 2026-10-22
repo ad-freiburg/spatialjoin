@@ -190,6 +190,7 @@ I32Box Sweeper::add(const I32Polygon& poly, const std::string& gid, bool side,
 // _____________________________________________________________________________
 I32Box Sweeper::add(const I32Polygon& poly, const std::string& gidR,
                     size_t subid, bool side, WriteBatch& batch) const {
+
   if (subid == 0 && _cfg.de9imFilter != util::geo::FANY) {
     // drop certain geometries if we can be sure that they will never match
     // the given DE-9IM filter
