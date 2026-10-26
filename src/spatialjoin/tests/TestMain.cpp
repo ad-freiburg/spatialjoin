@@ -1404,10 +1404,15 @@ int main(int, char**) {
         std::regex riverPark("\\$river\\t79\\.6\\d*\\tpark\\$");
         std::regex pointRiver("\\$point\\t61\\.7\\d*\\triver\\$");
         std::regex riverPoint("\\$river\\t61\\.7\\d*\\tpoint\\$");
-        std::regex anyRiver("\\$river\\t");
+        std::regex riverRiver("\\$river\\t14\\.3\\d*\\triver2\\$");
+
+        TEST(std::regex_search(res, riverRiver));
 
         if (maxDist < 61.75) {
-          TEST(!std::regex_search(res, anyRiver));
+          TEST(!std::regex_search(res, riverPoint));
+          TEST(!std::regex_search(res, pointRiver));
+          TEST(!std::regex_search(res, parkRiver));
+          TEST(!std::regex_search(res, riverPark));
         } else {
           TEST(std::regex_search(res, parkRiver));
           TEST(std::regex_search(res, riverPark));
