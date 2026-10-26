@@ -1173,6 +1173,15 @@ int main(int, char**) {
     TEST(res.find("$a contains u$") == std::string::npos);
   }
 
+  {
+    // in the test file, a size 1 side of a non-self join is empty because the
+    // WKT is invalid. This should not lead to a self join over the remaining
+    // side
+    RunStats stats;
+    auto res = fullRun(TEST_DATASET_DIR "/self-join-regression", all, &stats, 0, false);
+    TEST(res, ==, "");
+  }
+
   // distance
   for (auto cfg : cfgs) {
     cfg.withinDist = 1;
