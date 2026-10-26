@@ -326,6 +326,8 @@ class Sweeper {
 
   void addBatch(WriteBatch& cands);
 
+  void setNumSides(size_t sides) { _numSides = sides; }
+
   void flush();
 
   RelStats sweep();

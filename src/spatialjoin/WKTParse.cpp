@@ -34,6 +34,8 @@ void WKTParser::processQueue(size_t t) {
         // parse point directly
         auto mercPoint = latLngToWebMerc(job.point);
 
+        if (job.side) _twoSided[t] = true;
+
         util::geo::I32Point addPoint{static_cast<int>(mercPoint.getX() * PREC),
                                      static_cast<int>(mercPoint.getY() * PREC)};
         _bboxes[t] = util::geo::extendBox(
