@@ -1138,24 +1138,10 @@ int main(int, char**) {
   {
     // strict parsing skips and counts invalid WKT, lenient parsing parses it
     // partially (here: `c`, `d` and `e` as a point at (-5 -5))
-    std::ofstream ofs(".strictTmp");
-    ofs << "a\tPOLYGON((-10 -10, 10 -10, 10 10, -10 10, -10 -10))\n";
-    ofs << "b\tPOINT(-4e0 +4E-0)\n";
-    ofs << "c\tPOINT(-5 -5, 1 1)\n";
-    ofs << "d\tPOINT(-5 -5 foo)\n";
-    ofs << "e\tLINESTRING(-5 -5, 1 a)\n";
-    ofs << "f\tFOO(-5 -5)\n";
-    ofs << "g\tPOINT(-5 -5) foo\n";
-    ofs << "h\tPOINT(-5 -5))\n";
-    ofs << "u\t<http://www.opengis.net/def/crs/EPSG/0/3035> POINT(-5 -5)\n";
-    ofs << "http://www.opengis.net/def/crs/EPSG/0/3035\tPOINT(-5 -5)\n";
-    ofs << "x\t<b\n";
-    ofs << "r\t<b>\n";
-    ofs.close();
 
     RunStats stats;
-    auto res = fullRun(".strictTmp", all, &stats, 0, true);
-    TEST(stats.numInvalid, ==, 8);
+    auto res = fullRun(TEST_DATASET_DIR "/wkt-fail", all, &stats, 0, true);
+    TEST(stats.numInvalid, ==, 10);
     TEST(res.find("$a contains g$") == std::string::npos);
     TEST(res.find("$a contains h$") == std::string::npos);
     TEST(res.find("$a contains u$") == std::string::npos);
@@ -1165,8 +1151,7 @@ int main(int, char**) {
     TEST(res.find("$a contains d$") == std::string::npos);
     TEST(res.find("$a contains e$") == std::string::npos);
 
-    res = fullRun(".strictTmp", all, &stats);
-    unlink(".strictTmp");
+    res = fullRun(TEST_DATASET_DIR "/wkt-fail", all, &stats);
     TEST(stats.numInvalid, ==, 0);
     TEST(res.find("$a contains c$") != std::string::npos);
     TEST(res.find("$a contains g$") != std::string::npos);

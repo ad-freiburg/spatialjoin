@@ -1,0 +1,14 @@
+a	POLYGON((-10 -10, 10 -10, 10 10, -10 10, -10 -10))
+b	POINT(-4e0 +4E-0)
+c	POINT(-5 -5, 1 1)
+d	POINT(-5 -5 foo)
+e	LINESTRING(-5 -5, 1 a)
+f	FOO(-5 -5)
+g	POINT(-5 -5) foo
+h	POINT(-5 -5))
+u	<http://www.opengis.net/def/crs/EPSG/0/3035> POINT(-5 -5)
+http://www.opengis.net/def/crs/EPSG/0/3035	POINT(-5 -5)
+x	<b
+r	<b>
+i	POINT(-5 -5 blubb)
+j	POINT(-5 -5
