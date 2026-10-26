@@ -2185,8 +2185,9 @@ void Sweeper::fillBatch(
     JobVal b(p.v);
 
     // for simple lines, already check if the lines intersect, if not,
-    // ignore
-    if (isSimpleLine(a.type) && isSimpleLine(b.type) &&
+    // ignore. But only in non-withing-distance mode!
+    if (_cfg.withinDist < 0 && isSimpleLine(a.type) &&
+        isSimpleLine(b.type) &&
         !util::geo::IntersectorLine<int32_t>::check(
             LineSegment<int32_t>(a.point, a.point2), 32767, true, 32767, true,
             LineSegment<int32_t>(b.point, b.point2), 32767, true, 32767, true))
