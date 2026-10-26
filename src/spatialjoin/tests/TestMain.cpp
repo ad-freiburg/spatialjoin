@@ -1247,6 +1247,29 @@ int main(int, char**) {
       TEST(std::regex_search(res, pattern6));
     }
 
+    // the distance to a line with only two points (a "simple line") must not
+    // depend on the maximum distance, which the bounding box is padded with
+    for (double maxDist : {50.0, 100.0, 1000.0}) {
+      cfg.withinDist = maxDist;
+      RunStats stats;
+      auto res = fullRun(TEST_DATASET_DIR "/simplelinedistance", cfg, &stats);
+
+      std::regex parkRiver("\\$park\\t79\\.61\\d*\\triver\\$");
+      std::regex riverPark("\\$river\\t79\\.61\\d*\\tpark\\$");
+      std::regex pointRiver("\\$point\\t61\\.94\\d*\\triver\\$");
+      std::regex riverPoint("\\$river\\t61\\.94\\d*\\tpoint\\$");
+      std::regex anyRiver("\\$river\\t");
+
+      if (maxDist < 61.94) {
+        TEST(!std::regex_search(res, anyRiver));
+      } else {
+        TEST(std::regex_search(res, parkRiver));
+        TEST(std::regex_search(res, riverPark));
+        TEST(std::regex_search(res, pointRiver));
+        TEST(std::regex_search(res, riverPoint));
+      }
+    }
+
     cfg.withinDist = 50;
     {
       RunStats stats;

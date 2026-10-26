@@ -432,8 +432,10 @@ I32Box Sweeper::add(const I32Line& line, const std::string& gidR, size_t subid,
   cur.subid = subid;
   cur.gid = gid;
 
+  // simple lines store their second point implicitly via the bounding box,
+  // which is padded for within-distance joins, so we cannot use them there
   if (line.size() == 2 && (!_cfg.useBoxIds || boxIds.front().first == 1) &&
-      subid == 0) {
+      subid == 0 && _cfg.withinDist < 0) {
     // simple line
 
     cur.boxvalIn = {
