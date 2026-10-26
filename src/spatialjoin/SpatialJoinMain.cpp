@@ -100,8 +100,10 @@ void printHelp(int argc, char** argv) {
       << std::setw(42) << "  --no-diag-box"
       << "disable diagonal bounding-box based pre-filter\n"
       << std::setw(42) << "  --no-fast-sweep-skip"
-      << "disable fast sweep skip using binary search\n"
+      << "disable fast sweep skip using binary search\n\n"
       << std::setfill(' ') << std::left << "Misc:\n"
+      << std::setw(42) << "  --wkt-strict"
+      << "use strict WKT parsing\n"
       << std::setw(42)
       << "  --num-threads (default: " + std::to_string(NUM_THREADS) + ")"
       << "number of threads for geometric computation\n"
@@ -160,6 +162,7 @@ int main(int argc, char** argv) {
   bool useFastSweepSkip = true;
   bool noGeometryChecks = false;
   bool computeDE9IM = false;
+  bool wktStrict = false;
 
   bool printStats = false;
   bool verbose = false;
@@ -218,6 +221,8 @@ int main(int argc, char** argv) {
           state = 17;
         } else if (cur == "--de9im") {
           computeDE9IM = true;
+        } else if (cur == "--wkt-strict") {
+          wktStrict = true;
         } else if (cur == "--no-box-ids") {
           useBoxIds = false;
         } else if (cur == "--no-surface-area") {
@@ -414,7 +419,7 @@ int main(int argc, char** argv) {
   cacheManager.log("Parsing input geometries...");
   auto ts = TIME();
 
-  sj::WKTParser parser(&cacheManager, NUM_THREADS);
+  sj::WKTParser parser(&cacheManager, NUM_THREADS, wktStrict);
 
   if (!inputFiles.empty()) {
     if (inputFiles.size() > 2) {
@@ -495,8 +500,13 @@ int main(int argc, char** argv) {
 
   parser.done();
 
+  if (parser.getNumInvalid() > 0)
+    cacheManager.log("Note: skipped " + std::to_string(parser.getNumInvalid()) +
+                " invalid WKT literals");
+
   cacheManager.log("Done parsing (" + std::to_string(TOOK(ts) / 1000000000.0) +
               "s).");
+
   cacheManager.flush();
 
   Sweeper sweeper(sweeperCfg, &cacheManager);

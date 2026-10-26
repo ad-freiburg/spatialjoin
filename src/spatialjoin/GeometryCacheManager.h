@@ -304,6 +304,8 @@ class GeometryCacheManager {
 
   size_t numSides() const { return _numSides; }
 
+  void setNumSides(size_t sides) { _numSides = sides; }
+
   size_t subSize(const std::string& id) const {
     return _subSizes.at(id);
   }

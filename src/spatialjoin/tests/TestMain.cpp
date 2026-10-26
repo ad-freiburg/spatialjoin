@@ -1235,24 +1235,10 @@ int main(int, char**) {
   {
     // strict parsing skips and counts invalid WKT, lenient parsing parses it
     // partially (here: `c`, `d` and `e` as a point at (-5 -5))
-    std::ofstream ofs(".strictTmp");
-    ofs << "a\tPOLYGON((-10 -10, 10 -10, 10 10, -10 10, -10 -10))\n";
-    ofs << "b\tPOINT(-4e0 +4E-0)\n";
-    ofs << "c\tPOINT(-5 -5, 1 1)\n";
-    ofs << "d\tPOINT(-5 -5 foo)\n";
-    ofs << "e\tLINESTRING(-5 -5, 1 a)\n";
-    ofs << "f\tFOO(-5 -5)\n";
-    ofs << "g\tPOINT(-5 -5) foo\n";
-    ofs << "h\tPOINT(-5 -5))\n";
-    ofs << "u\t<http://www.opengis.net/def/crs/EPSG/0/3035> POINT(-5 -5)\n";
-    ofs << "http://www.opengis.net/def/crs/EPSG/0/3035\tPOINT(-5 -5)\n";
-    ofs << "x\t<b\n";
-    ofs << "r\t<b>\n";
-    ofs.close();
 
     RunStats stats;
-    auto res = fullRun(".strictTmp", all, &stats, 0, true);
-    TEST(stats.numInvalid, ==, 8);
+    auto res = fullRun(TEST_DATASET_DIR "/wkt-fail", all, &stats, 0, true);
+    TEST(stats.numInvalid, ==, 10);
     TEST(res.find("$a contains g$") == std::string::npos);
     TEST(res.find("$a contains h$") == std::string::npos);
     TEST(res.find("$a contains u$") == std::string::npos);
@@ -1262,12 +1248,20 @@ int main(int, char**) {
     TEST(res.find("$a contains d$") == std::string::npos);
     TEST(res.find("$a contains e$") == std::string::npos);
 
-    res = fullRun(".strictTmp", all, &stats);
-    unlink(".strictTmp");
+    res = fullRun(TEST_DATASET_DIR "/wkt-fail", all, &stats);
     TEST(stats.numInvalid, ==, 0);
     TEST(res.find("$a contains c$") != std::string::npos);
     TEST(res.find("$a contains g$") != std::string::npos);
     TEST(res.find("$a contains u$") == std::string::npos);
+  }
+
+  {
+    // in the test file, a size 1 side of a non-self join is empty because the
+    // WKT is invalid. This should not lead to a self join over the remaining
+    // side
+    RunStats stats;
+    auto res = fullRun(TEST_DATASET_DIR "/self-join-regression", all, &stats, 0, false);
+    TEST(res, ==, "");
   }
 
   // distance
@@ -1397,6 +1391,38 @@ int main(int, char**) {
 
       TEST(countMatches(res, "\\$house\\t11\\.1\\d*\\tlake\\$"), ==, 1);
       TEST(countMatches(res, "\\$lake\\t11\\.1\\d*\\thouse\\$"), ==, 1);
+    }
+
+    {
+      cfg.euclideanDist = false;
+      for (double maxDist : {50.0, 100.0, 1000.0}) {
+        cfg.withinDist = maxDist;
+        RunStats stats;
+        auto res = fullRun(TEST_DATASET_DIR "/simplelinedistance", cfg, &stats);
+
+        std::regex parkRiver("\\$park\\t79\\.6\\d*\\triver\\$");
+        std::regex riverPark("\\$river\\t79\\.6\\d*\\tpark\\$");
+        std::regex pointRiver("\\$point\\t61\\.7\\d*\\triver\\$");
+        std::regex riverPoint("\\$river\\t61\\.7\\d*\\tpoint\\$");
+        std::regex anyRiver("\\$river\\t");
+
+        if (maxDist < 61.75) {
+          TEST(!std::regex_search(res, anyRiver));
+        } else {
+          TEST(std::regex_search(res, parkRiver));
+          TEST(std::regex_search(res, riverPark));
+          TEST(std::regex_search(res, pointRiver));
+          TEST(std::regex_search(res, riverPoint));
+        }
+      }
+    }
+
+    cfg.withinDist = 50;
+    {
+      RunStats stats;
+      auto res = fullRun(TEST_DATASET_DIR "/empty", cfg, &stats);
+
+      TEST(res, == , "");
     }
   }
 }
