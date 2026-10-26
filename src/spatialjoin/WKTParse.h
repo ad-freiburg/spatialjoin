@@ -73,6 +73,7 @@ class WKTParserBase {
         _thrds(numThreads),
         _bboxes(numThreads),
         _numInvalid(numThreads),
+        _twoSided(numThreads),
         _cancelled(false){};
   ~WKTParserBase() {
     // graceful shutdown of all threads, should they be still running
@@ -96,6 +97,12 @@ class WKTParserBase {
     return ret;
   }
 
+  bool isTwoSided() const {
+    bool ret = false;
+    for (auto t : _twoSided) ret += t;
+    return ret;
+  }
+
   void done() {
     if (_curBatch.size()) {
       _jobs.add(std::move(_curBatch));
@@ -111,6 +118,8 @@ class WKTParserBase {
     for (const auto &box : _bboxes) {
       _bbox = util::geo::extendBox(box, _bbox);
     }
+
+    if (isTwoSided()) _sweeper->setNumSides(2);
   };
 
   static util::geo::I32Point projFunc(const util::geo::DPoint &p, util::geo::CRSType sourceCRS) {
@@ -149,6 +158,8 @@ class WKTParserBase {
       side = atoi(c);
       c = idp + 1;
     }
+
+    if (side) _twoSided[t] = true;
 
     const char *afterCrs;
     auto crsType = getCRSType(c, &afterCrs);
@@ -334,6 +345,7 @@ class WKTParserBase {
 
   std::vector<util::geo::I32Box> _bboxes;
   std::vector<size_t> _numInvalid;
+  std::vector<bool> _twoSided;
 
   std::atomic<bool> _cancelled;
 };
