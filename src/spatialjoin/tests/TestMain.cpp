@@ -1279,6 +1279,24 @@ int main(int, char**) {
       }
     }
 
+    // the distance to a line which is deduplicated against a member of a
+    // multi geometry must not be bounded by the multi geometry's distance
+    {
+      cfg.withinDist = 1000;
+      RunStats stats;
+      auto res = fullRun(TEST_DATASET_DIR "/multirefdistance", cfg, &stats);
+
+      std::regex farPoly("\\$far\\t745\\.69\\d*\\tpoly\\$");
+      std::regex polyFar("\\$poly\\t745\\.69\\d*\\tfar\\$");
+      std::regex multiPoly("\\$multi\\t30\\.93\\d*\\tpoly\\$");
+      std::regex polyMulti("\\$poly\\t30\\.93\\d*\\tmulti\\$");
+
+      TEST(std::regex_search(res, farPoly));
+      TEST(std::regex_search(res, polyFar));
+      TEST(std::regex_search(res, multiPoly));
+      TEST(std::regex_search(res, polyMulti));
+    }
+
     cfg.withinDist = 50;
     {
       RunStats stats;

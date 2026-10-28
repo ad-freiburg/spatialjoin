@@ -4306,6 +4306,11 @@ double Sweeper::getMaxMultiDist(const std::string& idA, size_t aSub,
                                 const std::string& idB, size_t bSub,
                                 const I32Point& leftBPoint, size_t t) {
   double maxD = _cfg.withinDist;
+
+  // the distance of a referenced geometry is copied to its referers, so it
+  // must not be bounded by the distance of its multi geometry
+  if (_refs.count(idA) || _refs.count(idB)) return maxD;
+
   // for multigeometries, we may already have a minimum distance above which we
   // are not required to search
   if (aSub > 0) {
