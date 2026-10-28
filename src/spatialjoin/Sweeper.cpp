@@ -80,28 +80,18 @@ void Sweeper::clearMultis(bool force) {
     if (_atomicCurX[i] < curMinThreadX) curMinThreadX = _atomicCurX[i];
   }
 
-  for (size_t i = 0; i < 2; i++) {
-    for (auto a = _activeMultis[i].begin(); a != _activeMultis[i].end();) {
-      size_t mid = *a;
-      if (mid >= _cacheManager->numMultis(i)) {
-        LOG(WARN) << "Invalid multi ID " << mid << " detected!";
-        a++;
-        continue;
-      }
-      const std::string& gid = _cacheManager->multiId(i, mid);
-      int32_t rightX = _cacheManager->multiRightX(i, mid);
-      if (force || rightX < curMinThreadX) {
-        curBatch.push_back({{}, {}, gid});
-        a = _activeMultis[i].erase(a);
-      } else {
-        a++;
-      }
+  // note: finishedMultis is sorted by x in asc, the front is the leftmost x,
+  // we can clear until we reach an x >= curMinThreadX
+  while (!_finishedMultis.empty() &&
+         (force || _finishedMultis.front().val < curMinThreadX)) {
+    const auto& mOut = _finishedMultis.front();
+    curBatch.push_back({{}, {}, _cacheManager->multiId(mOut.side, mOut.id)});
+    _finishedMultis.pop();
 
-      if (curBatch.size() >= batchSize) {
-        _jobs.add(std::move(curBatch));
-        curBatch.clear();  // std doesnt guarantee that after move
-        curBatch.reserve(batchSize);
-      }
+    if (curBatch.size() >= batchSize) {
+      _jobs.add(std::move(curBatch));
+      curBatch.clear();  // std doesnt guarantee that after move
+      curBatch.reserve(batchSize);
     }
   }
 
@@ -110,6 +100,7 @@ void Sweeper::clearMultis(bool force) {
 
 // _____________________________________________________________________________
 void Sweeper::multiOut(size_t tOut, const std::string& gidA) {
+
   // collect dist, if requested
   if (_cfg.withinDist >= 0) {
     std::map<std::string, double> subDistance;
@@ -500,10 +491,10 @@ RelStats Sweeper::sweep(const SweepEventList* eventsA,
                  cur->type == SELF_CHECK_POINT) {
         // self checks, required if we have reference geoms
         curBatch.push_back({*cur, *cur, ""});
-      } else if (!cur->out && cur->loY == 1 && cur->upY == 0 &&
+      } else if (cur->out && cur->loY == 1 && cur->upY == 0 &&
                  cur->type == POINT) {
-        // special multi-IN
-        _activeMultis[cur->side].insert(cur->id);
+        // special multi-OUT, defer for clearing (all threads must be past it)
+        _finishedMultis.push(*cur);
       } else if (!cur->out) {
         // IN event
         actives[cur->side].insert({cur->loY, cur->upY},
@@ -530,8 +521,7 @@ RelStats Sweeper::sweep(const SweepEventList* eventsA,
               std::to_string(actives[0].size() + actives[1].size()) +
               ", |JQ|=" + std::to_string(_jobs.size()) + " (x" +
               std::to_string(batchSize) + "), |A_mult|=" +
-              std::to_string(_activeMultis[0].size() +
-                             _activeMultis[1].size()) +
+              std::to_string(_finishedMultis.size()) +
               ", |C|=" + std::to_string(cacheSize.first) + " (" +
               util::readableSize(cacheSize.second) + ")");
           t = TIME();

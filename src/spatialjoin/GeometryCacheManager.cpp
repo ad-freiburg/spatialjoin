@@ -143,7 +143,7 @@ I32Box GeometryCacheManager::add(const I32MultiPoint& a, const std::string& gid,
 
 // _____________________________________________________________________________
 void GeometryCacheManager::multiAdd(const std::string& gid, bool side,
-                                    int32_t xLeft, int32_t xRight,
+                                    int32_t xRight,
                                     const I32Point& pointRight) {
   auto i = _multiGidToId[side].find(gid);
 
@@ -151,7 +151,6 @@ void GeometryCacheManager::multiAdd(const std::string& gid, bool side,
     _multiIds[side].push_back(gid);
     _multiRightX[side].push_back(xRight);
     _multiRightPoint[gid] = pointRight;
-    _multiLeftX[side].push_back(xLeft);
     _multiGidToId[side][gid] = _multiIds[side].size() - 1;
     _subSizes[gid] = 1;
   } else {
@@ -159,7 +158,6 @@ void GeometryCacheManager::multiAdd(const std::string& gid, bool side,
     if (xRight > _multiRightX[side][id]) _multiRightX[side][id] = xRight;
     if (pointRight.getX() > _multiRightPoint[gid].getX())
       _multiRightPoint[gid] = pointRight;
-    if (xLeft < _multiLeftX[side][id]) _multiLeftX[side][id] = xLeft;
     _subSizes[gid] = _subSizes[gid] + 1;
   }
 }
@@ -653,48 +651,48 @@ void GeometryCacheManager::addBatch(WriteBatch& cands,
   for (const auto& cand : cands.points) {
     if (cand.subid > 0) {
       std::unique_lock<std::mutex> lock(_multiAddMtx);
-      multiAdd(cand.gid, cand.boxvalIn.side, cand.boxvalIn.val,
-               cand.boxvalOut.val, cand.boxvalOut.point);
+      multiAdd(cand.gid, cand.boxvalIn.side, cand.boxvalOut.val,
+               cand.boxvalOut.point);
     }
   }
 
   for (const auto& cand : cands.simpleLines) {
     if (cand.subid > 0) {
       std::unique_lock<std::mutex> lock(_multiAddMtx);
-      multiAdd(cand.gid, cand.boxvalIn.side, cand.boxvalIn.val,
-               cand.boxvalOut.val, cand.boxvalOut.point);
+      multiAdd(cand.gid, cand.boxvalIn.side, cand.boxvalOut.val,
+               cand.boxvalOut.point);
     }
   }
 
   for (const auto& cand : cands.lines) {
     if (cand.subid > 0) {
       std::unique_lock<std::mutex> lock(_multiAddMtx);
-      multiAdd(cand.gid, cand.boxvalIn.side, cand.boxvalIn.val,
-               cand.boxvalOut.val, cand.boxvalOut.point);
+      multiAdd(cand.gid, cand.boxvalIn.side, cand.boxvalOut.val,
+               cand.boxvalOut.point);
     }
   }
 
   for (const auto& cand : cands.simpleAreas) {
     if (cand.subid > 0) {
       std::unique_lock<std::mutex> lock(_multiAddMtx);
-      multiAdd(cand.gid, cand.boxvalIn.side, cand.boxvalIn.val,
-               cand.boxvalOut.val, cand.boxvalOut.point);
+      multiAdd(cand.gid, cand.boxvalIn.side, cand.boxvalOut.val,
+               cand.boxvalOut.point);
     }
   }
 
   for (const auto& cand : cands.areas) {
     if (cand.subid > 0) {
       std::unique_lock<std::mutex> lock(_multiAddMtx);
-      multiAdd(cand.gid, cand.boxvalIn.side, cand.boxvalIn.val,
-               cand.boxvalOut.val, cand.boxvalOut.point);
+      multiAdd(cand.gid, cand.boxvalIn.side, cand.boxvalOut.val,
+               cand.boxvalOut.point);
     }
   }
 
   for (const auto& cand : cands.refs) {
     if (cand.subid > 0) {
       std::unique_lock<std::mutex> lock(_multiAddMtx);
-      multiAdd(cand.gid, cand.boxvalIn.side, cand.boxvalIn.val,
-               cand.boxvalOut.val, cand.boxvalOut.point);
+      multiAdd(cand.gid, cand.boxvalIn.side, cand.boxvalOut.val,
+               cand.boxvalOut.point);
     }
   }
 
@@ -783,13 +781,14 @@ void GeometryCacheManager::flush(sj::SweepEventList* events) {
     }
   }
 
+  // special multi-OUT event, at the right x of the multi geometry
   for (size_t side = 0; side < 2; side++) {
     for (size_t i = 0; i < _multiIds[side].size(); i++) {
       events->add({i,
                    1,
                    0,
-                   _multiLeftX[side][i] - 1,
-                   false,
+                   _multiRightX[side][i],
+                   true,
                    POINT,
                    0.0,
                    {},

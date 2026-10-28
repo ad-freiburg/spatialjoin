@@ -327,10 +327,6 @@ class GeometryCacheManager {
     return _multiIds[side][id];
   }
 
-  int32_t multiRightX(bool side, size_t id) const {
-    return _multiRightX[side][id];
-  }
-
   util::geo::I32Point multiRightPoint(const std::string& gid) const {
     auto i = _multiRightPoint.find(gid);
     if (i == _multiRightPoint.end()) return {};
@@ -392,8 +388,8 @@ class GeometryCacheManager {
 
   void diskAdd(const BoxVal& bv);
 
-  void multiAdd(const std::string& gid, bool side, int32_t xLeft,
-                int32_t xRight, const util::geo::I32Point& pointRight);
+  void multiAdd(const std::string& gid, bool side, int32_t xRight,
+                const util::geo::I32Point& pointRight);
 
   void duplicatesToReferences();
 
@@ -493,7 +489,6 @@ class GeometryCacheManager {
   std::vector<std::string> _multiIds[2];
   std::vector<int32_t> _multiRightX[2];
   std::unordered_map<std::string, util::geo::I32Point> _multiRightPoint;
-  std::vector<int32_t> _multiLeftX[2];
   std::unordered_map<std::string, size_t> _multiGidToId[2];
   std::unordered_map<std::string, size_t> _subSizes;
 

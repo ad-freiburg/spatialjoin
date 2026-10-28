@@ -311,7 +311,8 @@ class Sweeper {
   std::vector<std::unordered_map<std::string, std::set<std::string>>>
       _subNotOverlaps;
 
-  std::set<size_t> _activeMultis[2];
+  // multi geometries whose OUT event has been processed
+  std::queue<BoxVal> _finishedMultis;
 
   const GeometryCacheManager* _cacheManager;
 
