@@ -381,11 +381,6 @@ class GeometryCacheManager {
   template <typename W>
   static std::pair<size_t, size_t> size(const GeomLRUCache<W>& cache);
 
-  double getMaxMultiDist(const std::string& idA, size_t aSub,
-                         const util::geo::I32Point& leftAPoint,
-                         const std::string& idB, size_t bSub,
-                         const util::geo::I32Point& leftBPoint, size_t t);
-
   void diskAdd(const BoxVal& bv);
 
   void multiAdd(const std::string& gid, bool side, int32_t xRight,
