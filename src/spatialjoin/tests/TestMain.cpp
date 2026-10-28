@@ -1279,6 +1279,24 @@ int main(int, char**) {
       }
     }
 
+    // the distance to an axis-aligned rectangle (a "folded box polygon") must
+    // not depend on the maximum distance, which the bounding box is padded with
+    for (double maxDist : {500.0, 2000.0, 5000.0}) {
+      cfg.withinDist = maxDist;
+      RunStats stats;
+      auto res = fullRun(TEST_DATASET_DIR "/foldedboxdistance", cfg, &stats);
+
+      std::regex boxPoint("\\$box\\t1001\\.88\\d*\\tpoint\\$");
+      std::regex pointBox("\\$point\\t1001\\.88\\d*\\tbox\\$");
+
+      if (maxDist < 1001.88) {
+        TEST(res, ==, "");
+      } else {
+        TEST(std::regex_search(res, boxPoint));
+        TEST(std::regex_search(res, pointBox));
+      }
+    }
+
     cfg.withinDist = 50;
     {
       RunStats stats;
