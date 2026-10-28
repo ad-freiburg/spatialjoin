@@ -1,16 +1,13 @@
 // Copyright 2023, University of Freiburg
 // Authors: Patrick Brosi <brosi@cs.uni-freiburg.de>.
 
-#ifndef SPATIALJOINS_GEOMETRYCACHE_H_
-#define SPATIALJOINS_GEOMETRYCACHE_H_
+#ifndef SPATIALJOINS_GEOMETRYSTORE_H_
+#define SPATIALJOINS_GEOMETRYSTORE_H_
 
 #include <fstream>
 #include <iostream>
-#include <list>
 #include <map>
 #include <memory>
-#include <mutex>
-#include <unordered_map>
 
 #include "BoxIds.h"
 #include "util/geo/Geo.h"
@@ -66,35 +63,17 @@ struct Point {
   size_t subId;
 };
 
-template <typename W>
-struct ValEntry {
-  size_t estimatedSize;
-  std::shared_ptr<W> val;
-};
-
 const static size_t WRITE_BUFF_SIZE = 1024 * 1024 * 4l;
 
 template <typename W>
-class GeometryCache {
+class GeometryStore {
  public:
-  GeometryCache(size_t maxSize, size_t maxNumElements, size_t numthreads,
-                const std::string& dir)
-      : GeometryCache(maxSize, maxNumElements, numthreads, dir,
-                      ".spatialjoin"){};
-  GeometryCache(size_t maxSize, size_t maxNumElements, size_t numthreads,
-                const std::string& dir, const std::string& tmpPrefix)
-      : 
-        _maxSize(maxSize),
-        _maxNumElements(maxNumElements),
-        _numThreads(numthreads),
-        _dir(dir),
-        _tmpPrefix(tmpPrefix),
-        _mutexes(numthreads + 1) {
-    _geomsFReads.resize(numthreads + 1);
-
-    _vals.resize(numthreads + 1);
-    _valSizes.resize(numthreads + 1);
-    _idMap.resize(numthreads + 1);
+  GeometryStore(size_t numthreads, const std::string& dir)
+      : GeometryStore(numthreads, dir, ".spatialjoin"){};
+  GeometryStore(size_t numthreads, const std::string& dir,
+                const std::string& tmpPrefix)
+      : _numThreads(numthreads), _dir(dir), _tmpPrefix(tmpPrefix) {
+    _geomsFReads.resize(numthreads);
 
     _fName = getFName();
 
@@ -109,7 +88,7 @@ class GeometryCache {
     unlink(_fName.c_str());
   }
 
-  ~GeometryCache() {
+  ~GeometryStore() {
     if (_geomsF.is_open()) _geomsF.close();
     for (size_t i = 0; i < _geomsFReads.size(); i++) {
       if (_geomsFReads[i].is_open()) _geomsFReads[i].close();
@@ -120,27 +99,28 @@ class GeometryCache {
   size_t add(const std::string& raw);
   size_t writeTo(const W& val, std::ostream& str) const;
 
-  std::shared_ptr<W> get(size_t off, ssize_t tid) const;
   std::pair<size_t, W> getFrom(size_t off, std::istream& str) const;
-  std::shared_ptr<W> cache(size_t off, const W& val, size_t estSize,
-                           size_t tid) const;
 
-  std::shared_ptr<W> get(size_t off) const { return get(off, 0); }
+  // reads the geometry at off from disk, using the read stream of thread tid
+  // (0 <= tid < numthreads). Not thread-safe for the same tid!
+  std::pair<size_t, W> getFrom(size_t off, size_t tid) const {
+    return getFrom(off, _geomsFReads[tid]);
+  }
 
-  std::pair<size_t, size_t> size() const;
+  // if true, all geometries are held in memory and must be retrieved via
+  // getFromMem()
+  bool inMemory() const { return _inMemory; }
+
+  std::shared_ptr<W> getFromMem(size_t off) const { return _memStore.at(off); }
 
   void flush();
 
-  GeometryCache& operator=(GeometryCache&& other) {
+  GeometryStore& operator=(GeometryStore&& other) {
     other._geomsF.flush();
     _geomsF = std::move(other._geomsF);
     _geomsFReads = std::move(other._geomsFReads);
     _geomsOffset = other._geomsOffset;
 
-    _vals = std::move(other._vals);
-    _idMap = std::move(other._idMap);
-    _maxSize = other._maxSize;
-    _maxNumElements = other._maxNumElements;
     _dir = other._dir;
     _fName = other._fName;
     _numThreads = other._numThreads;
@@ -162,13 +142,7 @@ class GeometryCache {
   mutable std::vector<std::fstream> _geomsFReads;
   size_t _geomsOffset = 0;
 
-  mutable std::vector<std::list<std::pair<size_t, ValEntry<W>>>> _vals;
-  mutable std::vector<std::unordered_map<
-      size_t, typename std::list<std::pair<size_t, ValEntry<W>>>::iterator>>
-      _idMap;
-  mutable std::vector<size_t> _valSizes;
-
-  size_t _maxSize, _maxNumElements, _numThreads;
+  size_t _numThreads;
   std::string _dir, _tmpPrefix;
   std::string _fName;
 
@@ -177,8 +151,6 @@ class GeometryCache {
   bool _inMemory = true;
 
   char* _writeBuffer = 0;
-
-  mutable std::vector<std::mutex> _mutexes;
 };
 }  // namespace sj
 

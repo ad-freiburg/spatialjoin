@@ -13,13 +13,14 @@
 #include <atomic>
 #include <condition_variable>
 #include <functional>
+#include <list>
 #include <mutex>
 #include <queue>
 #include <thread>
 #include <unordered_map>
 #include <unordered_set>
 
-#include "GeometryCache.h"
+#include "GeometryStore.h"
 #include "Stats.h"
 #include "SweepEventList.h"
 #include "util/JobQueue.h"
@@ -44,7 +45,6 @@ inline std::string toString(const BoxVal& bv) {
   ret << " point=" << util::geo::getWKT(bv.point);
   // ret << " b45=" << util::geo::getWKT(bv.b45);
   ret << " side=" << bv.side;
-  ret << " large=" << bv.large;
   ret << ")";
 
   return ret.str();
@@ -81,32 +81,27 @@ inline bool operator==(const BoxVal& a, const BoxVal& b) {
 }
 
 struct SweepVal {
-  SweepVal(size_t id, GeomType type)
-      : id(id), type(type), side(false), large(false) {}
+  SweepVal(size_t id, GeomType type) : id(id), type(type), side(false) {}
   SweepVal(size_t id, GeomType type, util::geo::I32Box b45,
-           util::geo::I32Point point, util::geo::I32Point point2, bool side,
-           bool large)
+           util::geo::I32Point point, util::geo::I32Point point2, bool side)
       : id(id),
         type(type),
         b45(b45),
         point(point),
         point2(point2),
-        side(side),
-        large(large) {}
+        side(side) {}
   SweepVal() : id(0), type(POLYGON) {}
   size_t id;
   GeomType type : 4;
   util::geo::I32Box b45;
   util::geo::I32Point point, point2;
   bool side;
-  bool large;
 };
 
 struct JobVal {
   size_t id;
   GeomType type : 4;
   util::geo::I32Point point, point2;
-  bool large;
   int32_t val;
 
   JobVal() : id(0), type(POLYGON) {}
@@ -115,15 +110,9 @@ struct JobVal {
         type(bv.type),
         point(bv.point),
         point2(getOtherPoint(bv)),
-        large(bv.large),
         val(bv.val){};
   JobVal(const SweepVal& sv)
-      : id(sv.id),
-        type(sv.type),
-        point(sv.point),
-        point2(sv.point2),
-        large(sv.large),
-        val(0){};
+      : id(sv.id), type(sv.type), point(sv.point), point2(sv.point2), val(0){};
 };
 
 inline bool operator==(const JobVal& a, const JobVal& b) {
@@ -190,8 +179,32 @@ static const size_t MAX_OUT_LINE_LENGTH = 1000;
 static const size_t POINT_CACHE_MAX_ELEMENTS = 10000;
 static const size_t SIMPLE_LINE_CACHE_MAX_ELEMENTS = 10000;
 
-// only use large geom cache for extreme geometries
-static const size_t GEOM_LARGENESS_THRESHOLD = 1024 * 1024 * 1024;
+template <typename W>
+struct ValEntry {
+  size_t estimatedSize;
+  std::shared_ptr<W> val;
+};
+
+// per-thread LRU caches for the geometries of a single GeometryStore
+template <typename W>
+struct GeomLRUCache {
+  GeomLRUCache(size_t maxSize, size_t maxNumElements, size_t numThreads)
+      : vals(numThreads),
+        idMap(numThreads),
+        valSizes(numThreads),
+        mutexes(numThreads),
+        maxSize(maxSize),
+        maxNumElements(maxNumElements) {}
+
+  std::vector<std::list<std::pair<size_t, ValEntry<W>>>> vals;
+  std::vector<std::unordered_map<
+      size_t, typename std::list<std::pair<size_t, ValEntry<W>>>::iterator>>
+      idMap;
+  std::vector<size_t> valSizes;
+  mutable std::vector<std::mutex> mutexes;
+
+  size_t maxSize, maxNumElements;
+};
 
 class GeometryCacheManager {
  public:
@@ -201,21 +214,21 @@ class GeometryCacheManager {
                        const std::string& tmpPrefix)
       : _cfg(cfg),
         _obufpos(0),
-        _pointCache(cfg.geomCacheMaxSize,
-                    POINT_CACHE_MAX_ELEMENTS, cfg.numCacheThreads, cache,
-                    tmpPrefix),
-        _areaCache(cfg.geomCacheMaxSize,
-                   cfg.geomCacheMaxNumElements, cfg.numCacheThreads, cache,
-                   tmpPrefix),
-        _simpleAreaCache(cfg.geomCacheMaxSize,
-                         cfg.geomCacheMaxNumElements, cfg.numCacheThreads,
-                         cache, tmpPrefix),
-        _lineCache(cfg.geomCacheMaxSize,
-                   cfg.geomCacheMaxNumElements, cfg.numCacheThreads, cache,
-                   tmpPrefix),
-        _simpleLineCache(cfg.geomCacheMaxSize,
-                         SIMPLE_LINE_CACHE_MAX_ELEMENTS, cfg.numCacheThreads,
-                         cache, tmpPrefix),
+        _pointStore(cfg.numCacheThreads, cache, tmpPrefix),
+        _areaStore(cfg.numCacheThreads, cache, tmpPrefix),
+        _simpleAreaStore(cfg.numCacheThreads, cache, tmpPrefix),
+        _lineStore(cfg.numCacheThreads, cache, tmpPrefix),
+        _simpleLineStore(cfg.numCacheThreads, cache, tmpPrefix),
+        _pointCache(cfg.geomCacheMaxSize, POINT_CACHE_MAX_ELEMENTS,
+                    cfg.numCacheThreads),
+        _areaCache(cfg.geomCacheMaxSize, cfg.geomCacheMaxNumElements,
+                   cfg.numCacheThreads),
+        _simpleAreaCache(cfg.geomCacheMaxSize, cfg.geomCacheMaxNumElements,
+                         cfg.numCacheThreads),
+        _lineCache(cfg.geomCacheMaxSize, cfg.geomCacheMaxNumElements,
+                   cfg.numCacheThreads),
+        _simpleLineCache(cfg.geomCacheMaxSize, SIMPLE_LINE_CACHE_MAX_ELEMENTS,
+                         cfg.numCacheThreads),
         _cache(cache),
         _numSides(1) {
     if (_cfg.forceTwoSided) _numSides = 2;
@@ -278,22 +291,22 @@ class GeometryCacheManager {
   }
 
   std::shared_ptr<sj::Line> getLine(size_t id, size_t tid) const {
-    return _lineCache.get(id, tid);
+    return get(_lineStore, _lineCache, id, tid);
   }
   std::shared_ptr<sj::SimpleLine> getSimpleLine(size_t id, size_t tid) const {
-    return _simpleLineCache.get(id, tid);
+    return get(_simpleLineStore, _simpleLineCache, id, tid);
   }
 
   std::shared_ptr<sj::Area> getArea(size_t id, size_t tid) const {
-    return _areaCache.get(id, tid);
+    return get(_areaStore, _areaCache, id, tid);
   }
 
   std::shared_ptr<sj::SimpleArea> getSimpleArea(size_t id, size_t tid) const {
-    return _simpleAreaCache.get(id, tid);
+    return get(_simpleAreaStore, _simpleAreaCache, id, tid);
   }
 
   std::shared_ptr<sj::Point> getPoint(size_t id, size_t tid) const {
-    return _pointCache.get(id, tid);
+    return get(_pointStore, _pointCache, id, tid);
   }
 
   std::pair<size_t, size_t> size() const;
@@ -359,6 +372,19 @@ class GeometryCacheManager {
   double DUPLICATE_REMOVAL_MIN_SIZE = 500;
 
  private:
+  // returns the geometry stored at off in store, cached in the LRU cache of
+  // thread tid
+  template <typename W>
+  std::shared_ptr<W> get(const GeometryStore<W>& store, GeomLRUCache<W>& cache,
+                         size_t off, size_t tid) const;
+
+  template <typename W>
+  std::shared_ptr<W> cache(GeomLRUCache<W>& cache, size_t off, const W& val,
+                           size_t estSize, size_t tid) const;
+
+  template <typename W>
+  static std::pair<size_t, size_t> size(const GeomLRUCache<W>& cache);
+
   double getMaxMultiDist(const std::string& idA, size_t aSub,
                          const util::geo::I32Point& leftAPoint,
                          const std::string& idB, size_t bSub,
@@ -433,7 +459,6 @@ class GeometryCacheManager {
     // make ordernig of equal geoms deterministic
     if (boxa->type != boxb->type) return boxa->type < boxb->type ? -1 : 1;
     if (boxa->side != boxb->side) return boxa->side ? 1 : -1;
-    if (boxa->large != boxb->large) return boxa->large ? 1 : -1;
     if (boxa->id != boxb->id) return boxa->id < boxb->id ? -1 : 1;
 
     return 0;
@@ -452,11 +477,17 @@ class GeometryCacheManager {
 
   mutable std::vector<Stats> _stats;
 
-  GeometryCache<Point> _pointCache;
-  GeometryCache<Area> _areaCache;
-  GeometryCache<SimpleArea> _simpleAreaCache;
-  GeometryCache<Line> _lineCache;
-  GeometryCache<SimpleLine> _simpleLineCache;
+  GeometryStore<Point> _pointStore;
+  GeometryStore<Area> _areaStore;
+  GeometryStore<SimpleArea> _simpleAreaStore;
+  GeometryStore<Line> _lineStore;
+  GeometryStore<SimpleLine> _simpleLineStore;
+
+  mutable GeomLRUCache<Point> _pointCache;
+  mutable GeomLRUCache<Area> _areaCache;
+  mutable GeomLRUCache<SimpleArea> _simpleAreaCache;
+  mutable GeomLRUCache<Line> _lineCache;
+  mutable GeomLRUCache<SimpleLine> _simpleLineCache;
 
   // these are written during the geometry add phase
   std::vector<std::string> _multiIds[2];

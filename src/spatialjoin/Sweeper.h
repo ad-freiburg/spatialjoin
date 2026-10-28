@@ -19,8 +19,8 @@
 #include <unordered_map>
 #include <unordered_set>
 
-#include "GeometryCache.h"
 #include "GeometryCacheManager.h"
+#include "GeometryStore.h"
 #include "Stats.h"
 #include "util/JobQueue.h"
 #include "util/geo/Geo.h"
@@ -265,7 +265,6 @@ class Sweeper {
     // make ordernig of equal geoms deterministic
     if (boxa->type != boxb->type) return boxa->type < boxb->type ? -1 : 1;
     if (boxa->side != boxb->side) return boxa->side ? 1 : -1;
-    if (boxa->large != boxb->large) return boxa->large ? 1 : -1;
     if (boxa->id != boxb->id) return boxa->id < boxb->id ? -1 : 1;
 
     return 0;

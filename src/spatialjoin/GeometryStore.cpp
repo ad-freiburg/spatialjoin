@@ -3,83 +3,16 @@
 
 #include <fstream>
 #include <iostream>
-#include <mutex>
 #include <vector>
 
-#include "GeometryCache.h"
+#include "GeometryStore.h"
 #include "util/geo/Geo.h"
 
 const static size_t MAX_MEM_CACHE_SIZE = 3 * 1024 * 1024 * 20l;
 
 // ____________________________________________________________________________
-template <typename W>
-std::shared_ptr<W> sj::GeometryCache<W>::get(size_t off, ssize_t desTid) const {
-  size_t tid;
-
-  if (_inMemory) {
-    // completely circumvent cache system
-    return _memStore.at(off);
-  } else if (desTid == -1) {
-    // special cache for large geometries
-    tid = _numThreads;
-  } else {
-    tid = desTid % _numThreads;
-  }
-
-  std::unique_lock<std::mutex> lock(_mutexes[tid]);
-
-  // check if value is in cache
-  auto it = _idMap[tid].find(off);
-
-  if (it == _idMap[tid].end()) {
-    // if not, load, cache and return
-    const auto& val = getFrom(off, _geomsFReads[tid]);
-    return cache(off, val.second, val.first, tid);
-  }
-
-  // if in cache, move to front of list and return
-  // splice only changes pointers in the linked list, no copying here
-  _vals[tid].splice(_vals[tid].begin(), _vals[tid], it->second);
-
-  return it->second->second.val;
-}
-
-// ____________________________________________________________________________
-template <typename W>
-std::shared_ptr<W> sj::GeometryCache<W>::cache(size_t off, const W& val,
-                                               size_t estSize,
-                                               size_t tid) const {
-  // if cache is too large, pop last elements until we have space
-  while (_maxSize > 0 && _vals[tid].size() > 0 && _valSizes[tid] > _maxSize) {
-    auto last = _vals[tid].rbegin();
-    _valSizes[tid] -= last->second.estimatedSize;
-    _idMap[tid].erase(last->first);
-    _vals[tid].pop_back();
-  }
-
-  // push value to front
-  _vals[tid].push_front({off, {estSize, std::make_shared<W>(val)}});
-
-  // if cache has too many elements, pop last element
-  if (_maxNumElements > 0 && _vals[tid].size() > _maxNumElements) {
-    auto last = _vals[tid].rbegin();
-    _valSizes[tid] -= last->second.estimatedSize;
-    _idMap[tid].erase(last->first);
-    _vals[tid].pop_back();
-  }
-
-  // set map to front iterator
-  _idMap[tid][off] = _vals[tid].begin();
-
-  // increase total estimated size
-  _valSizes[tid] += estSize;
-
-  return _vals[tid].front().second.val;
-}
-
-// ____________________________________________________________________________
 template <>
-std::pair<size_t, sj::SimpleLine> sj::GeometryCache<sj::SimpleLine>::getFrom(
+std::pair<size_t, sj::SimpleLine> sj::GeometryStore<sj::SimpleLine>::getFrom(
     size_t off, std::istream& str) const {
   sj::SimpleLine ret;
 
@@ -99,7 +32,7 @@ std::pair<size_t, sj::SimpleLine> sj::GeometryCache<sj::SimpleLine>::getFrom(
 
 // ____________________________________________________________________________
 template <>
-std::pair<size_t, sj::Point> sj::GeometryCache<sj::Point>::getFrom(
+std::pair<size_t, sj::Point> sj::GeometryStore<sj::Point>::getFrom(
     size_t off, std::istream& str) const {
   sj::Point ret;
 
@@ -122,7 +55,7 @@ std::pair<size_t, sj::Point> sj::GeometryCache<sj::Point>::getFrom(
 
 // ____________________________________________________________________________
 template <>
-std::pair<size_t, sj::SimpleArea> sj::GeometryCache<sj::SimpleArea>::getFrom(
+std::pair<size_t, sj::SimpleArea> sj::GeometryStore<sj::SimpleArea>::getFrom(
     size_t off, std::istream& str) const {
   sj::SimpleArea ret;
 
@@ -154,7 +87,7 @@ std::pair<size_t, sj::SimpleArea> sj::GeometryCache<sj::SimpleArea>::getFrom(
 
 // ____________________________________________________________________________
 template <>
-std::pair<size_t, sj::Line> sj::GeometryCache<sj::Line>::getFrom(
+std::pair<size_t, sj::Line> sj::GeometryStore<sj::Line>::getFrom(
     size_t off, std::istream& str) const {
   sj::Line ret;
   size_t estSize = 0;
@@ -193,7 +126,7 @@ std::pair<size_t, sj::Line> sj::GeometryCache<sj::Line>::getFrom(
 
 // ____________________________________________________________________________
 template <>
-std::pair<size_t, sj::Area> sj::GeometryCache<sj::Area>::getFrom(
+std::pair<size_t, sj::Area> sj::GeometryStore<sj::Area>::getFrom(
     size_t off, std::istream& str) const {
   sj::Area ret;
   size_t estSize = 0;
@@ -232,7 +165,7 @@ std::pair<size_t, sj::Area> sj::GeometryCache<sj::Area>::getFrom(
 
 // ____________________________________________________________________________
 template <>
-size_t sj::GeometryCache<sj::Point>::writeTo(const sj::Point& val,
+size_t sj::GeometryStore<sj::Point>::writeTo(const sj::Point& val,
                                              std::ostream& str) const {
   size_t ret = 0;
 
@@ -258,7 +191,7 @@ size_t sj::GeometryCache<sj::Point>::writeTo(const sj::Point& val,
 
 // ____________________________________________________________________________
 template <typename W>
-size_t sj::GeometryCache<W>::add(const std::string& raw) {
+size_t sj::GeometryStore<W>::add(const std::string& raw) {
   size_t ret = _geomsOffset;
   _geomsOffset += raw.size();
 
@@ -289,7 +222,7 @@ size_t sj::GeometryCache<W>::add(const std::string& raw) {
 
 // ____________________________________________________________________________
 template <>
-size_t sj::GeometryCache<sj::SimpleArea>::writeTo(const sj::SimpleArea& val,
+size_t sj::GeometryStore<sj::SimpleArea>::writeTo(const sj::SimpleArea& val,
                                                   std::ostream& str) const {
   size_t ret = 0;
 
@@ -323,7 +256,7 @@ size_t sj::GeometryCache<sj::SimpleArea>::writeTo(const sj::SimpleArea& val,
 // ____________________________________________________________________________
 
 template <>
-size_t sj::GeometryCache<sj::SimpleLine>::writeTo(const sj::SimpleLine& val,
+size_t sj::GeometryStore<sj::SimpleLine>::writeTo(const sj::SimpleLine& val,
                                                   std::ostream& str) const {
   size_t ret = 0;
 
@@ -345,7 +278,7 @@ size_t sj::GeometryCache<sj::SimpleLine>::writeTo(const sj::SimpleLine& val,
 
 // ____________________________________________________________________________
 template <>
-size_t sj::GeometryCache<sj::Line>::writeTo(const sj::Line& val,
+size_t sj::GeometryStore<sj::Line>::writeTo(const sj::Line& val,
                                             std::ostream& str) const {
   size_t ret = 0;
 
@@ -384,7 +317,7 @@ size_t sj::GeometryCache<sj::Line>::writeTo(const sj::Line& val,
 
 // ____________________________________________________________________________
 template <>
-size_t sj::GeometryCache<sj::Area>::writeTo(const sj::Area& val,
+size_t sj::GeometryStore<sj::Area>::writeTo(const sj::Area& val,
                                             std::ostream& str) const {
   size_t ret = 0;
 
@@ -424,7 +357,7 @@ size_t sj::GeometryCache<sj::Area>::writeTo(const sj::Area& val,
 
 // ____________________________________________________________________________
 template <typename W>
-void sj::GeometryCache<W>::flush() {
+void sj::GeometryStore<W>::flush() {
   if (_geomsF.is_open()) {
     _geomsF.flush();
     _geomsF.close();
@@ -433,7 +366,7 @@ void sj::GeometryCache<W>::flush() {
 
 // ____________________________________________________________________________
 template <typename W>
-size_t sj::GeometryCache<W>::readPoly(std::istream& str,
+size_t sj::GeometryStore<W>::readPoly(std::istream& str,
                                       util::geo::I32XSortedPolygon& ret) const {
   size_t estSize = 0;
 
@@ -521,7 +454,7 @@ size_t sj::GeometryCache<W>::readPoly(std::istream& str,
 
 // ____________________________________________________________________________
 template <typename W>
-size_t sj::GeometryCache<W>::writePoly(const util::geo::I32XSortedPolygon& geom,
+size_t sj::GeometryStore<W>::writePoly(const util::geo::I32XSortedPolygon& geom,
                                        std::ostream& str) {
   size_t ret = 0;
 
@@ -596,7 +529,7 @@ size_t sj::GeometryCache<W>::writePoly(const util::geo::I32XSortedPolygon& geom,
 
 // ____________________________________________________________________________
 template <typename W>
-size_t sj::GeometryCache<W>::readLine(std::istream& str,
+size_t sj::GeometryStore<W>::readLine(std::istream& str,
                                       util::geo::I32XSortedLine& ret) const {
   size_t estSize = 0;
 
@@ -643,7 +576,7 @@ size_t sj::GeometryCache<W>::readLine(std::istream& str,
 
 // ____________________________________________________________________________
 template <typename W>
-size_t sj::GeometryCache<W>::writeLine(const util::geo::I32XSortedLine& geom,
+size_t sj::GeometryStore<W>::writeLine(const util::geo::I32XSortedLine& geom,
                                        std::ostream& str) {
   size_t ret = 0;
 
@@ -677,51 +610,38 @@ size_t sj::GeometryCache<W>::writeLine(const util::geo::I32XSortedLine& geom,
 }
 
 // ____________________________________________________________________________
-template <typename W>
-std::pair<size_t, size_t> sj::GeometryCache<W>::size() const {
-  size_t numEntries = 0;
-  size_t bytes = 0;
-  for (size_t tid = 0; tid < _vals.size(); tid++) {
-    std::unique_lock<std::mutex> lock(_mutexes[tid]);
-    numEntries += _vals[tid].size();
-    bytes += _valSizes[tid];
-  }
-  return {numEntries, bytes};
-}
-
-// ____________________________________________________________________________
 template <>
-std::string sj::GeometryCache<sj::Area>::getFName() const {
+std::string sj::GeometryStore<sj::Area>::getFName() const {
   return util::getTmpFName(_dir, _tmpPrefix, "areas");
 }
 
 // ____________________________________________________________________________
 template <>
-std::string sj::GeometryCache<sj::Line>::getFName() const {
+std::string sj::GeometryStore<sj::Line>::getFName() const {
   return util::getTmpFName(_dir, _tmpPrefix, "lines");
 }
 
 // ____________________________________________________________________________
 template <>
-std::string sj::GeometryCache<sj::Point>::getFName() const {
+std::string sj::GeometryStore<sj::Point>::getFName() const {
   return util::getTmpFName(_dir, _tmpPrefix, "points");
 }
 
 // ____________________________________________________________________________
 template <>
-std::string sj::GeometryCache<sj::SimpleLine>::getFName() const {
+std::string sj::GeometryStore<sj::SimpleLine>::getFName() const {
   return util::getTmpFName(_dir, _tmpPrefix, "simplelines");
 }
 
 // ____________________________________________________________________________
 template <>
-std::string sj::GeometryCache<sj::SimpleArea>::getFName() const {
+std::string sj::GeometryStore<sj::SimpleArea>::getFName() const {
   return util::getTmpFName(_dir, ".spatialjoin", "simpleareas");
 }
 
 // ____________________________________________________________________________
-template class sj::GeometryCache<sj::Area>;
-template class sj::GeometryCache<sj::Line>;
-template class sj::GeometryCache<sj::SimpleLine>;
-template class sj::GeometryCache<sj::Point>;
-template class sj::GeometryCache<sj::SimpleArea>;
+template class sj::GeometryStore<sj::Area>;
+template class sj::GeometryStore<sj::Line>;
+template class sj::GeometryStore<sj::SimpleLine>;
+template class sj::GeometryStore<sj::Point>;
+template class sj::GeometryStore<sj::SimpleArea>;

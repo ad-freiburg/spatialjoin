@@ -252,8 +252,7 @@ I32Box GeometryCacheManager::add(const I32Polygon& poly,
                     rawBox.getUpperRight(),
                     packPoint(rawBox.getLowerLeft()),
                     box45,
-                    side,
-                    false};
+                    side};
     cur.boxvalOut = {0,  // placeholder, will be overwritten later on
                      box.getLowerLeft().getY(),
                      box.getUpperRight().getY(),
@@ -264,14 +263,13 @@ I32Box GeometryCacheManager::add(const I32Polygon& poly,
                      rawBox.getLowerLeft(),
                      packPoint(rawBox.getUpperRight()),
                      box45,
-                     side,
-                     false};
+                     side};
     batch.foldedBoxAreas.emplace_back(cur);
   } else if (poly.getInners().size() == 0 && poly.getOuter().size() < 10 &&
              poly.getOuter().size() == densePoly.getOuter().size() &&
              subid == 0 && (!_cfg.useBoxIds || boxIds.front().first == 1)) {
     std::stringstream str;
-    _simpleAreaCache.writeTo({poly.getOuter(), gid}, str);
+    _simpleAreaStore.writeTo({poly.getOuter(), gid}, str);
     cur.raw = str.str();
 
     auto rightPoint = poly.getOuter().front();
@@ -279,9 +277,6 @@ I32Box GeometryCacheManager::add(const I32Polygon& poly,
     for (const auto& p : poly.getOuter()) {
       if (p.getX() > rightPoint.getX()) rightPoint = p;
     }
-
-    size_t estimatedSize =
-        poly.getOuter().size() * sizeof(util::geo::XSortedTuple<int32_t>);
 
     cur.boxvalIn = {0,  // placeholder, will be overwritten later on
                     box.getLowerLeft().getY(),
@@ -293,8 +288,7 @@ I32Box GeometryCacheManager::add(const I32Polygon& poly,
                     {},
                     poly.size(),
                     box45,
-                    side,
-                    estimatedSize > GEOM_LARGENESS_THRESHOLD};
+                    side};
     cur.boxvalOut = {0,  // placeholder, will be overwritten later on
                      box.getLowerLeft().getY(),
                      box.getUpperRight().getY(),
@@ -305,8 +299,7 @@ I32Box GeometryCacheManager::add(const I32Polygon& poly,
                      rightPoint,
                      poly.size(),
                      box45,
-                     side,
-                     estimatedSize > GEOM_LARGENESS_THRESHOLD};
+                     side};
     batch.simpleAreas.emplace_back(cur);
   } else {
     if (!_cfg.useFastSweepSkip) {
@@ -321,15 +314,8 @@ I32Box GeometryCacheManager::add(const I32Polygon& poly,
     auto rightPoint = spoly.getOuter().rawRing().back().p;
 
     std::stringstream str;
-    _areaCache.writeTo({std::move(spoly), gid, subid, boxIds}, str);
+    _areaStore.writeTo({std::move(spoly), gid, subid, boxIds}, str);
     ;
-
-    size_t estimatedSize = spoly.getOuter().rawRing().size() *
-                           sizeof(util::geo::XSortedTuple<int32_t>);
-    for (const auto& p : spoly.getInners()) {
-      estimatedSize +=
-          p.rawRing().size() * sizeof(util::geo::XSortedTuple<int32_t>);
-    }
 
     cur.raw = str.str();
 
@@ -343,8 +329,7 @@ I32Box GeometryCacheManager::add(const I32Polygon& poly,
                     {},
                     polySize,
                     box45,
-                    side,
-                    estimatedSize > GEOM_LARGENESS_THRESHOLD};
+                    side};
     cur.boxvalOut = {0,  // placeholder, will be overwritten later on
                      box.getLowerLeft().getY(),
                      box.getUpperRight().getY(),
@@ -355,8 +340,7 @@ I32Box GeometryCacheManager::add(const I32Polygon& poly,
                      rightPoint,
                      polySize,
                      box45,
-                     side,
-                     estimatedSize > GEOM_LARGENESS_THRESHOLD};
+                     side};
     batch.areas.emplace_back(cur);
   }
 
@@ -438,8 +422,7 @@ I32Box GeometryCacheManager::add(const I32Line& line, const std::string& gidR,
         packPoint(line.front().getX() < line.back().getX() ? line.front()
                                                            : line.back()),
         box45,
-        side,
-        false};
+        side};
     cur.boxvalOut = {
         0,  // placeholder, will be overwritten later on,
         box.getLowerLeft().getY(),
@@ -452,8 +435,7 @@ I32Box GeometryCacheManager::add(const I32Line& line, const std::string& gidR,
         packPoint(line.front().getX() < line.back().getX() ? line.back()
                                                            : line.front()),
         box45,
-        side,
-        false};
+        side};
 
     // check if we can fold the gid into the offset id, because the gid is all
     // we store in the cache for points
@@ -463,7 +445,7 @@ I32Box GeometryCacheManager::add(const I32Line& line, const std::string& gidR,
       batch.foldedSimpleLines.emplace_back(cur);
     } else {
       std::stringstream str;
-      _simpleLineCache.writeTo({gid}, str);
+      _simpleLineStore.writeTo({gid}, str);
 
       cur.raw = str.str();
 
@@ -480,11 +462,8 @@ I32Box GeometryCacheManager::add(const I32Line& line, const std::string& gidR,
     }
 
     std::stringstream str;
-    _lineCache.writeTo({std::move(sline), gid, subid, boxIds}, str);
+    _lineStore.writeTo({std::move(sline), gid, subid, boxIds}, str);
     cur.raw = str.str();
-
-    size_t estimatedSize =
-        line.size() * sizeof(util::geo::XSortedTuple<int32_t>);
 
     cur.boxvalIn = {0,  // placeholder, will be overwritten later on
                     box.getLowerLeft().getY(),
@@ -496,8 +475,7 @@ I32Box GeometryCacheManager::add(const I32Line& line, const std::string& gidR,
                     {},
                     lineSize,
                     box45,
-                    side,
-                    estimatedSize > GEOM_LARGENESS_THRESHOLD};
+                    side};
     cur.boxvalOut = {0,  // placeholder, will be overwritten later on
                      box.getLowerLeft().getY(),
                      box.getUpperRight().getY(),
@@ -508,8 +486,7 @@ I32Box GeometryCacheManager::add(const I32Line& line, const std::string& gidR,
                      rightPoint,
                      lineSize,
                      box45,
-                     side,
-                     estimatedSize > GEOM_LARGENESS_THRESHOLD};
+                     side};
     batch.lines.emplace_back(cur);
   }
 
@@ -568,8 +545,7 @@ I32Box GeometryCacheManager::add(const I32Point& point, const std::string& gidR,
                   point,
                   1,
                   getPaddedBoundingBox(pointR, rawBox),
-                  side,
-                  false};
+                  side};
   cur.boxvalOut = {0,  // placeholder, will be overwritten later on
                    box.getLowerLeft().getY(),
                    box.getUpperRight().getY(),
@@ -580,8 +556,7 @@ I32Box GeometryCacheManager::add(const I32Point& point, const std::string& gidR,
                    point,
                    1,
                    getPaddedBoundingBox(pointR, rawBox),
-                   side,
-                   false};
+                   side};
 
   cur.gid = gid;
 
@@ -593,7 +568,7 @@ I32Box GeometryCacheManager::add(const I32Point& point, const std::string& gidR,
     batch.foldedPoints.emplace_back(cur);
   } else {
     std::stringstream str;
-    _pointCache.writeTo({gid, subid}, str);
+    _pointStore.writeTo({gid, subid}, str);
 
     cur.raw = str.str();
 
@@ -618,7 +593,7 @@ void GeometryCacheManager::addBatch(WriteBatch& cands,
     std::unique_lock<std::mutex> lock(_pointGeomCacheWriteMtx);
     for (auto& cand : cands.points) {
       if (cand.boxvalIn.side) _numSides = 2;
-      cand.boxvalIn.id = _pointCache.add(cand.raw);
+      cand.boxvalIn.id = _pointStore.add(cand.raw);
       cand.boxvalOut.id = cand.boxvalIn.id;
     }
   }
@@ -627,7 +602,7 @@ void GeometryCacheManager::addBatch(WriteBatch& cands,
     std::unique_lock<std::mutex> lock(_lineGeomCacheWriteMtx);
     for (auto& cand : cands.lines) {
       if (cand.boxvalIn.side) _numSides = 2;
-      cand.boxvalIn.id = _lineCache.add(cand.raw);
+      cand.boxvalIn.id = _lineStore.add(cand.raw);
       cand.boxvalOut.id = cand.boxvalIn.id;
     }
   }
@@ -636,7 +611,7 @@ void GeometryCacheManager::addBatch(WriteBatch& cands,
     std::unique_lock<std::mutex> lock(_simpleLineGeomCacheWriteMtx);
     for (auto& cand : cands.simpleLines) {
       if (cand.boxvalIn.side) _numSides = 2;
-      cand.boxvalIn.id = _simpleLineCache.add(cand.raw);
+      cand.boxvalIn.id = _simpleLineStore.add(cand.raw);
       cand.boxvalOut.id = cand.boxvalIn.id;
     }
   }
@@ -661,7 +636,7 @@ void GeometryCacheManager::addBatch(WriteBatch& cands,
     std::unique_lock<std::mutex> lock(_simpleAreaGeomCacheWriteMtx);
     for (auto& cand : cands.simpleAreas) {
       if (cand.boxvalIn.side) _numSides = 2;
-      cand.boxvalIn.id = _simpleAreaCache.add(cand.raw);
+      cand.boxvalIn.id = _simpleAreaStore.add(cand.raw);
       cand.boxvalOut.id = cand.boxvalIn.id;
     }
   }
@@ -670,7 +645,7 @@ void GeometryCacheManager::addBatch(WriteBatch& cands,
     std::unique_lock<std::mutex> lock(_areaGeomCacheWriteMtx);
     for (auto& cand : cands.areas) {
       if (cand.boxvalIn.side) _numSides = 2;
-      cand.boxvalIn.id = _areaCache.add(cand.raw);
+      cand.boxvalIn.id = _areaStore.add(cand.raw);
       cand.boxvalOut.id = cand.boxvalIn.id;
     }
   }
@@ -804,7 +779,6 @@ void GeometryCacheManager::flush(sj::SweepEventList* events) {
                    {},
                    0,
                    {},
-                   false,
                    false});
     }
   }
@@ -821,16 +795,15 @@ void GeometryCacheManager::flush(sj::SweepEventList* events) {
                    {},
                    0,
                    {},
-                   static_cast<bool>(side),
-                   false});
+                   static_cast<bool>(side)});
     }
   }
 
-  _pointCache.flush();
-  _areaCache.flush();
-  _simpleAreaCache.flush();
-  _lineCache.flush();
-  _simpleLineCache.flush();
+  _pointStore.flush();
+  _areaStore.flush();
+  _simpleAreaStore.flush();
+  _lineStore.flush();
+  _simpleLineStore.flush();
 
   // TODO!!!!
   // duplicatesToReferences();
@@ -858,8 +831,7 @@ void GeometryCacheManager::duplicatesToReferences() {
 
   int32_t curX = 0;
 
-  std::unordered_map<uint64_t, std::pair<size_t, bool>> duplicatePolys,
-      duplicateLines;
+  std::unordered_map<uint64_t, size_t> duplicatePolys, duplicateLines;
 
   size_t pos = 0;
 
@@ -923,13 +895,12 @@ void GeometryCacheManager::duplicatesToReferences() {
           const auto& existing = duplicatePolys.find(h);
 
           if (existing != duplicatePolys.end()) {
-            auto a = _areaCache.get(cur->id, cur->large ? -1 : 0);
-            auto b = _areaCache.get(existing->second.first,
-                                    existing->second.second ? -1 : 0);
+            auto a = get(_areaStore, _areaCache, cur->id, 0);
+            auto b = get(_areaStore, _areaCache, existing->second, 0);
 
             if (a->geom == b->geom) {
               deletedPolys.insert(cur->id);
-              if (referencedPolys.insert(existing->second.first).second) {
+              if (referencedPolys.insert(existing->second).second) {
                 // for the first element referencing this, modify this
                 // event to the self check of the referenced geom
                 cur->type = SELF_CHECK_AREA;
@@ -943,7 +914,7 @@ void GeometryCacheManager::duplicatesToReferences() {
               _refs[b->id][b->subId][a->id] = a->subId;
             }
           } else {
-            duplicatePolys[h] = {(size_t)cur->id, cur->large};
+            duplicatePolys[h] = cur->id;
           }
         }
 
@@ -953,13 +924,12 @@ void GeometryCacheManager::duplicatesToReferences() {
           const auto& existing = duplicateLines.find(h);
 
           if (existing != duplicateLines.end()) {
-            auto a = _lineCache.get(cur->id, cur->large ? -1 : 0);
-            auto b = _lineCache.get(existing->second.first,
-                                    existing->second.second ? -1 : 0);
+            auto a = get(_lineStore, _lineCache, cur->id, 0);
+            auto b = get(_lineStore, _lineCache, existing->second, 0);
 
             if (a->geom == b->geom) {
               deletedLines.insert(cur->id);
-              if (referencedLines.insert(existing->second.first).second) {
+              if (referencedLines.insert(existing->second).second) {
                 // for the first element referencing this, modify this
                 // event to the self check of the referenced geom
                 cur->type = SELF_CHECK_LINE;
@@ -972,7 +942,7 @@ void GeometryCacheManager::duplicatesToReferences() {
               _refs[b->id][b->subId][a->id] = a->subId;
             }
           } else {
-            duplicateLines[h] = {(size_t)cur->id, cur->large};
+            duplicateLines[h] = cur->id;
           }
         }
       }
@@ -1075,12 +1045,106 @@ util::geo::I32Box GeometryCacheManager::getPaddedBoundingBox(
 }
 
 // _____________________________________________________________________________
+template <typename W>
+std::shared_ptr<W> GeometryCacheManager::get(const GeometryStore<W>& store,
+                                             GeomLRUCache<W>& cache, size_t off,
+                                             size_t tid) const {
+  // completely circumvent cache system
+  if (store.inMemory()) return store.getFromMem(off);
+
+  tid = tid % _cfg.numCacheThreads;
+
+  std::unique_lock<std::mutex> lock(cache.mutexes[tid]);
+
+  // check if value is in cache
+  auto it = cache.idMap[tid].find(off);
+
+  if (it == cache.idMap[tid].end()) {
+    // if not, load, cache and return
+    const auto& val = store.getFrom(off, tid);
+    return this->cache(cache, off, val.second, val.first, tid);
+  }
+
+  // if in cache, move to front of list and return
+  // splice only changes pointers in the linked list, no copying here
+  cache.vals[tid].splice(cache.vals[tid].begin(), cache.vals[tid], it->second);
+
+  return it->second->second.val;
+}
+
+template std::shared_ptr<sj::Point> GeometryCacheManager::get(
+    const sj::GeometryStore<sj::Point>&, sj::GeomLRUCache<sj::Point>&, size_t,
+    size_t) const;
+template std::shared_ptr<sj::Area> GeometryCacheManager::get(
+    const sj::GeometryStore<sj::Area>&, sj::GeomLRUCache<sj::Area>&, size_t,
+    size_t) const;
+template std::shared_ptr<sj::SimpleArea> GeometryCacheManager::get(
+    const sj::GeometryStore<sj::SimpleArea>&, sj::GeomLRUCache<sj::SimpleArea>&,
+    size_t, size_t) const;
+template std::shared_ptr<sj::Line> GeometryCacheManager::get(
+    const sj::GeometryStore<sj::Line>&, sj::GeomLRUCache<sj::Line>&, size_t,
+    size_t) const;
+template std::shared_ptr<sj::SimpleLine> GeometryCacheManager::get(
+    const sj::GeometryStore<sj::SimpleLine>&, sj::GeomLRUCache<sj::SimpleLine>&,
+    size_t, size_t) const;
+
+// _____________________________________________________________________________
+template <typename W>
+std::shared_ptr<W> GeometryCacheManager::cache(GeomLRUCache<W>& cache,
+                                               size_t off, const W& val,
+                                               size_t estSize,
+                                               size_t tid) const {
+  // if cache is too large, pop last elements until we have space
+  while (cache.maxSize > 0 && cache.vals[tid].size() > 0 &&
+         cache.valSizes[tid] > cache.maxSize) {
+    auto last = cache.vals[tid].rbegin();
+    cache.valSizes[tid] -= last->second.estimatedSize;
+    cache.idMap[tid].erase(last->first);
+    cache.vals[tid].pop_back();
+  }
+
+  // push value to front
+  cache.vals[tid].push_front({off, {estSize, std::make_shared<W>(val)}});
+
+  // if cache has too many elements, pop last element
+  if (cache.maxNumElements > 0 &&
+      cache.vals[tid].size() > cache.maxNumElements) {
+    auto last = cache.vals[tid].rbegin();
+    cache.valSizes[tid] -= last->second.estimatedSize;
+    cache.idMap[tid].erase(last->first);
+    cache.vals[tid].pop_back();
+  }
+
+  // set map to front iterator
+  cache.idMap[tid][off] = cache.vals[tid].begin();
+
+  // increase total estimated size
+  cache.valSizes[tid] += estSize;
+
+  return cache.vals[tid].front().second.val;
+}
+
+// _____________________________________________________________________________
+template <typename W>
+std::pair<size_t, size_t> GeometryCacheManager::size(
+    const GeomLRUCache<W>& cache) {
+  size_t numEntries = 0;
+  size_t bytes = 0;
+  for (size_t tid = 0; tid < cache.vals.size(); tid++) {
+    std::unique_lock<std::mutex> lock(cache.mutexes[tid]);
+    numEntries += cache.vals[tid].size();
+    bytes += cache.valSizes[tid];
+  }
+  return {numEntries, bytes};
+}
+
+// _____________________________________________________________________________
 std::pair<size_t, size_t> GeometryCacheManager::size() const {
-  auto cacheSizePoint = _pointCache.size();
-  auto cacheSizeArea = _areaCache.size();
-  auto cacheSizeSimpleArea = _simpleAreaCache.size();
-  auto cacheSizeSimpleLine = _simpleLineCache.size();
-  auto cacheSizeLine = _lineCache.size();
+  auto cacheSizePoint = size(_pointCache);
+  auto cacheSizeArea = size(_areaCache);
+  auto cacheSizeSimpleArea = size(_simpleAreaCache);
+  auto cacheSizeSimpleLine = size(_simpleLineCache);
+  auto cacheSizeLine = size(_lineCache);
 
   return {cacheSizePoint.first + cacheSizeArea.first +
               cacheSizeSimpleArea.first + cacheSizeSimpleLine.first +

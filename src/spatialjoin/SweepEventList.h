@@ -27,7 +27,7 @@ enum GeomType : uint8_t {
 };
 
 struct BoxVal {
-  size_t id;     // the ID returned from the GeometryCache (offset into file)
+  size_t id;     // the ID returned from the GeometryStore (offset into file)
   int32_t loY;   // the lower Y value of the box
   int32_t upY;   // the upper Y value of the box
   int32_t val;   // the left X value of the box
@@ -42,7 +42,6 @@ struct BoxVal {
                           // packPoint()
   util::geo::I32Box b45;  // oriented bounding box
   bool side;
-  bool large;
 };
 
 // _____________________________________________________________________________
@@ -130,7 +129,6 @@ static int boxCmp(const void* a, const void* b) {
   // make ordernig of equal geoms deterministic
   if (boxa->type != boxb->type) return boxa->type < boxb->type ? -1 : 1;
   if (boxa->side != boxb->side) return boxa->side ? 1 : -1;
-  if (boxa->large != boxb->large) return boxa->large ? 1 : -1;
   if (boxa->id != boxb->id) return boxa->id < boxb->id ? -1 : 1;
 
   return 0;
