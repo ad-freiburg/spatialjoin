@@ -46,7 +46,8 @@ class Sweeper {
 
   void log(const std::string& msg);
 
-  RelStats sweep(const SweepEventList& events);
+  RelStats sweep(const SweepEventList* eventsA,
+                 const SweepEventList* eventsB = 0);
 
   size_t numElements() const { return _curSweepId / 2; }
 

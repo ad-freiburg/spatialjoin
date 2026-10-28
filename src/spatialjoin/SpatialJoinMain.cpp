@@ -518,7 +518,7 @@ int main(int argc, char** argv) {
 
   cacheManager.log("Sweeping...");
   ts = TIME();
-  sweeper.sweep(sweepEvents);
+  sweeper.sweep(&sweepEvents, 0);
   cacheManager.log("done (" + std::to_string(TOOK(ts) / 1000000000.0) + "s).");
 
   delete[] buf;

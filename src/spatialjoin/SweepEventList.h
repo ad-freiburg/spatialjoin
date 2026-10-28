@@ -148,11 +148,13 @@ class SweepEventList {
   // reader for streaming the event list
   class Reader {
    public:
+    Reader() : _file(-1) {}
     Reader(int file, size_t bufSize) : _file(file), _buf(bufSize) {}
 
     // returns 0 at the end of the event list. Returned pointer is
     // valid until a call to next() or reset().
     const BoxVal* next() {
+      if (_file < 0) return 0;
       if (_readPtr >= _readBlockLen) {
         _readBlockLen =
             util::preadAll(_file, _buf.data(), _buf.size(), _fileOffset);
@@ -192,6 +194,41 @@ class SweepEventList {
     size_t _fileOffset = 0;
     ssize_t _readPtr = 0;
     ssize_t _readBlockLen = 0;
+  };
+
+  class CombinedReader {
+   public:
+    CombinedReader(const SweepEventList* a, const SweepEventList* b = 0,
+                   size_t bufSize = RBUF_SIZE)
+        : _readerA(a->newReader(bufSize)),
+          _readerB(b ? b->newReader(bufSize) : Reader()) {
+      _headA = _readerA.next();
+      _headB = _readerB.next();
+    }
+
+    // returns 0 at the end of both event lists. Returned pointer is
+    // valid until a call to next().
+    //
+    // TODO: store max-seg-length just like in util and quickly advance using
+    // binary search, useful if one side is << the other
+    const BoxVal* next() {
+      if (_last == &_headA) _headA = _readerA.next();
+      if (_last == &_headB) _headB = _readerB.next();
+
+      if (!_headB || (_headA && boxCmp(_headA, _headB) <= 0))
+        _last = &_headA;
+      else
+        _last = &_headB;
+
+      return *_last;
+    }
+
+   private:
+    Reader _readerA;
+    Reader _readerB;
+    const BoxVal* _headA = 0;
+    const BoxVal* _headB = 0;
+    const BoxVal** _last = 0;
   };
 
   SweepEventList(const std::string& cacheDir, const std::string& tmpPrefix)

@@ -70,7 +70,7 @@ std::string fullRun(const std::string& file, sj::SweeperCfg cfg,
     sweepEvents.flush(1);
 
     Sweeper sweeper(cfg, &cacheManager);
-    sweeper.sweep(sweepEvents);
+    sweeper.sweep(&sweepEvents);
 
     stats->numReferences = cacheManager.numReferences();
     stats->numInvalid = parser.getNumInvalid();

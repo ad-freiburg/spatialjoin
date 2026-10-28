@@ -425,9 +425,15 @@ void Sweeper::multiOut(size_t tOut, const std::string& gidA) {
 }
 
 // _____________________________________________________________________________
-RelStats Sweeper::sweep(const SweepEventList& events) {
-  // reads from the beginning of the event list
-  auto reader = events.newReader();
+RelStats Sweeper::sweep(const SweepEventList* eventsA,
+                        const SweepEventList* eventsB) {
+  // combined reader
+  SweepEventList::CombinedReader reader(eventsA, eventsB);
+
+  const size_t numObjects =
+      eventsA->numObjects() + (eventsB ? eventsB->numObjects() : 0);
+  const size_t numEvents =
+      eventsA->numEvents() + (eventsB ? eventsB->numEvents() : 0);
 
   _cancelled = false;
 
@@ -511,9 +517,9 @@ RelStats Sweeper::sweep(const SweepEventList& events) {
           auto cacheSize = _cacheManager->size();
 
           log(std::to_string(jj / 2) + " / " +
-              std::to_string(events.numObjects()) + " (" +
+              std::to_string(numObjects) + " (" +
               std::to_string(
-                  (((1.0 * jj) / (1.0 * events.numEvents())) * 100)) +
+                  (((1.0 * jj) / (1.0 * numEvents)) * 100)) +
               "%, " +
               std::to_string((500000.0 / double(TOOK(t))) * 1000000000.0) +
               " geoms/s, " +
