@@ -68,6 +68,7 @@ struct WriteBatch {
   std::vector<WriteCand> foldedBoxAreas;
   std::vector<WriteCand> areas;
   std::vector<WriteCand> refs;
+  std::vector<WriteCand> multiGeoms;
 
   size_t size() const {
     return points.size() + foldedSimpleLines.size() + foldedPoints.size() +
@@ -486,7 +487,7 @@ class GeometryCacheManager {
   mutable GeomLRUCache<SimpleLine> _simpleLineCache;
 
   // these are written during the geometry add phase
-  std::vector<std::string> _multiIds[2];
+  std::vector<std::string> _multiIds[2];  // required on OUT to get the GID
   std::vector<int32_t> _multiRightX[2];
   std::unordered_map<std::string, util::geo::I32Point> _multiRightPoint;
   std::unordered_map<std::string, size_t> _multiGidToId[2];

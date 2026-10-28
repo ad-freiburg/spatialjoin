@@ -14,6 +14,17 @@
 
 namespace sj {
 
+struct MultiGeom {
+  // rightmost point
+  util::geo::Point<int32_t> rightPoint;
+
+  // number of members
+  size_t numMembers;
+
+  // id
+  std::string id;
+};
+
 struct SimpleArea {
   // polygon
   util::geo::Ring<int32_t> geom;

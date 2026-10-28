@@ -32,6 +32,35 @@ std::pair<size_t, sj::SimpleLine> sj::GeometryStore<sj::SimpleLine>::getFrom(
 
 // ____________________________________________________________________________
 template <>
+std::pair<size_t, sj::MultiGeom> sj::GeometryStore<sj::MultiGeom>::getFrom(
+    size_t off, std::istream& str) const {
+  sj::MultiGeom ret;
+
+  str.seekg(off);
+
+  // id
+  uint16_t len;
+  str.read(reinterpret_cast<char*>(&len), sizeof(uint16_t));
+  ret.id.resize(len);
+
+  if (len) {
+    str.read(reinterpret_cast<char*>(&ret.id[0]), len * sizeof(char));
+  }
+
+  // number of members
+  str.read(reinterpret_cast<char*>(&ret.numMembers), sizeof(size_t));
+
+  // rightmost point
+  int32_t x, y;
+  str.read(reinterpret_cast<char*>(&x), sizeof(int32_t));
+  str.read(reinterpret_cast<char*>(&y), sizeof(int32_t));
+  ret.rightPoint = {x, y};
+
+  return {len * sizeof(char) + sizeof(size_t) + 2 * sizeof(int32_t), ret};
+}
+
+// ____________________________________________________________________________
+template <>
 std::pair<size_t, sj::Point> sj::GeometryStore<sj::Point>::getFrom(
     size_t off, std::istream& str) const {
   sj::Point ret;
@@ -185,6 +214,39 @@ size_t sj::GeometryStore<sj::Point>::writeTo(const sj::Point& val,
   // sub id
   str.write(reinterpret_cast<const char*>(&val.subId), sizeof(size_t));
   ret += sizeof(size_t);
+
+  return ret;
+}
+
+// ____________________________________________________________________________
+template <>
+size_t sj::GeometryStore<sj::MultiGeom>::writeTo(const sj::MultiGeom& val,
+                                                 std::ostream& str) const {
+  size_t ret = 0;
+
+  // id
+  if (val.id.size() > std::numeric_limits<uint16_t>::max()) {
+    throw std::out_of_range(
+        "Geometry ID is longer than " +
+        std::to_string(std::numeric_limits<uint16_t>::max()));
+  }
+  uint16_t s = val.id.size();
+  str.write(reinterpret_cast<const char*>(&s), sizeof(uint16_t));
+  ret += sizeof(uint16_t);
+  str.write(reinterpret_cast<const char*>(val.id.c_str()),
+            val.id.size() * sizeof(char));
+  ret += sizeof(char) * val.id.size();
+
+  // number of members
+  str.write(reinterpret_cast<const char*>(&val.numMembers), sizeof(size_t));
+  ret += sizeof(size_t);
+
+  // rightmost point
+  int32_t x = val.rightPoint.getX();
+  int32_t y = val.rightPoint.getY();
+  str.write(reinterpret_cast<const char*>(&x), sizeof(int32_t));
+  str.write(reinterpret_cast<const char*>(&y), sizeof(int32_t));
+  ret += 2 * sizeof(int32_t);
 
   return ret;
 }
@@ -640,8 +702,15 @@ std::string sj::GeometryStore<sj::SimpleArea>::getFName() const {
 }
 
 // ____________________________________________________________________________
+template <>
+std::string sj::GeometryStore<sj::MultiGeom>::getFName() const {
+  return util::getTmpFName(_dir, _tmpPrefix, "multis");
+}
+
+// ____________________________________________________________________________
 template class sj::GeometryStore<sj::Area>;
 template class sj::GeometryStore<sj::Line>;
 template class sj::GeometryStore<sj::SimpleLine>;
 template class sj::GeometryStore<sj::Point>;
 template class sj::GeometryStore<sj::SimpleArea>;
+template class sj::GeometryStore<sj::MultiGeom>;
