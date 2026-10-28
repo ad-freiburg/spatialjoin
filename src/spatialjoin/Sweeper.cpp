@@ -2892,7 +2892,8 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
     // covers
     if (res.coveredBy()) {
       writeNotCrosses(t, a->id, a->subId, b->id, b->subId);
-      if (a->subId == 0) writeNotOverlaps(t, a->id, a->subId, b->id, b->subId);
+      if (!_refs.count(a->id) && a->subId == 0)
+        writeNotOverlaps(t, a->id, a->subId, b->id, b->subId);
 
       writeCovers(t, b->id, b->subId, a->id, a->subId);
 
