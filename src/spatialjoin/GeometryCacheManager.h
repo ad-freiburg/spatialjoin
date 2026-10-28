@@ -167,7 +167,6 @@ struct SweeperCfg {
   std::string sepCrosses;
   bool useBoxIds;
   bool useArea;
-  bool useOBB;
   bool useDiagBox;
   bool useFastSweepSkip;
   bool noGeometryChecks;
@@ -202,19 +201,19 @@ class GeometryCacheManager {
                        const std::string& tmpPrefix)
       : _cfg(cfg),
         _obufpos(0),
-        _pointCache({cfg.useOBB}, cfg.geomCacheMaxSize,
+        _pointCache(cfg.geomCacheMaxSize,
                     POINT_CACHE_MAX_ELEMENTS, cfg.numCacheThreads, cache,
                     tmpPrefix),
-        _areaCache({cfg.useOBB}, cfg.geomCacheMaxSize,
+        _areaCache(cfg.geomCacheMaxSize,
                    cfg.geomCacheMaxNumElements, cfg.numCacheThreads, cache,
                    tmpPrefix),
-        _simpleAreaCache({cfg.useOBB}, cfg.geomCacheMaxSize,
+        _simpleAreaCache(cfg.geomCacheMaxSize,
                          cfg.geomCacheMaxNumElements, cfg.numCacheThreads,
                          cache, tmpPrefix),
-        _lineCache({cfg.useOBB}, cfg.geomCacheMaxSize,
+        _lineCache(cfg.geomCacheMaxSize,
                    cfg.geomCacheMaxNumElements, cfg.numCacheThreads, cache,
                    tmpPrefix),
-        _simpleLineCache({cfg.useOBB}, cfg.geomCacheMaxSize,
+        _simpleLineCache(cfg.geomCacheMaxSize,
                          SIMPLE_LINE_CACHE_MAX_ELEMENTS, cfg.numCacheThreads,
                          cache, tmpPrefix),
         _cache(cache),

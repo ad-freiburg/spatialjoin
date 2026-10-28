@@ -11,18 +11,18 @@
 #include <vector>
 
 #include "spatialjoin/BoxIds.h"
-#include "spatialjoin/OutputWriter.h"
 #include "spatialjoin/GeometryCacheManager.h"
+#include "spatialjoin/OutputWriter.h"
 #include "spatialjoin/Sweeper.h"
 #include "spatialjoin/WKTParse.h"
 #include "util/Test.h"
 #include "util/geo/Geo.h"
 #include "util/log/Log.h"
 
-using sj::ParseBatch;
 using sj::GeometryCacheManager;
-using sj::SweepEventList;
+using sj::ParseBatch;
 using sj::Sweeper;
+using sj::SweepEventList;
 
 size_t NUM_THREADS = 1;
 
@@ -176,8 +176,8 @@ int main(int, char**) {
   }
 
   {
-    using sj::boxids::BoxIdList;
     using sj::boxids::boxIdIsectPadded;
+    using sj::boxids::BoxIdList;
     using sj::boxids::GRID_W;
     using sj::boxids::NUM_GRID_CELLS;
 
@@ -218,60 +218,52 @@ int main(int, char**) {
       NUM_THREADS,  NUM_THREADS, 1000,        1000,       " intersects ",
       " contains ", " covers ",  " touches ", " equals ", " overlaps ",
       " crosses ",  false,       false,       false,      false,
-      false,        false,       -1,          false,      false,
-      false,        {},          false,       {},         {},
-      {},           {},          {}};
+      false,        -1,          false,       false,      false,
+      {},           false,       {},          {},         {},
+      {},           {}};
 
   sj::SweeperCfg all{
       NUM_THREADS,  NUM_THREADS, 1000,        1000,       " intersects ",
       " contains ", " covers ",  " touches ", " equals ", " overlaps ",
       " crosses ",  true,        true,        true,       true,
-      true,         false,       -1,          false,      false,
-      false,        {},          false,       {},         {},
-      {},           {},          {}};
+      false,        -1,          false,       false,      false,
+      {},           false,       {},          {},         {},
+      {},           {}};
 
   sj::SweeperCfg noSurfaceArea{
       NUM_THREADS,  NUM_THREADS, 1000,        1000,       " intersects ",
       " contains ", " covers ",  " touches ", " equals ", " overlaps ",
       " crosses ",  true,        false,       true,       true,
-      true,         false,       -1,          false,      false,
-      false,        {},          false,       {},         {},
-      {},           {},          {}};
+      false,        -1,          false,       false,      false,
+      {},           false,       {},          {},         {},
+      {},           {}};
 
   sj::SweeperCfg noBoxIds{
       NUM_THREADS,  NUM_THREADS, 1000,        1000,       " intersects ",
       " contains ", " covers ",  " touches ", " equals ", " overlaps ",
       " crosses ",  false,       true,        true,       true,
-      true,         false,       -1,          false,      false,
-      false,        {},          false,       {},         {},
-      {},           {},          {}};
-
-  sj::SweeperCfg noObb{
-      NUM_THREADS,  NUM_THREADS, 1000,        1000,       " intersects ",
-      " contains ", " covers ",  " touches ", " equals ", " overlaps ",
-      " crosses ",  true,        true,        false,      true,
-      true,         false,       -1,          false,      false,
-      false,        {},          false,       {},         {},
-      {},           {},          {}};
+      false,        -1,          false,       false,      false,
+      {},           false,       {},          {},         {},
+      {},           {}};
 
   sj::SweeperCfg noDiagBox{
       NUM_THREADS,  NUM_THREADS, 1000,        1000,       " intersects ",
       " contains ", " covers ",  " touches ", " equals ", " overlaps ",
-      " crosses ",  true,        true,        true,       false,
-      true,         false,       -1,          false,      false,
-      false,        {},          false,       {},         {},
-      {},           {},          {}};
+      " crosses ",  true,        true,        false,      true,
+      false,        -1,          false,       false,      false,
+      {},           false,       {},          {},         {},
+      {},           {}};
 
   sj::SweeperCfg noFastSweep{
       NUM_THREADS,  NUM_THREADS, 1000,        1000,       " intersects ",
       " contains ", " covers ",  " touches ", " equals ", " overlaps ",
-      " crosses ",  true,        true,        true,       true,
-      false,        false,       -1,          false,      false,
-      false,        {},          false,       {},         {},
-      {},           {},          {}};
+      " crosses ",  true,        true,        true,       false,
+      false,        -1,          false,       false,      false,
+      {},           false,       {},          {},         {},
+      {},           {}};
 
-  std::vector<sj::SweeperCfg> cfgs{baseline, all,       noSurfaceArea, noBoxIds,
-                                   noObb,    noDiagBox, noFastSweep};
+  std::vector<sj::SweeperCfg> cfgs{baseline, all,       noSurfaceArea,
+                                   noBoxIds, noDiagBox, noFastSweep};
 
   for (auto cfg : cfgs) {
     {
@@ -1264,7 +1256,8 @@ int main(int, char**) {
     // WKT is invalid. This should not lead to a self join over the remaining
     // side
     RunStats stats;
-    auto res = fullRun(TEST_DATASET_DIR "/self-join-regression", all, &stats, 0, false);
+    auto res = fullRun(TEST_DATASET_DIR "/self-join-regression", all, &stats, 0,
+                       false);
     TEST(res, ==, "");
   }
 
@@ -1431,7 +1424,7 @@ int main(int, char**) {
       RunStats stats;
       auto res = fullRun(TEST_DATASET_DIR "/empty", cfg, &stats);
 
-      TEST(res, == , "");
+      TEST(res, ==, "");
     }
   }
 }

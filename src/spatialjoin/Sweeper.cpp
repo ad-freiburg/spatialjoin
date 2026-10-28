@@ -630,8 +630,8 @@ sj::Area Sweeper::areaFromSimpleArea(const SimpleArea* sa) const {
           sa->id,
           0,
           (_cfg.useBoxIds ? BoxIdList{{1, 0}, {-getBoxId(sa->geom.front()), 0}}
-                          : BoxIdList{}),
-          {}};
+                          : BoxIdList{})
+          };
 }
 
 // _____________________________________________________________________________
@@ -672,15 +672,6 @@ util::geo::DE9IMatrix Sweeper::DE9IMCheck(const Area* a, const Area* b,
     }
   }
 
-  if (_cfg.useOBB) {
-    if (!a->obb.empty() && !b->obb.empty()) {
-      auto ts = TIME();
-      auto r = util::geo::intersectsContainsCovers(a->obb, b->obb);
-      _stats[t].timeOBBIsectAreaArea += TOOK(ts);
-      if (!std::get<0>(r)) return util::geo::MFF2FF1212;
-    }
-  }
-
   auto ts = TIME();
   auto res = DE9IM(b->geom, a->geom).transpose();
 
@@ -717,15 +708,6 @@ util::geo::DE9IMatrix Sweeper::DE9IMCheck(const Line* a, const Area* b,
     }
   }
 
-  if (_cfg.useOBB) {
-    if (!a->obb.empty() && !b->obb.empty()) {
-      auto ts = TIME();
-      auto r = intersectsContainsCovers(a->obb, b->obb);
-      _stats[t].timeOBBIsectAreaLine += TOOK(ts);
-      if (!std::get<0>(r)) return util::geo::MFF1FF0212;
-    }
-  }
-
   auto ts = TIME();
   auto res = DE9IM(a->geom, b->geom);
   _stats[t].timeFullGeoCheckAreaLine += TOOK(ts);
@@ -753,15 +735,6 @@ util::geo::DE9IMatrix Sweeper::DE9IMCheck(const Line* a, const Line* b,
     if (r.first + r.second == 0) return util::geo::MFF1FF0102;
   }
 
-  if (_cfg.useOBB) {
-    if (!a->obb.empty() && !b->obb.empty()) {
-      auto ts = TIME();
-      auto r = util::geo::intersectsContainsCovers(a->obb, b->obb);
-      _stats[t].timeOBBIsectLineLine += TOOK(ts);
-      if (!std::get<0>(r)) return util::geo::MFF1FF0102;
-    }
-  }
-
   auto ts = TIME();
   auto res = DE9IM(a->geom, b->geom);
   _stats[t].timeFullGeoCheckLineLine += TOOK(ts);
@@ -785,13 +758,6 @@ util::geo::DE9IMatrix Sweeper::DE9IMCheck(const LineSegment<int32_t>& a,
 
     // no box shared, we cannot contain or intersect
     if (r.first + r.second == 0) return util::geo::MFF1FF0212;
-  }
-
-  if (_cfg.useOBB && !b->obb.empty()) {
-    auto ts = TIME();
-    auto r = intersectsContainsCovers(I32XSortedLine(a), b->obb);
-    _stats[t].timeOBBIsectAreaLine += TOOK(ts);
-    if (!std::get<0>(r)) return util::geo::MFF1FF0212;
   }
 
   auto ts = TIME();
@@ -873,13 +839,6 @@ util::geo::DE9IMatrix Sweeper::DE9IMCheck(const LineSegment<int32_t>& a,
 
     // no box shared, we cannot contain or intersect
     if (r.first + r.second == 0) return util::geo::MFF1FF0102;
-  }
-
-  if (_cfg.useOBB && !b->obb.empty()) {
-    auto ts = TIME();
-    auto r = intersectsContainsCovers(I32XSortedLine(a), b->obb);
-    _stats[t].timeOBBIsectLineLine += TOOK(ts);
-    if (!std::get<0>(r)) return util::geo::MFF1FF0102;
   }
 
   auto ts = TIME();
@@ -2891,13 +2850,6 @@ util::geo::DE9IMatrix Sweeper::DE9IMCheck(const I32Point& a, const Area* b,
 
     // no box shared, we cannot contain or intersect
     if (r.first + r.second == 0) return util::geo::MFF0FFF212;
-  }
-
-  if (_cfg.useOBB && b->obb.getOuter().rawRing().size()) {
-    auto ts = TIME();
-    auto r = containsCovers(a, b->obb);
-    _stats[t].timeOBBIsectAreaPoint += TOOK(ts);
-    if (!std::get<1>(r)) return util::geo::MFF0FFF212;
   }
 
   auto ts = TIME();

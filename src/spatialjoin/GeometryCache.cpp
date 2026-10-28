@@ -188,11 +188,6 @@ std::pair<size_t, sj::Line> sj::GeometryCache<sj::Line>::getFrom(
     estSize += sizeof(sj::boxids::BoxId) * numBoxIds;
   }
 
-  if (_opts.storeOBB) {
-    // OBB
-    estSize += readPoly(str, ret.obb);
-  }
-
   return {estSize, ret};
 }
 
@@ -230,11 +225,6 @@ std::pair<size_t, sj::Area> sj::GeometryCache<sj::Area>::getFrom(
     str.read(reinterpret_cast<char*>(&ret.boxIds[0]),
              sizeof(sj::boxids::BoxId) * numBoxIds);
     estSize += sizeof(sj::boxids::BoxId) * numBoxIds;
-  }
-
-  if (_opts.storeOBB) {
-    // OBB
-    estSize += readPoly(str, ret.obb);
   }
 
   return {estSize, ret};
@@ -389,11 +379,6 @@ size_t sj::GeometryCache<sj::Line>::writeTo(const sj::Line& val,
 
   ret += sizeof(uint32_t) + sizeof(sj::boxids::BoxId) * size;
 
-  if (_opts.storeOBB) {
-    // OBB
-    ret += writePoly(val.obb, str);
-  }
-
   return ret;
 }
 
@@ -433,11 +418,6 @@ size_t sj::GeometryCache<sj::Area>::writeTo(const sj::Area& val,
   }
 
   ret += sizeof(uint32_t) + sizeof(sj::boxids::BoxId) * size;
-
-  if (_opts.storeOBB) {
-    // OBB
-    ret += writePoly(val.obb, str);
-  }
 
   return ret;
 }

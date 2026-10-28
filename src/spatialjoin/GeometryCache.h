@@ -37,9 +37,6 @@ struct Area {
 
   // box ids
   std::vector<sj::boxids::BoxId> boxIds;
-
-  // OBB
-  util::geo::I32XSortedPolygon obb;
 };
 
 struct SimpleLine {
@@ -59,9 +56,6 @@ struct Line {
 
   // box ids
   std::vector<sj::boxids::BoxId> boxIds;
-
-  // OBB
-  util::geo::I32XSortedPolygon obb;
 };
 
 struct Point {
@@ -80,20 +74,16 @@ struct ValEntry {
 
 const static size_t WRITE_BUFF_SIZE = 1024 * 1024 * 4l;
 
-struct StorageOptions {
-  bool storeOBB;
-};
-
 template <typename W>
 class GeometryCache {
  public:
-  GeometryCache(const StorageOptions& opts, size_t maxSize, size_t maxNumElements, size_t numthreads,
+  GeometryCache(size_t maxSize, size_t maxNumElements, size_t numthreads,
                 const std::string& dir)
-      : GeometryCache(opts, maxSize, maxNumElements, numthreads, dir,
+      : GeometryCache(maxSize, maxNumElements, numthreads, dir,
                       ".spatialjoin"){};
-  GeometryCache(const StorageOptions& opts, size_t maxSize, size_t maxNumElements, size_t numthreads,
+  GeometryCache(size_t maxSize, size_t maxNumElements, size_t numthreads,
                 const std::string& dir, const std::string& tmpPrefix)
-      : _opts(opts),
+      : 
         _maxSize(maxSize),
         _maxNumElements(maxNumElements),
         _numThreads(numthreads),
@@ -178,7 +168,6 @@ class GeometryCache {
       _idMap;
   mutable std::vector<size_t> _valSizes;
 
-  StorageOptions _opts;
   size_t _maxSize, _maxNumElements, _numThreads;
   std::string _dir, _tmpPrefix;
   std::string _fName;

@@ -62,8 +62,6 @@ using util::LogLevel::INFO;
 using util::LogLevel::VDEBUG;
 using util::LogLevel::WARN;
 
-const static size_t OBB_MIN_SIZE = 100;
-
 const static double sin45 = 1.0 / sqrt(2);
 const static double cos45 = 1.0 / sqrt(2);
 
@@ -319,21 +317,11 @@ I32Box GeometryCacheManager::add(const I32Polygon& poly,
       }
     }
 
-    util::geo::I32Polygon obb;
-
-    if (_cfg.useOBB && poly.getOuter().size() >= OBB_MIN_SIZE) {
-      obb = util::geo::convexHull(
-          util::geo::pad(util::geo::getOrientedEnvelope(poly), 10));
-
-      // drop redundant oriented bbox
-      if (obb.getOuter().size() >= poly.getOuter().size()) obb = {};
-    }
-
     // careful, assign this before move below
     auto rightPoint = spoly.getOuter().rawRing().back().p;
 
     std::stringstream str;
-    _areaCache.writeTo({std::move(spoly), gid, subid, boxIds, obb}, str);
+    _areaCache.writeTo({std::move(spoly), gid, subid, boxIds}, str);
     ;
 
     size_t estimatedSize = spoly.getOuter().rawRing().size() *
@@ -486,21 +474,13 @@ I32Box GeometryCacheManager::add(const I32Line& line, const std::string& gidR,
     if (line.empty()) return {};
     if (sline.rawLine().empty()) return {};
     auto rightPoint = sline.rawLine().back().p;
-    util::geo::I32Polygon obb;
-    if (_cfg.useOBB && line.size() >= OBB_MIN_SIZE) {
-      obb = util::geo::convexHull(
-          util::geo::pad(util::geo::getOrientedEnvelope(line), 10));
-
-      // drop redundant oriented bbox
-      if (obb.getOuter().size() >= line.size()) obb = {};
-    }
 
     if (!_cfg.useFastSweepSkip) {
       sline.setMaxSegLen(std::numeric_limits<int32_t>::max());
     }
 
     std::stringstream str;
-    _lineCache.writeTo({std::move(sline), gid, subid, boxIds, obb}, str);
+    _lineCache.writeTo({std::move(sline), gid, subid, boxIds}, str);
     cur.raw = str.str();
 
     size_t estimatedSize =

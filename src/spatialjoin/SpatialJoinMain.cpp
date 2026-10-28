@@ -95,8 +95,6 @@ void printHelp(int argc, char** argv) {
       << "computation\n"
       << std::setw(42) << "  --no-surface-area"
       << "disable surface area criteria for polygon contains/covers\n"
-      << std::setw(42) << "  --no-oriented-envelope"
-      << "disable oriented envelope cirteria for contains/intersect\n"
       << std::setw(42) << "  --no-diag-box"
       << "disable diagonal bounding-box based pre-filter\n"
       << std::setw(42) << "  --no-fast-sweep-skip"
@@ -157,7 +155,6 @@ int main(int argc, char** argv) {
 
   bool useBoxIds = true;
   bool useArea = true;
-  bool useOBB = true;
   bool useDiagBox = true;
   bool useFastSweepSkip = true;
   bool noGeometryChecks = false;
@@ -227,8 +224,6 @@ int main(int argc, char** argv) {
           useBoxIds = false;
         } else if (cur == "--no-surface-area") {
           useArea = false;
-        } else if (cur == "--no-oriented-envelope") {
-          useOBB = false;
         } else if (cur == "--no-diag-box") {
           useDiagBox = false;
         } else if (cur == "--no-geometry-checks") {
@@ -390,7 +385,6 @@ int main(int argc, char** argv) {
                             crosses,
                             useBoxIds,
                             useArea,
-                            useOBB,
                             useDiagBox,
                             useFastSweepSkip,
                             noGeometryChecks,
