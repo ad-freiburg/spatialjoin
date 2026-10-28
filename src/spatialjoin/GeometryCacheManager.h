@@ -20,8 +20,8 @@
 #include <unordered_set>
 
 #include "GeometryCache.h"
-#include "SweepEventList.h"
 #include "Stats.h"
+#include "SweepEventList.h"
 #include "util/JobQueue.h"
 #include "util/geo/Geo.h"
 #include "util/geo/IntervalIdx.h"
@@ -201,7 +201,6 @@ class GeometryCacheManager {
   GeometryCacheManager(SweeperCfg cfg, const std::string& cache,
                        const std::string& tmpPrefix)
       : _cfg(cfg),
-        _events(cache, tmpPrefix, _cfg.numThreads),
         _obufpos(0),
         _pointCache({cfg.useOBB}, cfg.geomCacheMaxSize,
                     POINT_CACHE_MAX_ELEMENTS, cfg.numCacheThreads, cache,
@@ -265,11 +264,9 @@ class GeometryCacheManager {
            const util::geo::I32Box& box, const std::string& gid, size_t subid,
            bool side, WriteBatch& batch) const;
 
-  void addBatch(WriteBatch& cands);
+  void addBatch(WriteBatch& cands, sj::SweepEventList* events);
 
-  void flush();
-
-  const SweepEventList& events() const { return _events; }
+  void flush(sj::SweepEventList* events);
 
   size_t numReferences() const {
     size_t ret = 0;
@@ -306,9 +303,7 @@ class GeometryCacheManager {
 
   void setNumSides(size_t sides) { _numSides = sides; }
 
-  size_t subSize(const std::string& id) const {
-    return _subSizes.at(id);
-  }
+  size_t subSize(const std::string& id) const { return _subSizes.at(id); }
 
   bool isMulti(const std::string& id) const {
     return _subSizes.find(id) != _subSizes.end();
@@ -334,8 +329,8 @@ class GeometryCacheManager {
 
   bool isRefed(const std::string& gid) const { return _refs.count(gid); }
 
-  const std::unordered_map<std::string, size_t>* getRefs(
-      const std::string& gid, size_t subId) const {
+  const std::unordered_map<std::string, size_t>* getRefs(const std::string& gid,
+                                                         size_t subId) const {
     auto i = _refs.find(gid);
     if (i == _refs.end()) return nullptr;
     auto j = i->second.find(subId);
@@ -447,7 +442,6 @@ class GeometryCacheManager {
 
   const SweeperCfg _cfg;
   int _file;
-  SweepEventList _events;
   ssize_t _obufpos;
 
   std::vector<size_t> _checks;

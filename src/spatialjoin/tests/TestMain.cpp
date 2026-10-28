@@ -21,6 +21,7 @@
 
 using sj::ParseBatch;
 using sj::GeometryCacheManager;
+using sj::SweepEventList;
 using sj::Sweeper;
 
 size_t NUM_THREADS = 1;
@@ -41,7 +42,8 @@ std::string fullRun(const std::string& file, sj::SweeperCfg cfg,
                                   size_t predn) {
       outWriter.writeRelCb(t, a, an, b, bn, pred, predn);
     };
-    GeometryCacheManager cacheManager(cfg, ".");
+    GeometryCacheManager cacheManager(cfg, ".", ".spatialjoin");
+    SweepEventList sweepEvents(".", ".spatialjoin");
     cacheManager.DUPLICATE_REMOVAL_MIN_SIZE = dupRemovalMinSize;
 
     // very small buffer size 1 here for test purposes to force buffer overflows
@@ -54,7 +56,7 @@ std::string fullRun(const std::string& file, sj::SweeperCfg cfg,
     int f = open(file.c_str(), O_RDONLY);
     TEST(f >= 0);
 
-    sj::WKTParser parser(&cacheManager, 1, strict);
+    sj::WKTParser parser(&cacheManager, &sweepEvents, 1, strict);
 
     while ((len = read(f, buf, BUFF_SIZE)) > 0) {
       parser.parse(buf, len, 0);
@@ -63,10 +65,12 @@ std::string fullRun(const std::string& file, sj::SweeperCfg cfg,
 
     delete[] buf;
 
-    cacheManager.flush();
+    cacheManager.flush(&sweepEvents);
+
+    sweepEvents.flush(1);
 
     Sweeper sweeper(cfg, &cacheManager);
-    sweeper.sweep(cacheManager.events());
+    sweeper.sweep(sweepEvents);
 
     stats->numReferences = cacheManager.numReferences();
     stats->numInvalid = parser.getNumInvalid();

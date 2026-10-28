@@ -5,16 +5,16 @@
 #include <iostream>
 
 #include "BoxIds.h"
-#include "OutputWriter.h"
 #include "GeometryCacheManager.h"
+#include "OutputWriter.h"
 #include "Sweeper.h"
 #include "WKTParse.h"
 #include "util/Misc.h"
 #include "util/geo/Geo.h"
 #include "util/log/Log.h"
 
-using sj::ParseBatch;
 using sj::GeometryCacheManager;
+using sj::ParseBatch;
 using sj::Sweeper;
 using util::geo::DE9IMFilter;
 using util::geo::DLine;
@@ -414,12 +414,13 @@ int main(int argc, char** argv) {
       LOGTO(INFO, std::cerr) << s;
     };
 
-  GeometryCacheManager cacheManager(sweeperCfg, cache);
+  GeometryCacheManager cacheManager(sweeperCfg, cache, ".spatialjoin");
+  sj::SweepEventList sweepEvents(cache, ".spatialjoin");
 
   cacheManager.log("Parsing input geometries...");
   auto ts = TIME();
 
-  sj::WKTParser parser(&cacheManager, NUM_THREADS, wktStrict);
+  sj::WKTParser parser(&cacheManager, &sweepEvents, NUM_THREADS, wktStrict);
 
   if (!inputFiles.empty()) {
     if (inputFiles.size() > 2) {
@@ -502,18 +503,22 @@ int main(int argc, char** argv) {
 
   if (parser.getNumInvalid() > 0)
     cacheManager.log("Note: skipped " + std::to_string(parser.getNumInvalid()) +
-                " invalid WKT literals");
+                     " invalid WKT literals");
 
   cacheManager.log("Done parsing (" + std::to_string(TOOK(ts) / 1000000000.0) +
-              "s).");
+                   "s).");
 
-  cacheManager.flush();
+  cacheManager.flush(&sweepEvents);
+
+  cacheManager.log("Sorting events...");
+  sweepEvents.flush(NUM_THREADS);
+  cacheManager.log("...done");
 
   Sweeper sweeper(sweeperCfg, &cacheManager);
 
   cacheManager.log("Sweeping...");
   ts = TIME();
-  sweeper.sweep(cacheManager.events());
+  sweeper.sweep(sweepEvents);
   cacheManager.log("done (" + std::to_string(TOOK(ts) / 1000000000.0) + "s).");
 
   delete[] buf;

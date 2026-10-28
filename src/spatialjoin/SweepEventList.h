@@ -194,9 +194,8 @@ class SweepEventList {
     ssize_t _readBlockLen = 0;
   };
 
-  SweepEventList(const std::string& cacheDir, const std::string& tmpPrefix,
-                 size_t numThreads)
-      : _obufpos(0), _cacheDir(cacheDir), _numThreads(numThreads) {
+  SweepEventList(const std::string& cacheDir, const std::string& tmpPrefix)
+      : _obufpos(0), _cacheDir(cacheDir) {
     _outBuffer = new unsigned char[BUFFER_S];
 
     auto fname = util::getTmpFName(cacheDir, tmpPrefix, "events");
@@ -243,7 +242,7 @@ class SweepEventList {
     return Reader(_file, (bufSize / sizeof(BoxVal)) * sizeof(BoxVal));
   }
 
-  void flush() {
+  void flush(size_t numThreads = 4) {
     ssize_t r = util::writeAll(_file, _outBuffer, _obufpos);
     if (r < 0) {
       std::stringstream ss;
@@ -270,7 +269,7 @@ class SweepEventList {
     posix_fadvise(newFile, 0, 0, POSIX_FADV_SEQUENTIAL);
 #endif
     r = util::externalSort(_file, newFile, sizeof(BoxVal), _curSweepId,
-                           _numThreads, boxCmp);
+                           numThreads, boxCmp);
 
     if (r < 0) {
       std::stringstream ss;
@@ -295,7 +294,6 @@ class SweepEventList {
   ssize_t _obufpos;
   std::string _cacheDir;
   int _file;
-  size_t _numThreads;
 
   size_t _curSweepId = 0;
 };

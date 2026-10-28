@@ -12,9 +12,10 @@ using sj::WKTParser;
 using sj::WKTParserBase;
 
 // _____________________________________________________________________________
-WKTParser::WKTParser(sj::GeometryCacheManager *cacheManager, size_t numThreads,
-                     bool strict)
-    : WKTParserBase<ParseJob>(cacheManager, numThreads), _strict(strict) {
+WKTParser::WKTParser(sj::GeometryCacheManager* cacheManager,
+                     sj::SweepEventList* events, size_t numThreads, bool strict)
+    : WKTParserBase<ParseJob>(cacheManager, events, numThreads),
+      _strict(strict) {
   for (size_t i = 0; i < _thrds.size(); i++) {
     _thrds[i] = std::thread(&WKTParser::processQueue, this, i);
   }
@@ -25,7 +26,7 @@ void WKTParser::processQueue(size_t t) {
   ParseBatch batch;
   while ((batch = _jobs.get()).size()) {
     sj::WriteBatch w;
-    for (const auto &job : batch) {
+    for (const auto& job : batch) {
       if (_cancelled) break;
 
       if (job.str.size()) {
@@ -45,12 +46,12 @@ void WKTParser::processQueue(size_t t) {
       }
     }
 
-    _cacheManager->addBatch(w);
+    _cacheManager->addBatch(w, _events);
   }
 }
 
 // _____________________________________________________________________________
-void WKTParser::parseWKT(const char *c, size_t id, bool side) {
+void WKTParser::parseWKT(const char* c, size_t id, bool side) {
   // dont parse empty strings
   if (*c == 0) return;
 
@@ -64,7 +65,7 @@ void WKTParser::parseWKT(const char *c, size_t id, bool side) {
 }
 
 // _____________________________________________________________________________
-void WKTParser::parseWKT(const std::string &str, size_t id, bool side) {
+void WKTParser::parseWKT(const std::string& str, size_t id, bool side) {
   if (str.empty()) return;
 
   _curBatch.reserve(10000);
@@ -105,11 +106,11 @@ void WKTParser::parsePoint(util::geo::DPoint point, size_t id, bool side) {
 }
 
 // _____________________________________________________________________________
-void WKTParser::parse(char *c, size_t size, bool side) {
+void WKTParser::parse(char* c, size_t size, bool side) {
   size_t p = 0;
 
   while (true) {
-    char *newLine = reinterpret_cast<char *>(memchr(c + p, '\n', size - p));
+    char* newLine = reinterpret_cast<char*>(memchr(c + p, '\n', size - p));
 
     if (newLine) {
       size_t pNext = newLine - c;

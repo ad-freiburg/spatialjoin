@@ -546,6 +546,7 @@ I32Box GeometryCacheManager::add(const I32Point& point, const std::string& gid,
 I32Box GeometryCacheManager::add(const I32Point& point, const std::string& gidR,
                                  size_t subid, bool side,
                                  WriteBatch& batch) const {
+  // THIS NO LONGER WORKS IF THE CACHE IS BUILD INDEPENDENT OF THE JOINPREDICATE
   if (subid == 0 && _cfg.de9imFilter != util::geo::FANY) {
     // drop certain geometries if we can be sure that they will never match
     // the given DE-9IM filter
@@ -623,7 +624,8 @@ I32Box GeometryCacheManager::add(const I32Point& point, const std::string& gidR,
 }
 
 // _____________________________________________________________________________
-void GeometryCacheManager::addBatch(WriteBatch& cands) {
+void GeometryCacheManager::addBatch(WriteBatch& cands,
+                                    sj::SweepEventList* events) {
   {
     for (auto& cand : cands.foldedPoints) {
       if (cand.boxvalIn.side) _numSides = 2;
@@ -744,65 +746,65 @@ void GeometryCacheManager::addBatch(WriteBatch& cands) {
   {
     std::unique_lock<std::mutex> lock(_sweepEventWriteMtx);
     for (const auto& cand : cands.foldedPoints) {
-      _events.add(cand.boxvalIn);
-      _events.add(cand.boxvalOut);
-      if (_events.numObjects() % 1000000 == 0)
-        log("@ " + std::to_string(_events.numObjects()));
+      events->add(cand.boxvalIn);
+      events->add(cand.boxvalOut);
+      if (events->numObjects() % 1000000 == 0)
+        log("@ " + std::to_string(events->numObjects()));
     }
     for (const auto& cand : cands.points) {
-      _events.add(cand.boxvalIn);
-      _events.add(cand.boxvalOut);
-      if (_events.numObjects() % 1000000 == 0)
-        log("@ " + std::to_string(_events.numObjects()));
+      events->add(cand.boxvalIn);
+      events->add(cand.boxvalOut);
+      if (events->numObjects() % 1000000 == 0)
+        log("@ " + std::to_string(events->numObjects()));
     }
     for (const auto& cand : cands.foldedSimpleLines) {
-      _events.add(cand.boxvalIn);
-      _events.add(cand.boxvalOut);
-      if (_events.numObjects() % 1000000 == 0)
-        log("@ " + std::to_string(_events.numObjects()));
+      events->add(cand.boxvalIn);
+      events->add(cand.boxvalOut);
+      if (events->numObjects() % 1000000 == 0)
+        log("@ " + std::to_string(events->numObjects()));
     }
     for (const auto& cand : cands.foldedBoxAreas) {
-      _events.add(cand.boxvalIn);
-      _events.add(cand.boxvalOut);
-      if (_events.numObjects() % 1000000 == 0)
-        log("@ " + std::to_string(_events.numObjects()));
+      events->add(cand.boxvalIn);
+      events->add(cand.boxvalOut);
+      if (events->numObjects() % 1000000 == 0)
+        log("@ " + std::to_string(events->numObjects()));
     }
     for (const auto& cand : cands.simpleLines) {
-      _events.add(cand.boxvalIn);
-      _events.add(cand.boxvalOut);
-      if (_events.numObjects() % 1000000 == 0)
-        log("@ " + std::to_string(_events.numObjects()));
+      events->add(cand.boxvalIn);
+      events->add(cand.boxvalOut);
+      if (events->numObjects() % 1000000 == 0)
+        log("@ " + std::to_string(events->numObjects()));
     }
     for (const auto& cand : cands.lines) {
-      _events.add(cand.boxvalIn);
-      _events.add(cand.boxvalOut);
-      if (_events.numObjects() % 1000000 == 0)
-        log("@ " + std::to_string(_events.numObjects()));
+      events->add(cand.boxvalIn);
+      events->add(cand.boxvalOut);
+      if (events->numObjects() % 1000000 == 0)
+        log("@ " + std::to_string(events->numObjects()));
     }
     for (const auto& cand : cands.simpleAreas) {
-      _events.add(cand.boxvalIn);
-      _events.add(cand.boxvalOut);
-      if (_events.numObjects() % 1000000 == 0)
-        log("@ " + std::to_string(_events.numObjects()));
+      events->add(cand.boxvalIn);
+      events->add(cand.boxvalOut);
+      if (events->numObjects() % 1000000 == 0)
+        log("@ " + std::to_string(events->numObjects()));
     }
     for (const auto& cand : cands.areas) {
-      _events.add(cand.boxvalIn);
-      _events.add(cand.boxvalOut);
-      if (_events.numObjects() % 1000000 == 0)
-        log("@ " + std::to_string(_events.numObjects()));
+      events->add(cand.boxvalIn);
+      events->add(cand.boxvalOut);
+      if (events->numObjects() % 1000000 == 0)
+        log("@ " + std::to_string(events->numObjects()));
     }
     for (const auto& cand : cands.refs) {
       _refs[cand.raw][0][cand.gid] = cand.subid;
       _selfCheckBounds[cand.raw] = util::geo::getBoundingBox(
           I32Point{cand.boxvalIn.val, cand.boxvalIn.loY});
-      if (_events.numObjects() % 1000000 == 0)
-        log("@ " + std::to_string(_events.numObjects()));
+      if (events->numObjects() % 1000000 == 0)
+        log("@ " + std::to_string(events->numObjects()));
     }
   }
 }
 
 // _____________________________________________________________________________
-void GeometryCacheManager::flush() {
+void GeometryCacheManager::flush(sj::SweepEventList* events) {
   if (_numSides > 1) log("(Non-self join between 2 datasets)");
 
   log(std::to_string(_multiIds[0].size() + _multiIds[1].size()) +
@@ -812,7 +814,7 @@ void GeometryCacheManager::flush() {
     for (const auto& sub : ref.second) {
       _selfChecks.push_back({ref.first, sub.first});
 
-      _events.add({_selfChecks.size() - 1,
+      events->add({_selfChecks.size() - 1,
                    1,
                    0,
                    _selfCheckBounds[ref.first].getLowerLeft().getX(),
@@ -829,7 +831,7 @@ void GeometryCacheManager::flush() {
 
   for (size_t side = 0; side < 2; side++) {
     for (size_t i = 0; i < _multiIds[side].size(); i++) {
-      _events.add({i,
+      events->add({i,
                    1,
                    0,
                    _multiLeftX[side][i] - 1,
@@ -850,13 +852,7 @@ void GeometryCacheManager::flush() {
   _lineCache.flush();
   _simpleLineCache.flush();
 
-  log("Sorting events...");
-
-  _events.flush();
-
-  log("...done");
-
-  // TODO!
+  // TODO!!!!
   // duplicatesToReferences();
 
   log(std::to_string(_refs.size()) + " reference geometries");
