@@ -213,57 +213,57 @@ class Sweeper {
     if (boxa->out && !boxb->out) return 1;
 
     // everything before a polygon
-    if (boxa->type != POLYGON && boxa->type != SIMPLE_POLYGON &&
-        boxa->type != FOLDED_BOX_POLYGON &&
-        (boxb->type == POLYGON || boxb->type == SIMPLE_POLYGON ||
-         boxb->type == FOLDED_BOX_POLYGON))
+    if (boxa->getType() != POLYGON && boxa->getType() != SIMPLE_POLYGON &&
+        boxa->getType() != FOLDED_BOX_POLYGON &&
+        (boxb->getType() == POLYGON || boxb->getType() == SIMPLE_POLYGON ||
+         boxb->getType() == FOLDED_BOX_POLYGON))
       return -1;
-    if ((boxa->type == POLYGON || boxa->type == SIMPLE_POLYGON ||
-         boxa->type == FOLDED_BOX_POLYGON) &&
-        boxb->type != POLYGON && boxb->type != SIMPLE_POLYGON &&
-        boxb->type != FOLDED_BOX_POLYGON)
+    if ((boxa->getType() == POLYGON || boxa->getType() == SIMPLE_POLYGON ||
+         boxa->getType() == FOLDED_BOX_POLYGON) &&
+        boxb->getType() != POLYGON && boxb->getType() != SIMPLE_POLYGON &&
+        boxb->getType() != FOLDED_BOX_POLYGON)
       return 1;
 
     // points before lines
-    if ((boxa->type == POINT || boxa->type == FOLDED_POINT) &&
-        (boxb->type == SIMPLE_LINE || boxb->type == LINE ||
-         boxb->type == FOLDED_SIMPLE_LINE))
+    if ((boxa->getType() == POINT || boxa->getType() == FOLDED_POINT) &&
+        (boxb->getType() == SIMPLE_LINE || boxb->getType() == LINE ||
+         boxb->getType() == FOLDED_SIMPLE_LINE))
       return -1;
-    if ((boxb->type == POINT || boxb->type == FOLDED_POINT) &&
-        (boxa->type == SIMPLE_LINE || boxa->type == LINE ||
-         boxa->type == FOLDED_SIMPLE_LINE))
+    if ((boxb->getType() == POINT || boxb->getType() == FOLDED_POINT) &&
+        (boxa->getType() == SIMPLE_LINE || boxa->getType() == LINE ||
+         boxa->getType() == FOLDED_SIMPLE_LINE))
       return 1;
 
     // smaller polygons before larger
-    if ((boxa->type == POLYGON || boxa->type == SIMPLE_POLYGON ||
-         boxa->type == FOLDED_BOX_POLYGON) &&
-        (boxb->type == POLYGON || boxb->type == SIMPLE_POLYGON ||
-         boxb->type == FOLDED_BOX_POLYGON) &&
+    if ((boxa->getType() == POLYGON || boxa->getType() == SIMPLE_POLYGON ||
+         boxa->getType() == FOLDED_BOX_POLYGON) &&
+        (boxb->getType() == POLYGON || boxb->getType() == SIMPLE_POLYGON ||
+         boxb->getType() == FOLDED_BOX_POLYGON) &&
         boxa->areaOrLen < boxb->areaOrLen)
       return -1;
-    if ((boxa->type == POLYGON || boxa->type == SIMPLE_POLYGON ||
-         boxa->type == FOLDED_BOX_POLYGON) &&
-        (boxb->type == POLYGON || boxb->type == SIMPLE_POLYGON ||
-         boxb->type == FOLDED_BOX_POLYGON) &&
+    if ((boxa->getType() == POLYGON || boxa->getType() == SIMPLE_POLYGON ||
+         boxa->getType() == FOLDED_BOX_POLYGON) &&
+        (boxb->getType() == POLYGON || boxb->getType() == SIMPLE_POLYGON ||
+         boxb->getType() == FOLDED_BOX_POLYGON) &&
         boxa->areaOrLen > boxb->areaOrLen)
       return 1;
 
     // shorter lines before longer
-    if ((boxa->type == LINE || boxa->type == SIMPLE_LINE ||
-         boxa->type == FOLDED_SIMPLE_LINE) &&
-        (boxb->type == LINE || boxb->type == SIMPLE_LINE ||
-         boxb->type == FOLDED_SIMPLE_LINE) &&
+    if ((boxa->getType() == LINE || boxa->getType() == SIMPLE_LINE ||
+         boxa->getType() == FOLDED_SIMPLE_LINE) &&
+        (boxb->getType() == LINE || boxb->getType() == SIMPLE_LINE ||
+         boxb->getType() == FOLDED_SIMPLE_LINE) &&
         boxa->areaOrLen < boxb->areaOrLen)
       return -1;
-    if ((boxa->type == LINE || boxa->type == SIMPLE_LINE ||
-         boxa->type == FOLDED_SIMPLE_LINE) &&
-        (boxb->type == LINE || boxb->type == SIMPLE_LINE ||
-         boxb->type == FOLDED_SIMPLE_LINE) &&
+    if ((boxa->getType() == LINE || boxa->getType() == SIMPLE_LINE ||
+         boxa->getType() == FOLDED_SIMPLE_LINE) &&
+        (boxb->getType() == LINE || boxb->getType() == SIMPLE_LINE ||
+         boxb->getType() == FOLDED_SIMPLE_LINE) &&
         boxa->areaOrLen > boxb->areaOrLen)
       return 1;
 
     // make ordernig of equal geoms deterministic
-    if (boxa->type != boxb->type) return boxa->type < boxb->type ? -1 : 1;
+    if (boxa->getType() != boxb->getType()) return boxa->getType() < boxb->getType() ? -1 : 1;
     if (boxa->side != boxb->side) return boxa->side ? 1 : -1;
     if (boxa->id != boxb->id) return boxa->id < boxb->id ? -1 : 1;
 

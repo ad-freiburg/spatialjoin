@@ -274,12 +274,12 @@ size_t sj::GeometryStore<W>::add(const std::string& raw) {
       _memStore = {};
     }
 
-    return ret;
+    return typedId(ret, geomType());
   }
 
   _geomsF.write(raw.c_str(), raw.size());
 
-  return ret;
+  return typedId(ret, geomType());
 }
 
 // ____________________________________________________________________________
@@ -705,6 +705,43 @@ std::string sj::GeometryStore<sj::SimpleArea>::getFName() const {
 template <>
 std::string sj::GeometryStore<sj::MultiGeom>::getFName() const {
   return util::getTmpFName(_dir, _tmpPrefix, "multis");
+}
+
+// ____________________________________________________________________________
+template <>
+sj::GeomType sj::GeometryStore<sj::Area>::geomType() {
+  return sj::POLYGON;
+}
+
+// ____________________________________________________________________________
+template <>
+sj::GeomType sj::GeometryStore<sj::Line>::geomType() {
+  return sj::LINE;
+}
+
+// ____________________________________________________________________________
+template <>
+sj::GeomType sj::GeometryStore<sj::Point>::geomType() {
+  return sj::POINT;
+}
+
+// ____________________________________________________________________________
+template <>
+sj::GeomType sj::GeometryStore<sj::SimpleLine>::geomType() {
+  return sj::SIMPLE_LINE;
+}
+
+// ____________________________________________________________________________
+template <>
+sj::GeomType sj::GeometryStore<sj::SimpleArea>::geomType() {
+  return sj::SIMPLE_POLYGON;
+}
+
+// ____________________________________________________________________________
+template <>
+sj::GeomType sj::GeometryStore<sj::MultiGeom>::geomType() {
+  // multi geometries are swept as special POINT events
+  return sj::POINT;
 }
 
 // ____________________________________________________________________________

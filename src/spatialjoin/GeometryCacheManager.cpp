@@ -240,23 +240,21 @@ I32Box GeometryCacheManager::add(const I32Polygon& poly,
       poly.getOuter().size() == densePoly.getOuter().size() &&
       (!_cfg.useBoxIds || boxIds.front().first == 1) &&
       area(rawBox) == areaSize) {
-    cur.boxvalIn = {0,  // placeholder, will be overwritten later on
+    cur.boxvalIn = {typedId(0, FOLDED_BOX_POLYGON),  // placeholder ID
                     box.getLowerLeft().getY(),
                     box.getUpperRight().getY(),
                     box.getLowerLeft().getX(),
                     false,
-                    FOLDED_BOX_POLYGON,
                     areaSize,
                     rawBox.getUpperRight(),
                     packPoint(rawBox.getLowerLeft()),
                     box45,
                     side};
-    cur.boxvalOut = {0,  // placeholder, will be overwritten later on
+    cur.boxvalOut = {typedId(0, FOLDED_BOX_POLYGON),  // placeholder ID
                      box.getLowerLeft().getY(),
                      box.getUpperRight().getY(),
                      box.getUpperRight().getX(),
                      true,
-                     FOLDED_BOX_POLYGON,
                      areaSize,
                      rawBox.getLowerLeft(),
                      packPoint(rawBox.getUpperRight()),
@@ -276,23 +274,21 @@ I32Box GeometryCacheManager::add(const I32Polygon& poly,
       if (p.getX() > rightPoint.getX()) rightPoint = p;
     }
 
-    cur.boxvalIn = {0,  // placeholder, will be overwritten later on
+    cur.boxvalIn = {typedId(0, SIMPLE_POLYGON),  // placeholder ID
                     box.getLowerLeft().getY(),
                     box.getUpperRight().getY(),
                     box.getLowerLeft().getX(),
                     false,
-                    SIMPLE_POLYGON,
                     areaSize,
                     {},
                     poly.size(),
                     box45,
                     side};
-    cur.boxvalOut = {0,  // placeholder, will be overwritten later on
+    cur.boxvalOut = {typedId(0, SIMPLE_POLYGON),  // placeholder ID
                      box.getLowerLeft().getY(),
                      box.getUpperRight().getY(),
                      box.getUpperRight().getX(),
                      true,
-                     SIMPLE_POLYGON,
                      areaSize,
                      rightPoint,
                      poly.size(),
@@ -317,23 +313,21 @@ I32Box GeometryCacheManager::add(const I32Polygon& poly,
 
     cur.raw = str.str();
 
-    cur.boxvalIn = {0,  // placeholder, will be overwritten later on
+    cur.boxvalIn = {typedId(0, POLYGON),  // placeholder ID
                     box.getLowerLeft().getY(),
                     box.getUpperRight().getY(),
                     box.getLowerLeft().getX(),
                     false,
-                    POLYGON,
                     areaSize,
                     {},
                     polySize,
                     box45,
                     side};
-    cur.boxvalOut = {0,  // placeholder, will be overwritten later on
+    cur.boxvalOut = {typedId(0, POLYGON),  // placeholder ID
                      box.getLowerLeft().getY(),
                      box.getUpperRight().getY(),
                      box.getUpperRight().getX(),
                      true,
-                     POLYGON,
                      areaSize,
                      rightPoint,
                      polySize,
@@ -409,12 +403,11 @@ I32Box GeometryCacheManager::add(const I32Line& line, const std::string& gidR,
     // simple line
 
     cur.boxvalIn = {
-        0,  // placeholder, will be overwritten later on
+        typedId(0, SIMPLE_LINE),  // placeholder ID
         box.getLowerLeft().getY(),
         box.getUpperRight().getY(),
         box.getLowerLeft().getX(),
         false,
-        SIMPLE_LINE,
         len,
         line.front().getX() < line.back().getX() ? line.back() : line.front(),
         packPoint(line.front().getX() < line.back().getX() ? line.front()
@@ -422,12 +415,11 @@ I32Box GeometryCacheManager::add(const I32Line& line, const std::string& gidR,
         box45,
         side};
     cur.boxvalOut = {
-        0,  // placeholder, will be overwritten later on,
+        typedId(0, SIMPLE_LINE),  // placeholder ID
         box.getLowerLeft().getY(),
         box.getUpperRight().getY(),
         box.getUpperRight().getX(),
         true,
-        SIMPLE_LINE,
         len,
         line.front().getX() < line.back().getX() ? line.front() : line.back(),
         packPoint(line.front().getX() < line.back().getX() ? line.back()
@@ -438,8 +430,8 @@ I32Box GeometryCacheManager::add(const I32Line& line, const std::string& gidR,
     // check if we can fold the gid into the offset id, because the gid is all
     // we store in the cache for points
     if (subid == 0 && gid.size() < 8) {
-      cur.boxvalIn.type = FOLDED_SIMPLE_LINE;
-      cur.boxvalOut.type = FOLDED_SIMPLE_LINE;
+      cur.boxvalIn.setType(FOLDED_SIMPLE_LINE);
+      cur.boxvalOut.setType(FOLDED_SIMPLE_LINE);
       batch.foldedSimpleLines.emplace_back(cur);
     } else {
       std::stringstream str;
@@ -463,23 +455,21 @@ I32Box GeometryCacheManager::add(const I32Line& line, const std::string& gidR,
     _lineStore.writeTo({std::move(sline), gid, subid, boxIds}, str);
     cur.raw = str.str();
 
-    cur.boxvalIn = {0,  // placeholder, will be overwritten later on
+    cur.boxvalIn = {typedId(0, LINE),  // placeholder ID
                     box.getLowerLeft().getY(),
                     box.getUpperRight().getY(),
                     box.getLowerLeft().getX(),
                     false,
-                    LINE,
                     len,
                     {},
                     lineSize,
                     box45,
                     side};
-    cur.boxvalOut = {0,  // placeholder, will be overwritten later on
+    cur.boxvalOut = {typedId(0, LINE),  // placeholder ID
                      box.getLowerLeft().getY(),
                      box.getUpperRight().getY(),
                      box.getUpperRight().getX(),
                      true,
-                     LINE,
                      len,
                      rightPoint,
                      lineSize,
@@ -533,23 +523,21 @@ I32Box GeometryCacheManager::add(const I32Point& point, const std::string& gidR,
   if (!util::geo::intersects(box, _filterBox)) return {};
 
   auto pointR = util::geo::rotateSinCos(point, sin45, cos45, I32Point(0, 0));
-  cur.boxvalIn = {0,  // placeholder, will be overwritten later on
+  cur.boxvalIn = {typedId(0, POINT),  // placeholder ID
                   box.getLowerLeft().getY(),
                   box.getUpperRight().getY(),
                   box.getLowerLeft().getX(),
                   false,
-                  POINT,
                   0,
                   point,
                   1,
                   getPaddedBoundingBox(pointR, rawBox),
                   side};
-  cur.boxvalOut = {0,  // placeholder, will be overwritten later on
+  cur.boxvalOut = {typedId(0, POINT),  // placeholder ID
                    box.getLowerLeft().getY(),
                    box.getUpperRight().getY(),
                    box.getUpperRight().getX(),
                    true,
-                   POINT,
                    0,
                    point,
                    1,
@@ -561,8 +549,8 @@ I32Box GeometryCacheManager::add(const I32Point& point, const std::string& gidR,
   // check if we can fold the gid into the offset id, because the gid is all
   // we store in the cache for points
   if (subid == 0 && gid.size() < 8) {
-    cur.boxvalIn.type = FOLDED_POINT;
-    cur.boxvalOut.type = FOLDED_POINT;
+    cur.boxvalIn.setType(FOLDED_POINT);
+    cur.boxvalOut.setType(FOLDED_POINT);
     batch.foldedPoints.emplace_back(cur);
   } else {
     std::stringstream str;
@@ -582,7 +570,8 @@ void GeometryCacheManager::addBatch(WriteBatch& cands,
   {
     for (auto& cand : cands.foldedPoints) {
       if (cand.boxvalIn.side) _numSides = 2;
-      cand.boxvalIn.id = foldString(cand.gid);
+      cand.boxvalIn.id =
+          typedId(foldString(cand.gid), cand.boxvalIn.getType());
       cand.boxvalOut.id = cand.boxvalIn.id;
     }
   }
@@ -617,7 +606,8 @@ void GeometryCacheManager::addBatch(WriteBatch& cands,
   {
     for (auto& cand : cands.foldedSimpleLines) {
       if (cand.boxvalIn.side) _numSides = 2;
-      cand.boxvalIn.id = foldString(cand.gid);
+      cand.boxvalIn.id =
+          typedId(foldString(cand.gid), cand.boxvalIn.getType());
       cand.boxvalOut.id = cand.boxvalIn.id;
     }
   }
@@ -625,7 +615,8 @@ void GeometryCacheManager::addBatch(WriteBatch& cands,
   {
     for (auto& cand : cands.foldedBoxAreas) {
       if (cand.boxvalIn.side) _numSides = 2;
-      cand.boxvalIn.id = foldString(cand.gid);
+      cand.boxvalIn.id =
+          typedId(foldString(cand.gid), cand.boxvalIn.getType());
       cand.boxvalOut.id = cand.boxvalIn.id;
     }
   }
@@ -767,12 +758,11 @@ void GeometryCacheManager::flush(sj::SweepEventList* events) {
     for (const auto& sub : ref.second) {
       _selfChecks.push_back({ref.first, sub.first});
 
-      events->add({_selfChecks.size() - 1,
+      events->add({typedId(_selfChecks.size() - 1, SELF_CHECK),
                    1,
                    0,
                    _selfCheckBounds[ref.first].getLowerLeft().getX(),
                    false,
-                   SELF_CHECK,
                    0.0,
                    {},
                    0,
@@ -784,12 +774,11 @@ void GeometryCacheManager::flush(sj::SweepEventList* events) {
   // special multi-OUT event, at the right x of the multi geometry
   for (size_t side = 0; side < 2; side++) {
     for (size_t i = 0; i < _multiIds[side].size(); i++) {
-      events->add({i,
+      events->add({typedId(i, POINT),
                    1,
                    0,
                    _multiRightX[side][i],
                    true,
-                   POINT,
                    0.0,
                    {},
                    0,
@@ -860,22 +849,22 @@ void GeometryCacheManager::duplicatesToReferences() {
         jj++;
 
         if (cur->out) {
-          if (cur->type == POLYGON) {
-            if (deletedPolys.erase(cur->id)) {
+          if (cur->getType() == POLYGON) {
+            if (deletedPolys.erase(getId(*cur))) {
               // erase it if present, to avoid unnecessary memory consumption
-              cur->type = DELETED;
+              cur->setType(DELETED);
               updated = true;
             }
-            referencedPolys.erase(cur->id);
+            referencedPolys.erase(getId(*cur));
           }
 
-          if (cur->type == LINE) {
-            if (deletedLines.erase(cur->id)) {
+          if (cur->getType() == LINE) {
+            if (deletedLines.erase(getId(*cur))) {
               // erase it if present, to avoid unnecessary memory consumption
-              cur->type = DELETED;
+              cur->setType(DELETED);
               updated = true;
             }
-            referencedLines.erase(cur->id);
+            referencedLines.erase(getId(*cur));
           }
 
           continue;
@@ -888,60 +877,60 @@ void GeometryCacheManager::duplicatesToReferences() {
           curX = cur->val;
         }
 
-        if (cur->type == POLYGON &&
+        if (cur->getType() == POLYGON &&
             cur->numAnchors >= DUPLICATE_REMOVAL_MIN_SIZE) {
           size_t h = cur->numAnchors;
           const auto& existing = duplicatePolys.find(h);
 
           if (existing != duplicatePolys.end()) {
-            auto a = get(_areaStore, _areaCache, cur->id, 0);
+            auto a = get(_areaStore, _areaCache, getId(*cur), 0);
             auto b = get(_areaStore, _areaCache, existing->second, 0);
 
             if (a->geom == b->geom) {
-              deletedPolys.insert(cur->id);
+              deletedPolys.insert(getId(*cur));
               if (referencedPolys.insert(existing->second).second) {
                 // for the first element referencing this, modify this
                 // event to the self check of the referenced geom
-                cur->type = SELF_CHECK_AREA;
+                cur->setType(SELF_CHECK_AREA);
                 _selfChecks.push_back({b->id, b->subId});
-                cur->id = _selfChecks.size() - 1;
+                cur->id = typedId(_selfChecks.size() - 1, cur->getType());
               } else {
-                cur->type = DELETED;
+                cur->setType(DELETED);
               }
 
               updated = true;
               _refs[b->id][b->subId][a->id] = a->subId;
             }
           } else {
-            duplicatePolys[h] = cur->id;
+            duplicatePolys[h] = getId(*cur);
           }
         }
 
-        if (cur->type == LINE &&
+        if (cur->getType() == LINE &&
             cur->numAnchors >= DUPLICATE_REMOVAL_MIN_SIZE) {
           size_t h = cur->numAnchors;
           const auto& existing = duplicateLines.find(h);
 
           if (existing != duplicateLines.end()) {
-            auto a = get(_lineStore, _lineCache, cur->id, 0);
+            auto a = get(_lineStore, _lineCache, getId(*cur), 0);
             auto b = get(_lineStore, _lineCache, existing->second, 0);
 
             if (a->geom == b->geom) {
-              deletedLines.insert(cur->id);
+              deletedLines.insert(getId(*cur));
               if (referencedLines.insert(existing->second).second) {
                 // for the first element referencing this, modify this
                 // event to the self check of the referenced geom
-                cur->type = SELF_CHECK_LINE;
+                cur->setType(SELF_CHECK_LINE);
                 _selfChecks.push_back({b->id, b->subId});
-                cur->id = _selfChecks.size() - 1;
+                cur->id = typedId(_selfChecks.size() - 1, cur->getType());
               } else {
-                cur->type = DELETED;
+                cur->setType(DELETED);
               }
               updated = true;
               _refs[b->id][b->subId][a->id] = a->subId;
             }
           } else {
-            duplicateLines[h] = cur->id;
+            duplicateLines[h] = getId(*cur);
           }
         }
       }

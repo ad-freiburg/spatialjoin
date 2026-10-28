@@ -7,6 +7,7 @@
 #include <fcntl.h>
 
 #include "util/Misc.h"
+#include "util/geo/Geo.h"
 
 namespace sj {
 
@@ -26,14 +27,18 @@ enum GeomType : uint8_t {
   SELF_CHECK_POINT = 12
 };
 
+// the upper 4 bits of a BoxVal ID hold the geometry type, see typedId()
+const static size_t ID_TYPE_SHIFT = 60;
+const static size_t ID_MASK = (size_t(1) << ID_TYPE_SHIFT) - 1;
+
 struct BoxVal {
-  size_t id;     // the ID returned from the GeometryStore (offset into file)
-  int32_t loY;   // the lower Y value of the box
-  int32_t upY;   // the upper Y value of the box
-  int32_t val;   // the left X value of the box
-  bool out : 1;  // whether this is an IN or OUT event
-  GeomType type : 4;  // geometry type
-  double areaOrLen;   // area or len
+  size_t id;         // typed ID, the lower 60 bits are the dist offset returned from the
+                     // GeometryStore, upper 4 bits are geometry type
+  int32_t loY;       // the lower Y value of the box
+  int32_t upY;       // the upper Y value of the box
+  int32_t val;       // the left X value of the box
+  bool out : 1;      // whether this is an IN or OUT event
+  double areaOrLen;  // area or len
   util::geo::I32Point point;
   size_t numAnchors;      // for polygons and lines: number of anchor points,
                           // used for DUPLICATE REMOVAL
@@ -42,7 +47,26 @@ struct BoxVal {
                           // packPoint()
   util::geo::I32Box b45;  // oriented bounding box
   bool side;
+
+  GeomType getType() const {
+    return static_cast<GeomType>(id >> ID_TYPE_SHIFT);
+  }
+
+  void setType(GeomType type) {
+    id = (id & ID_MASK) | (static_cast<size_t>(type) << ID_TYPE_SHIFT);
+  }
 };
+
+// _____________________________________________________________________________
+inline size_t typedId(size_t id, GeomType type) {
+  return (id & ID_MASK) | (static_cast<size_t>(type) << ID_TYPE_SHIFT);
+}
+
+// _____________________________________________________________________________
+inline size_t untypedId(size_t id) { return id & ID_MASK; }
+
+// _____________________________________________________________________________
+inline size_t getId(const BoxVal& bv) { return untypedId(bv.id); }
 
 // _____________________________________________________________________________
 inline size_t packPoint(const util::geo::I32Point& p) {
@@ -61,8 +85,8 @@ inline util::geo::I32Point getOtherPoint(const BoxVal& bv) {
   // for simple lines the second endpoint, and for folded box polygons the
   // second box corner cannot be reconstructed from the box because it may be
   // padded in case withinDist > 0
-  if (bv.type == SIMPLE_LINE || bv.type == FOLDED_SIMPLE_LINE ||
-      bv.type == FOLDED_BOX_POLYGON)
+  if (bv.getType() == SIMPLE_LINE || bv.getType() == FOLDED_SIMPLE_LINE ||
+      bv.getType() == FOLDED_BOX_POLYGON)
     return unpackPoint(bv.numAnchors);
   return {bv.val, bv.point.getY() == bv.loY ? bv.upY : bv.loY};
 }
@@ -77,57 +101,57 @@ static int boxCmp(const void* a, const void* b) {
   if (boxa->out && !boxb->out) return 1;
 
   // everything before a polygon
-  if (boxa->type != POLYGON && boxa->type != SIMPLE_POLYGON &&
-      boxa->type != FOLDED_BOX_POLYGON &&
-      (boxb->type == POLYGON || boxb->type == SIMPLE_POLYGON ||
-       boxb->type == FOLDED_BOX_POLYGON))
+  if (boxa->getType() != POLYGON && boxa->getType() != SIMPLE_POLYGON &&
+      boxa->getType() != FOLDED_BOX_POLYGON &&
+      (boxb->getType() == POLYGON || boxb->getType() == SIMPLE_POLYGON ||
+       boxb->getType() == FOLDED_BOX_POLYGON))
     return -1;
-  if ((boxa->type == POLYGON || boxa->type == SIMPLE_POLYGON ||
-       boxa->type == FOLDED_BOX_POLYGON) &&
-      boxb->type != POLYGON && boxb->type != SIMPLE_POLYGON &&
-      boxb->type != FOLDED_BOX_POLYGON)
+  if ((boxa->getType() == POLYGON || boxa->getType() == SIMPLE_POLYGON ||
+       boxa->getType() == FOLDED_BOX_POLYGON) &&
+      boxb->getType() != POLYGON && boxb->getType() != SIMPLE_POLYGON &&
+      boxb->getType() != FOLDED_BOX_POLYGON)
     return 1;
 
   // points before lines
-  if ((boxa->type == POINT || boxa->type == FOLDED_POINT) &&
-      (boxb->type == SIMPLE_LINE || boxb->type == LINE ||
-       boxb->type == FOLDED_SIMPLE_LINE))
+  if ((boxa->getType() == POINT || boxa->getType() == FOLDED_POINT) &&
+      (boxb->getType() == SIMPLE_LINE || boxb->getType() == LINE ||
+       boxb->getType() == FOLDED_SIMPLE_LINE))
     return -1;
-  if ((boxb->type == POINT || boxb->type == FOLDED_POINT) &&
-      (boxa->type == SIMPLE_LINE || boxa->type == LINE ||
-       boxa->type == FOLDED_SIMPLE_LINE))
+  if ((boxb->getType() == POINT || boxb->getType() == FOLDED_POINT) &&
+      (boxa->getType() == SIMPLE_LINE || boxa->getType() == LINE ||
+       boxa->getType() == FOLDED_SIMPLE_LINE))
     return 1;
 
   // smaller polygons before larger
-  if ((boxa->type == POLYGON || boxa->type == SIMPLE_POLYGON ||
-       boxa->type == FOLDED_BOX_POLYGON) &&
-      (boxb->type == POLYGON || boxb->type == SIMPLE_POLYGON ||
-       boxb->type == FOLDED_BOX_POLYGON) &&
+  if ((boxa->getType() == POLYGON || boxa->getType() == SIMPLE_POLYGON ||
+       boxa->getType() == FOLDED_BOX_POLYGON) &&
+      (boxb->getType() == POLYGON || boxb->getType() == SIMPLE_POLYGON ||
+       boxb->getType() == FOLDED_BOX_POLYGON) &&
       boxa->areaOrLen < boxb->areaOrLen)
     return -1;
-  if ((boxa->type == POLYGON || boxa->type == SIMPLE_POLYGON ||
-       boxa->type == FOLDED_BOX_POLYGON) &&
-      (boxb->type == POLYGON || boxb->type == SIMPLE_POLYGON ||
-       boxb->type == FOLDED_BOX_POLYGON) &&
+  if ((boxa->getType() == POLYGON || boxa->getType() == SIMPLE_POLYGON ||
+       boxa->getType() == FOLDED_BOX_POLYGON) &&
+      (boxb->getType() == POLYGON || boxb->getType() == SIMPLE_POLYGON ||
+       boxb->getType() == FOLDED_BOX_POLYGON) &&
       boxa->areaOrLen > boxb->areaOrLen)
     return 1;
 
   // shorter lines before longer
-  if ((boxa->type == LINE || boxa->type == SIMPLE_LINE ||
-       boxa->type == FOLDED_SIMPLE_LINE) &&
-      (boxb->type == LINE || boxb->type == SIMPLE_LINE ||
-       boxb->type == FOLDED_SIMPLE_LINE) &&
+  if ((boxa->getType() == LINE || boxa->getType() == SIMPLE_LINE ||
+       boxa->getType() == FOLDED_SIMPLE_LINE) &&
+      (boxb->getType() == LINE || boxb->getType() == SIMPLE_LINE ||
+       boxb->getType() == FOLDED_SIMPLE_LINE) &&
       boxa->areaOrLen < boxb->areaOrLen)
     return -1;
-  if ((boxa->type == LINE || boxa->type == SIMPLE_LINE ||
-       boxa->type == FOLDED_SIMPLE_LINE) &&
-      (boxb->type == LINE || boxb->type == SIMPLE_LINE ||
-       boxb->type == FOLDED_SIMPLE_LINE) &&
+  if ((boxa->getType() == LINE || boxa->getType() == SIMPLE_LINE ||
+       boxa->getType() == FOLDED_SIMPLE_LINE) &&
+      (boxb->getType() == LINE || boxb->getType() == SIMPLE_LINE ||
+       boxb->getType() == FOLDED_SIMPLE_LINE) &&
       boxa->areaOrLen > boxb->areaOrLen)
     return 1;
 
   // make ordernig of equal geoms deterministic
-  if (boxa->type != boxb->type) return boxa->type < boxb->type ? -1 : 1;
+  if (boxa->getType() != boxb->getType()) return boxa->getType() < boxb->getType() ? -1 : 1;
   if (boxa->side != boxb->side) return boxa->side ? 1 : -1;
   if (boxa->id != boxb->id) return boxa->id < boxb->id ? -1 : 1;
 

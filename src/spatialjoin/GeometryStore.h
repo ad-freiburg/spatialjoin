@@ -10,6 +10,7 @@
 #include <memory>
 
 #include "BoxIds.h"
+#include "SweepEventList.h"
 #include "util/geo/Geo.h"
 
 namespace sj {
@@ -115,14 +116,16 @@ class GeometryStore {
   // reads the geometry at off from disk, using the read stream of thread tid
   // (0 <= tid < numthreads). Not thread-safe for the same tid!
   std::pair<size_t, W> getFrom(size_t off, size_t tid) const {
-    return getFrom(off, _geomsFReads[tid]);
+    return getFrom(untypedId(off), _geomsFReads[tid]);
   }
 
   // if true, all geometries are held in memory and must be retrieved via
   // getFromMem()
   bool inMemory() const { return _inMemory; }
 
-  std::shared_ptr<W> getFromMem(size_t off) const { return _memStore.at(off); }
+  std::shared_ptr<W> getFromMem(size_t off) const {
+    return _memStore.at(untypedId(off));
+  }
 
   void flush();
 
@@ -141,6 +144,9 @@ class GeometryStore {
 
  private:
   std::string getFName() const;
+
+  // the geometry type the IDs returned by add() are tagged with
+  static GeomType geomType();
   size_t readLine(std::istream& str, util::geo::I32XSortedLine& ret) const;
   static size_t writeLine(const util::geo::I32XSortedLine& ret,
                           std::ostream& str);
