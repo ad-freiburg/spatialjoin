@@ -990,6 +990,18 @@ int main(int, char**) {
       TEST(res.find("$gridpoly contains insideline$") != std::string::npos);
       TEST(res.find("$gridpoly touches insideline$") == std::string::npos);
     }
+
+    {
+      // a line which is covered by another line does not overlap it, but a
+      // multi geometry with a member identical to that line might
+      RunStats stats;
+      auto res = fullRun(TEST_DATASET_DIR "/overlapsreference", cfg, &stats);
+
+      TEST(res.find("$big covers sub$") != std::string::npos);
+      TEST(res.find("$big overlaps sub$") == std::string::npos);
+      TEST(res.find("$multi overlaps big$") != std::string::npos);
+      TEST(res.find("$big overlaps multi$") != std::string::npos);
+    }
   }
 
   {
@@ -1294,7 +1306,27 @@ int main(int, char**) {
       TEST(std::regex_search(res, farPoly));
       TEST(std::regex_search(res, polyFar));
       TEST(std::regex_search(res, multiPoly));
-      TEST(std::regex_search(res, polyMulti));
+      TEST(std::regex_search(res, polyMulti));      
+    }
+    
+    // the distance to an axis-aligned rectangle (a "folded box polygon") must
+    // not depend on the maximum distance, which the bounding box is padded with
+    {
+      for (double maxDist : {500.0, 2000.0, 5000.0}) {
+        cfg.withinDist = maxDist;
+        RunStats stats;
+        auto res = fullRun(TEST_DATASET_DIR "/foldedboxdistance", cfg, &stats);
+
+        std::regex boxPoint("\\$box\\t1001\\.88\\d*\\tpoint\\$");
+        std::regex pointBox("\\$point\\t1001\\.88\\d*\\tbox\\$");
+
+        if (maxDist < 1001.88) {
+          TEST(res, ==, "");
+        } else {
+          TEST(std::regex_search(res, boxPoint));
+          TEST(std::regex_search(res, pointBox));
+        }
+      }
     }
 
     cfg.withinDist = 50;

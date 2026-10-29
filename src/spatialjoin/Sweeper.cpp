@@ -233,9 +233,11 @@ I32Box Sweeper::add(const I32Polygon& poly, const std::string& gidR,
   cur.subid = subid;
   cur.gid = gid;
 
+  // folded box polygons store their geometry implicitly via the bounding box,
+  // which is padded for within-distance joins, so we cannot use them there
   if (poly.getInners().size() == 0 && subid == 0 && gid.size() < 8 &&
       (!_cfg.useBoxIds || boxIds.front().first == 1) &&
-      area(rawBox) == areaSize) {
+      area(rawBox) == areaSize && _cfg.withinDist < 0) {
     cur.boxvalIn = {0,  // placeholder, will be overwritten later on
                     box.getLowerLeft().getY(),
                     box.getUpperRight().getY(),
@@ -2892,7 +2894,8 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
     // covers
     if (res.coveredBy()) {
       writeNotCrosses(t, a->id, a->subId, b->id, b->subId);
-      if (a->subId == 0) writeNotOverlaps(t, a->id, a->subId, b->id, b->subId);
+      if (!_refs.count(a->id) && a->subId == 0)
+        writeNotOverlaps(t, a->id, a->subId, b->id, b->subId);
 
       writeCovers(t, b->id, b->subId, a->id, a->subId);
 
