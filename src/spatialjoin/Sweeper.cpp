@@ -86,7 +86,7 @@ void Sweeper::clearMultis(bool force) {
          (force || _finishedMultis.front().val < curMinThreadX)) {
     const auto& mOut = _finishedMultis.front();
     curBatch.push_back(
-        {{}, {}, _cacheManager->multiId(mOut.side, getId(mOut))});
+        {{}, {}, _geomStore->multiId(mOut.side, getId(mOut))});
     _finishedMultis.pop();
 
     if (curBatch.size() >= batchSize) {
@@ -137,7 +137,7 @@ void Sweeper::multiOut(size_t tOut, const std::string& gidA) {
 
     for (const auto& a : subDistance) {
       // avoid double writing of distance
-      if (_cacheManager->isMulti(a.first) && a.first < gidA) continue;
+      if (_geomStore->isMulti(a.first) && a.first < gidA) continue;
 
       const auto& dStr = util::formatFloat(a.second, 4);
       writeRel(tOut, gidA, a.first, "\t" + dStr + "\t");
@@ -173,7 +173,7 @@ void Sweeper::multiOut(size_t tOut, const std::string& gidA) {
       for (const auto& a : cur) {
         while (it != subDE9IM.end() && it->first < a.first) it++;
         if (it != subDE9IM.end() && it->first == a.first) {
-          if (_cacheManager->isMulti(a.first)) {
+          if (_geomStore->isMulti(a.first)) {
             it->second.elementwiseMax(a.second);
           } else {
             it->second.uniteRowGeoms(a.second);
@@ -186,7 +186,7 @@ void Sweeper::multiOut(size_t tOut, const std::string& gidA) {
 
     for (const auto& a : subDE9IM) {
       // avoid double writing of de9im matrix
-      if (_cacheManager->isMulti(a.first) && a.first < gidA) continue;
+      if (_geomStore->isMulti(a.first) && a.first < gidA) continue;
 
       if (_cfg.de9imFilter.matches(a.second)) {
         writeRel(tOut, gidA, a.first, "\t" + a.second.toString() + "\t");
@@ -252,8 +252,8 @@ void Sweeper::multiOut(size_t tOut, const std::string& gidA) {
 
   // write equals
   for (auto i : subEquals[gidA]) {
-    if (i.second == _cacheManager->subSize(gidA) &&
-        subEquals[i.first][gidA] == _cacheManager->subSize(i.first)) {
+    if (i.second == _geomStore->subSize(gidA) &&
+        subEquals[i.first][gidA] == _geomStore->subSize(i.first)) {
       writeRel(tOut, i.first, gidA, _cfg.sepEquals);
       _relStats[tOut].equals++;
       writeRel(tOut, gidA, i.first, _cfg.sepEquals);
@@ -263,7 +263,7 @@ void Sweeper::multiOut(size_t tOut, const std::string& gidA) {
 
   // write contains
   for (auto i : subContains) {
-    if (i.second == _cacheManager->subSize(gidA)) {
+    if (i.second == _geomStore->subSize(gidA)) {
       writeRel(tOut, i.first, gidA, _cfg.sepContains);
       _relStats[tOut].contains++;
     }
@@ -271,9 +271,9 @@ void Sweeper::multiOut(size_t tOut, const std::string& gidA) {
 
   // write covers
   for (auto i : subCovered) {
-    if (i.second == _cacheManager->subSize(gidA)) {
+    if (i.second == _geomStore->subSize(gidA)) {
       // CAREFUL: sub IDs are only flags here!!
-      writeNotOverlaps(tOut, i.first, _cacheManager->isMulti(i.first) ? 1 : 0,
+      writeNotOverlaps(tOut, i.first, _geomStore->isMulti(i.first) ? 1 : 0,
                        gidA, 1, false, false);
       writeRel(tOut, i.first, gidA, _cfg.sepCovers);
       _relStats[tOut].covers++;
@@ -360,7 +360,7 @@ void Sweeper::multiOut(size_t tOut, const std::string& gidA) {
   {
     for (const auto& b : subCovered) {
       auto gidB = b.first;
-      if (b.second == _cacheManager->subSize(gidA)) continue;
+      if (b.second == _geomStore->subSize(gidA)) continue;
 
       if (coversAll(gidA, gidB)) continue;
 
@@ -538,7 +538,7 @@ RelStats Sweeper::sweep(const SweepEventList* eventsA,
 
         counts++;
 
-        int sideB = ((int)(cur->side) + 1) % _cacheManager->numSides();
+        int sideB = ((int)(cur->side) + 1) % _geomStore->numSides();
 
         fillBatch(&curBatch, &actives[sideB], cur);
 
@@ -868,7 +868,7 @@ void Sweeper::writeRel(size_t t, const std::string& a, const std::string& b,
 
   auto ts = TIME();
 
-  if (_cacheManager->numSides() == 2 && (a[0] != 'A' || a[0] == b[0])) return;
+  if (_geomStore->numSides() == 2 && (a[0] != 'A' || a[0] == b[0])) return;
 
   _cfg.writeRelCb(t, a.c_str() + 1, a.size() - 1, b.c_str() + 1, b.size() - 1,
                   pred.c_str(), pred.size());
@@ -922,10 +922,10 @@ void Sweeper::writeDE9IM(size_t t, const std::string& a, size_t aSub,
 
   // handle references
 
-  if (!_cacheManager->hasRefs()) return;
+  if (!_geomStore->hasRefs()) return;
 
-  const auto* referersA = _cacheManager->getRefs(a, aSub);
-  const auto* referersB = _cacheManager->getRefs(b, bSub);
+  const auto* referersA = _geomStore->getRefs(a, aSub);
+  const auto* referersB = _geomStore->getRefs(b, bSub);
 
   if (expandB && referersB) {
     for (const auto& idB : *referersB) {
@@ -980,10 +980,10 @@ void Sweeper::writeDist(size_t t, const std::string& a, size_t aSub,
 
   // handle references
 
-  if (!_cacheManager->hasRefs()) return;
+  if (!_geomStore->hasRefs()) return;
 
-  const auto* referersA = _cacheManager->getRefs(a, aSub);
-  const auto* referersB = _cacheManager->getRefs(b, bSub);
+  const auto* referersA = _geomStore->getRefs(a, aSub);
+  const auto* referersB = _geomStore->getRefs(b, bSub);
 
   if (expandB && referersB) {
     for (const auto& idB : *referersB) {
@@ -1013,12 +1013,12 @@ void Sweeper::writeIntersect(size_t t, const std::string& a, size_t aSub,
     writeRel(t, b, a, _cfg.sepIsect);
   }
 
-  if (!_cacheManager->hasRefs()) return;
+  if (!_geomStore->hasRefs()) return;
 
   // handle references
 
-  const auto* referersA = _cacheManager->getRefs(a, aSub);
-  const auto* referersB = _cacheManager->getRefs(b, bSub);
+  const auto* referersA = _geomStore->getRefs(a, aSub);
+  const auto* referersB = _geomStore->getRefs(b, bSub);
 
   if (expandB && referersB) {
     for (const auto& idB : *referersB) {
@@ -1070,7 +1070,7 @@ void Sweeper::doDE9IMCheck(const JobVal cur, const JobVal sv, size_t t) {
 
   if (cur.getType() == SELF_CHECK || cur.getType() == SELF_CHECK_AREA ||
       cur.getType() == SELF_CHECK_LINE || cur.getType() == SELF_CHECK_POINT) {
-    auto sc = _cacheManager->selfCheck(cur.getId());
+    auto sc = _geomStore->selfCheck(cur.getId());
     return selfCheck(sc.first, sc.second, cur.getType(), t);
   }
 
@@ -1315,7 +1315,7 @@ void Sweeper::doDistCheck(const JobVal cur, const JobVal sv, size_t t) {
 
   if (cur.getType() == SELF_CHECK || cur.getType() == SELF_CHECK_AREA ||
       cur.getType() == SELF_CHECK_LINE || cur.getType() == SELF_CHECK_POINT) {
-    auto sc = _cacheManager->selfCheck(cur.getId());
+    auto sc = _geomStore->selfCheck(cur.getId());
     return selfCheck(sc.first, sc.second, cur.getType(), t);
   }
 
@@ -1510,7 +1510,7 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
 
   if (cur.getType() == SELF_CHECK || cur.getType() == SELF_CHECK_AREA ||
       cur.getType() == SELF_CHECK_LINE || cur.getType() == SELF_CHECK_POINT) {
-    auto sc = _cacheManager->selfCheck(cur.getId());
+    auto sc = _geomStore->selfCheck(cur.getId());
     return selfCheck(sc.first, sc.second, cur.getType(), t);
   }
 
@@ -1563,7 +1563,7 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
     } else if (res.intersects()) {
       // if a is not a multi-geom, and is completey covered, we wont
       // be finding a touch as we assume non-self-intersecting geoms
-      if (_cacheManager->isRefed(a->id) ||
+      if (_geomStore->isRefed(a->id) ||
           !(a->subId == 0 && res.coveredBy())) {
         writeNotTouches(t, a->id, a->subId, b->id, b->subId);
       }
@@ -1615,7 +1615,7 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
     } else if (res.intersects()) {
       // if a is not a multi-geom, and is completey covered, we wont
       // be finding a touch as we assume non-self-intersecting geoms
-      if (_cacheManager->isRefed(a->id) ||
+      if (_geomStore->isRefed(a->id) ||
           !(a->subId == 0 && res.coveredBy())) {
         writeNotTouches(t, a->id, a->subId, b->id, b->subId);
       }
@@ -1665,7 +1665,7 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
     if (res.touches()) {
       writeTouches(t, a->id, 0, b->id, b->subId);
     } else if (res.intersects()) {
-      if (_cacheManager->isRefed(a->id) || !(res.coveredBy())) {
+      if (_geomStore->isRefed(a->id) || !(res.coveredBy())) {
         writeNotTouches(t, a->id, 0, b->id, b->subId);
       }
     }
@@ -1716,7 +1716,7 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
     } else if (res.intersects()) {
       // if b is not a multi-geom, and is completey covered, we wont
       // be finding a touch as we assume non-self-intersecting geoms
-      if (_cacheManager->isRefed(a->id) ||
+      if (_geomStore->isRefed(a->id) ||
           !(b->subId == 0 && res.coveredBy())) {
         writeNotTouches(t, a->id, a->subId, b->id, b->subId);
       }
@@ -1764,7 +1764,7 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
     if (res.touches()) {
       writeTouches(t, a->id, a->subId, b->id, 0);
     } else if (res.intersects()) {
-      if (_cacheManager->isRefed(a->id) || !res.coveredBy()) {
+      if (_geomStore->isRefed(a->id) || !res.coveredBy()) {
         writeNotTouches(t, a->id, a->subId, b->id, 0);
       }
     }
@@ -2087,7 +2087,7 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
       if (res.within()) {
         writeContains(t, b->id, b->subId, a->id, a->subId);
 
-        if (_cacheManager->isRefed(a->id) || a->subId != 0) {
+        if (_geomStore->isRefed(a->id) || a->subId != 0) {
           writeNotTouches(t, a->id, a->subId, b->id, b->subId);
         }
       } else {
@@ -2171,12 +2171,12 @@ void Sweeper::writeOverlaps(size_t t, const std::string& a, size_t aSub,
     }
   }
 
-  if (!_cacheManager->hasRefs()) return;
+  if (!_geomStore->hasRefs()) return;
 
   // handle references
 
-  const auto* referersA = _cacheManager->getRefs(a, aSub);
-  const auto* referersB = _cacheManager->getRefs(b, bSub);
+  const auto* referersA = _geomStore->getRefs(a, aSub);
+  const auto* referersB = _geomStore->getRefs(b, bSub);
 
   if (expandB && referersB) {
     for (const auto& idB : *referersB) {
@@ -2208,12 +2208,12 @@ void Sweeper::writeNotOverlaps(size_t t, const std::string& a, size_t aSub,
     if (aSub != 0) _subNotOverlaps[t][a].insert(b);
   }
 
-  if (!expandRefs || !_cacheManager->hasRefs()) return;
+  if (!expandRefs || !_geomStore->hasRefs()) return;
 
   // handle references
 
-  const auto* referersA = _cacheManager->getRefs(a, aSub);
-  const auto* referersB = _cacheManager->getRefs(b, bSub);
+  const auto* referersA = _geomStore->getRefs(a, aSub);
+  const auto* referersB = _geomStore->getRefs(b, bSub);
 
   if (expandB && referersB) {
     for (const auto& idB : *referersB) {
@@ -2245,12 +2245,12 @@ void Sweeper::writeCrosses(size_t t, const std::string& a, size_t aSub,
     if (aSub != 0) _subCrosses[t][a].insert(b);
   }
 
-  if (!_cacheManager->hasRefs()) return;
+  if (!_geomStore->hasRefs()) return;
 
   // handle references
 
-  const auto* referersA = _cacheManager->getRefs(a, aSub);
-  const auto* referersB = _cacheManager->getRefs(b, bSub);
+  const auto* referersA = _geomStore->getRefs(a, aSub);
+  const auto* referersB = _geomStore->getRefs(b, bSub);
 
   if (expandB && referersB) {
     for (const auto& idB : *referersB) {
@@ -2281,12 +2281,12 @@ void Sweeper::writeNotCrosses(size_t t, const std::string& a, size_t aSub,
     if (aSub != 0) _subNotCrosses[t][a].insert(b);
   }
 
-  if (!_cacheManager->hasRefs()) return;
+  if (!_geomStore->hasRefs()) return;
 
   // handle references
 
-  const auto* referersA = _cacheManager->getRefs(a, aSub);
-  const auto* referersB = _cacheManager->getRefs(b, bSub);
+  const auto* referersA = _geomStore->getRefs(a, aSub);
+  const auto* referersB = _geomStore->getRefs(b, bSub);
 
   if (expandB && referersB) {
     for (const auto& idB : *referersB) {
@@ -2316,12 +2316,12 @@ void Sweeper::writeCrossesOneWay(size_t t, const std::string& a, size_t aSub,
     writeRel(t, a, b, _cfg.sepCrosses);
   }
 
-  if (!_cacheManager->hasRefs()) return;
+  if (!_geomStore->hasRefs()) return;
 
   // handle references
 
-  const auto* referersA = _cacheManager->getRefs(a, aSub);
-  const auto* referersB = _cacheManager->getRefs(b, bSub);
+  const auto* referersA = _geomStore->getRefs(a, aSub);
+  const auto* referersB = _geomStore->getRefs(b, bSub);
 
   if (expandB && referersB) {
     for (const auto& idB : *referersB) {
@@ -2355,12 +2355,12 @@ void Sweeper::writeTouches(size_t t, const std::string& a, size_t aSub,
     if (aSub != 0) _subTouches[t][a].insert(b);
   }
 
-  if (!_cacheManager->hasRefs()) return;
+  if (!_geomStore->hasRefs()) return;
 
   // handle references
 
-  const auto* referersA = _cacheManager->getRefs(a, aSub);
-  const auto* referersB = _cacheManager->getRefs(b, bSub);
+  const auto* referersA = _geomStore->getRefs(a, aSub);
+  const auto* referersB = _geomStore->getRefs(b, bSub);
 
   if (expandB && referersB) {
     for (const auto& idB : *referersB) {
@@ -2391,12 +2391,12 @@ void Sweeper::writeNotTouches(size_t t, const std::string& a, size_t aSub,
     if (aSub != 0) _subNotTouches[t][a].insert(b);
   }
 
-  if (!_cacheManager->hasRefs()) return;
+  if (!_geomStore->hasRefs()) return;
 
   // handle references
 
-  const auto* referersA = _cacheManager->getRefs(a, aSub);
-  const auto* referersB = _cacheManager->getRefs(b, bSub);
+  const auto* referersA = _geomStore->getRefs(a, aSub);
+  const auto* referersB = _geomStore->getRefs(b, bSub);
 
   if (expandB && referersB) {
     for (const auto& idB : *referersB) {
@@ -2431,7 +2431,7 @@ void Sweeper::writeEquals(size_t t, const std::string& a, size_t aSub,
       _relStats[t].equals++;
     } else if (aSub == 0 || bSub == 0) {
       writeNotOverlaps(t, a, aSub, b, bSub);
-    } else if (_cacheManager->subSize(a) != _cacheManager->subSize(b)) {
+    } else if (_geomStore->subSize(a) != _geomStore->subSize(b)) {
     } else {
       std::unique_lock<std::mutex> lock(_mutsEquals[t]);
 
@@ -2440,12 +2440,12 @@ void Sweeper::writeEquals(size_t t, const std::string& a, size_t aSub,
     }
   }
 
-  if (!_cacheManager->hasRefs()) return;
+  if (!_geomStore->hasRefs()) return;
 
   // handle references
 
-  const auto* referersA = _cacheManager->getRefs(a, aSub);
-  const auto* referersB = _cacheManager->getRefs(b, bSub);
+  const auto* referersA = _geomStore->getRefs(a, aSub);
+  const auto* referersB = _geomStore->getRefs(b, bSub);
 
   if (expandB && referersB) {
     for (const auto& idB : *referersB) {
@@ -2475,12 +2475,12 @@ void Sweeper::writeCovers(size_t t, const std::string& a, size_t aSub,
     }
   }
 
-  if (!_cacheManager->hasRefs()) return;
+  if (!_geomStore->hasRefs()) return;
 
   // handle references
 
-  const auto* referersA = _cacheManager->getRefs(a, aSub);
-  const auto* referersB = _cacheManager->getRefs(b, bSub);
+  const auto* referersA = _geomStore->getRefs(a, aSub);
+  const auto* referersB = _geomStore->getRefs(b, bSub);
 
   if (expandB && referersB) {
     for (const auto& idB : *referersB) {
@@ -2508,11 +2508,11 @@ void Sweeper::writeContains(size_t t, const std::string& a, size_t aSub,
     }
   }
 
-  if (!_cacheManager->hasRefs()) return;
+  if (!_geomStore->hasRefs()) return;
 
   // handle references
-  const auto* referersA = _cacheManager->getRefs(a, aSub);
-  const auto* referersB = _cacheManager->getRefs(b, bSub);
+  const auto* referersA = _geomStore->getRefs(a, aSub);
+  const auto* referersB = _geomStore->getRefs(b, bSub);
 
   if (expandB && referersB) {
     for (const auto& idB : *referersB) {
@@ -2554,7 +2554,7 @@ bool Sweeper::coversAll(const std::string& a, const std::string& b) {
   // does a cover *every* sub geometry of the multi geometry b? Note that this
   // can already be answered while b is still being swept, as long as a is
   // complete: no check between a and b can happen after a was flushed
-  if (!_cacheManager->isMulti(b)) return false;
+  if (!_geomStore->isMulti(b)) return false;
 
   size_t covered = 0;
 
@@ -2566,7 +2566,7 @@ bool Sweeper::coversAll(const std::string& a, const std::string& b) {
     if (j != i->second.end()) covered += j->second.size();
   }
 
-  return covered == _cacheManager->subSize(b);
+  return covered == _geomStore->subSize(b);
 }
 
 // _____________________________________________________________________________
@@ -3315,18 +3315,18 @@ double Sweeper::getMaxMultiDist(const std::string& idA, size_t aSub,
   // TODO: why do we return here directly for euclidean, check this!
   if (euclidean) return maxD;
 
-  if (_cacheManager->isRefed(idA) || _cacheManager->isRefed(idB)) return maxD;
+  if (_geomStore->isRefed(idA) || _geomStore->isRefed(idB)) return maxD;
 
   // for multigeometries, we may already have a minimum distance above which we
   // are not required to search
   if (aSub > 0) {
-    const auto& rightPointA = _cacheManager->multiRightPoint(idA);
+    const auto& rightPointA = _geomStore->multiRightPoint(idA);
     double d = euclidean ? Sweeper::euclideanDist(rightPointA, leftBPoint, maxD)
                          : Sweeper::meterDist(rightPointA, leftBPoint, maxD);
     maxD = std::min(maxD, d);
   }
   if (bSub > 0) {
-    const auto& rightPointB = _cacheManager->multiRightPoint(idB);
+    const auto& rightPointB = _geomStore->multiRightPoint(idB);
     double d = euclidean ? Sweeper::euclideanDist(rightPointB, leftAPoint, maxD)
                          : Sweeper::meterDist(rightPointB, leftAPoint, maxD);
     maxD = std::min(maxD, d);

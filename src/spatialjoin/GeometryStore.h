@@ -4,13 +4,19 @@
 #ifndef SPATIALJOINS_GEOMETRYSTORE_H_
 #define SPATIALJOINS_GEOMETRYSTORE_H_
 
+#include <atomic>
 #include <fstream>
 #include <iostream>
 #include <map>
 #include <memory>
+#include <mutex>
+#include <string>
+#include <unordered_map>
+#include <vector>
 
 #include "BoxIds.h"
 #include "SweepEventList.h"
+#include "SweeperCfg.h"
 #include "util/geo/Geo.h"
 
 namespace sj {
@@ -78,12 +84,12 @@ struct Point {
 const static size_t WRITE_BUFF_SIZE = 1024 * 1024 * 4l;
 
 template <typename W>
-class GeometryStore {
+class TypedGeometryStore {
  public:
-  GeometryStore(size_t numthreads, const std::string& dir)
-      : GeometryStore(numthreads, dir, ".spatialjoin"){};
-  GeometryStore(size_t numthreads, const std::string& dir,
-                const std::string& tmpPrefix)
+  TypedGeometryStore(size_t numthreads, const std::string& dir)
+      : TypedGeometryStore(numthreads, dir, ".spatialjoin"){};
+  TypedGeometryStore(size_t numthreads, const std::string& dir,
+                     const std::string& tmpPrefix)
       : _numThreads(numthreads), _dir(dir), _tmpPrefix(tmpPrefix) {
     _geomsFReads.resize(numthreads);
 
@@ -100,7 +106,7 @@ class GeometryStore {
     unlink(_fName.c_str());
   }
 
-  ~GeometryStore() {
+  ~TypedGeometryStore() {
     if (_geomsF.is_open()) _geomsF.close();
     for (size_t i = 0; i < _geomsFReads.size(); i++) {
       if (_geomsFReads[i].is_open()) _geomsFReads[i].close();
@@ -129,7 +135,7 @@ class GeometryStore {
 
   void flush();
 
-  GeometryStore& operator=(GeometryStore&& other) {
+  TypedGeometryStore& operator=(TypedGeometryStore&& other) {
     other._geomsF.flush();
     _geomsF = std::move(other._geomsF);
     _geomsFReads = std::move(other._geomsFReads);
@@ -169,6 +175,218 @@ class GeometryStore {
 
   char* _writeBuffer = 0;
 };
+struct WriteCand {
+  std::string raw;
+  std::string gid;
+  BoxVal boxvalIn;
+  BoxVal boxvalOut;
+  size_t subid;
+};
+
+struct WriteBatch {
+  std::vector<WriteCand> points;
+  std::vector<WriteCand> foldedPoints;
+  std::vector<WriteCand> simpleLines;
+  std::vector<WriteCand> foldedSimpleLines;
+  std::vector<WriteCand> lines;
+  std::vector<WriteCand> simpleAreas;
+  std::vector<WriteCand> foldedBoxAreas;
+  std::vector<WriteCand> areas;
+  std::vector<WriteCand> refs;
+  std::vector<WriteCand> multiGeoms;
+
+  size_t size() const {
+    return points.size() + foldedSimpleLines.size() + foldedPoints.size() +
+           simpleLines.size() + lines.size() + simpleAreas.size() +
+           areas.size() + refs.size();
+  }
+};
+
+// holds all geometries and their metadata written during the add phase
+class GeometryStore {
+ public:
+  GeometryStore(const SweeperCfg& cfg, const std::string& cache,
+                const std::string& tmpPrefix)
+      : _cfg(cfg),
+        _pointStore(cfg.numCacheThreads, cache, tmpPrefix),
+        _areaStore(cfg.numCacheThreads, cache, tmpPrefix),
+        _simpleAreaStore(cfg.numCacheThreads, cache, tmpPrefix),
+        _lineStore(cfg.numCacheThreads, cache, tmpPrefix),
+        _simpleLineStore(cfg.numCacheThreads, cache, tmpPrefix),
+        _numSides(1) {
+    if (_cfg.forceTwoSided) _numSides = 2;
+  };
+
+  void log(const std::string& msg);
+
+  util::geo::I32Box add(const util::geo::I32MultiPolygon& a,
+                        const std::string& gid, bool side,
+                        WriteBatch& batch) const;
+  util::geo::I32Box add(const util::geo::I32MultiPolygon& a,
+                        const std::string& gid, size_t, bool side,
+                        WriteBatch& batch) const;
+  util::geo::I32Box add(const util::geo::I32Polygon& a, const std::string& gid,
+                        bool side, WriteBatch& batch) const;
+  util::geo::I32Box add(const util::geo::I32Polygon& a, const std::string& gid,
+                        size_t subId, bool side, WriteBatch& batch) const;
+
+  util::geo::I32Box add(const util::geo::I32MultiLine& a,
+                        const std::string& gid, size_t, bool side,
+                        WriteBatch& batch) const;
+  util::geo::I32Box add(const util::geo::I32MultiLine& a,
+                        const std::string& gid, bool side,
+                        WriteBatch& batch) const;
+  util::geo::I32Box add(const util::geo::I32Line& a, const std::string& gid,
+                        bool side, WriteBatch& batch) const;
+  util::geo::I32Box add(const util::geo::I32Line& a, const std::string& gid,
+                        size_t subid, bool side, WriteBatch& batch) const;
+
+  util::geo::I32Box add(const util::geo::I32Point& a, const std::string& gid,
+                        bool side, WriteBatch& batch) const;
+  util::geo::I32Box add(const util::geo::I32Point& a, const std::string& gid,
+                        size_t subid, bool side, WriteBatch& batch) const;
+  util::geo::I32Box add(const util::geo::I32MultiPoint& a,
+                        const std::string& gid, size_t, bool side,
+                        WriteBatch& batch) const;
+  util::geo::I32Box add(const util::geo::I32MultiPoint& a,
+                        const std::string& gid, bool side,
+                        WriteBatch& batch) const;
+
+  void add(const std::string& a, const util::geo::I32Box& box,
+           const std::string& gid, size_t subid, bool side,
+           WriteBatch& batch) const;
+
+  void addBatch(WriteBatch& cands, sj::SweepEventList* events);
+
+  void flush(sj::SweepEventList* events);
+
+  size_t numReferences() const {
+    size_t ret = 0;
+    for (const auto& subs : _refs) {
+      for (const auto& refd : subs.second) {
+        ret += refd.second.size();
+      }
+    }
+    return ret;
+  }
+
+  const TypedGeometryStore<Point>& pointStore() const { return _pointStore; }
+  const TypedGeometryStore<Area>& areaStore() const { return _areaStore; }
+  const TypedGeometryStore<SimpleArea>& simpleAreaStore() const {
+    return _simpleAreaStore;
+  }
+  const TypedGeometryStore<Line>& lineStore() const { return _lineStore; }
+  const TypedGeometryStore<SimpleLine>& simpleLineStore() const {
+    return _simpleLineStore;
+  }
+
+  size_t numSides() const { return _numSides; }
+
+  void setNumSides(size_t sides) { _numSides = sides; }
+
+  size_t subSize(const std::string& id) const { return _subSizes.at(id); }
+
+  bool isMulti(const std::string& id) const {
+    return _subSizes.find(id) != _subSizes.end();
+  }
+
+  size_t numMultis(bool side) const { return _multiIds[side].size(); }
+
+  const std::string& multiId(bool side, size_t id) const {
+    return _multiIds[side][id];
+  }
+
+  util::geo::I32Point multiRightPoint(const std::string& gid) const {
+    auto i = _multiRightPoint.find(gid);
+    if (i == _multiRightPoint.end()) return {};
+    return i->second;
+  }
+
+  bool hasRefs() const { return _refs.size() != 0; }
+
+  bool isRefed(const std::string& gid) const { return _refs.count(gid); }
+
+  const std::unordered_map<std::string, size_t>* getRefs(const std::string& gid,
+                                                         size_t subId) const {
+    auto i = _refs.find(gid);
+    if (i == _refs.end()) return nullptr;
+    auto j = i->second.find(subId);
+    if (j == i->second.end()) return nullptr;
+    return &j->second;
+  }
+
+  std::pair<std::string, size_t> selfCheck(size_t id) const {
+    return _selfChecks[id];
+  }
+
+  void setFilterBox(const util::geo::I32Box& filterBox) {
+    _filterBox = filterBox;
+  }
+
+  template <template <typename> class G, typename T>
+  util::geo::I32Box getPaddedBoundingBox(const G<T>& geom) const {
+    return getPaddedBoundingBox(geom, geom);
+  }
+
+  template <template <typename> class G1, template <typename> class G2,
+            typename T>
+  util::geo::I32Box getPaddedBoundingBox(const G1<T>& geom,
+                                         const G2<T>& refGeom) const;
+  static size_t foldString(const std::string& s);
+
+  double DUPLICATE_REMOVAL_MIN_SIZE = 500;
+
+ private:
+  // returns the geometry stored at off in store, bypassing any cache
+  template <typename W>
+  static std::shared_ptr<W> get(const TypedGeometryStore<W>& store,
+                                size_t off);
+
+  void multiAdd(const std::string& gid, bool side, int32_t xRight,
+                const util::geo::I32Point& pointRight);
+
+  void duplicatesToReferences(int file);
+
+  const SweeperCfg _cfg;
+
+  TypedGeometryStore<Point> _pointStore;
+  TypedGeometryStore<Area> _areaStore;
+  TypedGeometryStore<SimpleArea> _simpleAreaStore;
+  TypedGeometryStore<Line> _lineStore;
+  TypedGeometryStore<SimpleLine> _simpleLineStore;
+
+  // these are written during the geometry add phase
+  std::vector<std::string> _multiIds[2];  // required on OUT to get the GID
+  std::vector<int32_t> _multiRightX[2];
+  std::unordered_map<std::string, util::geo::I32Point> _multiRightPoint;
+  std::unordered_map<std::string, size_t> _multiGidToId[2];
+  std::unordered_map<std::string, size_t> _subSizes;
+
+  std::atomic<uint8_t> _numSides;
+
+  mutable std::mutex _multiAddMtx;
+  mutable std::mutex _sweepEventWriteMtx;
+  mutable std::mutex _pointGeomCacheWriteMtx;
+  mutable std::mutex _lineGeomCacheWriteMtx;
+  mutable std::mutex _simpleLineGeomCacheWriteMtx;
+  mutable std::mutex _areaGeomCacheWriteMtx;
+  mutable std::mutex _simpleAreaGeomCacheWriteMtx;
+
+  std::unordered_map<std::string, util::geo::I32Box> _selfCheckBounds;
+
+  std::unordered_map<
+      std::string,
+      std::unordered_map<size_t, std::unordered_map<std::string, size_t>>>
+      _refs;
+
+  std::vector<std::pair<std::string, size_t>> _selfChecks;
+
+  util::geo::I32Box _filterBox = {{std::numeric_limits<int32_t>::lowest(),
+                                   std::numeric_limits<int32_t>::lowest()},
+                                  {std::numeric_limits<int32_t>::max(),
+                                   std::numeric_limits<int32_t>::max()}};
+};
+
 }  // namespace sj
 
 #endif

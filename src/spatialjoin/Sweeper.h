@@ -38,6 +38,7 @@ class Sweeper {
       : _cfg(cfg),
         _obufpos(0),
         _cacheManager(cacheManager),
+        _geomStore(&cacheManager->getStore()),
         _jobs(100),
         _dontNeedFullDE9IM(!_cfg.computeDE9IM &&
                            _cfg.de9imFilter == util::geo::FANY) {
@@ -315,6 +316,7 @@ class Sweeper {
   std::queue<BoxVal> _finishedMultis;
 
   const GeometryCacheManager* _cacheManager;
+  const GeometryStore* _geomStore;
 
   util::JobQueue<JobBatch> _jobs;
 

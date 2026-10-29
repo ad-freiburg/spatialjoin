@@ -414,7 +414,7 @@ int main(int argc, char** argv) {
   cacheManager.log("Parsing input geometries...");
   auto ts = TIME();
 
-  sj::WKTParser parser(&cacheManager, &sweepEvents, NUM_THREADS, wktStrict);
+  sj::WKTParser parser(&cacheManager.getStore(), &sweepEvents, NUM_THREADS, wktStrict);
 
   if (!inputFiles.empty()) {
     if (inputFiles.size() > 2) {
@@ -502,7 +502,7 @@ int main(int argc, char** argv) {
   cacheManager.log("Done parsing (" + std::to_string(TOOK(ts) / 1000000000.0) +
                    "s).");
 
-  cacheManager.flush(&sweepEvents);
+  cacheManager.getStore().flush(&sweepEvents);
 
   cacheManager.log("Sorting events...");
   sweepEvents.flush(NUM_THREADS);
