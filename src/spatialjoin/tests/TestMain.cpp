@@ -1069,6 +1069,18 @@ int main(int, char**) {
       TEST(res.find("$gridpoly contains insideline$") != std::string::npos);
       TEST(res.find("$gridpoly touches insideline$") == std::string::npos);
     }
+
+    {
+      // a line which is covered by another line does not overlap it, but a
+      // multi geometry with a member identical to that line might
+      RunStats stats;
+      auto res = fullRun(TEST_DATASET_DIR "/overlapsreference", cfg, &stats);
+
+      TEST(res.find("$big covers sub$") != std::string::npos);
+      TEST(res.find("$big overlaps sub$") == std::string::npos);
+      TEST(res.find("$multi overlaps big$") != std::string::npos);
+      TEST(res.find("$big overlaps multi$") != std::string::npos);
+    }
   }
 
   {
