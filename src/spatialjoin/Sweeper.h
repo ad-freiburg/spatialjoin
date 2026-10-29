@@ -19,7 +19,7 @@
 #include <unordered_map>
 #include <unordered_set>
 
-#include "GeometryCacheManager.h"
+#include "GeometryCache.h"
 #include "GeometryStore.h"
 #include "Stats.h"
 #include "util/JobQueue.h"
@@ -34,11 +34,11 @@ namespace sj {
 
 class Sweeper {
  public:
-  Sweeper(SweeperCfg cfg, const GeometryCacheManager* cacheManager)
+  Sweeper(SweeperCfg cfg, const GeometryCache* geomCache)
       : _cfg(cfg),
         _obufpos(0),
-        _cacheManager(cacheManager),
-        _geomStore(&cacheManager->getStore()),
+        _geomCache(geomCache),
+        _geomStore(&geomCache->getStore()),
         _jobs(100),
         _dontNeedFullDE9IM(!_cfg.computeDE9IM &&
                            _cfg.de9imFilter == util::geo::FANY) {
@@ -315,7 +315,7 @@ class Sweeper {
   // multi geometries whose OUT event has been processed
   std::queue<BoxVal> _finishedMultis;
 
-  const GeometryCacheManager* _cacheManager;
+  const GeometryCache* _geomCache;
   const GeometryStore* _geomStore;
 
   util::JobQueue<JobBatch> _jobs;

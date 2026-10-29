@@ -20,13 +20,13 @@
 #include <sstream>
 
 #include "BoxIds.h"
-#include "GeometryCacheManager.h"
+#include "GeometryCache.h"
 #include "util/Misc.h"
 #include "util/geo/IntervalIdx.h"
 #include "util/log/Log.h"
 
 using sj::GeomCheckRes;
-using sj::GeometryCacheManager;
+using sj::GeometryCache;
 using sj::GeomType;
 using sj::boxids::boxIdIsect;
 using sj::boxids::BoxIdList;
@@ -64,8 +64,8 @@ using util::LogLevel::WARN;
 
 // _____________________________________________________________________________
 template <typename W>
-std::shared_ptr<W> GeometryCacheManager::get(const TypedGeometryStore<W>& store,
-                                             GeomLRUCache<W>& cache, size_t off,
+std::shared_ptr<W> GeometryCache::get(const TypedGeometryStore<W>& store,
+                                             TypedGeometryCache<W>& cache, size_t off,
                                              size_t tid) const {
   // completely circumvent cache system
   if (store.inMemory()) return store.getFromMem(off);
@@ -90,25 +90,25 @@ std::shared_ptr<W> GeometryCacheManager::get(const TypedGeometryStore<W>& store,
   return it->second->second.val;
 }
 
-template std::shared_ptr<sj::Point> GeometryCacheManager::get(
-    const sj::TypedGeometryStore<sj::Point>&, sj::GeomLRUCache<sj::Point>&, size_t,
+template std::shared_ptr<sj::Point> GeometryCache::get(
+    const sj::TypedGeometryStore<sj::Point>&, sj::TypedGeometryCache<sj::Point>&, size_t,
     size_t) const;
-template std::shared_ptr<sj::Area> GeometryCacheManager::get(
-    const sj::TypedGeometryStore<sj::Area>&, sj::GeomLRUCache<sj::Area>&, size_t,
+template std::shared_ptr<sj::Area> GeometryCache::get(
+    const sj::TypedGeometryStore<sj::Area>&, sj::TypedGeometryCache<sj::Area>&, size_t,
     size_t) const;
-template std::shared_ptr<sj::SimpleArea> GeometryCacheManager::get(
-    const sj::TypedGeometryStore<sj::SimpleArea>&, sj::GeomLRUCache<sj::SimpleArea>&,
+template std::shared_ptr<sj::SimpleArea> GeometryCache::get(
+    const sj::TypedGeometryStore<sj::SimpleArea>&, sj::TypedGeometryCache<sj::SimpleArea>&,
     size_t, size_t) const;
-template std::shared_ptr<sj::Line> GeometryCacheManager::get(
-    const sj::TypedGeometryStore<sj::Line>&, sj::GeomLRUCache<sj::Line>&, size_t,
+template std::shared_ptr<sj::Line> GeometryCache::get(
+    const sj::TypedGeometryStore<sj::Line>&, sj::TypedGeometryCache<sj::Line>&, size_t,
     size_t) const;
-template std::shared_ptr<sj::SimpleLine> GeometryCacheManager::get(
-    const sj::TypedGeometryStore<sj::SimpleLine>&, sj::GeomLRUCache<sj::SimpleLine>&,
+template std::shared_ptr<sj::SimpleLine> GeometryCache::get(
+    const sj::TypedGeometryStore<sj::SimpleLine>&, sj::TypedGeometryCache<sj::SimpleLine>&,
     size_t, size_t) const;
 
 // _____________________________________________________________________________
 template <typename W>
-std::shared_ptr<W> GeometryCacheManager::cache(GeomLRUCache<W>& cache,
+std::shared_ptr<W> GeometryCache::cache(TypedGeometryCache<W>& cache,
                                                size_t off, const W& val,
                                                size_t estSize,
                                                size_t tid) const {
@@ -144,8 +144,8 @@ std::shared_ptr<W> GeometryCacheManager::cache(GeomLRUCache<W>& cache,
 
 // _____________________________________________________________________________
 template <typename W>
-std::pair<size_t, size_t> GeometryCacheManager::size(
-    const GeomLRUCache<W>& cache) {
+std::pair<size_t, size_t> GeometryCache::size(
+    const TypedGeometryCache<W>& cache) {
   size_t numEntries = 0;
   size_t bytes = 0;
   for (size_t tid = 0; tid < cache.vals.size(); tid++) {
@@ -157,22 +157,28 @@ std::pair<size_t, size_t> GeometryCacheManager::size(
 }
 
 // _____________________________________________________________________________
-std::pair<size_t, size_t> GeometryCacheManager::size() const {
-  auto cacheSizePoint = size(_pointCache);
-  auto cacheSizeArea = size(_areaCache);
-  auto cacheSizeSimpleArea = size(_simpleAreaCache);
-  auto cacheSizeSimpleLine = size(_simpleLineCache);
-  auto cacheSizeLine = size(_lineCache);
-
-  return {cacheSizePoint.first + cacheSizeArea.first +
-              cacheSizeSimpleArea.first + cacheSizeSimpleLine.first +
-              cacheSizeLine.first,
-          cacheSizePoint.second + cacheSizeArea.second +
-              cacheSizeSimpleArea.second + cacheSizeSimpleLine.second +
-              cacheSizeLine.second};
+std::pair<size_t, size_t> GeometryCache::size() const {
+  std::pair<size_t, size_t> ret{0, 0};
+  for (const auto& caches : _caches) {
+    for (const auto& cacheSize :
+         {size(caches->pointCache), size(caches->areaCache),
+          size(caches->simpleAreaCache), size(caches->simpleLineCache),
+          size(caches->lineCache)}) {
+      ret.first += cacheSize.first;
+      ret.second += cacheSize.second;
+    }
+  }
+  return ret;
 }
 
 // _____________________________________________________________________________
-void GeometryCacheManager::log(const std::string& msg) {
+size_t GeometryCache::addStore(const GeometryStore* store) {
+  _stores.push_back(store);
+  _caches.push_back(std::unique_ptr<StoreCaches>(new StoreCaches(_cfg)));
+  return _stores.size() - 1;
+}
+
+// _____________________________________________________________________________
+void GeometryCache::log(const std::string& msg) {
   if (_cfg.logCb) _cfg.logCb(msg);
 }

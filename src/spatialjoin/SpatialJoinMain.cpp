@@ -5,7 +5,7 @@
 #include <iostream>
 
 #include "BoxIds.h"
-#include "GeometryCacheManager.h"
+#include "GeometryCache.h"
 #include "OutputWriter.h"
 #include "Sweeper.h"
 #include "WKTParse.h"
@@ -13,7 +13,7 @@
 #include "util/geo/Geo.h"
 #include "util/log/Log.h"
 
-using sj::GeometryCacheManager;
+using sj::GeometryCache;
 using sj::ParseBatch;
 using sj::Sweeper;
 using util::geo::DE9IMFilter;
@@ -140,7 +140,7 @@ int main(int argc, char** argv) {
 
   std::string prefix = "";
   std::string output = "";
-  std::string cache = ".";
+  std::string cacheDir = ".";
   std::string contains = " contains ";
   std::string intersects = " intersects ";
   std::string covers = " covers ";
@@ -264,7 +264,7 @@ int main(int argc, char** argv) {
         state = 0;
         break;
       case 6:
-        cache = cur;
+        cacheDir = cur;
         state = 0;
         break;
       case 7:
@@ -360,7 +360,7 @@ int main(int argc, char** argv) {
   unsigned char* buf = new unsigned char[CACHE_SIZE];
   size_t len;
 
-  sj::OutputWriter outWriter(numThreads, prefix, suffix, output, cache);
+  sj::OutputWriter outWriter(numThreads, prefix, suffix, output, cacheDir);
 
   std::function<void(size_t, const char*, size_t, const char*, size_t,
                      const char*, size_t)>
@@ -408,13 +408,15 @@ int main(int argc, char** argv) {
       LOGTO(INFO, std::cerr) << s;
     };
 
-  GeometryCacheManager cacheManager(sweeperCfg, cache, ".spatialjoin");
-  sj::SweepEventList sweepEvents(cache, ".spatialjoin");
+  sj::GeometryStore geomStore(sweeperCfg, cacheDir, ".spatialjoin");
+  GeometryCache geomCache(sweeperCfg);
+  geomCache.addStore(&geomStore);
+  sj::SweepEventList sweepEvents(cacheDir, ".spatialjoin");
 
-  cacheManager.log("Parsing input geometries...");
+  geomCache.log("Parsing input geometries...");
   auto ts = TIME();
 
-  sj::WKTParser parser(&cacheManager.getStore(), &sweepEvents, NUM_THREADS, wktStrict);
+  sj::WKTParser parser(&geomStore, &sweepEvents, NUM_THREADS, wktStrict);
 
   if (!inputFiles.empty()) {
     if (inputFiles.size() > 2) {
@@ -496,24 +498,24 @@ int main(int argc, char** argv) {
   parser.done();
 
   if (parser.getNumInvalid() > 0)
-    cacheManager.log("Note: skipped " + std::to_string(parser.getNumInvalid()) +
+    geomCache.log("Note: skipped " + std::to_string(parser.getNumInvalid()) +
                      " invalid WKT literals");
 
-  cacheManager.log("Done parsing (" + std::to_string(TOOK(ts) / 1000000000.0) +
+  geomCache.log("Done parsing (" + std::to_string(TOOK(ts) / 1000000000.0) +
                    "s).");
 
-  cacheManager.getStore().flush(&sweepEvents);
+  geomStore.flush(&sweepEvents);
 
-  cacheManager.log("Sorting events...");
+  geomCache.log("Sorting events...");
   sweepEvents.flush(NUM_THREADS);
-  cacheManager.log("...done");
+  geomCache.log("...done");
 
-  Sweeper sweeper(sweeperCfg, &cacheManager);
+  Sweeper sweeper(sweeperCfg, &geomCache);
 
-  cacheManager.log("Sweeping...");
+  geomCache.log("Sweeping...");
   ts = TIME();
   sweeper.sweep(&sweepEvents, 0);
-  cacheManager.log("done (" + std::to_string(TOOK(ts) / 1000000000.0) + "s).");
+  geomCache.log("done (" + std::to_string(TOOK(ts) / 1000000000.0) + "s).");
 
   delete[] buf;
 

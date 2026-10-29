@@ -11,7 +11,7 @@
 #include <vector>
 
 #include "spatialjoin/BoxIds.h"
-#include "spatialjoin/GeometryCacheManager.h"
+#include "spatialjoin/GeometryCache.h"
 #include "spatialjoin/OutputWriter.h"
 #include "spatialjoin/Sweeper.h"
 #include "spatialjoin/WKTParse.h"
@@ -19,7 +19,7 @@
 #include "util/geo/Geo.h"
 #include "util/log/Log.h"
 
-using sj::GeometryCacheManager;
+using sj::GeometryCache;
 using sj::ParseBatch;
 using sj::Sweeper;
 using sj::SweepEventList;
@@ -42,9 +42,11 @@ std::string fullRun(const std::string& file, sj::SweeperCfg cfg,
                                   size_t predn) {
       outWriter.writeRelCb(t, a, an, b, bn, pred, predn);
     };
-    GeometryCacheManager cacheManager(cfg, ".", ".spatialjoin");
+    sj::GeometryStore geomStore(cfg, ".", ".spatialjoin");
+    GeometryCache geomCache(cfg);
+    geomCache.addStore(&geomStore);
     SweepEventList sweepEvents(".", ".spatialjoin");
-    cacheManager.getStore().DUPLICATE_REMOVAL_MIN_SIZE = dupRemovalMinSize;
+    geomStore.DUPLICATE_REMOVAL_MIN_SIZE = dupRemovalMinSize;
 
     // very small buffer size 1 here for test purposes to force buffer overflows
     // during parsing
@@ -56,7 +58,7 @@ std::string fullRun(const std::string& file, sj::SweeperCfg cfg,
     int f = open(file.c_str(), O_RDONLY);
     TEST(f >= 0);
 
-    sj::WKTParser parser(&cacheManager.getStore(), &sweepEvents, 1, strict);
+    sj::WKTParser parser(&geomStore, &sweepEvents, 1, strict);
 
     while ((len = read(f, buf, BUFF_SIZE)) > 0) {
       parser.parse(buf, len, 0);
@@ -65,14 +67,14 @@ std::string fullRun(const std::string& file, sj::SweeperCfg cfg,
 
     delete[] buf;
 
-    cacheManager.getStore().flush(&sweepEvents);
+    geomStore.flush(&sweepEvents);
 
     sweepEvents.flush(1);
 
-    Sweeper sweeper(cfg, &cacheManager);
+    Sweeper sweeper(cfg, &geomCache);
     sweeper.sweep(&sweepEvents);
 
-    stats->numReferences = cacheManager.getStore().numReferences();
+    stats->numReferences = geomStore.numReferences();
     stats->numInvalid = parser.getNumInvalid();
 
     close(f);
