@@ -3310,11 +3310,15 @@ double Sweeper::getMaxMultiDist(const std::string& idA, size_t aSub,
                                 const I32Point& leftBPoint, size_t t) {
   const bool euclidean = _cfg.euclideanDist && !_cfg.haversineApprox;
   double maxD = euclidean ? _cfg.withinDist * PREC : _cfg.withinDist;
-  // for multigeometries, we may already have a minimum distance above which we
-  // are not required to search
   if (aSub == 0 && bSub == 0) return maxD;
+
+  // TODO: why do we return here directly for euclidean, check this!
   if (euclidean) return maxD;
 
+  if (_cacheManager->isRefed(idA) || _cacheManager->isRefed(idB)) return maxD;
+
+  // for multigeometries, we may already have a minimum distance above which we
+  // are not required to search
   if (aSub > 0) {
     const auto& rightPointA = _cacheManager->multiRightPoint(idA);
     double d = euclidean ? Sweeper::euclideanDist(rightPointA, leftBPoint, maxD)
