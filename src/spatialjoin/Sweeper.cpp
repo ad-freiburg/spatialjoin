@@ -3347,8 +3347,8 @@ double Sweeper::getMaxMultiDist(const std::string& idA, size_t aSub,
 
 // _____________________________________________________________________________
 std::string Sweeper::unfoldString(size_t folded) {
-  // shift by 7 bytes to get size
-  size_t n = folded >> 56;
+  // the byte below the type bits stores the size
+  size_t n = (folded >> FOLD_LEN_SHIFT) & 0xFF;
 
   std::string ret;
   ret.reserve(n);

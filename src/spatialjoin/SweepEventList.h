@@ -28,12 +28,17 @@ enum GeomType : uint8_t {
 };
 
 // the upper 4 bits of a BoxVal ID hold the geometry type, see typedId()
-const static size_t ID_TYPE_SHIFT = 60;
+const static size_t ID_TYPE_SHIFT = 56;
 const static size_t ID_MASK = (size_t(1) << ID_TYPE_SHIFT) - 1;
 
+// a folded gid (see GeometryStore::foldString()) stores its length in the byte
+// directly below the type bits, and up to FOLD_MAX_LEN chars below that
+const static size_t FOLD_LEN_SHIFT = ID_TYPE_SHIFT - 8;
+const static size_t FOLD_MAX_LEN = FOLD_LEN_SHIFT / 8;
+
 struct BoxVal {
-  size_t id;         // typed ID, the lower 60 bits are the dist offset returned from the
-                     // GeometryStore, upper 4 bits are geometry type
+  size_t id;         // typed ID, the lower 56 bits are the dist offset returned from the
+                     // GeometryStore, bits 57-60 are geometry type
   int32_t loY;       // the lower Y value of the box
   int32_t upY;       // the upper Y value of the box
   int32_t val;       // the left X value of the box

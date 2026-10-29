@@ -966,7 +966,8 @@ I32Box GeometryStore::add(const I32Polygon& poly,
   cur.subid = subid;
   cur.gid = gid;
 
-  if (poly.getInners().size() == 0 && subid == 0 && gid.size() < 8 &&
+  if (poly.getInners().size() == 0 && subid == 0 &&
+      gid.size() <= FOLD_MAX_LEN &&
       poly.getOuter().size() == densePoly.getOuter().size() &&
       (!_cfg.useBoxIds || boxIds.front().first == 1) &&
       area(rawBox) == areaSize) {
@@ -1159,7 +1160,7 @@ I32Box GeometryStore::add(const I32Line& line, const std::string& gidR,
 
     // check if we can fold the gid into the offset id, because the gid is all
     // we store in the cache for points
-    if (subid == 0 && gid.size() < 8) {
+    if (subid == 0 && gid.size() <= FOLD_MAX_LEN) {
       cur.boxvalIn.setType(FOLDED_SIMPLE_LINE);
       cur.boxvalOut.setType(FOLDED_SIMPLE_LINE);
       batch.foldedSimpleLines.emplace_back(cur);
@@ -1278,7 +1279,7 @@ I32Box GeometryStore::add(const I32Point& point, const std::string& gidR,
 
   // check if we can fold the gid into the offset id, because the gid is all
   // we store in the cache for points
-  if (subid == 0 && gid.size() < 8) {
+  if (subid == 0 && gid.size() <= FOLD_MAX_LEN) {
     cur.boxvalIn.setType(FOLDED_POINT);
     cur.boxvalOut.setType(FOLDED_POINT);
     batch.foldedPoints.emplace_back(cur);
@@ -1762,13 +1763,13 @@ util::geo::I32Box GeometryStore::getPaddedBoundingBox(
 // _____________________________________________________________________________
 size_t GeometryStore::foldString(const std::string& s) {
   size_t ret = 0;
-  for (size_t i = 0; i < std::min((size_t)7, s.size()); i++) {
+  for (size_t i = 0; i < std::min(FOLD_MAX_LEN, s.size()); i++) {
     size_t tmp = static_cast<unsigned char>(s[i]);
     ret |= tmp << (i * 8);
   }
 
-  // highest byte stores the length
-  ret |= (s.size() << 56);
+  // the byte below the type bits stores the length
+  ret |= (s.size() << FOLD_LEN_SHIFT);
 
   return ret;
 }
