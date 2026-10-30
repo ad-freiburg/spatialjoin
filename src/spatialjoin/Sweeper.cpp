@@ -99,6 +99,33 @@ void Sweeper::clearMultis(bool force) {
 }
 
 // _____________________________________________________________________________
+std::vector<sj::BoxVal> Sweeper::multiIn(const BoxVal& multiIn) {
+  auto multi = _geomStore->multiStore().getMulti(getId(multiIn));
+
+  // the number of members, and the rightmost point of the OUT events
+  size_t subSize = 0;
+  util::geo::I32Point rightPoint;
+  bool hasRightPoint = false;
+
+  for (const auto& event : multi.events) {
+    if (!event.out) {
+      subSize++;
+    } else if (!hasRightPoint || event.point.getX() > rightPoint.getX()) {
+      rightPoint = event.point;
+      hasRightPoint = true;
+    }
+  }
+
+  {
+    std::unique_lock<std::shared_timed_mutex> lock(_multiMetaMtx);
+    _subSizes[multi.id] = subSize;
+    _multiRightPoint[multi.id] = rightPoint;
+  }
+
+  return std::move(multi.events);
+}
+
+// _____________________________________________________________________________
 void Sweeper::multiOut(size_t tOut, const std::string& gidA) {
   // collect dist, if requested
   if (_cfg.withinDist >= 0) {
@@ -135,7 +162,7 @@ void Sweeper::multiOut(size_t tOut, const std::string& gidA) {
 
     for (const auto& a : subDistance) {
       // avoid double writing of distance
-      if (_geomStore->isMulti(a.first) && a.first < gidA) continue;
+      if (isMulti(a.first) && a.first < gidA) continue;
 
       const auto& dStr = util::formatFloat(a.second, 4);
       writeRel(tOut, gidA, a.first, "\t" + dStr + "\t");
@@ -171,7 +198,7 @@ void Sweeper::multiOut(size_t tOut, const std::string& gidA) {
       for (const auto& a : cur) {
         while (it != subDE9IM.end() && it->first < a.first) it++;
         if (it != subDE9IM.end() && it->first == a.first) {
-          if (_geomStore->isMulti(a.first)) {
+          if (isMulti(a.first)) {
             it->second.elementwiseMax(a.second);
           } else {
             it->second.uniteRowGeoms(a.second);
@@ -184,7 +211,7 @@ void Sweeper::multiOut(size_t tOut, const std::string& gidA) {
 
     for (const auto& a : subDE9IM) {
       // avoid double writing of de9im matrix
-      if (_geomStore->isMulti(a.first) && a.first < gidA) continue;
+      if (isMulti(a.first) && a.first < gidA) continue;
 
       if (_cfg.de9imFilter.matches(a.second)) {
         writeRel(tOut, gidA, a.first, "\t" + a.second.toString() + "\t");
@@ -250,8 +277,8 @@ void Sweeper::multiOut(size_t tOut, const std::string& gidA) {
 
   // write equals
   for (auto i : subEquals[gidA]) {
-    if (i.second == _geomStore->subSize(gidA) &&
-        subEquals[i.first][gidA] == _geomStore->subSize(i.first)) {
+    if (i.second == subSize(gidA) &&
+        subEquals[i.first][gidA] == subSize(i.first)) {
       writeRel(tOut, i.first, gidA, _cfg.sepEquals);
       _relStats[tOut].equals++;
       writeRel(tOut, gidA, i.first, _cfg.sepEquals);
@@ -261,7 +288,7 @@ void Sweeper::multiOut(size_t tOut, const std::string& gidA) {
 
   // write contains
   for (auto i : subContains) {
-    if (i.second == _geomStore->subSize(gidA)) {
+    if (i.second == subSize(gidA)) {
       writeRel(tOut, i.first, gidA, _cfg.sepContains);
       _relStats[tOut].contains++;
     }
@@ -269,10 +296,10 @@ void Sweeper::multiOut(size_t tOut, const std::string& gidA) {
 
   // write covers
   for (auto i : subCovered) {
-    if (i.second == _geomStore->subSize(gidA)) {
+    if (i.second == subSize(gidA)) {
       // CAREFUL: sub IDs are only flags here!!
-      writeNotOverlaps(tOut, i.first, _geomStore->isMulti(i.first) ? 1 : 0,
-                       gidA, 1, false, false);
+      writeNotOverlaps(tOut, i.first, isMulti(i.first) ? 1 : 0, gidA, 1, false,
+                       false);
       writeRel(tOut, i.first, gidA, _cfg.sepCovers);
       _relStats[tOut].covers++;
     }
@@ -358,7 +385,7 @@ void Sweeper::multiOut(size_t tOut, const std::string& gidA) {
   {
     for (const auto& b : subCovered) {
       auto gidB = b.first;
-      if (b.second == _geomStore->subSize(gidA)) continue;
+      if (b.second == subSize(gidA)) continue;
 
       if (coversAll(gidA, gidB)) continue;
 
@@ -471,10 +498,45 @@ RelStats Sweeper::sweep(const SweepEventList* eventsA,
   for (size_t i = 0; i < thrds.size(); i++)
     thrds[i] = std::thread(&Sweeper::processQueue, this, i);
 
-  const BoxVal* cur = 0;
+  // multi-events (guarnateed to be sorted by BoxVal) dynamically streamed in
+  // from MULTI IN events
+  std::vector<std::vector<BoxVal>> multiEvents;
+
+  // keep track of indices in multiEvents which have been freed...
+  std::vector<size_t> freeMultiEvents;
+
+  // the priority queue for the k-way merge of the dynamically stream-in
+  // sweep events obtained from the MULTI out, basically the top of this queue
+  // is the event list with the smallest non-processed BoxVal
+  MultiEventQueue multiHeads(MultiEventCmp{&multiEvents});
+
+  const BoxVal* next = reader.next();
+  BoxVal curVal;
+  const BoxVal* cur = &curVal;
 
   try {
-    while ((cur = reader.next()) != 0) {
+    while (next || !multiHeads.empty()) {
+      // take the smaller of the next event in the "normal" event list and the
+      // next event of the dynamically streamed multi geometries
+      if (next && (multiHeads.empty() ||
+                   boxCmp(next, &multiEvents[multiHeads.top().first]
+                                            [multiHeads.top().second]) <= 0)) {
+        curVal = *next;
+        next = reader.next();
+      } else {
+        auto head = multiHeads.top();
+        multiHeads.pop();
+        curVal = multiEvents[head.first][head.second];
+
+        if (head.second + 1 < multiEvents[head.first].size()) {
+          multiHeads.push({head.first, head.second + 1});
+        } else {
+          // all events of this multi geometry merged
+          multiEvents[head.first] = {};
+          freeMultiEvents.push_back(head.first);
+        }
+      }
+
       if (_cfg.sweepCancellationCb && jj % 10000 == 0) {
         _cfg.sweepCancellationCb();
       }
@@ -492,9 +554,24 @@ RelStats Sweeper::sweep(const SweepEventList* eventsA,
         // self checks, required if we have reference geoms
         curBatch.push_back({*cur, *cur, ""});
       } else if (cur->getType() == MULTI) {
-        // special multi-OUT, defer for clearing (all threads must be past it),
-        // special multi-IN events are currently ignored
-        if (cur->out) _finishedMultis.push(*cur);
+        if (cur->out) {
+          // special multi-OUT, defer for clearing (all threads must be past it)
+          _finishedMultis.push(*cur);
+        } else {
+          // special multi-IN, merge the events of its members from now on
+          auto events = multiIn(*cur);
+          if (!events.empty()) {
+            size_t slot = multiEvents.size();
+            if (freeMultiEvents.empty()) {
+              multiEvents.push_back(std::move(events));
+            } else {
+              slot = freeMultiEvents.back();
+              freeMultiEvents.pop_back();
+              multiEvents[slot] = std::move(events);
+            }
+            multiHeads.push({slot, 0});
+          }
+        }
       } else if (!cur->out) {
         // IN event
         actives[cur->side].insert(
@@ -2421,7 +2498,7 @@ void Sweeper::writeEquals(size_t t, const std::string& a, size_t aSub,
       _relStats[t].equals++;
     } else if (aSub == 0 || bSub == 0) {
       writeNotOverlaps(t, a, aSub, b, bSub);
-    } else if (_geomStore->subSize(a) != _geomStore->subSize(b)) {
+    } else if (subSize(a) != subSize(b)) {
     } else {
       std::unique_lock<std::mutex> lock(_mutsEquals[t]);
 
@@ -2544,7 +2621,7 @@ bool Sweeper::coversAll(const std::string& a, const std::string& b) {
   // does a cover *every* sub geometry of the multi geometry b? Note that this
   // can already be answered while b is still being swept, as long as a is
   // complete: no check between a and b can happen after a was flushed
-  if (!_geomStore->isMulti(b)) return false;
+  if (!isMulti(b)) return false;
 
   size_t covered = 0;
 
@@ -2556,7 +2633,7 @@ bool Sweeper::coversAll(const std::string& a, const std::string& b) {
     if (j != i->second.end()) covered += j->second.size();
   }
 
-  return covered == _geomStore->subSize(b);
+  return covered == subSize(b);
 }
 
 // _____________________________________________________________________________
@@ -3310,13 +3387,13 @@ double Sweeper::getMaxMultiDist(const std::string& idA, size_t aSub,
   // for multigeometries, we may already have a minimum distance above which we
   // are not required to search
   if (aSub > 0) {
-    const auto& rightPointA = _geomStore->multiRightPoint(idA);
+    const auto& rightPointA = multiRightPoint(idA);
     double d = euclidean ? Sweeper::euclideanDist(rightPointA, leftBPoint, maxD)
                          : Sweeper::meterDist(rightPointA, leftBPoint, maxD);
     maxD = std::min(maxD, d);
   }
   if (bSub > 0) {
-    const auto& rightPointB = _geomStore->multiRightPoint(idB);
+    const auto& rightPointB = multiRightPoint(idB);
     double d = euclidean ? Sweeper::euclideanDist(rightPointB, leftAPoint, maxD)
                          : Sweeper::meterDist(rightPointB, leftAPoint, maxD);
     maxD = std::min(maxD, d);

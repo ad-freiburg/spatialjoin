@@ -65,8 +65,8 @@ using util::LogLevel::WARN;
 // _____________________________________________________________________________
 template <typename W>
 std::shared_ptr<W> GeometryCache::get(const TypedGeometryStore<W>& store,
-                                             TypedGeometryCache<W>& cache, size_t off,
-                                             size_t tid) const {
+                                      TypedGeometryCache<W>& cache, size_t off,
+                                      size_t tid) const {
   // completely circumvent cache system
   if (store.inMemory()) return store.getFromMem(off);
 
@@ -91,27 +91,26 @@ std::shared_ptr<W> GeometryCache::get(const TypedGeometryStore<W>& store,
 }
 
 template std::shared_ptr<sj::Point> GeometryCache::get(
-    const sj::TypedGeometryStore<sj::Point>&, sj::TypedGeometryCache<sj::Point>&, size_t,
-    size_t) const;
+    const sj::TypedGeometryStore<sj::Point>&,
+    sj::TypedGeometryCache<sj::Point>&, size_t, size_t) const;
 template std::shared_ptr<sj::Area> GeometryCache::get(
-    const sj::TypedGeometryStore<sj::Area>&, sj::TypedGeometryCache<sj::Area>&, size_t,
-    size_t) const;
+    const sj::TypedGeometryStore<sj::Area>&, sj::TypedGeometryCache<sj::Area>&,
+    size_t, size_t) const;
 template std::shared_ptr<sj::SimpleArea> GeometryCache::get(
-    const sj::TypedGeometryStore<sj::SimpleArea>&, sj::TypedGeometryCache<sj::SimpleArea>&,
-    size_t, size_t) const;
+    const sj::TypedGeometryStore<sj::SimpleArea>&,
+    sj::TypedGeometryCache<sj::SimpleArea>&, size_t, size_t) const;
 template std::shared_ptr<sj::Line> GeometryCache::get(
-    const sj::TypedGeometryStore<sj::Line>&, sj::TypedGeometryCache<sj::Line>&, size_t,
-    size_t) const;
-template std::shared_ptr<sj::SimpleLine> GeometryCache::get(
-    const sj::TypedGeometryStore<sj::SimpleLine>&, sj::TypedGeometryCache<sj::SimpleLine>&,
+    const sj::TypedGeometryStore<sj::Line>&, sj::TypedGeometryCache<sj::Line>&,
     size_t, size_t) const;
+template std::shared_ptr<sj::SimpleLine> GeometryCache::get(
+    const sj::TypedGeometryStore<sj::SimpleLine>&,
+    sj::TypedGeometryCache<sj::SimpleLine>&, size_t, size_t) const;
 
 // _____________________________________________________________________________
 template <typename W>
 std::shared_ptr<W> GeometryCache::cache(TypedGeometryCache<W>& cache,
-                                               size_t off, const W& val,
-                                               size_t estSize,
-                                               size_t tid) const {
+                                        size_t off, const W& val,
+                                        size_t estSize, size_t tid) const {
   // if cache is too large, pop last elements until we have space
   while (cache.maxSize > 0 && cache.vals[tid].size() > 0 &&
          cache.valSizes[tid] > cache.maxSize) {

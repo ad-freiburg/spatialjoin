@@ -725,6 +725,16 @@ std::string sj::TypedGeometryStore<sj::SimpleArea>::getFName() const {
 
 // ____________________________________________________________________________
 template <>
+sj::MultiGeom sj::TypedGeometryStore<sj::MultiGeom>::getMulti(
+    size_t off) const {
+  if (_inMemory) return *getFromMem(off);
+
+  // only ever read by a single thread, so we can always use read stream 0
+  return getFrom(off, 0).second;
+}
+
+// ____________________________________________________________________________
+template <>
 std::string sj::TypedGeometryStore<sj::MultiGeom>::getFName() const {
   return util::getTmpFName(_dir, _tmpPrefix, "multis");
 }
@@ -890,23 +900,18 @@ I32Box GeometryStore::add(const I32MultiPoint& a, const std::string& gid,
 
 // _____________________________________________________________________________
 size_t GeometryStore::multiAdd(const std::string& gid, bool side,
-                               int32_t xRight, const I32Point& pointRight) {
+                               int32_t xRight) {
   auto i = _multiGidToId[side].find(gid);
 
   if (i == _multiGidToId[side].end()) {
     _multiIds[side].push_back(gid);
     _multiRightX[side].push_back(xRight);
-    _multiRightPoint[gid] = pointRight;
     _multiGidToId[side][gid] = _multiIds[side].size() - 1;
-    _subSizes[gid] = 1;
     return _multiIds[side].size() - 1;
   }
 
   size_t id = i->second;
   if (xRight > _multiRightX[side][id]) _multiRightX[side][id] = xRight;
-  if (pointRight.getX() > _multiRightPoint[gid].getX())
-    _multiRightPoint[gid] = pointRight;
-  _subSizes[gid] = _subSizes[gid] + 1;
   return id;
 }
 
@@ -1369,13 +1374,14 @@ void GeometryStore::addBatch(WriteBatch& cands, sj::SweepEventList* events) {
         for (const auto& cand : *members) {
           multiId =
               multiAdd(cand.gid, cand.meta.side,
-                       cand.meta.bbox.getUpperRight().getX(), cand.meta.point2);
+                       cand.meta.bbox.getUpperRight().getX());
           leftX = std::min(leftX, cand.meta.bbox.getLowerLeft().getX());
         }
       }
 
-      // special multi-IN event, at the left x of the multi geometry
-      multiEvents.push_back({typedId(multiId, MULTI),
+      // special multi-IN event, at the left x of the multi geometry, with the
+      // ID of the multi geometry in the multi geometry store
+      multiEvents.push_back({multi.id,
                              0,
                              0,
                              leftX,
@@ -1412,13 +1418,6 @@ void GeometryStore::addBatch(WriteBatch& cands, sj::SweepEventList* events) {
       if (events->numObjects() % 1000000 == 0)
         log("@ " + std::to_string(events->numObjects()));
     }
-    for (const auto& multi : cands.multiGeoms) {
-      for (const auto& cand : multi.members.points) {
-        events->add(cand.meta);
-        if (events->numObjects() % 1000000 == 0)
-          log("@ " + std::to_string(events->numObjects()));
-      }
-    }
     for (const auto& cand : cands.foldedSimpleLines) {
       events->add(cand.meta);
       if (events->numObjects() % 1000000 == 0)
@@ -1434,50 +1433,29 @@ void GeometryStore::addBatch(WriteBatch& cands, sj::SweepEventList* events) {
       if (events->numObjects() % 1000000 == 0)
         log("@ " + std::to_string(events->numObjects()));
     }
-    for (const auto& multi : cands.multiGeoms) {
-      for (const auto& cand : multi.members.simpleLines) {
-        events->add(cand.meta);
-        if (events->numObjects() % 1000000 == 0)
-          log("@ " + std::to_string(events->numObjects()));
-      }
-    }
     for (const auto& cand : cands.lines) {
       events->add(cand.meta);
       if (events->numObjects() % 1000000 == 0)
         log("@ " + std::to_string(events->numObjects()));
-    }
-    for (const auto& multi : cands.multiGeoms) {
-      for (const auto& cand : multi.members.lines) {
-        events->add(cand.meta);
-        if (events->numObjects() % 1000000 == 0)
-          log("@ " + std::to_string(events->numObjects()));
-      }
     }
     for (const auto& cand : cands.simpleAreas) {
       events->add(cand.meta);
       if (events->numObjects() % 1000000 == 0)
         log("@ " + std::to_string(events->numObjects()));
     }
-    for (const auto& multi : cands.multiGeoms) {
-      for (const auto& cand : multi.members.simpleAreas) {
-        events->add(cand.meta);
-        if (events->numObjects() % 1000000 == 0)
-          log("@ " + std::to_string(events->numObjects()));
-      }
-    }
     for (const auto& cand : cands.areas) {
       events->add(cand.meta);
       if (events->numObjects() % 1000000 == 0)
         log("@ " + std::to_string(events->numObjects()));
     }
-    for (const auto& multi : cands.multiGeoms) {
-      for (const auto& cand : multi.members.areas) {
-        events->add(cand.meta);
-        if (events->numObjects() % 1000000 == 0)
-          log("@ " + std::to_string(events->numObjects()));
-      }
-    }
     for (const auto& multiEvent : multiEvents) events->add(multiEvent);
+
+    // the events of the members of multi geometries are not written to the
+    // event list, they are merged into the sweep on the fly from the multi
+    // geometry store
+    for (const auto& multi : cands.multiGeoms) {
+      events->addMerged(2 * multi.members.size());
+    }
   }
 }
 

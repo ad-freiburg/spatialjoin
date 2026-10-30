@@ -15,6 +15,7 @@
 #include <functional>
 #include <mutex>
 #include <queue>
+#include <shared_mutex>
 #include <thread>
 #include <unordered_map>
 #include <unordered_set>
@@ -31,6 +32,23 @@
 #endif
 
 namespace sj {
+
+// a position in the sweep events of the multi geometries merged in during the
+// sweep, as (slot of the multi geometry, position of the event)
+typedef std::pair<size_t, size_t> MultiEventPos;
+
+struct MultiEventCmp {
+  const std::vector<std::vector<BoxVal>>* events;
+
+  bool operator()(const MultiEventPos& a, const MultiEventPos& b) const {
+    return boxCmp(&(*events)[a.first][a.second],
+                  &(*events)[b.first][b.second]) > 0;
+  }
+};
+
+typedef std::priority_queue<MultiEventPos, std::vector<MultiEventPos>,
+                            MultiEventCmp>
+    MultiEventQueue;
 
 class Sweeper {
  public:
@@ -55,6 +73,28 @@ class Sweeper {
   static std::string unfoldString(size_t folded);
 
  private:
+  // metadata of the multi geometries, available after their multi-IN event
+  size_t subSize(const std::string& gid) const {
+    std::shared_lock<std::shared_timed_mutex> lock(_multiMetaMtx);
+    return _subSizes.at(gid);
+  }
+
+  bool isMulti(const std::string& gid) const {
+    std::shared_lock<std::shared_timed_mutex> lock(_multiMetaMtx);
+    return _subSizes.find(gid) != _subSizes.end();
+  }
+
+  util::geo::I32Point multiRightPoint(const std::string& gid) const {
+    std::shared_lock<std::shared_timed_mutex> lock(_multiMetaMtx);
+    auto i = _multiRightPoint.find(gid);
+    if (i == _multiRightPoint.end()) return {};
+    return i->second;
+  }
+
+  // fills the metadata of the multi geometry of multiIn, and returns the
+  // sorted sweep events of its members
+  std::vector<BoxVal> multiIn(const BoxVal& multiIn);
+
   Area areaFromSimpleArea(const SimpleArea* sa) const;
   Line lineFromSimpleLine(const SimpleLine* sl) const;
 
@@ -133,8 +173,7 @@ class Sweeper {
   void writeTouches(size_t t, const std::string& a, size_t aSub,
                     const std::string& b, size_t bSub, bool expandB = true);
   void writeNotTouches(size_t t, const std::string& a, size_t aSub,
-                       const std::string& b, size_t bSub,
-                       bool expandB = true);
+                       const std::string& b, size_t bSub, bool expandB = true);
 
   void writeOverlaps(size_t t, const std::string& a, size_t aSub,
                      const std::string& b, size_t bSub, bool expandB = true);
@@ -145,8 +184,7 @@ class Sweeper {
   void writeCrosses(size_t t, const std::string& a, size_t aSub,
                     const std::string& b, size_t bSub, bool expandB = true);
   void writeNotCrosses(size_t t, const std::string& a, size_t aSub,
-                       const std::string& b, size_t bSub,
-                       bool expandB = true);
+                       const std::string& b, size_t bSub, bool expandB = true);
   void writeCrossesOneWay(size_t t, const std::string& a, size_t aSub,
                           const std::string& b, size_t bSub,
                           bool expandB = true);
@@ -204,73 +242,6 @@ class Sweeper {
                  const util::geo::IntervalIdx<int32_t, SweepVal>* actives,
                  const BoxVal* cur) const;
 
-  static int boxCmp(const void* a, const void* b) {
-    const auto& boxa = static_cast<const BoxVal*>(a);
-    const auto& boxb = static_cast<const BoxVal*>(b);
-    if (boxa->val < boxb->val) return -1;
-    if (boxa->val > boxb->val) return 1;
-
-    if (!boxa->out && boxb->out) return -1;
-    if (boxa->out && !boxb->out) return 1;
-
-    // everything before a polygon
-    if (boxa->getType() != POLYGON && boxa->getType() != SIMPLE_POLYGON &&
-        boxa->getType() != FOLDED_BOX_POLYGON &&
-        (boxb->getType() == POLYGON || boxb->getType() == SIMPLE_POLYGON ||
-         boxb->getType() == FOLDED_BOX_POLYGON))
-      return -1;
-    if ((boxa->getType() == POLYGON || boxa->getType() == SIMPLE_POLYGON ||
-         boxa->getType() == FOLDED_BOX_POLYGON) &&
-        boxb->getType() != POLYGON && boxb->getType() != SIMPLE_POLYGON &&
-        boxb->getType() != FOLDED_BOX_POLYGON)
-      return 1;
-
-    // points before lines
-    if ((boxa->getType() == POINT || boxa->getType() == FOLDED_POINT) &&
-        (boxb->getType() == SIMPLE_LINE || boxb->getType() == LINE ||
-         boxb->getType() == FOLDED_SIMPLE_LINE))
-      return -1;
-    if ((boxb->getType() == POINT || boxb->getType() == FOLDED_POINT) &&
-        (boxa->getType() == SIMPLE_LINE || boxa->getType() == LINE ||
-         boxa->getType() == FOLDED_SIMPLE_LINE))
-      return 1;
-
-    // smaller polygons before larger
-    if ((boxa->getType() == POLYGON || boxa->getType() == SIMPLE_POLYGON ||
-         boxa->getType() == FOLDED_BOX_POLYGON) &&
-        (boxb->getType() == POLYGON || boxb->getType() == SIMPLE_POLYGON ||
-         boxb->getType() == FOLDED_BOX_POLYGON) &&
-        boxa->areaOrLen < boxb->areaOrLen)
-      return -1;
-    if ((boxa->getType() == POLYGON || boxa->getType() == SIMPLE_POLYGON ||
-         boxa->getType() == FOLDED_BOX_POLYGON) &&
-        (boxb->getType() == POLYGON || boxb->getType() == SIMPLE_POLYGON ||
-         boxb->getType() == FOLDED_BOX_POLYGON) &&
-        boxa->areaOrLen > boxb->areaOrLen)
-      return 1;
-
-    // shorter lines before longer
-    if ((boxa->getType() == LINE || boxa->getType() == SIMPLE_LINE ||
-         boxa->getType() == FOLDED_SIMPLE_LINE) &&
-        (boxb->getType() == LINE || boxb->getType() == SIMPLE_LINE ||
-         boxb->getType() == FOLDED_SIMPLE_LINE) &&
-        boxa->areaOrLen < boxb->areaOrLen)
-      return -1;
-    if ((boxa->getType() == LINE || boxa->getType() == SIMPLE_LINE ||
-         boxa->getType() == FOLDED_SIMPLE_LINE) &&
-        (boxb->getType() == LINE || boxb->getType() == SIMPLE_LINE ||
-         boxb->getType() == FOLDED_SIMPLE_LINE) &&
-        boxa->areaOrLen > boxb->areaOrLen)
-      return 1;
-
-    // make ordernig of equal geoms deterministic
-    if (boxa->getType() != boxb->getType()) return boxa->getType() < boxb->getType() ? -1 : 1;
-    if (boxa->side != boxb->side) return boxa->side ? 1 : -1;
-    if (boxa->id != boxb->id) return boxa->id < boxb->id ? -1 : 1;
-
-    return 0;
-  }
-
   const SweeperCfg _cfg;
   size_t _curSweepId = 0;
   unsigned char* _outBuffer;
@@ -314,6 +285,10 @@ class Sweeper {
 
   // multi geometries whose OUT event has been processed
   std::queue<BoxVal> _finishedMultis;
+
+  std::unordered_map<std::string, size_t> _subSizes;
+  std::unordered_map<std::string, util::geo::I32Point> _multiRightPoint;
+  mutable std::shared_timed_mutex _multiMetaMtx;
 
   const GeometryCache* _geomCache;
   const GeometryStore* _geomStore;

@@ -130,6 +130,10 @@ class TypedGeometryStore {
     return _memStore.at(untypedId(off));
   }
 
+  // reads the multi geometry at off, only available for W = MultiGeom. Only to
+  // be used by a single thread (the main sweep thread), as there is no locking!
+  W getMulti(size_t off) const;
+
   void flush();
 
   TypedGeometryStore& operator=(TypedGeometryStore&& other) {
@@ -301,22 +305,10 @@ class GeometryStore {
 
   void setNumSides(size_t sides) { _numSides = sides; }
 
-  size_t subSize(const std::string& id) const { return _subSizes.at(id); }
-
-  bool isMulti(const std::string& id) const {
-    return _subSizes.find(id) != _subSizes.end();
-  }
-
   size_t numMultis(bool side) const { return _multiIds[side].size(); }
 
   const std::string& multiId(bool side, size_t id) const {
     return _multiIds[side][id];
-  }
-
-  util::geo::I32Point multiRightPoint(const std::string& gid) const {
-    auto i = _multiRightPoint.find(gid);
-    if (i == _multiRightPoint.end()) return {};
-    return i->second;
   }
 
   bool hasRefs() const { return _refs.size() != 0; }
@@ -359,8 +351,7 @@ class GeometryStore {
   static std::shared_ptr<W> get(const TypedGeometryStore<W>& store, size_t off);
 
   // returns the multi ID of gid
-  size_t multiAdd(const std::string& gid, bool side, int32_t xRight,
-                  const util::geo::I32Point& pointRight);
+  size_t multiAdd(const std::string& gid, bool side, int32_t xRight);
 
   void duplicatesToReferences(int file);
 
@@ -376,9 +367,7 @@ class GeometryStore {
   // these are written during the geometry add phase
   std::vector<std::string> _multiIds[2];  // required on OUT to get the GID
   std::vector<int32_t> _multiRightX[2];
-  std::unordered_map<std::string, util::geo::I32Point> _multiRightPoint;
   std::unordered_map<std::string, size_t> _multiGidToId[2];
-  std::unordered_map<std::string, size_t> _subSizes;
 
   std::atomic<uint8_t> _numSides;
 

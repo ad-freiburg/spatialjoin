@@ -185,8 +185,8 @@ class GeometryCache {
 
   std::shared_ptr<sj::Point> getPoint(size_t id, size_t tid,
                                       size_t storeId = 0) const {
-    return get(_stores[storeId]->pointStore(), _caches[storeId]->pointCache,
-               id, tid);
+    return get(_stores[storeId]->pointStore(), _caches[storeId]->pointCache, id,
+               tid);
   }
 
   std::pair<size_t, size_t> size() const;

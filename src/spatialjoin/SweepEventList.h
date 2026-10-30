@@ -169,6 +169,10 @@ static int boxCmp(const void* a, const void* b) {
   if (boxa->val < boxb->val) return -1;
   if (boxa->val > boxb->val) return 1;
 
+  // special multi events before everything else
+  if (boxa->getType() == MULTI && boxb->getType() != MULTI) return -1;
+  if (boxa->getType() != MULTI && boxb->getType() == MULTI) return 1;
+
   if (!boxa->out && boxb->out) return -1;
   if (boxa->out && !boxb->out) return 1;
 
@@ -382,8 +386,12 @@ class SweepEventList {
         meta.numAnchors, meta.areaOrLen, meta.side);
   }
 
-  size_t numObjects() const { return _curSweepId / 2; }
-  size_t numEvents() const { return _curSweepId; }
+  // counts n events which are not stored in this list, but merged into the
+  // sweep on the fly (the events of the members of multi geometries)
+  void addMerged(size_t n) { _numMergedEvents += n; }
+
+  size_t numObjects() const { return numEvents() / 2; }
+  size_t numEvents() const { return _curSweepId + _numMergedEvents; }
 
   Reader newReader(size_t bufSize = RBUF_SIZE) const {
     // the buffer size must be a multiple of sizeof(BoxVal) and must
@@ -446,6 +454,7 @@ class SweepEventList {
   int _file;
 
   size_t _curSweepId = 0;
+  size_t _numMergedEvents = 0;
 };
 
 }  // namespace sj
