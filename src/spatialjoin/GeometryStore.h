@@ -178,8 +178,8 @@ class TypedGeometryStore {
 struct WriteCand {
   std::string raw;
   std::string gid;
-  BoxVal boxvalIn;
-  BoxVal boxvalOut;
+  // typed ID, assigned in GeometryStore::addBatch(), see typedId()
+  size_t id;
   size_t subid;
 
   // the (padded) bounding box
@@ -348,8 +348,7 @@ class GeometryStore {
  private:
   // returns the geometry stored at off in store, bypassing any cache
   template <typename W>
-  static std::shared_ptr<W> get(const TypedGeometryStore<W>& store,
-                                size_t off);
+  static std::shared_ptr<W> get(const TypedGeometryStore<W>& store, size_t off);
 
   void multiAdd(const std::string& gid, bool side, int32_t xRight,
                 const util::geo::I32Point& pointRight);

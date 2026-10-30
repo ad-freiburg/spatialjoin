@@ -499,10 +499,10 @@ int main(int argc, char** argv) {
 
   if (parser.getNumInvalid() > 0)
     geomCache.log("Note: skipped " + std::to_string(parser.getNumInvalid()) +
-                     " invalid WKT literals");
+                  " invalid WKT literals");
 
   geomCache.log("Done parsing (" + std::to_string(TOOK(ts) / 1000000000.0) +
-                   "s).");
+                "s).");
 
   geomStore.flush(&sweepEvents);
 

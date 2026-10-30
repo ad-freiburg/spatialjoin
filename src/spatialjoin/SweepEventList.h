@@ -37,8 +37,8 @@ const static size_t FOLD_LEN_SHIFT = ID_TYPE_SHIFT - 8;
 const static size_t FOLD_MAX_LEN = FOLD_LEN_SHIFT / 8;
 
 struct BoxVal {
-  size_t id;         // typed ID, the lower 56 bits are the dist offset returned from the
-                     // GeometryStore, bits 57-60 are geometry type
+  size_t id;  // typed ID, the lower 56 bits are the dist offset returned from
+              // the GeometryStore, bits 57-60 are geometry type
   int32_t loY;       // the lower Y value of the box
   int32_t upY;       // the upper Y value of the box
   int32_t val;       // the left X value of the box
@@ -156,7 +156,8 @@ static int boxCmp(const void* a, const void* b) {
     return 1;
 
   // make ordernig of equal geoms deterministic
-  if (boxa->getType() != boxb->getType()) return boxa->getType() < boxb->getType() ? -1 : 1;
+  if (boxa->getType() != boxb->getType())
+    return boxa->getType() < boxb->getType() ? -1 : 1;
   if (boxa->side != boxb->side) return boxa->side ? 1 : -1;
   if (boxa->id != boxb->id) return boxa->id < boxb->id ? -1 : 1;
 
@@ -294,6 +295,45 @@ class SweepEventList {
       _obufpos = 0;
     }
     _curSweepId++;
+  }
+
+  // adds the IN and the OUT event of a geometry with typed ID id (see
+  // typedId()), point1 and point2 are the points of the IN and the OUT event
+  void add(size_t id, const util::geo::I32Box& bbox,
+           const util::geo::I32Box& box45, const util::geo::I32Point& point1,
+           const util::geo::I32Point& point2, size_t numAnchors,
+           double areaOrLen, bool side) {
+    BoxVal in{id,
+              bbox.getLowerLeft().getY(),
+              bbox.getUpperRight().getY(),
+              bbox.getLowerLeft().getX(),
+              false,
+              areaOrLen,
+              point1,
+              numAnchors,
+              box45,
+              side};
+    BoxVal out{id,
+               bbox.getLowerLeft().getY(),
+               bbox.getUpperRight().getY(),
+               bbox.getUpperRight().getX(),
+               true,
+               areaOrLen,
+               point2,
+               numAnchors,
+               box45,
+               side};
+
+    // simple lines and folded box polygons store the packed point of the other
+    // event instead of the number of anchors, see getOtherPoint()
+    if (in.getType() == SIMPLE_LINE || in.getType() == FOLDED_SIMPLE_LINE ||
+        in.getType() == FOLDED_BOX_POLYGON) {
+      in.numAnchors = packPoint(point2);
+      out.numAnchors = packPoint(point1);
+    }
+
+    add(in);
+    add(out);
   }
 
   size_t numObjects() const { return _curSweepId / 2; }

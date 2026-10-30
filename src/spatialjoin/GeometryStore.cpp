@@ -1,6 +1,8 @@
 // Copyright 2023, University of Freiburg
 // Authors: Patrick Brosi <brosi@cs.uni-freiburg.de>
 
+#include "GeometryStore.h"
+
 #include <errno.h>
 #include <unistd.h>
 
@@ -13,7 +15,6 @@
 #include <vector>
 
 #include "BoxIds.h"
-#include "GeometryStore.h"
 #include "util/Misc.h"
 #include "util/geo/Geo.h"
 
@@ -21,8 +22,9 @@ const static size_t MAX_MEM_CACHE_SIZE = 3 * 1024 * 1024 * 20l;
 
 // ____________________________________________________________________________
 template <>
-std::pair<size_t, sj::SimpleLine> sj::TypedGeometryStore<sj::SimpleLine>::getFrom(
-    size_t off, std::istream& str) const {
+std::pair<size_t, sj::SimpleLine>
+sj::TypedGeometryStore<sj::SimpleLine>::getFrom(size_t off,
+                                                std::istream& str) const {
   sj::SimpleLine ret;
 
   str.seekg(off);
@@ -93,8 +95,9 @@ std::pair<size_t, sj::Point> sj::TypedGeometryStore<sj::Point>::getFrom(
 
 // ____________________________________________________________________________
 template <>
-std::pair<size_t, sj::SimpleArea> sj::TypedGeometryStore<sj::SimpleArea>::getFrom(
-    size_t off, std::istream& str) const {
+std::pair<size_t, sj::SimpleArea>
+sj::TypedGeometryStore<sj::SimpleArea>::getFrom(size_t off,
+                                                std::istream& str) const {
   sj::SimpleArea ret;
 
   str.seekg(off);
@@ -204,7 +207,7 @@ std::pair<size_t, sj::Area> sj::TypedGeometryStore<sj::Area>::getFrom(
 // ____________________________________________________________________________
 template <>
 size_t sj::TypedGeometryStore<sj::Point>::writeTo(const sj::Point& val,
-                                             std::ostream& str) const {
+                                                  std::ostream& str) const {
   size_t ret = 0;
 
   // id
@@ -230,7 +233,7 @@ size_t sj::TypedGeometryStore<sj::Point>::writeTo(const sj::Point& val,
 // ____________________________________________________________________________
 template <>
 size_t sj::TypedGeometryStore<sj::MultiGeom>::writeTo(const sj::MultiGeom& val,
-                                                 std::ostream& str) const {
+                                                      std::ostream& str) const {
   size_t ret = 0;
 
   // id
@@ -293,8 +296,8 @@ size_t sj::TypedGeometryStore<W>::add(const std::string& raw) {
 
 // ____________________________________________________________________________
 template <>
-size_t sj::TypedGeometryStore<sj::SimpleArea>::writeTo(const sj::SimpleArea& val,
-                                                  std::ostream& str) const {
+size_t sj::TypedGeometryStore<sj::SimpleArea>::writeTo(
+    const sj::SimpleArea& val, std::ostream& str) const {
   size_t ret = 0;
 
   // geom
@@ -327,8 +330,8 @@ size_t sj::TypedGeometryStore<sj::SimpleArea>::writeTo(const sj::SimpleArea& val
 // ____________________________________________________________________________
 
 template <>
-size_t sj::TypedGeometryStore<sj::SimpleLine>::writeTo(const sj::SimpleLine& val,
-                                                  std::ostream& str) const {
+size_t sj::TypedGeometryStore<sj::SimpleLine>::writeTo(
+    const sj::SimpleLine& val, std::ostream& str) const {
   size_t ret = 0;
 
   // id
@@ -350,7 +353,7 @@ size_t sj::TypedGeometryStore<sj::SimpleLine>::writeTo(const sj::SimpleLine& val
 // ____________________________________________________________________________
 template <>
 size_t sj::TypedGeometryStore<sj::Line>::writeTo(const sj::Line& val,
-                                            std::ostream& str) const {
+                                                 std::ostream& str) const {
   size_t ret = 0;
 
   // geoms
@@ -389,7 +392,7 @@ size_t sj::TypedGeometryStore<sj::Line>::writeTo(const sj::Line& val,
 // ____________________________________________________________________________
 template <>
 size_t sj::TypedGeometryStore<sj::Area>::writeTo(const sj::Area& val,
-                                            std::ostream& str) const {
+                                                 std::ostream& str) const {
   size_t ret = 0;
 
   // geoms
@@ -437,8 +440,8 @@ void sj::TypedGeometryStore<W>::flush() {
 
 // ____________________________________________________________________________
 template <typename W>
-size_t sj::TypedGeometryStore<W>::readPoly(std::istream& str,
-                                      util::geo::I32XSortedPolygon& ret) const {
+size_t sj::TypedGeometryStore<W>::readPoly(
+    std::istream& str, util::geo::I32XSortedPolygon& ret) const {
   size_t estSize = 0;
 
   util::geo::I32Box box;
@@ -525,8 +528,8 @@ size_t sj::TypedGeometryStore<W>::readPoly(std::istream& str,
 
 // ____________________________________________________________________________
 template <typename W>
-size_t sj::TypedGeometryStore<W>::writePoly(const util::geo::I32XSortedPolygon& geom,
-                                       std::ostream& str) {
+size_t sj::TypedGeometryStore<W>::writePoly(
+    const util::geo::I32XSortedPolygon& geom, std::ostream& str) {
   size_t ret = 0;
 
   // outer envelope
@@ -600,8 +603,8 @@ size_t sj::TypedGeometryStore<W>::writePoly(const util::geo::I32XSortedPolygon& 
 
 // ____________________________________________________________________________
 template <typename W>
-size_t sj::TypedGeometryStore<W>::readLine(std::istream& str,
-                                      util::geo::I32XSortedLine& ret) const {
+size_t sj::TypedGeometryStore<W>::readLine(
+    std::istream& str, util::geo::I32XSortedLine& ret) const {
   size_t estSize = 0;
 
   util::geo::I32Box box;
@@ -647,8 +650,8 @@ size_t sj::TypedGeometryStore<W>::readLine(std::istream& str,
 
 // ____________________________________________________________________________
 template <typename W>
-size_t sj::TypedGeometryStore<W>::writeLine(const util::geo::I32XSortedLine& geom,
-                                       std::ostream& str) {
+size_t sj::TypedGeometryStore<W>::writeLine(
+    const util::geo::I32XSortedLine& geom, std::ostream& str) {
   size_t ret = 0;
 
   // outer envelope
@@ -796,9 +799,8 @@ const static double sin45 = 1.0 / sqrt(2);
 const static double cos45 = 1.0 / sqrt(2);
 
 // _____________________________________________________________________________
-I32Box GeometryStore::add(const I32MultiPolygon& a,
-                                 const std::string& gid, bool side,
-                                 WriteBatch& batch) const {
+I32Box GeometryStore::add(const I32MultiPolygon& a, const std::string& gid,
+                          bool side, WriteBatch& batch) const {
   size_t subid = 0;  // a subid of 0 means "single polygon"
   if (a.size() > 1) subid = 1;
 
@@ -807,7 +809,7 @@ I32Box GeometryStore::add(const I32MultiPolygon& a,
 
 // _____________________________________________________________________________
 I32Box GeometryStore::add(const I32MultiLine& a, const std::string& gid,
-                                 bool side, WriteBatch& batch) const {
+                          bool side, WriteBatch& batch) const {
   size_t subid = 0;  // a subid of 0 means "single line"
   if (a.size() > 1) subid = 1;
 
@@ -816,7 +818,7 @@ I32Box GeometryStore::add(const I32MultiLine& a, const std::string& gid,
 
 // _____________________________________________________________________________
 I32Box GeometryStore::add(const I32MultiPoint& a, const std::string& gid,
-                                 bool side, WriteBatch& batch) const {
+                          bool side, WriteBatch& batch) const {
   size_t subid = 0;  // a subid of 0 means "single point"
   if (a.size() > 1) subid = 1;
 
@@ -824,9 +826,8 @@ I32Box GeometryStore::add(const I32MultiPoint& a, const std::string& gid,
 }
 
 // _____________________________________________________________________________
-I32Box GeometryStore::add(const I32MultiPolygon& a,
-                                 const std::string& gid, size_t subId,
-                                 bool side, WriteBatch& batch) const {
+I32Box GeometryStore::add(const I32MultiPolygon& a, const std::string& gid,
+                          size_t subId, bool side, WriteBatch& batch) const {
   I32Box ret;
   for (const auto& poly : a) {
     if (poly.getOuter().size() < 2) continue;
@@ -841,8 +842,7 @@ I32Box GeometryStore::add(const I32MultiPolygon& a,
 
 // _____________________________________________________________________________
 I32Box GeometryStore::add(const I32MultiLine& a, const std::string& gid,
-                                 size_t subId, bool side,
-                                 WriteBatch& batch) const {
+                          size_t subId, bool side, WriteBatch& batch) const {
   I32Box ret;
   for (const auto& line : a) {
     if (line.size() < 2) continue;
@@ -857,8 +857,7 @@ I32Box GeometryStore::add(const I32MultiLine& a, const std::string& gid,
 
 // _____________________________________________________________________________
 I32Box GeometryStore::add(const I32MultiPoint& a, const std::string& gid,
-                                 size_t subid, bool side,
-                                 WriteBatch& batch) const {
+                          size_t subid, bool side, WriteBatch& batch) const {
   I32Box ret;
   size_t newId = subid;
   for (const auto& point : a) {
@@ -872,9 +871,8 @@ I32Box GeometryStore::add(const I32MultiPoint& a, const std::string& gid,
 }
 
 // _____________________________________________________________________________
-void GeometryStore::multiAdd(const std::string& gid, bool side,
-                                    int32_t xRight,
-                                    const I32Point& pointRight) {
+void GeometryStore::multiAdd(const std::string& gid, bool side, int32_t xRight,
+                             const I32Point& pointRight) {
   auto i = _multiGidToId[side].find(gid);
 
   if (i == _multiGidToId[side].end()) {
@@ -894,14 +892,13 @@ void GeometryStore::multiAdd(const std::string& gid, bool side,
 
 // _____________________________________________________________________________
 I32Box GeometryStore::add(const I32Polygon& poly, const std::string& gid,
-                                 bool side, WriteBatch& batch) const {
+                          bool side, WriteBatch& batch) const {
   return add(poly, gid, 0, side, batch);
 }
 
 // _____________________________________________________________________________
-I32Box GeometryStore::add(const I32Polygon& poly,
-                                 const std::string& gidR, size_t subid,
-                                 bool side, WriteBatch& batch) const {
+I32Box GeometryStore::add(const I32Polygon& poly, const std::string& gidR,
+                          size_t subid, bool side, WriteBatch& batch) const {
   if (subid == 0 && _cfg.de9imFilter != util::geo::FANY) {
     // drop certain geometries if we can be sure that they will never match
     // the given DE-9IM filter
@@ -954,26 +951,6 @@ I32Box GeometryStore::add(const I32Polygon& poly,
       poly.getOuter().size() == densePoly.getOuter().size() &&
       (!_cfg.useBoxIds || boxIds.front().first == 1) &&
       area(rawBox) == areaSize) {
-    cur.boxvalIn = {typedId(0, FOLDED_BOX_POLYGON),  // placeholder ID
-                    box.getLowerLeft().getY(),
-                    box.getUpperRight().getY(),
-                    box.getLowerLeft().getX(),
-                    false,
-                    areaSize,
-                    rawBox.getUpperRight(),
-                    packPoint(rawBox.getLowerLeft()),
-                    box45,
-                    side};
-    cur.boxvalOut = {typedId(0, FOLDED_BOX_POLYGON),  // placeholder ID
-                     box.getLowerLeft().getY(),
-                     box.getUpperRight().getY(),
-                     box.getUpperRight().getX(),
-                     true,
-                     areaSize,
-                     rawBox.getLowerLeft(),
-                     packPoint(rawBox.getUpperRight()),
-                     box45,
-                     side};
     cur.type = FOLDED_BOX_POLYGON;
     cur.point1 = rawBox.getUpperRight();
     cur.point2 = rawBox.getLowerLeft();
@@ -992,26 +969,6 @@ I32Box GeometryStore::add(const I32Polygon& poly,
       if (p.getX() > rightPoint.getX()) rightPoint = p;
     }
 
-    cur.boxvalIn = {typedId(0, SIMPLE_POLYGON),  // placeholder ID
-                    box.getLowerLeft().getY(),
-                    box.getUpperRight().getY(),
-                    box.getLowerLeft().getX(),
-                    false,
-                    areaSize,
-                    {},
-                    poly.size(),
-                    box45,
-                    side};
-    cur.boxvalOut = {typedId(0, SIMPLE_POLYGON),  // placeholder ID
-                     box.getLowerLeft().getY(),
-                     box.getUpperRight().getY(),
-                     box.getUpperRight().getX(),
-                     true,
-                     areaSize,
-                     rightPoint,
-                     poly.size(),
-                     box45,
-                     side};
     cur.type = SIMPLE_POLYGON;
     cur.point1 = {};
     cur.point2 = rightPoint;
@@ -1035,26 +992,6 @@ I32Box GeometryStore::add(const I32Polygon& poly,
 
     cur.raw = str.str();
 
-    cur.boxvalIn = {typedId(0, POLYGON),  // placeholder ID
-                    box.getLowerLeft().getY(),
-                    box.getUpperRight().getY(),
-                    box.getLowerLeft().getX(),
-                    false,
-                    areaSize,
-                    {},
-                    polySize,
-                    box45,
-                    side};
-    cur.boxvalOut = {typedId(0, POLYGON),  // placeholder ID
-                     box.getLowerLeft().getY(),
-                     box.getUpperRight().getY(),
-                     box.getUpperRight().getX(),
-                     true,
-                     areaSize,
-                     rightPoint,
-                     polySize,
-                     box45,
-                     side};
     cur.type = POLYGON;
     cur.point1 = {};
     cur.point2 = rightPoint;
@@ -1067,14 +1004,13 @@ I32Box GeometryStore::add(const I32Polygon& poly,
 
 // _____________________________________________________________________________
 I32Box GeometryStore::add(const I32Line& line, const std::string& gid,
-                                 bool side, WriteBatch& batch) const {
+                          bool side, WriteBatch& batch) const {
   return add(line, gid, 0, side, batch);
 }
 
 // _____________________________________________________________________________
 I32Box GeometryStore::add(const I32Line& line, const std::string& gidR,
-                                 size_t subid, bool side,
-                                 WriteBatch& batch) const {
+                          size_t subid, bool side, WriteBatch& batch) const {
   if (line.size() < 2) return {};
 
   if (subid == 0 && _cfg.de9imFilter != util::geo::FANY) {
@@ -1132,30 +1068,6 @@ I32Box GeometryStore::add(const I32Line& line, const std::string& gidR,
       (!_cfg.useBoxIds || boxIds.front().first == 1) && subid == 0) {
     // simple line
 
-    cur.boxvalIn = {
-        typedId(0, SIMPLE_LINE),  // placeholder ID
-        box.getLowerLeft().getY(),
-        box.getUpperRight().getY(),
-        box.getLowerLeft().getX(),
-        false,
-        len,
-        line.front().getX() < line.back().getX() ? line.back() : line.front(),
-        packPoint(line.front().getX() < line.back().getX() ? line.front()
-                                                           : line.back()),
-        box45,
-        side};
-    cur.boxvalOut = {
-        typedId(0, SIMPLE_LINE),  // placeholder ID
-        box.getLowerLeft().getY(),
-        box.getUpperRight().getY(),
-        box.getUpperRight().getX(),
-        true,
-        len,
-        line.front().getX() < line.back().getX() ? line.front() : line.back(),
-        packPoint(line.front().getX() < line.back().getX() ? line.back()
-                                                           : line.front()),
-        box45,
-        side};
     cur.type = SIMPLE_LINE;
     cur.point1 =
         line.front().getX() < line.back().getX() ? line.back() : line.front();
@@ -1166,8 +1078,6 @@ I32Box GeometryStore::add(const I32Line& line, const std::string& gidR,
     // check if we can fold the gid into the offset id, because the gid is all
     // we store in the cache for points
     if (subid == 0 && gid.size() <= FOLD_MAX_LEN) {
-      cur.boxvalIn.setType(FOLDED_SIMPLE_LINE);
-      cur.boxvalOut.setType(FOLDED_SIMPLE_LINE);
       cur.type = FOLDED_SIMPLE_LINE;
       batch.foldedSimpleLines.emplace_back(cur);
     } else {
@@ -1192,26 +1102,6 @@ I32Box GeometryStore::add(const I32Line& line, const std::string& gidR,
     _lineStore.writeTo({std::move(sline), gid, subid, boxIds}, str);
     cur.raw = str.str();
 
-    cur.boxvalIn = {typedId(0, LINE),  // placeholder ID
-                    box.getLowerLeft().getY(),
-                    box.getUpperRight().getY(),
-                    box.getLowerLeft().getX(),
-                    false,
-                    len,
-                    {},
-                    lineSize,
-                    box45,
-                    side};
-    cur.boxvalOut = {typedId(0, LINE),  // placeholder ID
-                     box.getLowerLeft().getY(),
-                     box.getUpperRight().getY(),
-                     box.getUpperRight().getX(),
-                     true,
-                     len,
-                     rightPoint,
-                     lineSize,
-                     box45,
-                     side};
     cur.type = LINE;
     cur.point1 = {};
     cur.point2 = rightPoint;
@@ -1224,14 +1114,13 @@ I32Box GeometryStore::add(const I32Line& line, const std::string& gidR,
 
 // _____________________________________________________________________________
 I32Box GeometryStore::add(const I32Point& point, const std::string& gid,
-                                 bool side, WriteBatch& batch) const {
+                          bool side, WriteBatch& batch) const {
   return add(point, gid, 0, side, batch);
 }
 
 // _____________________________________________________________________________
 I32Box GeometryStore::add(const I32Point& point, const std::string& gidR,
-                                 size_t subid, bool side,
-                                 WriteBatch& batch) const {
+                          size_t subid, bool side, WriteBatch& batch) const {
   // THIS NO LONGER WORKS IF THE CACHE IS BUILD INDEPENDENT OF THE JOINPREDICATE
   if (subid == 0 && _cfg.de9imFilter != util::geo::FANY) {
     // drop certain geometries if we can be sure that they will never match
@@ -1272,34 +1161,12 @@ I32Box GeometryStore::add(const I32Point& point, const std::string& gidR,
   cur.numAnchors = 1;
   cur.areaOrLen = 0;
   cur.side = side;
-  cur.boxvalIn = {typedId(0, POINT),  // placeholder ID
-                  box.getLowerLeft().getY(),
-                  box.getUpperRight().getY(),
-                  box.getLowerLeft().getX(),
-                  false,
-                  0,
-                  point,
-                  1,
-                  getPaddedBoundingBox(pointR, rawBox),
-                  side};
-  cur.boxvalOut = {typedId(0, POINT),  // placeholder ID
-                   box.getLowerLeft().getY(),
-                   box.getUpperRight().getY(),
-                   box.getUpperRight().getX(),
-                   true,
-                   0,
-                   point,
-                   1,
-                   getPaddedBoundingBox(pointR, rawBox),
-                   side};
 
   cur.gid = gid;
 
   // check if we can fold the gid into the offset id, because the gid is all
   // we store in the cache for points
   if (subid == 0 && gid.size() <= FOLD_MAX_LEN) {
-    cur.boxvalIn.setType(FOLDED_POINT);
-    cur.boxvalOut.setType(FOLDED_POINT);
     cur.type = FOLDED_POINT;
     batch.foldedPoints.emplace_back(cur);
   } else {
@@ -1315,167 +1182,155 @@ I32Box GeometryStore::add(const I32Point& point, const std::string& gidR,
 }
 
 // _____________________________________________________________________________
-void GeometryStore::addBatch(WriteBatch& cands,
-                                    sj::SweepEventList* events) {
+void GeometryStore::addBatch(WriteBatch& cands, sj::SweepEventList* events) {
   {
     for (auto& cand : cands.foldedPoints) {
-      if (cand.boxvalIn.side) _numSides = 2;
-      cand.boxvalIn.id =
-          typedId(foldString(cand.gid), cand.boxvalIn.getType());
-      cand.boxvalOut.id = cand.boxvalIn.id;
+      if (cand.side) _numSides = 2;
+      cand.id = typedId(foldString(cand.gid), cand.type);
     }
   }
 
   {
     std::unique_lock<std::mutex> lock(_pointGeomCacheWriteMtx);
     for (auto& cand : cands.points) {
-      if (cand.boxvalIn.side) _numSides = 2;
-      cand.boxvalIn.id = _pointStore.add(cand.raw);
-      cand.boxvalOut.id = cand.boxvalIn.id;
+      if (cand.side) _numSides = 2;
+      cand.id = _pointStore.add(cand.raw);
     }
   }
 
   {
     std::unique_lock<std::mutex> lock(_lineGeomCacheWriteMtx);
     for (auto& cand : cands.lines) {
-      if (cand.boxvalIn.side) _numSides = 2;
-      cand.boxvalIn.id = _lineStore.add(cand.raw);
-      cand.boxvalOut.id = cand.boxvalIn.id;
+      if (cand.side) _numSides = 2;
+      cand.id = _lineStore.add(cand.raw);
     }
   }
 
   {
     std::unique_lock<std::mutex> lock(_simpleLineGeomCacheWriteMtx);
     for (auto& cand : cands.simpleLines) {
-      if (cand.boxvalIn.side) _numSides = 2;
-      cand.boxvalIn.id = _simpleLineStore.add(cand.raw);
-      cand.boxvalOut.id = cand.boxvalIn.id;
+      if (cand.side) _numSides = 2;
+      cand.id = _simpleLineStore.add(cand.raw);
     }
   }
 
   {
     for (auto& cand : cands.foldedSimpleLines) {
-      if (cand.boxvalIn.side) _numSides = 2;
-      cand.boxvalIn.id =
-          typedId(foldString(cand.gid), cand.boxvalIn.getType());
-      cand.boxvalOut.id = cand.boxvalIn.id;
+      if (cand.side) _numSides = 2;
+      cand.id = typedId(foldString(cand.gid), cand.type);
     }
   }
 
   {
     for (auto& cand : cands.foldedBoxAreas) {
-      if (cand.boxvalIn.side) _numSides = 2;
-      cand.boxvalIn.id =
-          typedId(foldString(cand.gid), cand.boxvalIn.getType());
-      cand.boxvalOut.id = cand.boxvalIn.id;
+      if (cand.side) _numSides = 2;
+      cand.id = typedId(foldString(cand.gid), cand.type);
     }
   }
 
   {
     std::unique_lock<std::mutex> lock(_simpleAreaGeomCacheWriteMtx);
     for (auto& cand : cands.simpleAreas) {
-      if (cand.boxvalIn.side) _numSides = 2;
-      cand.boxvalIn.id = _simpleAreaStore.add(cand.raw);
-      cand.boxvalOut.id = cand.boxvalIn.id;
+      if (cand.side) _numSides = 2;
+      cand.id = _simpleAreaStore.add(cand.raw);
     }
   }
 
   {
     std::unique_lock<std::mutex> lock(_areaGeomCacheWriteMtx);
     for (auto& cand : cands.areas) {
-      if (cand.boxvalIn.side) _numSides = 2;
-      cand.boxvalIn.id = _areaStore.add(cand.raw);
-      cand.boxvalOut.id = cand.boxvalIn.id;
+      if (cand.side) _numSides = 2;
+      cand.id = _areaStore.add(cand.raw);
     }
   }
 
   for (const auto& cand : cands.points) {
     if (cand.subid > 0) {
       std::unique_lock<std::mutex> lock(_multiAddMtx);
-      multiAdd(cand.gid, cand.boxvalIn.side, cand.boxvalOut.val,
-               cand.boxvalOut.point);
+      multiAdd(cand.gid, cand.side, cand.bbox.getUpperRight().getX(),
+               cand.point2);
     }
   }
 
   for (const auto& cand : cands.simpleLines) {
     if (cand.subid > 0) {
       std::unique_lock<std::mutex> lock(_multiAddMtx);
-      multiAdd(cand.gid, cand.boxvalIn.side, cand.boxvalOut.val,
-               cand.boxvalOut.point);
+      multiAdd(cand.gid, cand.side, cand.bbox.getUpperRight().getX(),
+               cand.point2);
     }
   }
 
   for (const auto& cand : cands.lines) {
     if (cand.subid > 0) {
       std::unique_lock<std::mutex> lock(_multiAddMtx);
-      multiAdd(cand.gid, cand.boxvalIn.side, cand.boxvalOut.val,
-               cand.boxvalOut.point);
+      multiAdd(cand.gid, cand.side, cand.bbox.getUpperRight().getX(),
+               cand.point2);
     }
   }
 
   for (const auto& cand : cands.simpleAreas) {
     if (cand.subid > 0) {
       std::unique_lock<std::mutex> lock(_multiAddMtx);
-      multiAdd(cand.gid, cand.boxvalIn.side, cand.boxvalOut.val,
-               cand.boxvalOut.point);
+      multiAdd(cand.gid, cand.side, cand.bbox.getUpperRight().getX(),
+               cand.point2);
     }
   }
 
   for (const auto& cand : cands.areas) {
     if (cand.subid > 0) {
       std::unique_lock<std::mutex> lock(_multiAddMtx);
-      multiAdd(cand.gid, cand.boxvalIn.side, cand.boxvalOut.val,
-               cand.boxvalOut.point);
+      multiAdd(cand.gid, cand.side, cand.bbox.getUpperRight().getX(),
+               cand.point2);
     }
   }
 
   {
     std::unique_lock<std::mutex> lock(_sweepEventWriteMtx);
     for (const auto& cand : cands.foldedPoints) {
-      events->add(cand.boxvalIn);
-      events->add(cand.boxvalOut);
+      events->add(cand.id, cand.bbox, cand.box45, cand.point1, cand.point2,
+                  cand.numAnchors, cand.areaOrLen, cand.side);
       if (events->numObjects() % 1000000 == 0)
         log("@ " + std::to_string(events->numObjects()));
     }
     for (const auto& cand : cands.points) {
-      events->add(cand.boxvalIn);
-      events->add(cand.boxvalOut);
+      events->add(cand.id, cand.bbox, cand.box45, cand.point1, cand.point2,
+                  cand.numAnchors, cand.areaOrLen, cand.side);
       if (events->numObjects() % 1000000 == 0)
         log("@ " + std::to_string(events->numObjects()));
     }
     for (const auto& cand : cands.foldedSimpleLines) {
-      events->add(cand.boxvalIn);
-      events->add(cand.boxvalOut);
+      events->add(cand.id, cand.bbox, cand.box45, cand.point1, cand.point2,
+                  cand.numAnchors, cand.areaOrLen, cand.side);
       if (events->numObjects() % 1000000 == 0)
         log("@ " + std::to_string(events->numObjects()));
     }
     for (const auto& cand : cands.foldedBoxAreas) {
-      events->add(cand.boxvalIn);
-      events->add(cand.boxvalOut);
+      events->add(cand.id, cand.bbox, cand.box45, cand.point1, cand.point2,
+                  cand.numAnchors, cand.areaOrLen, cand.side);
       if (events->numObjects() % 1000000 == 0)
         log("@ " + std::to_string(events->numObjects()));
     }
     for (const auto& cand : cands.simpleLines) {
-      events->add(cand.boxvalIn);
-      events->add(cand.boxvalOut);
+      events->add(cand.id, cand.bbox, cand.box45, cand.point1, cand.point2,
+                  cand.numAnchors, cand.areaOrLen, cand.side);
       if (events->numObjects() % 1000000 == 0)
         log("@ " + std::to_string(events->numObjects()));
     }
     for (const auto& cand : cands.lines) {
-      events->add(cand.boxvalIn);
-      events->add(cand.boxvalOut);
+      events->add(cand.id, cand.bbox, cand.box45, cand.point1, cand.point2,
+                  cand.numAnchors, cand.areaOrLen, cand.side);
       if (events->numObjects() % 1000000 == 0)
         log("@ " + std::to_string(events->numObjects()));
     }
     for (const auto& cand : cands.simpleAreas) {
-      events->add(cand.boxvalIn);
-      events->add(cand.boxvalOut);
+      events->add(cand.id, cand.bbox, cand.box45, cand.point1, cand.point2,
+                  cand.numAnchors, cand.areaOrLen, cand.side);
       if (events->numObjects() % 1000000 == 0)
         log("@ " + std::to_string(events->numObjects()));
     }
     for (const auto& cand : cands.areas) {
-      events->add(cand.boxvalIn);
-      events->add(cand.boxvalOut);
+      events->add(cand.id, cand.bbox, cand.box45, cand.point1, cand.point2,
+                  cand.numAnchors, cand.areaOrLen, cand.side);
       if (events->numObjects() % 1000000 == 0)
         log("@ " + std::to_string(events->numObjects()));
     }
