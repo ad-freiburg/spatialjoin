@@ -491,8 +491,7 @@ RelStats Sweeper::sweep(const SweepEventList* eventsA,
                  cur->getType() == SELF_CHECK_POINT) {
         // self checks, required if we have reference geoms
         curBatch.push_back({*cur, *cur, ""});
-      } else if (cur->out && cur->loY == 1 && cur->upY == 0 &&
-                 cur->getType() == POINT) {
+      } else if (cur->getType() == MULTI) {
         // special multi-OUT, defer for clearing (all threads must be past it)
         _finishedMultis.push(*cur);
       } else if (!cur->out) {

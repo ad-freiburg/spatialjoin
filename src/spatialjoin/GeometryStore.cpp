@@ -762,8 +762,7 @@ sj::GeomType sj::TypedGeometryStore<sj::SimpleArea>::geomType() {
 // ____________________________________________________________________________
 template <>
 sj::GeomType sj::TypedGeometryStore<sj::MultiGeom>::geomType() {
-  // multi geometries are swept as special POINT events
-  return sj::POINT;
+  return sj::MULTI;
 }
 
 // ____________________________________________________________________________
@@ -1374,8 +1373,8 @@ void GeometryStore::addBatch(WriteBatch& cands, sj::SweepEventList* events) {
       }
 
       // special multi-OUT event, at the right x of the multi geometry
-      multiOuts.push_back({typedId(multiId, POINT),
-                           1,
+      multiOuts.push_back({typedId(multiId, MULTI),
+                           0,
                            0,
                            _multiRightX[multi.side][multiId],
                            true,

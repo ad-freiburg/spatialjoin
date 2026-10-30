@@ -24,7 +24,8 @@ enum GeomType : uint8_t {
   SELF_CHECK = 9,
   SELF_CHECK_AREA = 10,
   SELF_CHECK_LINE = 11,
-  SELF_CHECK_POINT = 12
+  SELF_CHECK_POINT = 12,
+  MULTI = 13
 };
 
 // the upper 4 bits of a BoxVal ID hold the geometry type, see typedId()
