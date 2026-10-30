@@ -953,20 +953,20 @@ I32Box GeometryStore::add(const I32Polygon& poly, const std::string& gidR,
 
   cur.subid = subid;
   cur.gid = gid;
-  cur.bbox = box;
-  cur.box45 = box45;
-  cur.areaOrLen = areaSize;
-  cur.side = side;
+  cur.meta.bbox = box;
+  cur.meta.box45 = box45;
+  cur.meta.areaOrLen = areaSize;
+  cur.meta.side = side;
 
   if (poly.getInners().size() == 0 && subid == 0 &&
       gid.size() <= FOLD_MAX_LEN &&
       poly.getOuter().size() == densePoly.getOuter().size() &&
       (!_cfg.useBoxIds || boxIds.front().first == 1) &&
       area(rawBox) == areaSize) {
-    cur.type = FOLDED_BOX_POLYGON;
-    cur.point1 = rawBox.getUpperRight();
-    cur.point2 = rawBox.getLowerLeft();
-    cur.numAnchors = poly.size();
+    cur.meta.type = FOLDED_BOX_POLYGON;
+    cur.meta.point1 = rawBox.getUpperRight();
+    cur.meta.point2 = rawBox.getLowerLeft();
+    cur.meta.numAnchors = poly.size();
     batch.foldedBoxAreas.emplace_back(cur);
   } else if (poly.getInners().size() == 0 && poly.getOuter().size() < 10 &&
              poly.getOuter().size() == densePoly.getOuter().size() &&
@@ -981,10 +981,10 @@ I32Box GeometryStore::add(const I32Polygon& poly, const std::string& gidR,
       if (p.getX() > rightPoint.getX()) rightPoint = p;
     }
 
-    cur.type = SIMPLE_POLYGON;
-    cur.point1 = {};
-    cur.point2 = rightPoint;
-    cur.numAnchors = poly.size();
+    cur.meta.type = SIMPLE_POLYGON;
+    cur.meta.point1 = {};
+    cur.meta.point2 = rightPoint;
+    cur.meta.numAnchors = poly.size();
     batch.simpleAreas.emplace_back(cur);
   } else {
     if (!_cfg.useFastSweepSkip) {
@@ -1004,10 +1004,10 @@ I32Box GeometryStore::add(const I32Polygon& poly, const std::string& gidR,
 
     cur.raw = str.str();
 
-    cur.type = POLYGON;
-    cur.point1 = {};
-    cur.point2 = rightPoint;
-    cur.numAnchors = polySize;
+    cur.meta.type = POLYGON;
+    cur.meta.point1 = {};
+    cur.meta.point2 = rightPoint;
+    cur.meta.numAnchors = polySize;
     batch.areas.emplace_back(cur);
   }
 
@@ -1071,26 +1071,26 @@ I32Box GeometryStore::add(const I32Line& line, const std::string& gidR,
 
   cur.subid = subid;
   cur.gid = gid;
-  cur.bbox = box;
-  cur.box45 = box45;
-  cur.areaOrLen = len;
-  cur.side = side;
+  cur.meta.bbox = box;
+  cur.meta.box45 = box45;
+  cur.meta.areaOrLen = len;
+  cur.meta.side = side;
 
   if (line.size() == 2 && denseLine.size() == line.size() &&
       (!_cfg.useBoxIds || boxIds.front().first == 1) && subid == 0) {
     // simple line
 
-    cur.type = SIMPLE_LINE;
-    cur.point1 =
+    cur.meta.type = SIMPLE_LINE;
+    cur.meta.point1 =
         line.front().getX() < line.back().getX() ? line.back() : line.front();
-    cur.point2 =
+    cur.meta.point2 =
         line.front().getX() < line.back().getX() ? line.front() : line.back();
-    cur.numAnchors = lineSize;
+    cur.meta.numAnchors = lineSize;
 
     // check if we can fold the gid into the offset id, because the gid is all
     // we store in the cache for points
     if (subid == 0 && gid.size() <= FOLD_MAX_LEN) {
-      cur.type = FOLDED_SIMPLE_LINE;
+      cur.meta.type = FOLDED_SIMPLE_LINE;
       batch.foldedSimpleLines.emplace_back(cur);
     } else {
       std::stringstream str;
@@ -1114,10 +1114,10 @@ I32Box GeometryStore::add(const I32Line& line, const std::string& gidR,
     _lineStore.writeTo({std::move(sline), gid, subid, boxIds}, str);
     cur.raw = str.str();
 
-    cur.type = LINE;
-    cur.point1 = {};
-    cur.point2 = rightPoint;
-    cur.numAnchors = lineSize;
+    cur.meta.type = LINE;
+    cur.meta.point1 = {};
+    cur.meta.point2 = rightPoint;
+    cur.meta.numAnchors = lineSize;
     batch.lines.emplace_back(cur);
   }
 
@@ -1165,21 +1165,21 @@ I32Box GeometryStore::add(const I32Point& point, const std::string& gidR,
   if (!util::geo::intersects(box, _filterBox)) return {};
 
   auto pointR = util::geo::rotateSinCos(point, sin45, cos45, I32Point(0, 0));
-  cur.bbox = box;
-  cur.type = POINT;
-  cur.box45 = getPaddedBoundingBox(pointR, rawBox);
-  cur.point1 = point;
-  cur.point2 = point;
-  cur.numAnchors = 1;
-  cur.areaOrLen = 0;
-  cur.side = side;
+  cur.meta.bbox = box;
+  cur.meta.type = POINT;
+  cur.meta.box45 = getPaddedBoundingBox(pointR, rawBox);
+  cur.meta.point1 = point;
+  cur.meta.point2 = point;
+  cur.meta.numAnchors = 1;
+  cur.meta.areaOrLen = 0;
+  cur.meta.side = side;
 
   cur.gid = gid;
 
   // check if we can fold the gid into the offset id, because the gid is all
   // we store in the cache for points
   if (subid == 0 && gid.size() <= FOLD_MAX_LEN) {
-    cur.type = FOLDED_POINT;
+    cur.meta.type = FOLDED_POINT;
     batch.foldedPoints.emplace_back(cur);
   } else {
     std::stringstream str;
@@ -1212,8 +1212,8 @@ void GeometryStore::addBatch(WriteBatch& cands, sj::SweepEventList* events) {
 
   {
     for (auto& cand : cands.foldedPoints) {
-      if (cand.side) _numSides = 2;
-      cand.id = typedId(foldString(cand.gid), cand.type);
+      if (cand.meta.side) _numSides = 2;
+      cand.meta.id = typedId(foldString(cand.gid), cand.meta.type);
     }
     // note: folded geoms can never be multi
   }
@@ -1221,13 +1221,13 @@ void GeometryStore::addBatch(WriteBatch& cands, sj::SweepEventList* events) {
   {
     std::unique_lock<std::mutex> lock(_pointGeomCacheWriteMtx);
     for (auto& cand : cands.points) {
-      if (cand.side) _numSides = 2;
-      cand.id = _pointStore.add(cand.raw);
+      if (cand.meta.side) _numSides = 2;
+      cand.meta.id = _pointStore.add(cand.raw);
     }
     for (auto& multi : cands.multiGeoms) {
       for (auto& cand : multi.members.points) {
-        if (cand.side) _numSides = 2;
-        cand.id = _pointStore.add(cand.raw);
+        if (cand.meta.side) _numSides = 2;
+        cand.meta.id = _pointStore.add(cand.raw);
       }
     }
   }
@@ -1235,13 +1235,13 @@ void GeometryStore::addBatch(WriteBatch& cands, sj::SweepEventList* events) {
   {
     std::unique_lock<std::mutex> lock(_lineGeomCacheWriteMtx);
     for (auto& cand : cands.lines) {
-      if (cand.side) _numSides = 2;
-      cand.id = _lineStore.add(cand.raw);
+      if (cand.meta.side) _numSides = 2;
+      cand.meta.id = _lineStore.add(cand.raw);
     }
     for (auto& multi : cands.multiGeoms) {
       for (auto& cand : multi.members.lines) {
-        if (cand.side) _numSides = 2;
-        cand.id = _lineStore.add(cand.raw);
+        if (cand.meta.side) _numSides = 2;
+        cand.meta.id = _lineStore.add(cand.raw);
       }
     }
   }
@@ -1249,29 +1249,29 @@ void GeometryStore::addBatch(WriteBatch& cands, sj::SweepEventList* events) {
   {
     std::unique_lock<std::mutex> lock(_simpleLineGeomCacheWriteMtx);
     for (auto& cand : cands.simpleLines) {
-      if (cand.side) _numSides = 2;
-      cand.id = _simpleLineStore.add(cand.raw);
+      if (cand.meta.side) _numSides = 2;
+      cand.meta.id = _simpleLineStore.add(cand.raw);
     }
     for (auto& multi : cands.multiGeoms) {
       for (auto& cand : multi.members.simpleLines) {
-        if (cand.side) _numSides = 2;
-        cand.id = _simpleLineStore.add(cand.raw);
+        if (cand.meta.side) _numSides = 2;
+        cand.meta.id = _simpleLineStore.add(cand.raw);
       }
     }
   }
 
   {
     for (auto& cand : cands.foldedSimpleLines) {
-      if (cand.side) _numSides = 2;
-      cand.id = typedId(foldString(cand.gid), cand.type);
+      if (cand.meta.side) _numSides = 2;
+      cand.meta.id = typedId(foldString(cand.gid), cand.meta.type);
     }
     // note: folded geoms can never be multi
   }
 
   {
     for (auto& cand : cands.foldedBoxAreas) {
-      if (cand.side) _numSides = 2;
-      cand.id = typedId(foldString(cand.gid), cand.type);
+      if (cand.meta.side) _numSides = 2;
+      cand.meta.id = typedId(foldString(cand.gid), cand.meta.type);
     }
     // note: folded geoms can never be multi
   }
@@ -1279,13 +1279,13 @@ void GeometryStore::addBatch(WriteBatch& cands, sj::SweepEventList* events) {
   {
     std::unique_lock<std::mutex> lock(_simpleAreaGeomCacheWriteMtx);
     for (auto& cand : cands.simpleAreas) {
-      if (cand.side) _numSides = 2;
-      cand.id = _simpleAreaStore.add(cand.raw);
+      if (cand.meta.side) _numSides = 2;
+      cand.meta.id = _simpleAreaStore.add(cand.raw);
     }
     for (auto& multi : cands.multiGeoms) {
       for (auto& cand : multi.members.simpleAreas) {
-        if (cand.side) _numSides = 2;
-        cand.id = _simpleAreaStore.add(cand.raw);
+        if (cand.meta.side) _numSides = 2;
+        cand.meta.id = _simpleAreaStore.add(cand.raw);
       }
     }
   }
@@ -1293,13 +1293,13 @@ void GeometryStore::addBatch(WriteBatch& cands, sj::SweepEventList* events) {
   {
     std::unique_lock<std::mutex> lock(_areaGeomCacheWriteMtx);
     for (auto& cand : cands.areas) {
-      if (cand.side) _numSides = 2;
-      cand.id = _areaStore.add(cand.raw);
+      if (cand.meta.side) _numSides = 2;
+      cand.meta.id = _areaStore.add(cand.raw);
     }
     for (auto& multi : cands.multiGeoms) {
       for (auto& cand : multi.members.areas) {
-        if (cand.side) _numSides = 2;
-        cand.id = _areaStore.add(cand.raw);
+        if (cand.meta.side) _numSides = 2;
+        cand.meta.id = _areaStore.add(cand.raw);
       }
     }
   }
@@ -1320,8 +1320,9 @@ void GeometryStore::addBatch(WriteBatch& cands, sj::SweepEventList* events) {
             &multi.members.lines, &multi.members.simpleAreas,
             &multi.members.areas}) {
         for (const auto& cand : *members) {
-          multiId = multiAdd(cand.gid, cand.side,
-                             cand.bbox.getUpperRight().getX(), cand.point2);
+          multiId =
+              multiAdd(cand.gid, cand.meta.side,
+                       cand.meta.bbox.getUpperRight().getX(), cand.meta.point2);
         }
       }
 
@@ -1342,89 +1343,76 @@ void GeometryStore::addBatch(WriteBatch& cands, sj::SweepEventList* events) {
   {
     std::unique_lock<std::mutex> lock(_sweepEventWriteMtx);
     for (const auto& cand : cands.foldedPoints) {
-      events->add(cand.id, cand.bbox, cand.box45, cand.point1, cand.point2,
-                  cand.numAnchors, cand.areaOrLen, cand.side);
+      events->add(cand.meta);
       if (events->numObjects() % 1000000 == 0)
         log("@ " + std::to_string(events->numObjects()));
     }
     for (const auto& cand : cands.points) {
-      events->add(cand.id, cand.bbox, cand.box45, cand.point1, cand.point2,
-                  cand.numAnchors, cand.areaOrLen, cand.side);
+      events->add(cand.meta);
       if (events->numObjects() % 1000000 == 0)
         log("@ " + std::to_string(events->numObjects()));
     }
     for (const auto& multi : cands.multiGeoms) {
       for (const auto& cand : multi.members.points) {
-        events->add(cand.id, cand.bbox, cand.box45, cand.point1, cand.point2,
-                    cand.numAnchors, cand.areaOrLen, cand.side);
+        events->add(cand.meta);
         if (events->numObjects() % 1000000 == 0)
           log("@ " + std::to_string(events->numObjects()));
       }
     }
     for (const auto& cand : cands.foldedSimpleLines) {
-      events->add(cand.id, cand.bbox, cand.box45, cand.point1, cand.point2,
-                  cand.numAnchors, cand.areaOrLen, cand.side);
+      events->add(cand.meta);
       if (events->numObjects() % 1000000 == 0)
         log("@ " + std::to_string(events->numObjects()));
     }
     for (const auto& cand : cands.foldedBoxAreas) {
-      events->add(cand.id, cand.bbox, cand.box45, cand.point1, cand.point2,
-                  cand.numAnchors, cand.areaOrLen, cand.side);
+      events->add(cand.meta);
       if (events->numObjects() % 1000000 == 0)
         log("@ " + std::to_string(events->numObjects()));
     }
     for (const auto& cand : cands.simpleLines) {
-      events->add(cand.id, cand.bbox, cand.box45, cand.point1, cand.point2,
-                  cand.numAnchors, cand.areaOrLen, cand.side);
+      events->add(cand.meta);
       if (events->numObjects() % 1000000 == 0)
         log("@ " + std::to_string(events->numObjects()));
     }
     for (const auto& multi : cands.multiGeoms) {
       for (const auto& cand : multi.members.simpleLines) {
-        events->add(cand.id, cand.bbox, cand.box45, cand.point1, cand.point2,
-                    cand.numAnchors, cand.areaOrLen, cand.side);
+        events->add(cand.meta);
         if (events->numObjects() % 1000000 == 0)
           log("@ " + std::to_string(events->numObjects()));
       }
     }
     for (const auto& cand : cands.lines) {
-      events->add(cand.id, cand.bbox, cand.box45, cand.point1, cand.point2,
-                  cand.numAnchors, cand.areaOrLen, cand.side);
+      events->add(cand.meta);
       if (events->numObjects() % 1000000 == 0)
         log("@ " + std::to_string(events->numObjects()));
     }
     for (const auto& multi : cands.multiGeoms) {
       for (const auto& cand : multi.members.lines) {
-        events->add(cand.id, cand.bbox, cand.box45, cand.point1, cand.point2,
-                    cand.numAnchors, cand.areaOrLen, cand.side);
+        events->add(cand.meta);
         if (events->numObjects() % 1000000 == 0)
           log("@ " + std::to_string(events->numObjects()));
       }
     }
     for (const auto& cand : cands.simpleAreas) {
-      events->add(cand.id, cand.bbox, cand.box45, cand.point1, cand.point2,
-                  cand.numAnchors, cand.areaOrLen, cand.side);
+      events->add(cand.meta);
       if (events->numObjects() % 1000000 == 0)
         log("@ " + std::to_string(events->numObjects()));
     }
     for (const auto& multi : cands.multiGeoms) {
       for (const auto& cand : multi.members.simpleAreas) {
-        events->add(cand.id, cand.bbox, cand.box45, cand.point1, cand.point2,
-                    cand.numAnchors, cand.areaOrLen, cand.side);
+        events->add(cand.meta);
         if (events->numObjects() % 1000000 == 0)
           log("@ " + std::to_string(events->numObjects()));
       }
     }
     for (const auto& cand : cands.areas) {
-      events->add(cand.id, cand.bbox, cand.box45, cand.point1, cand.point2,
-                  cand.numAnchors, cand.areaOrLen, cand.side);
+      events->add(cand.meta);
       if (events->numObjects() % 1000000 == 0)
         log("@ " + std::to_string(events->numObjects()));
     }
     for (const auto& multi : cands.multiGeoms) {
       for (const auto& cand : multi.members.areas) {
-        events->add(cand.id, cand.bbox, cand.box45, cand.point1, cand.point2,
-                    cand.numAnchors, cand.areaOrLen, cand.side);
+        events->add(cand.meta);
         if (events->numObjects() % 1000000 == 0)
           log("@ " + std::to_string(events->numObjects()));
       }

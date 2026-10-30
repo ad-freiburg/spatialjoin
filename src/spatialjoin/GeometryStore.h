@@ -178,23 +178,8 @@ class TypedGeometryStore {
 struct WriteCand {
   std::string raw;
   std::string gid;
-  // typed ID, assigned in GeometryStore::addBatch(), see typedId()
-  size_t id;
   size_t subid;
-
-  // the (padded) bounding box
-  util::geo::I32Box bbox;
-  GeomType type;
-  // the (padded) bounding box of the geometry rotated by 45 degrees
-  util::geo::I32Box box45;
-  // the point of the IN event and of the OUT event, see BoxVal::point
-  util::geo::I32Point point1, point2;
-  // number of anchor points (for simple lines and folded box polygons, the
-  // events instead store the packed other point, see packPoint())
-  size_t numAnchors;
-  // area for polygons, length for lines, 0 for points
-  double areaOrLen;
-  bool side;
+  PreparedGeomMeta meta;
 };
 
 struct MultiWriteCand;

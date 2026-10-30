@@ -96,6 +96,25 @@ inline util::geo::I32Point getOtherPoint(const BoxVal& bv) {
   return {bv.val, bv.point.getY() == bv.loY ? bv.upY : bv.loY};
 }
 
+// the metadata of a prepared geometry, from which its sweep events are built
+struct PreparedGeomMeta {
+  // typed ID, assigned in GeometryStore::addBatch(), see typedId()
+  size_t id;
+  // the (padded) bounding box
+  util::geo::I32Box bbox;
+  GeomType type;
+  // the (padded) bounding box of the geometry rotated by 45 degrees
+  util::geo::I32Box box45;
+  // the point of the IN event and of the OUT event, see BoxVal::point
+  util::geo::I32Point point1, point2;
+  // number of anchor points (for simple lines and folded box polygons, the
+  // events instead store the packed other point, see packPoint())
+  size_t numAnchors;
+  // area for polygons, length for lines, 0 for points
+  double areaOrLen;
+  bool side;
+};
+
 static int boxCmp(const void* a, const void* b) {
   const auto& boxa = static_cast<const BoxVal*>(a);
   const auto& boxb = static_cast<const BoxVal*>(b);
@@ -334,6 +353,12 @@ class SweepEventList {
 
     add(in);
     add(out);
+  }
+
+  // adds the IN and the OUT event of a prepared geometry
+  void add(const PreparedGeomMeta& meta) {
+    add(meta.id, meta.bbox, meta.box45, meta.point1, meta.point2,
+        meta.numAnchors, meta.areaOrLen, meta.side);
   }
 
   size_t numObjects() const { return _curSweepId / 2; }
