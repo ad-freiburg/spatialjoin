@@ -305,12 +305,6 @@ class GeometryStore {
 
   void setNumSides(size_t sides) { _numSides = sides; }
 
-  size_t numMultis(bool side) const { return _multiIds[side].size(); }
-
-  const std::string& multiId(bool side, size_t id) const {
-    return _multiIds[side][id];
-  }
-
   bool hasRefs() const { return _refs.size() != 0; }
 
   bool isRefed(const std::string& gid) const { return _refs.count(gid); }
@@ -350,9 +344,6 @@ class GeometryStore {
   template <typename W>
   static std::shared_ptr<W> get(const TypedGeometryStore<W>& store, size_t off);
 
-  // returns the multi ID of gid
-  size_t multiAdd(const std::string& gid, bool side, int32_t xRight);
-
   void duplicatesToReferences(int file);
 
   const SweeperCfg _cfg;
@@ -364,14 +355,11 @@ class GeometryStore {
   TypedGeometryStore<SimpleLine> _simpleLineStore;
   TypedGeometryStore<MultiGeom> _multiStore;
 
-  // these are written during the geometry add phase
-  std::vector<std::string> _multiIds[2];  // required on OUT to get the GID
-  std::vector<int32_t> _multiRightX[2];
-  std::unordered_map<std::string, size_t> _multiGidToId[2];
+  // number of multi geometries, guarded by _multiGeomCacheWriteMtx
+  size_t _numMultis = 0;
 
   std::atomic<uint8_t> _numSides;
 
-  mutable std::mutex _multiAddMtx;
   mutable std::mutex _sweepEventWriteMtx;
   mutable std::mutex _pointGeomCacheWriteMtx;
   mutable std::mutex _lineGeomCacheWriteMtx;

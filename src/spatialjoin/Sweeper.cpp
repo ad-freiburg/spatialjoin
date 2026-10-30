@@ -84,8 +84,11 @@ void Sweeper::clearMultis(bool force) {
   // we can clear until we reach an x >= curMinThreadX
   while (!_finishedMultis.empty() &&
          (force || _finishedMultis.front().val < curMinThreadX)) {
-    const auto& mOut = _finishedMultis.front();
-    curBatch.push_back({{}, {}, _geomStore->multiId(mOut.side, getId(mOut))});
+    auto openMultiID = _openMultiIDs.find(getId(_finishedMultis.front()));
+
+    // we can move here, openMulti is deleted in the line below!
+    curBatch.push_back({{}, {}, std::move(openMultiID->second)});
+    _openMultiIDs.erase(openMultiID);
     _finishedMultis.pop();
 
     if (curBatch.size() >= batchSize) {
@@ -121,6 +124,8 @@ std::vector<sj::BoxVal> Sweeper::multiIn(const BoxVal& multiIn) {
     _subSizes[multi.id] = subSize;
     _multiRightPoint[multi.id] = rightPoint;
   }
+
+  _openMultiIDs[getId(multiIn)] = multi.id;
 
   return std::move(multi.events);
 }

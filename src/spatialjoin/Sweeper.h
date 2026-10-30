@@ -286,6 +286,8 @@ class Sweeper {
   // multi geometries whose OUT event has been processed
   std::queue<BoxVal> _finishedMultis;
 
+  std::unordered_map<size_t, std::string> _openMultiIDs;
+
   std::unordered_map<std::string, size_t> _subSizes;
   std::unordered_map<std::string, util::geo::I32Point> _multiRightPoint;
   mutable std::shared_timed_mutex _multiMetaMtx;
@@ -306,14 +308,6 @@ class Sweeper {
   std::vector<std::mutex> _mutsNotOverlaps;
   std::vector<std::mutex> _mutsDistance;
   std::vector<std::mutex> _mutsDE9IM;
-
-  mutable std::mutex _multiAddMtx;
-  mutable std::mutex _sweepEventWriteMtx;
-  mutable std::mutex _pointGeomCacheWriteMtx;
-  mutable std::mutex _lineGeomCacheWriteMtx;
-  mutable std::mutex _simpleLineGeomCacheWriteMtx;
-  mutable std::mutex _areaGeomCacheWriteMtx;
-  mutable std::mutex _simpleAreaGeomCacheWriteMtx;
 
   bool _dontNeedFullDE9IM;
 };

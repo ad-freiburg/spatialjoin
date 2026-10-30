@@ -899,23 +899,6 @@ I32Box GeometryStore::add(const I32MultiPoint& a, const std::string& gid,
 }
 
 // _____________________________________________________________________________
-size_t GeometryStore::multiAdd(const std::string& gid, bool side,
-                               int32_t xRight) {
-  auto i = _multiGidToId[side].find(gid);
-
-  if (i == _multiGidToId[side].end()) {
-    _multiIds[side].push_back(gid);
-    _multiRightX[side].push_back(xRight);
-    _multiGidToId[side][gid] = _multiIds[side].size() - 1;
-    return _multiIds[side].size() - 1;
-  }
-
-  size_t id = i->second;
-  if (xRight > _multiRightX[side][id]) _multiRightX[side][id] = xRight;
-  return id;
-}
-
-// _____________________________________________________________________________
 I32Box GeometryStore::add(const I32Polygon& poly, const std::string& gid,
                           bool side, WriteBatch& batch) const {
   return add(poly, gid, 0, side, batch);
@@ -1353,6 +1336,7 @@ void GeometryStore::addBatch(WriteBatch& cands, sj::SweepEventList* events) {
     for (size_t i = 0; i < cands.multiGeoms.size(); i++) {
       cands.multiGeoms[i].id = _multiStore.add(multiRaws[i]);
     }
+    _numMultis += cands.multiGeoms.size();
   }
 
   // all members of a multi geometry are kept together (several input lines
@@ -1360,50 +1344,27 @@ void GeometryStore::addBatch(WriteBatch& cands, sj::SweepEventList* events) {
   // complete here, and we can write its multi-IN and multi-OUT event
   std::vector<BoxVal> multiEvents;
 
-  {
-    std::unique_lock<std::mutex> lock(_multiAddMtx);
+  for (const auto& multi : cands.multiGeoms) {
+    int32_t leftX = std::numeric_limits<int32_t>::max();
+    int32_t rightX = std::numeric_limits<int32_t>::min();
 
-    for (const auto& multi : cands.multiGeoms) {
-      size_t multiId = 0;
-      int32_t leftX = std::numeric_limits<int32_t>::max();
-
-      for (const auto* members :
-           {&multi.members.points, &multi.members.simpleLines,
-            &multi.members.lines, &multi.members.simpleAreas,
-            &multi.members.areas}) {
-        for (const auto& cand : *members) {
-          multiId =
-              multiAdd(cand.gid, cand.meta.side,
-                       cand.meta.bbox.getUpperRight().getX());
-          leftX = std::min(leftX, cand.meta.bbox.getLowerLeft().getX());
-        }
+    for (const auto* members :
+         {&multi.members.points, &multi.members.simpleLines,
+          &multi.members.lines, &multi.members.simpleAreas,
+          &multi.members.areas}) {
+      for (const auto& cand : *members) {
+        leftX = std::min(leftX, cand.meta.bbox.getLowerLeft().getX());
+        rightX = std::max(rightX, cand.meta.bbox.getUpperRight().getX());
       }
-
-      // special multi-IN event, at the left x of the multi geometry, with the
-      // ID of the multi geometry in the multi geometry store
-      multiEvents.push_back({multi.id,
-                             0,
-                             0,
-                             leftX,
-                             false,
-                             0.0,
-                             {},
-                             0,
-                             {},
-                             multi.side});
-
-      // special multi-OUT event, at the right x of the multi geometry
-      multiEvents.push_back({typedId(multiId, MULTI),
-                           0,
-                           0,
-                           _multiRightX[multi.side][multiId],
-                           true,
-                           0.0,
-                           {},
-                           0,
-                           {},
-                           multi.side});
     }
+
+    // special multi-IN event, at the left x of the multi geometry, and special
+    // multi-OUT event, at the right x of the multi geometry, both with the ID
+    // of the multi geometry in the multi geometry store
+    multiEvents.push_back(
+        {multi.id, 0, 0, leftX, false, 0.0, {}, 0, {}, multi.side});
+    multiEvents.push_back(
+        {multi.id, 0, 0, rightX, true, 0.0, {}, 0, {}, multi.side});
   }
 
   {
@@ -1463,7 +1424,7 @@ void GeometryStore::addBatch(WriteBatch& cands, sj::SweepEventList* events) {
 void GeometryStore::flush() {
   if (_numSides > 1) log("(Non-self join between 2 datasets)");
 
-  log(std::to_string(_multiIds[0].size() + _multiIds[1].size()) +
+  log(std::to_string(_numMultis) +
       " multi geometries");
 
   _pointStore.flush();
