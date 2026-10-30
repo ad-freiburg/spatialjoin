@@ -6,6 +6,7 @@
 #include <errno.h>
 #include <unistd.h>
 
+#include <algorithm>
 #include <cmath>
 #include <cstring>
 #include <fstream>
@@ -801,28 +802,37 @@ const static double cos45 = 1.0 / sqrt(2);
 // _____________________________________________________________________________
 I32Box GeometryStore::add(const I32MultiPolygon& a, const std::string& gid,
                           bool side, WriteBatch& batch) const {
-  size_t subid = 0;  // a subid of 0 means "single polygon"
-  if (a.size() > 1) subid = 1;
+  // a subid of 0 means "single polygon"
+  if (a.size() < 2) return add(a, gid, 0, side, batch);
 
-  return add(a, gid, subid, side, batch);
+  WriteBatch members;
+  auto box = add(a, gid, 1, side, members);
+  addMulti(std::move(members), box, gid, side, batch);
+  return box;
 }
 
 // _____________________________________________________________________________
 I32Box GeometryStore::add(const I32MultiLine& a, const std::string& gid,
                           bool side, WriteBatch& batch) const {
-  size_t subid = 0;  // a subid of 0 means "single line"
-  if (a.size() > 1) subid = 1;
+  // a subid of 0 means "single line"
+  if (a.size() < 2) return add(a, gid, 0, side, batch);
 
-  return add(a, gid, subid, side, batch);
+  WriteBatch members;
+  auto box = add(a, gid, 1, side, members);
+  addMulti(std::move(members), box, gid, side, batch);
+  return box;
 }
 
 // _____________________________________________________________________________
 I32Box GeometryStore::add(const I32MultiPoint& a, const std::string& gid,
                           bool side, WriteBatch& batch) const {
-  size_t subid = 0;  // a subid of 0 means "single point"
-  if (a.size() > 1) subid = 1;
+  // a subid of 0 means "single point"
+  if (a.size() < 2) return add(a, gid, 0, side, batch);
 
-  return add(a, gid, subid, side, batch);
+  WriteBatch members;
+  auto box = add(a, gid, 1, side, members);
+  addMulti(std::move(members), box, gid, side, batch);
+  return box;
 }
 
 // _____________________________________________________________________________
@@ -871,8 +881,8 @@ I32Box GeometryStore::add(const I32MultiPoint& a, const std::string& gid,
 }
 
 // _____________________________________________________________________________
-void GeometryStore::multiAdd(const std::string& gid, bool side, int32_t xRight,
-                             const I32Point& pointRight) {
+size_t GeometryStore::multiAdd(const std::string& gid, bool side,
+                               int32_t xRight, const I32Point& pointRight) {
   auto i = _multiGidToId[side].find(gid);
 
   if (i == _multiGidToId[side].end()) {
@@ -881,13 +891,15 @@ void GeometryStore::multiAdd(const std::string& gid, bool side, int32_t xRight,
     _multiRightPoint[gid] = pointRight;
     _multiGidToId[side][gid] = _multiIds[side].size() - 1;
     _subSizes[gid] = 1;
-  } else {
-    size_t id = _multiGidToId[side][gid];
-    if (xRight > _multiRightX[side][id]) _multiRightX[side][id] = xRight;
-    if (pointRight.getX() > _multiRightPoint[gid].getX())
-      _multiRightPoint[gid] = pointRight;
-    _subSizes[gid] = _subSizes[gid] + 1;
+    return _multiIds[side].size() - 1;
   }
+
+  size_t id = i->second;
+  if (xRight > _multiRightX[side][id]) _multiRightX[side][id] = xRight;
+  if (pointRight.getX() > _multiRightPoint[gid].getX())
+    _multiRightPoint[gid] = pointRight;
+  _subSizes[gid] = _subSizes[gid] + 1;
+  return id;
 }
 
 // _____________________________________________________________________________
@@ -1182,12 +1194,28 @@ I32Box GeometryStore::add(const I32Point& point, const std::string& gidR,
 }
 
 // _____________________________________________________________________________
+void GeometryStore::addMulti(WriteBatch&& members, const I32Box& box,
+                             const std::string& gidR, bool side,
+                             WriteBatch& batch) const {
+  if (members.size() == 0) return;
+
+  std::string gid = (side ? ("B" + gidR) : ("A" + gidR));
+  batch.multiGeoms.push_back({gid, box, side, std::move(members)});
+}
+
+// _____________________________________________________________________________
 void GeometryStore::addBatch(WriteBatch& cands, sj::SweepEventList* events) {
+  // we go over each class of candidates. Note that in .multiGeoms, multi-geoms
+  // are kept together, and each class (POINT, POLYGON...) may appear there,
+  // too. The id is written into the candidate and will be available at the
+  // end of this method for further processing, see below
+
   {
     for (auto& cand : cands.foldedPoints) {
       if (cand.side) _numSides = 2;
       cand.id = typedId(foldString(cand.gid), cand.type);
     }
+    // note: folded geoms can never be multi
   }
 
   {
@@ -1195,6 +1223,12 @@ void GeometryStore::addBatch(WriteBatch& cands, sj::SweepEventList* events) {
     for (auto& cand : cands.points) {
       if (cand.side) _numSides = 2;
       cand.id = _pointStore.add(cand.raw);
+    }
+    for (auto& multi : cands.multiGeoms) {
+      for (auto& cand : multi.members.points) {
+        if (cand.side) _numSides = 2;
+        cand.id = _pointStore.add(cand.raw);
+      }
     }
   }
 
@@ -1204,6 +1238,12 @@ void GeometryStore::addBatch(WriteBatch& cands, sj::SweepEventList* events) {
       if (cand.side) _numSides = 2;
       cand.id = _lineStore.add(cand.raw);
     }
+    for (auto& multi : cands.multiGeoms) {
+      for (auto& cand : multi.members.lines) {
+        if (cand.side) _numSides = 2;
+        cand.id = _lineStore.add(cand.raw);
+      }
+    }
   }
 
   {
@@ -1212,6 +1252,12 @@ void GeometryStore::addBatch(WriteBatch& cands, sj::SweepEventList* events) {
       if (cand.side) _numSides = 2;
       cand.id = _simpleLineStore.add(cand.raw);
     }
+    for (auto& multi : cands.multiGeoms) {
+      for (auto& cand : multi.members.simpleLines) {
+        if (cand.side) _numSides = 2;
+        cand.id = _simpleLineStore.add(cand.raw);
+      }
+    }
   }
 
   {
@@ -1219,6 +1265,7 @@ void GeometryStore::addBatch(WriteBatch& cands, sj::SweepEventList* events) {
       if (cand.side) _numSides = 2;
       cand.id = typedId(foldString(cand.gid), cand.type);
     }
+    // note: folded geoms can never be multi
   }
 
   {
@@ -1226,6 +1273,7 @@ void GeometryStore::addBatch(WriteBatch& cands, sj::SweepEventList* events) {
       if (cand.side) _numSides = 2;
       cand.id = typedId(foldString(cand.gid), cand.type);
     }
+    // note: folded geoms can never be multi
   }
 
   {
@@ -1233,6 +1281,12 @@ void GeometryStore::addBatch(WriteBatch& cands, sj::SweepEventList* events) {
     for (auto& cand : cands.simpleAreas) {
       if (cand.side) _numSides = 2;
       cand.id = _simpleAreaStore.add(cand.raw);
+    }
+    for (auto& multi : cands.multiGeoms) {
+      for (auto& cand : multi.members.simpleAreas) {
+        if (cand.side) _numSides = 2;
+        cand.id = _simpleAreaStore.add(cand.raw);
+      }
     }
   }
 
@@ -1242,45 +1296,46 @@ void GeometryStore::addBatch(WriteBatch& cands, sj::SweepEventList* events) {
       if (cand.side) _numSides = 2;
       cand.id = _areaStore.add(cand.raw);
     }
-  }
-
-  for (const auto& cand : cands.points) {
-    if (cand.subid > 0) {
-      std::unique_lock<std::mutex> lock(_multiAddMtx);
-      multiAdd(cand.gid, cand.side, cand.bbox.getUpperRight().getX(),
-               cand.point2);
+    for (auto& multi : cands.multiGeoms) {
+      for (auto& cand : multi.members.areas) {
+        if (cand.side) _numSides = 2;
+        cand.id = _areaStore.add(cand.raw);
+      }
     }
   }
 
-  for (const auto& cand : cands.simpleLines) {
-    if (cand.subid > 0) {
-      std::unique_lock<std::mutex> lock(_multiAddMtx);
-      multiAdd(cand.gid, cand.side, cand.bbox.getUpperRight().getX(),
-               cand.point2);
-    }
-  }
+  // all members of a multi geometry are kept together (several input lines
+  // with the same gid are undefined behavior), so each multi geometry is
+  // complete here, and we can write its multi-OUT event
+  std::vector<BoxVal> multiOuts;
 
-  for (const auto& cand : cands.lines) {
-    if (cand.subid > 0) {
-      std::unique_lock<std::mutex> lock(_multiAddMtx);
-      multiAdd(cand.gid, cand.side, cand.bbox.getUpperRight().getX(),
-               cand.point2);
-    }
-  }
+  {
+    std::unique_lock<std::mutex> lock(_multiAddMtx);
 
-  for (const auto& cand : cands.simpleAreas) {
-    if (cand.subid > 0) {
-      std::unique_lock<std::mutex> lock(_multiAddMtx);
-      multiAdd(cand.gid, cand.side, cand.bbox.getUpperRight().getX(),
-               cand.point2);
-    }
-  }
+    for (const auto& multi : cands.multiGeoms) {
+      size_t multiId = 0;
 
-  for (const auto& cand : cands.areas) {
-    if (cand.subid > 0) {
-      std::unique_lock<std::mutex> lock(_multiAddMtx);
-      multiAdd(cand.gid, cand.side, cand.bbox.getUpperRight().getX(),
-               cand.point2);
+      for (const auto* members :
+           {&multi.members.points, &multi.members.simpleLines,
+            &multi.members.lines, &multi.members.simpleAreas,
+            &multi.members.areas}) {
+        for (const auto& cand : *members) {
+          multiId = multiAdd(cand.gid, cand.side,
+                             cand.bbox.getUpperRight().getX(), cand.point2);
+        }
+      }
+
+      // special multi-OUT event, at the right x of the multi geometry
+      multiOuts.push_back({typedId(multiId, POINT),
+                           1,
+                           0,
+                           _multiRightX[multi.side][multiId],
+                           true,
+                           0.0,
+                           {},
+                           0,
+                           {},
+                           multi.side});
     }
   }
 
@@ -1297,6 +1352,14 @@ void GeometryStore::addBatch(WriteBatch& cands, sj::SweepEventList* events) {
                   cand.numAnchors, cand.areaOrLen, cand.side);
       if (events->numObjects() % 1000000 == 0)
         log("@ " + std::to_string(events->numObjects()));
+    }
+    for (const auto& multi : cands.multiGeoms) {
+      for (const auto& cand : multi.members.points) {
+        events->add(cand.id, cand.bbox, cand.box45, cand.point1, cand.point2,
+                    cand.numAnchors, cand.areaOrLen, cand.side);
+        if (events->numObjects() % 1000000 == 0)
+          log("@ " + std::to_string(events->numObjects()));
+      }
     }
     for (const auto& cand : cands.foldedSimpleLines) {
       events->add(cand.id, cand.bbox, cand.box45, cand.point1, cand.point2,
@@ -1316,11 +1379,27 @@ void GeometryStore::addBatch(WriteBatch& cands, sj::SweepEventList* events) {
       if (events->numObjects() % 1000000 == 0)
         log("@ " + std::to_string(events->numObjects()));
     }
+    for (const auto& multi : cands.multiGeoms) {
+      for (const auto& cand : multi.members.simpleLines) {
+        events->add(cand.id, cand.bbox, cand.box45, cand.point1, cand.point2,
+                    cand.numAnchors, cand.areaOrLen, cand.side);
+        if (events->numObjects() % 1000000 == 0)
+          log("@ " + std::to_string(events->numObjects()));
+      }
+    }
     for (const auto& cand : cands.lines) {
       events->add(cand.id, cand.bbox, cand.box45, cand.point1, cand.point2,
                   cand.numAnchors, cand.areaOrLen, cand.side);
       if (events->numObjects() % 1000000 == 0)
         log("@ " + std::to_string(events->numObjects()));
+    }
+    for (const auto& multi : cands.multiGeoms) {
+      for (const auto& cand : multi.members.lines) {
+        events->add(cand.id, cand.bbox, cand.box45, cand.point1, cand.point2,
+                    cand.numAnchors, cand.areaOrLen, cand.side);
+        if (events->numObjects() % 1000000 == 0)
+          log("@ " + std::to_string(events->numObjects()));
+      }
     }
     for (const auto& cand : cands.simpleAreas) {
       events->add(cand.id, cand.bbox, cand.box45, cand.point1, cand.point2,
@@ -1328,54 +1407,38 @@ void GeometryStore::addBatch(WriteBatch& cands, sj::SweepEventList* events) {
       if (events->numObjects() % 1000000 == 0)
         log("@ " + std::to_string(events->numObjects()));
     }
+    for (const auto& multi : cands.multiGeoms) {
+      for (const auto& cand : multi.members.simpleAreas) {
+        events->add(cand.id, cand.bbox, cand.box45, cand.point1, cand.point2,
+                    cand.numAnchors, cand.areaOrLen, cand.side);
+        if (events->numObjects() % 1000000 == 0)
+          log("@ " + std::to_string(events->numObjects()));
+      }
+    }
     for (const auto& cand : cands.areas) {
       events->add(cand.id, cand.bbox, cand.box45, cand.point1, cand.point2,
                   cand.numAnchors, cand.areaOrLen, cand.side);
       if (events->numObjects() % 1000000 == 0)
         log("@ " + std::to_string(events->numObjects()));
     }
+    for (const auto& multi : cands.multiGeoms) {
+      for (const auto& cand : multi.members.areas) {
+        events->add(cand.id, cand.bbox, cand.box45, cand.point1, cand.point2,
+                    cand.numAnchors, cand.areaOrLen, cand.side);
+        if (events->numObjects() % 1000000 == 0)
+          log("@ " + std::to_string(events->numObjects()));
+      }
+    }
+    for (const auto& multiOut : multiOuts) events->add(multiOut);
   }
 }
 
 // _____________________________________________________________________________
-void GeometryStore::flush(sj::SweepEventList* events) {
+void GeometryStore::flush() {
   if (_numSides > 1) log("(Non-self join between 2 datasets)");
 
   log(std::to_string(_multiIds[0].size() + _multiIds[1].size()) +
       " multi geometries");
-
-  for (const auto& ref : _refs) {
-    for (const auto& sub : ref.second) {
-      _selfChecks.push_back({ref.first, sub.first});
-
-      events->add({typedId(_selfChecks.size() - 1, SELF_CHECK),
-                   1,
-                   0,
-                   _selfCheckBounds[ref.first].getLowerLeft().getX(),
-                   false,
-                   0.0,
-                   {},
-                   0,
-                   {},
-                   false});
-    }
-  }
-
-  // special multi-OUT event, at the right x of the multi geometry
-  for (size_t side = 0; side < 2; side++) {
-    for (size_t i = 0; i < _multiIds[side].size(); i++) {
-      events->add({typedId(i, POINT),
-                   1,
-                   0,
-                   _multiRightX[side][i],
-                   true,
-                   0.0,
-                   {},
-                   0,
-                   {},
-                   static_cast<bool>(side)});
-    }
-  }
 
   _pointStore.flush();
   _areaStore.flush();

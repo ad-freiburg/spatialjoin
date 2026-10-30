@@ -197,6 +197,8 @@ struct WriteCand {
   bool side;
 };
 
+struct MultiWriteCand;
+
 struct WriteBatch {
   std::vector<WriteCand> points;
   std::vector<WriteCand> foldedPoints;
@@ -206,14 +208,27 @@ struct WriteBatch {
   std::vector<WriteCand> simpleAreas;
   std::vector<WriteCand> foldedBoxAreas;
   std::vector<WriteCand> areas;
-  std::vector<WriteCand> multiGeoms;
+  std::vector<MultiWriteCand> multiGeoms;
 
-  size_t size() const {
-    return points.size() + foldedSimpleLines.size() + foldedPoints.size() +
-           simpleLines.size() + lines.size() + simpleAreas.size() +
-           areas.size();
-  }
+  size_t size() const;
 };
+
+// a multi geometry, whose members are kept together in their own WriteBatch
+struct MultiWriteCand {
+  std::string gid;
+  // the (padded) bounding box of all members
+  util::geo::I32Box bbox;
+  bool side;
+  WriteBatch members;
+};
+
+inline size_t WriteBatch::size() const {
+  size_t ret = points.size() + foldedSimpleLines.size() + foldedPoints.size() +
+               simpleLines.size() + lines.size() + simpleAreas.size() +
+               foldedBoxAreas.size() + areas.size();
+  for (const auto& multi : multiGeoms) ret += multi.members.size();
+  return ret;
+}
 
 // holds all geometries and their metadata written during the add phase
 class GeometryStore {
@@ -265,9 +280,14 @@ class GeometryStore {
                         const std::string& gid, bool side,
                         WriteBatch& batch) const;
 
+  // adds the members (added with a subid > 0) of the multi geometry gid with
+  // bounding box box as a single multi geometry to batch
+  void addMulti(WriteBatch&& members, const util::geo::I32Box& box,
+                const std::string& gid, bool side, WriteBatch& batch) const;
+
   void addBatch(WriteBatch& cands, sj::SweepEventList* events);
 
-  void flush(sj::SweepEventList* events);
+  void flush();
 
   size_t numReferences() const {
     size_t ret = 0;
@@ -350,8 +370,9 @@ class GeometryStore {
   template <typename W>
   static std::shared_ptr<W> get(const TypedGeometryStore<W>& store, size_t off);
 
-  void multiAdd(const std::string& gid, bool side, int32_t xRight,
-                const util::geo::I32Point& pointRight);
+  // returns the multi ID of gid
+  size_t multiAdd(const std::string& gid, bool side, int32_t xRight,
+                  const util::geo::I32Point& pointRight);
 
   void duplicatesToReferences(int file);
 

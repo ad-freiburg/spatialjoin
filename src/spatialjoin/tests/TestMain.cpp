@@ -67,7 +67,7 @@ std::string fullRun(const std::string& file, sj::SweeperCfg cfg,
 
     delete[] buf;
 
-    geomStore.flush(&sweepEvents);
+    geomStore.flush();
 
     sweepEvents.flush(1);
 
@@ -549,6 +549,20 @@ int main(int, char**) {
            std::string::npos);
       TEST(res.find("$Brandenburg-Point intersects Brandenburg$") !=
            std::string::npos);
+    }
+
+    {
+      // the members of multi geometries inside a collection must not share
+      // sub IDs with the following collection elements
+      RunStats stats;
+      auto res = fullRun(TEST_DATASET_DIR "/collectionsubids", cfg, &stats);
+
+      TEST(res.find("$colp equals mp$") != std::string::npos);
+      TEST(res.find("$mp equals colp$") != std::string::npos);
+      TEST(res.find("$mp covers colp$") != std::string::npos);
+      TEST(res.find("$coll equals ml$") != std::string::npos);
+      TEST(res.find("$ml equals coll$") != std::string::npos);
+      TEST(res.find("$ml covers coll$") != std::string::npos);
     }
 
     {

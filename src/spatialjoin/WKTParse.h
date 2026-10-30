@@ -252,33 +252,48 @@ class WKTParserBase {
 
         size_t subId = numGeoms > 1 ? 1 : 0;
 
+        // the members of a multi collection are kept together
+        sj::WriteBatch members;
+        auto& target = numGeoms > 1 ? members : batch;
+        util::geo::I32Box colBox;
+
         for (const auto& a : col) {
           if (a.getType() == 0)
-            _bboxes[t] = util::geo::extendBox(
-                _store->add(a.getPoint(), id, subId, side, batch),
-                _bboxes[t]);
+            colBox = util::geo::extendBox(
+                _store->add(a.getPoint(), id, subId, side, target), colBox);
           if (a.getType() == 1)
-            _bboxes[t] = util::geo::extendBox(
-                _store->add(a.getLine(), id, subId, side, batch),
-                _bboxes[t]);
+            colBox = util::geo::extendBox(
+                _store->add(a.getLine(), id, subId, side, target), colBox);
           if (a.getType() == 2)
-            _bboxes[t] = util::geo::extendBox(
-                _store->add(a.getPolygon(), id, subId, side, batch),
-                _bboxes[t]);
+            colBox = util::geo::extendBox(
+                _store->add(a.getPolygon(), id, subId, side, target), colBox);
           if (a.getType() == 3)
-            _bboxes[t] = util::geo::extendBox(
-                _store->add(a.getMultiLine(), id, subId, side, batch),
-                _bboxes[t]);
+            colBox = util::geo::extendBox(
+                _store->add(a.getMultiLine(), id, subId, side, target),
+                colBox);
           if (a.getType() == 4)
-            _bboxes[t] = util::geo::extendBox(
-                _store->add(a.getMultiPolygon(), id, subId, side, batch),
-                _bboxes[t]);
+            colBox = util::geo::extendBox(
+                _store->add(a.getMultiPolygon(), id, subId, side, target),
+                colBox);
           if (a.getType() == 6)
-            _bboxes[t] = util::geo::extendBox(
-                _store->add(a.getMultiPoint(), id, subId, side, batch),
-                _bboxes[t]);
-          subId++;
+            colBox = util::geo::extendBox(
+                _store->add(a.getMultiPoint(), id, subId, side, target),
+                colBox);
+
+          // the members of a multi element each take their own sub ID
+          if (a.getType() == 3)
+            subId += a.getMultiLine().size();
+          else if (a.getType() == 4)
+            subId += a.getMultiPolygon().size();
+          else if (a.getType() == 6)
+            subId += a.getMultiPoint().size();
+          else
+            subId++;
         }
+
+        _bboxes[t] = util::geo::extendBox(colBox, _bboxes[t]);
+        if (numGeoms > 1)
+          _store->addMulti(std::move(members), colBox, id, side, batch);
       }
     } catch (const util::geo::WKTParseException&) {
       if (!strict) throw;

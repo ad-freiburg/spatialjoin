@@ -504,7 +504,7 @@ int main(int argc, char** argv) {
   geomCache.log("Done parsing (" + std::to_string(TOOK(ts) / 1000000000.0) +
                 "s).");
 
-  geomStore.flush(&sweepEvents);
+  geomStore.flush();
 
   geomCache.log("Sorting events...");
   sweepEvents.flush(NUM_THREADS);
