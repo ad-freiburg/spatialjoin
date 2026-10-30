@@ -1352,14 +1352,15 @@ void GeometryStore::addBatch(WriteBatch& cands, sj::SweepEventList* events) {
 
   // all members of a multi geometry are kept together (several input lines
   // with the same gid are undefined behavior), so each multi geometry is
-  // complete here, and we can write its multi-OUT event
-  std::vector<BoxVal> multiOuts;
+  // complete here, and we can write its multi-IN and multi-OUT event
+  std::vector<BoxVal> multiEvents;
 
   {
     std::unique_lock<std::mutex> lock(_multiAddMtx);
 
     for (const auto& multi : cands.multiGeoms) {
       size_t multiId = 0;
+      int32_t leftX = std::numeric_limits<int32_t>::max();
 
       for (const auto* members :
            {&multi.members.points, &multi.members.simpleLines,
@@ -1369,11 +1370,24 @@ void GeometryStore::addBatch(WriteBatch& cands, sj::SweepEventList* events) {
           multiId =
               multiAdd(cand.gid, cand.meta.side,
                        cand.meta.bbox.getUpperRight().getX(), cand.meta.point2);
+          leftX = std::min(leftX, cand.meta.bbox.getLowerLeft().getX());
         }
       }
 
+      // special multi-IN event, at the left x of the multi geometry
+      multiEvents.push_back({typedId(multiId, MULTI),
+                             0,
+                             0,
+                             leftX,
+                             false,
+                             0.0,
+                             {},
+                             0,
+                             {},
+                             multi.side});
+
       // special multi-OUT event, at the right x of the multi geometry
-      multiOuts.push_back({typedId(multiId, MULTI),
+      multiEvents.push_back({typedId(multiId, MULTI),
                            0,
                            0,
                            _multiRightX[multi.side][multiId],
@@ -1463,7 +1477,7 @@ void GeometryStore::addBatch(WriteBatch& cands, sj::SweepEventList* events) {
           log("@ " + std::to_string(events->numObjects()));
       }
     }
-    for (const auto& multiOut : multiOuts) events->add(multiOut);
+    for (const auto& multiEvent : multiEvents) events->add(multiEvent);
   }
 }
 

@@ -492,8 +492,9 @@ RelStats Sweeper::sweep(const SweepEventList* eventsA,
         // self checks, required if we have reference geoms
         curBatch.push_back({*cur, *cur, ""});
       } else if (cur->getType() == MULTI) {
-        // special multi-OUT, defer for clearing (all threads must be past it)
-        _finishedMultis.push(*cur);
+        // special multi-OUT, defer for clearing (all threads must be past it),
+        // special multi-IN events are currently ignored
+        if (cur->out) _finishedMultis.push(*cur);
       } else if (!cur->out) {
         // IN event
         actives[cur->side].insert(
