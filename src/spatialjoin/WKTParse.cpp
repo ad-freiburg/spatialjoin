@@ -12,8 +12,10 @@ using sj::WKTParser;
 using sj::WKTParserBase;
 
 // _____________________________________________________________________________
-WKTParser::WKTParser(sj::Sweeper *sweeper, size_t numThreads, bool strict)
-    : WKTParserBase<ParseJob>(sweeper, numThreads), _strict(strict) {
+WKTParser::WKTParser(sj::GeometryStore* store,
+                     sj::SweepEventList* events, size_t numThreads, bool strict)
+    : WKTParserBase<ParseJob>(store, events, numThreads),
+      _strict(strict) {
   for (size_t i = 0; i < _thrds.size(); i++) {
     _thrds[i] = std::thread(&WKTParser::processQueue, this, i);
   }
@@ -24,11 +26,11 @@ void WKTParser::processQueue(size_t t) {
   ParseBatch batch;
   while ((batch = _jobs.get()).size()) {
     sj::WriteBatch w;
-    for (const auto &job : batch) {
+    for (const auto& job : batch) {
       if (_cancelled) break;
 
       if (job.str.size()) {
-        parseLine(job.str.c_str(), job.str.size(), job.line, t, w, job.side,
+        parseLine(job.str.c_str(), job.line, t, w, job.side,
                   true, _strict);
       } else {
         // parse point directly
@@ -39,17 +41,17 @@ void WKTParser::processQueue(size_t t) {
         util::geo::I32Point addPoint{static_cast<int>(mercPoint.getX() * PREC),
                                      static_cast<int>(mercPoint.getY() * PREC)};
         _bboxes[t] = util::geo::extendBox(
-            _sweeper->add(addPoint, std::to_string(job.line), job.side, w),
+            _store->add(addPoint, std::to_string(job.line), job.side, w),
             _bboxes[t]);
       }
     }
 
-    _sweeper->addBatch(w);
+    _store->addBatch(w, _events);
   }
 }
 
 // _____________________________________________________________________________
-void WKTParser::parseWKT(const char *c, size_t id, bool side) {
+void WKTParser::parseWKT(const char* c, size_t id, bool side) {
   // dont parse empty strings
   if (*c == 0) return;
 
@@ -63,7 +65,7 @@ void WKTParser::parseWKT(const char *c, size_t id, bool side) {
 }
 
 // _____________________________________________________________________________
-void WKTParser::parseWKT(const std::string &str, size_t id, bool side) {
+void WKTParser::parseWKT(const std::string& str, size_t id, bool side) {
   if (str.empty()) return;
 
   _curBatch.reserve(10000);
@@ -104,11 +106,11 @@ void WKTParser::parsePoint(util::geo::DPoint point, size_t id, bool side) {
 }
 
 // _____________________________________________________________________________
-void WKTParser::parse(char *c, size_t size, bool side) {
+void WKTParser::parse(char* c, size_t size, bool side) {
   size_t p = 0;
 
   while (true) {
-    char *newLine = reinterpret_cast<char *>(memchr(c + p, '\n', size - p));
+    char* newLine = reinterpret_cast<char*>(memchr(c + p, '\n', size - p));
 
     if (newLine) {
       size_t pNext = newLine - c;

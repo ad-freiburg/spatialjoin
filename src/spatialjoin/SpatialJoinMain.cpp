@@ -5,6 +5,7 @@
 #include <iostream>
 
 #include "BoxIds.h"
+#include "GeometryCache.h"
 #include "OutputWriter.h"
 #include "Sweeper.h"
 #include "WKTParse.h"
@@ -12,6 +13,7 @@
 #include "util/geo/Geo.h"
 #include "util/log/Log.h"
 
+using sj::GeometryCache;
 using sj::ParseBatch;
 using sj::Sweeper;
 using util::geo::DE9IMFilter;
@@ -93,8 +95,6 @@ void printHelp(int argc, char** argv) {
       << "computation\n"
       << std::setw(42) << "  --no-surface-area"
       << "disable surface area criteria for polygon contains/covers\n"
-      << std::setw(42) << "  --no-oriented-envelope"
-      << "disable oriented envelope cirteria for contains/intersect\n"
       << std::setw(42) << "  --no-diag-box"
       << "disable diagonal bounding-box based pre-filter\n"
       << std::setw(42) << "  --no-fast-sweep-skip"
@@ -140,7 +140,7 @@ int main(int argc, char** argv) {
 
   std::string prefix = "";
   std::string output = "";
-  std::string cache = ".";
+  std::string cacheDir = ".";
   std::string contains = " contains ";
   std::string intersects = " intersects ";
   std::string covers = " covers ";
@@ -155,7 +155,6 @@ int main(int argc, char** argv) {
 
   bool useBoxIds = true;
   bool useArea = true;
-  bool useOBB = true;
   bool useDiagBox = true;
   bool useFastSweepSkip = true;
   bool noGeometryChecks = false;
@@ -225,8 +224,6 @@ int main(int argc, char** argv) {
           useBoxIds = false;
         } else if (cur == "--no-surface-area") {
           useArea = false;
-        } else if (cur == "--no-oriented-envelope") {
-          useOBB = false;
         } else if (cur == "--no-diag-box") {
           useDiagBox = false;
         } else if (cur == "--no-geometry-checks") {
@@ -267,7 +264,7 @@ int main(int argc, char** argv) {
         state = 0;
         break;
       case 6:
-        cache = cur;
+        cacheDir = cur;
         state = 0;
         break;
       case 7:
@@ -363,7 +360,7 @@ int main(int argc, char** argv) {
   unsigned char* buf = new unsigned char[CACHE_SIZE];
   size_t len;
 
-  sj::OutputWriter outWriter(numThreads, prefix, suffix, output, cache);
+  sj::OutputWriter outWriter(numThreads, prefix, suffix, output, cacheDir);
 
   std::function<void(size_t, const char*, size_t, const char*, size_t,
                      const char*, size_t)>
@@ -388,7 +385,6 @@ int main(int argc, char** argv) {
                             crosses,
                             useBoxIds,
                             useArea,
-                            useOBB,
                             useDiagBox,
                             useFastSweepSkip,
                             noGeometryChecks,
@@ -412,12 +408,15 @@ int main(int argc, char** argv) {
       LOGTO(INFO, std::cerr) << s;
     };
 
-  Sweeper sweeper(sweeperCfg, cache);
+  sj::GeometryStore geomStore(sweeperCfg, cacheDir, ".spatialjoin");
+  GeometryCache geomCache(sweeperCfg);
+  geomCache.addStore(&geomStore);
+  sj::SweepEventList sweepEvents(cacheDir, ".spatialjoin");
 
-  sweeper.log("Parsing input geometries...");
+  geomCache.log("Parsing input geometries...");
   auto ts = TIME();
 
-  sj::WKTParser parser(&sweeper, NUM_THREADS, wktStrict);
+  sj::WKTParser parser(&geomStore, &sweepEvents, NUM_THREADS, wktStrict);
 
   if (!inputFiles.empty()) {
     if (inputFiles.size() > 2) {
@@ -499,16 +498,24 @@ int main(int argc, char** argv) {
   parser.done();
 
   if (parser.getNumInvalid() > 0)
-    sweeper.log("Note: skipped " + std::to_string(parser.getNumInvalid()) +
-                " invalid WKT literals");
-  sweeper.log("Done parsing (" + std::to_string(TOOK(ts) / 1000000000.0) +
-              "s).");
-  sweeper.flush();
+    geomCache.log("Note: skipped " + std::to_string(parser.getNumInvalid()) +
+                  " invalid WKT literals");
 
-  sweeper.log("Sweeping...");
+  geomCache.log("Done parsing (" + std::to_string(TOOK(ts) / 1000000000.0) +
+                "s).");
+
+  geomStore.flush();
+
+  geomCache.log("Sorting events...");
+  sweepEvents.flush(NUM_THREADS);
+  geomCache.log("...done");
+
+  Sweeper sweeper(sweeperCfg, &geomCache);
+
+  geomCache.log("Sweeping...");
   ts = TIME();
-  sweeper.sweep();
-  sweeper.log("done (" + std::to_string(TOOK(ts) / 1000000000.0) + "s).");
+  sweeper.sweep(&sweepEvents, 0);
+  geomCache.log("done (" + std::to_string(TOOK(ts) / 1000000000.0) + "s).");
 
   delete[] buf;
 

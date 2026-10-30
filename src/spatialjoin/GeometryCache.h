@@ -1,76 +1,124 @@
-// Copyright 2023, University of Freiburg
+// Copyright 2026, University of Freiburg
 // Authors: Patrick Brosi <brosi@cs.uni-freiburg.de>.
 
 #ifndef SPATIALJOINS_GEOMETRYCACHE_H_
 #define SPATIALJOINS_GEOMETRYCACHE_H_
 
-#include <fstream>
-#include <iostream>
-#include <list>
-#include <map>
-#include <memory>
-#include <mutex>
-#include <unordered_map>
+#include <fcntl.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
-#include "BoxIds.h"
+#include <atomic>
+#include <condition_variable>
+#include <functional>
+#include <list>
+#include <mutex>
+#include <queue>
+#include <thread>
+#include <unordered_map>
+#include <unordered_set>
+
+#include "GeometryStore.h"
+#include "Stats.h"
+#include "SweepEventList.h"
+#include "util/JobQueue.h"
 #include "util/geo/Geo.h"
+#include "util/geo/IntervalIdx.h"
+
+#ifndef POSIX_FADV_SEQUENTIAL
+#define POSIX_FADV_SEQUENTIAL 2
+#endif
 
 namespace sj {
 
-struct SimpleArea {
-  // polygon
-  util::geo::Ring<int32_t> geom;
+inline std::string toString(const BoxVal& bv) {
+  std::stringstream ret;
 
-  // id
-  std::string id;
+  ret << "(id=" << getId(bv);
+  ret << " loY=" << bv.loY;
+  ret << " upY=" << bv.upY;
+  ret << " val=" << bv.val;
+  ret << " out=" << bv.out;
+  ret << " type=" << (int)bv.getType();
+  ret << " point=" << util::geo::getWKT(bv.point);
+  // ret << " b45=" << util::geo::getWKT(bv.b45);
+  ret << " side=" << bv.side;
+  ret << ")";
+
+  return ret.str();
+}
+
+inline bool operator==(const BoxVal& a, const BoxVal& b) {
+  return a.id == b.id && a.loY == b.loY && a.upY == b.upY;
+}
+
+struct SweepVal {
+  SweepVal(size_t id) : id(id), side(false) {}
+  SweepVal(size_t id, util::geo::I32Box b45, util::geo::I32Point point,
+           util::geo::I32Point point2, bool side)
+      : id(id), b45(b45), point(point), point2(point2), side(side) {}
+  SweepVal() : id(typedId(0, POLYGON)) {}
+  size_t id;  // typed ID, see typedId()
+  util::geo::I32Box b45;
+  util::geo::I32Point point, point2;
+  bool side;
+
+  size_t getId() const { return untypedId(id); }
+  GeomType getType() const {
+    return static_cast<GeomType>(id >> ID_TYPE_SHIFT);
+  }
 };
 
-struct Area {
-  // polygons
-  util::geo::I32XSortedPolygon geom;
+struct JobVal {
+  size_t id;  // typed ID, see typedId()
+  util::geo::I32Point point, point2;
+  int32_t val;
 
-  // id
-  std::string id;
+  JobVal() : id(typedId(0, POLYGON)) {}
+  JobVal(const BoxVal& bv)
+      : id(bv.id), point(bv.point), point2(getOtherPoint(bv)), val(bv.val){};
+  JobVal(const SweepVal& sv)
+      : id(sv.id), point(sv.point), point2(sv.point2), val(0){};
 
-  // sub id (for multipolygons)
-  size_t subId;
-
-  // box ids
-  std::vector<sj::boxids::BoxId> boxIds;
-
-  // OBB
-  util::geo::I32XSortedPolygon obb;
+  size_t getId() const { return untypedId(id); }
+  GeomType getType() const {
+    return static_cast<GeomType>(id >> ID_TYPE_SHIFT);
+  }
 };
 
-struct SimpleLine {
-  // id
-  std::string id;
+inline bool operator==(const JobVal& a, const JobVal& b) {
+  return a.id == b.id;
+}
+
+inline bool operator==(const SweepVal& a, const SweepVal& b) {
+  return a.id == b.id;
+}
+
+inline bool operator<(const SweepVal& a, const SweepVal& b) {
+  return a.id < b.id;
+}
+
+struct Job {
+  JobVal boxVal, sweepVal;
+  std::string multiOut;
 };
 
-struct Line {
-  // line
-  util::geo::I32XSortedLine geom;
+inline bool operator==(const Job& a, const Job& b) {
+  return a.boxVal == b.boxVal && a.sweepVal == b.sweepVal &&
+         a.multiOut == b.multiOut;
+}
 
-  // id
-  std::string id;
+typedef std::vector<Job> JobBatch;
 
-  // sub id (for multilines)
-  size_t subId;
+// intersects, contains, covers, touches, crosses / overlaps
+typedef std::tuple<bool, bool, bool, bool, bool> GeomCheckRes;
 
-  // box ids
-  std::vector<sj::boxids::BoxId> boxIds;
+static const size_t MAX_OUT_LINE_LENGTH = 1000;
 
-  // OBB
-  util::geo::I32XSortedPolygon obb;
-};
-
-struct Point {
-  // id
-  std::string id;
-
-  // sub id (for multipoints)
-  size_t subId;
-};
+static const size_t POINT_CACHE_MAX_ELEMENTS = 10000;
+static const size_t SIMPLE_LINE_CACHE_MAX_ELEMENTS = 10000;
 
 template <typename W>
 struct ValEntry {
@@ -78,119 +126,113 @@ struct ValEntry {
   std::shared_ptr<W> val;
 };
 
-const static size_t WRITE_BUFF_SIZE = 1024 * 1024 * 4l;
+// per-thread LRU caches for the geometries of a single GeometryStore
+template <typename W>
+struct TypedGeometryCache {
+  TypedGeometryCache(size_t maxSize, size_t maxNumElements, size_t numThreads)
+      : vals(numThreads),
+        idMap(numThreads),
+        valSizes(numThreads),
+        mutexes(numThreads),
+        maxSize(maxSize),
+        maxNumElements(maxNumElements) {}
 
-struct StorageOptions {
-  bool storeOBB;
+  std::vector<std::list<std::pair<size_t, ValEntry<W>>>> vals;
+  std::vector<std::unordered_map<
+      size_t, typename std::list<std::pair<size_t, ValEntry<W>>>::iterator>>
+      idMap;
+  std::vector<size_t> valSizes;
+  mutable std::vector<std::mutex> mutexes;
+
+  size_t maxSize, maxNumElements;
 };
 
-template <typename W>
 class GeometryCache {
  public:
-  GeometryCache(const StorageOptions& opts, size_t maxSize, size_t maxNumElements, size_t numthreads,
-                const std::string& dir)
-      : GeometryCache(opts, maxSize, maxNumElements, numthreads, dir,
-                      ".spatialjoin"){};
-  GeometryCache(const StorageOptions& opts, size_t maxSize, size_t maxNumElements, size_t numthreads,
-                const std::string& dir, const std::string& tmpPrefix)
-      : _opts(opts),
-        _maxSize(maxSize),
-        _maxNumElements(maxNumElements),
-        _numThreads(numthreads),
-        _dir(dir),
-        _tmpPrefix(tmpPrefix),
-        _mutexes(numthreads + 1) {
-    _geomsFReads.resize(numthreads + 1);
+  GeometryCache(SweeperCfg cfg) : _cfg(cfg) {}
 
-    _vals.resize(numthreads + 1);
-    _valSizes.resize(numthreads + 1);
-    _idMap.resize(numthreads + 1);
+  void log(const std::string& msg);
 
-    _fName = getFName();
+  // adds a (non-owned) geometry store, returns its store id
+  size_t addStore(const GeometryStore* store);
 
-    _writeBuffer = new char[WRITE_BUFF_SIZE];
-
-    _geomsF.rdbuf()->pubsetbuf(_writeBuffer, WRITE_BUFF_SIZE);
-    _geomsF.open(_fName, std::ios::out | std::ios::binary | std::ios::trunc);
-
-    for (size_t i = 0; i < _geomsFReads.size(); i++) {
-      _geomsFReads[i].open(_fName, std::ios::in | std::ios::binary);
-    }
-    unlink(_fName.c_str());
+  const GeometryStore& getStore(size_t storeId = 0) const {
+    return *_stores[storeId];
   }
 
-  ~GeometryCache() {
-    if (_geomsF.is_open()) _geomsF.close();
-    for (size_t i = 0; i < _geomsFReads.size(); i++) {
-      if (_geomsFReads[i].is_open()) _geomsFReads[i].close();
-    }
-    if (_writeBuffer) delete[] _writeBuffer;
+  std::shared_ptr<sj::Line> getLine(size_t id, size_t tid,
+                                    size_t storeId = 0) const {
+    return get(_stores[storeId]->lineStore(), _caches[storeId]->lineCache, id,
+               tid);
+  }
+  std::shared_ptr<sj::SimpleLine> getSimpleLine(size_t id, size_t tid,
+                                                size_t storeId = 0) const {
+    return get(_stores[storeId]->simpleLineStore(),
+               _caches[storeId]->simpleLineCache, id, tid);
   }
 
-  size_t add(const std::string& raw);
-  size_t writeTo(const W& val, std::ostream& str) const;
+  std::shared_ptr<sj::Area> getArea(size_t id, size_t tid,
+                                    size_t storeId = 0) const {
+    return get(_stores[storeId]->areaStore(), _caches[storeId]->areaCache, id,
+               tid);
+  }
 
-  std::shared_ptr<W> get(size_t off, ssize_t tid) const;
-  std::pair<size_t, W> getFrom(size_t off, std::istream& str) const;
-  std::shared_ptr<W> cache(size_t off, const W& val, size_t estSize,
-                           size_t tid) const;
+  std::shared_ptr<sj::SimpleArea> getSimpleArea(size_t id, size_t tid,
+                                                size_t storeId = 0) const {
+    return get(_stores[storeId]->simpleAreaStore(),
+               _caches[storeId]->simpleAreaCache, id, tid);
+  }
 
-  std::shared_ptr<W> get(size_t off) const { return get(off, 0); }
+  std::shared_ptr<sj::Point> getPoint(size_t id, size_t tid,
+                                      size_t storeId = 0) const {
+    return get(_stores[storeId]->pointStore(), _caches[storeId]->pointCache, id,
+               tid);
+  }
 
   std::pair<size_t, size_t> size() const;
 
-  void flush();
-
-  GeometryCache& operator=(GeometryCache&& other) {
-    other._geomsF.flush();
-    _geomsF = std::move(other._geomsF);
-    _geomsFReads = std::move(other._geomsFReads);
-    _geomsOffset = other._geomsOffset;
-
-    _vals = std::move(other._vals);
-    _idMap = std::move(other._idMap);
-    _maxSize = other._maxSize;
-    _maxNumElements = other._maxNumElements;
-    _dir = other._dir;
-    _fName = other._fName;
-    _numThreads = other._numThreads;
-
-    return *this;
-  }
-
  private:
-  std::string getFName() const;
-  size_t readLine(std::istream& str, util::geo::I32XSortedLine& ret) const;
-  static size_t writeLine(const util::geo::I32XSortedLine& ret,
-                          std::ostream& str);
+  // the LRU caches for the geometries of a single GeometryStore
+  struct StoreCaches {
+    StoreCaches(const SweeperCfg& cfg)
+        : pointCache(cfg.geomCacheMaxSize, POINT_CACHE_MAX_ELEMENTS,
+                     cfg.numCacheThreads),
+          areaCache(cfg.geomCacheMaxSize, cfg.geomCacheMaxNumElements,
+                    cfg.numCacheThreads),
+          simpleAreaCache(cfg.geomCacheMaxSize, cfg.geomCacheMaxNumElements,
+                          cfg.numCacheThreads),
+          lineCache(cfg.geomCacheMaxSize, cfg.geomCacheMaxNumElements,
+                    cfg.numCacheThreads),
+          simpleLineCache(cfg.geomCacheMaxSize, SIMPLE_LINE_CACHE_MAX_ELEMENTS,
+                          cfg.numCacheThreads) {}
 
-  size_t readPoly(std::istream& str, util::geo::I32XSortedPolygon& ret) const;
-  static size_t writePoly(const util::geo::I32XSortedPolygon& ret,
-                          std::ostream& str);
+    TypedGeometryCache<Point> pointCache;
+    TypedGeometryCache<Area> areaCache;
+    TypedGeometryCache<SimpleArea> simpleAreaCache;
+    TypedGeometryCache<Line> lineCache;
+    TypedGeometryCache<SimpleLine> simpleLineCache;
+  };
 
-  mutable std::fstream _geomsF;
-  mutable std::vector<std::fstream> _geomsFReads;
-  size_t _geomsOffset = 0;
+  // returns the geometry stored at off in store, cached in the LRU cache of
+  // thread tid
+  template <typename W>
+  std::shared_ptr<W> get(const TypedGeometryStore<W>& store,
+                         TypedGeometryCache<W>& cache, size_t off,
+                         size_t tid) const;
 
-  mutable std::vector<std::list<std::pair<size_t, ValEntry<W>>>> _vals;
-  mutable std::vector<std::unordered_map<
-      size_t, typename std::list<std::pair<size_t, ValEntry<W>>>::iterator>>
-      _idMap;
-  mutable std::vector<size_t> _valSizes;
+  template <typename W>
+  std::shared_ptr<W> cache(TypedGeometryCache<W>& cache, size_t off,
+                           const W& val, size_t estSize, size_t tid) const;
 
-  StorageOptions _opts;
-  size_t _maxSize, _maxNumElements, _numThreads;
-  std::string _dir, _tmpPrefix;
-  std::string _fName;
+  template <typename W>
+  static std::pair<size_t, size_t> size(const TypedGeometryCache<W>& cache);
 
-  // must be ordered map to ensure correct writing order when flushing to disk!
-  std::map<size_t, std::shared_ptr<W>> _memStore;
-  bool _inMemory = true;
+  const SweeperCfg _cfg;
 
-  char* _writeBuffer = 0;
-
-  mutable std::vector<std::mutex> _mutexes;
+  std::vector<const GeometryStore*> _stores;
+  std::vector<std::unique_ptr<StoreCaches>> _caches;
 };
+
 }  // namespace sj
 
 #endif
