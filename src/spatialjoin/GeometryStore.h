@@ -22,14 +22,11 @@
 namespace sj {
 
 struct MultiGeom {
-  // rightmost point
-  util::geo::Point<int32_t> rightPoint;
-
-  // number of members
-  size_t numMembers;
-
   // id
   std::string id;
+
+  // the sweep events (IN and OUT) of all members, sorted by boxCmp()
+  std::vector<BoxVal> events;
 };
 
 struct SimpleArea {
@@ -201,6 +198,8 @@ struct WriteBatch {
 // a multi geometry, whose members are kept together in their own WriteBatch
 struct MultiWriteCand {
   std::string gid;
+  // typed ID in the multi geometry store, assigned in GeometryStore::addBatch()
+  size_t id;
   // the (padded) bounding box of all members
   util::geo::I32Box bbox;
   bool side;
@@ -226,6 +225,7 @@ class GeometryStore {
         _simpleAreaStore(cfg.numCacheThreads, cache, tmpPrefix),
         _lineStore(cfg.numCacheThreads, cache, tmpPrefix),
         _simpleLineStore(cfg.numCacheThreads, cache, tmpPrefix),
+        _multiStore(cfg.numCacheThreads, cache, tmpPrefix),
         _numSides(1) {
     if (_cfg.forceTwoSided) _numSides = 2;
   };
@@ -292,6 +292,9 @@ class GeometryStore {
   const TypedGeometryStore<Line>& lineStore() const { return _lineStore; }
   const TypedGeometryStore<SimpleLine>& simpleLineStore() const {
     return _simpleLineStore;
+  }
+  const TypedGeometryStore<MultiGeom>& multiStore() const {
+    return _multiStore;
   }
 
   size_t numSides() const { return _numSides; }
@@ -368,6 +371,7 @@ class GeometryStore {
   TypedGeometryStore<SimpleArea> _simpleAreaStore;
   TypedGeometryStore<Line> _lineStore;
   TypedGeometryStore<SimpleLine> _simpleLineStore;
+  TypedGeometryStore<MultiGeom> _multiStore;
 
   // these are written during the geometry add phase
   std::vector<std::string> _multiIds[2];  // required on OUT to get the GID
@@ -385,6 +389,7 @@ class GeometryStore {
   mutable std::mutex _simpleLineGeomCacheWriteMtx;
   mutable std::mutex _areaGeomCacheWriteMtx;
   mutable std::mutex _simpleAreaGeomCacheWriteMtx;
+  mutable std::mutex _multiGeomCacheWriteMtx;
 
   std::unordered_map<std::string, util::geo::I32Box> _selfCheckBounds;
 

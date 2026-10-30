@@ -115,6 +115,53 @@ struct PreparedGeomMeta {
   bool side;
 };
 
+// _____________________________________________________________________________
+// returns the IN and the OUT event of a geometry with typed ID id (see
+// typedId()), point1 and point2 are the points of the IN and the OUT event
+inline std::pair<BoxVal, BoxVal> getSweepEvents(
+    size_t id, const util::geo::I32Box& bbox, const util::geo::I32Box& box45,
+    const util::geo::I32Point& point1, const util::geo::I32Point& point2,
+    size_t numAnchors, double areaOrLen, bool side) {
+  BoxVal in{id,
+            bbox.getLowerLeft().getY(),
+            bbox.getUpperRight().getY(),
+            bbox.getLowerLeft().getX(),
+            false,
+            areaOrLen,
+            point1,
+            numAnchors,
+            box45,
+            side};
+  BoxVal out{id,
+             bbox.getLowerLeft().getY(),
+             bbox.getUpperRight().getY(),
+             bbox.getUpperRight().getX(),
+             true,
+             areaOrLen,
+             point2,
+             numAnchors,
+             box45,
+             side};
+
+  // simple lines and folded box polygons store the packed point of the other
+  // event instead of the number of anchors, see getOtherPoint()
+  if (in.getType() == SIMPLE_LINE || in.getType() == FOLDED_SIMPLE_LINE ||
+      in.getType() == FOLDED_BOX_POLYGON) {
+    in.numAnchors = packPoint(point2);
+    out.numAnchors = packPoint(point1);
+  }
+
+  return {in, out};
+}
+
+// _____________________________________________________________________________
+// returns the IN and the OUT event of a prepared geometry
+inline std::pair<BoxVal, BoxVal> getSweepEvents(const PreparedGeomMeta& meta) {
+  return getSweepEvents(meta.id, meta.bbox, meta.box45, meta.point1,
+                        meta.point2, meta.numAnchors, meta.areaOrLen,
+                        meta.side);
+}
+
 static int boxCmp(const void* a, const void* b) {
   const auto& boxa = static_cast<const BoxVal*>(a);
   const auto& boxb = static_cast<const BoxVal*>(b);
@@ -322,37 +369,10 @@ class SweepEventList {
            const util::geo::I32Box& box45, const util::geo::I32Point& point1,
            const util::geo::I32Point& point2, size_t numAnchors,
            double areaOrLen, bool side) {
-    BoxVal in{id,
-              bbox.getLowerLeft().getY(),
-              bbox.getUpperRight().getY(),
-              bbox.getLowerLeft().getX(),
-              false,
-              areaOrLen,
-              point1,
-              numAnchors,
-              box45,
-              side};
-    BoxVal out{id,
-               bbox.getLowerLeft().getY(),
-               bbox.getUpperRight().getY(),
-               bbox.getUpperRight().getX(),
-               true,
-               areaOrLen,
-               point2,
-               numAnchors,
-               box45,
-               side};
-
-    // simple lines and folded box polygons store the packed point of the other
-    // event instead of the number of anchors, see getOtherPoint()
-    if (in.getType() == SIMPLE_LINE || in.getType() == FOLDED_SIMPLE_LINE ||
-        in.getType() == FOLDED_BOX_POLYGON) {
-      in.numAnchors = packPoint(point2);
-      out.numAnchors = packPoint(point1);
-    }
-
-    add(in);
-    add(out);
+    const auto& events = getSweepEvents(id, bbox, box45, point1, point2,
+                                        numAnchors, areaOrLen, side);
+    add(events.first);
+    add(events.second);
   }
 
   // adds the IN and the OUT event of a prepared geometry

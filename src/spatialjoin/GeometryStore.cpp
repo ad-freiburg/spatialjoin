@@ -21,6 +21,7 @@
 
 const static size_t MAX_MEM_CACHE_SIZE = 3 * 1024 * 1024 * 20l;
 
+
 // ____________________________________________________________________________
 template <>
 std::pair<size_t, sj::SimpleLine>
@@ -59,16 +60,20 @@ std::pair<size_t, sj::MultiGeom> sj::TypedGeometryStore<sj::MultiGeom>::getFrom(
     str.read(reinterpret_cast<char*>(&ret.id[0]), len * sizeof(char));
   }
 
-  // number of members
-  str.read(reinterpret_cast<char*>(&ret.numMembers), sizeof(size_t));
+  size_t estSize = len * sizeof(char);
 
-  // rightmost point
-  int32_t x, y;
-  str.read(reinterpret_cast<char*>(&x), sizeof(int32_t));
-  str.read(reinterpret_cast<char*>(&y), sizeof(int32_t));
-  ret.rightPoint = {x, y};
+  // sweep events
+  uint32_t size;
+  str.read(reinterpret_cast<char*>(&size), sizeof(uint32_t));
+  ret.events.resize(size);
 
-  return {len * sizeof(char) + sizeof(size_t) + 2 * sizeof(int32_t), ret};
+  if (size) {
+    str.read(reinterpret_cast<char*>(&ret.events[0]), size * sizeof(BoxVal));
+  }
+
+  estSize += size * sizeof(BoxVal);
+
+  return {estSize, ret};
 }
 
 // ____________________________________________________________________________
@@ -250,16 +255,20 @@ size_t sj::TypedGeometryStore<sj::MultiGeom>::writeTo(const sj::MultiGeom& val,
             val.id.size() * sizeof(char));
   ret += sizeof(char) * val.id.size();
 
-  // number of members
-  str.write(reinterpret_cast<const char*>(&val.numMembers), sizeof(size_t));
-  ret += sizeof(size_t);
+  // sweep events
+  if (val.events.size() > std::numeric_limits<uint32_t>::max()) {
+    throw std::out_of_range(
+        "Multi geometry has more than " +
+        std::to_string(std::numeric_limits<uint32_t>::max()) +
+        " sweep events");
+  }
+  uint32_t size = val.events.size();
+  str.write(reinterpret_cast<const char*>(&size), sizeof(uint32_t));
+  ret += sizeof(uint32_t);
 
-  // rightmost point
-  int32_t x = val.rightPoint.getX();
-  int32_t y = val.rightPoint.getY();
-  str.write(reinterpret_cast<const char*>(&x), sizeof(int32_t));
-  str.write(reinterpret_cast<const char*>(&y), sizeof(int32_t));
-  ret += 2 * sizeof(int32_t);
+  str.write(reinterpret_cast<const char*>(val.events.data()),
+            val.events.size() * sizeof(BoxVal));
+  ret += val.events.size() * sizeof(BoxVal);
 
   return ret;
 }
@@ -1200,7 +1209,7 @@ void GeometryStore::addMulti(WriteBatch&& members, const I32Box& box,
   if (members.size() == 0) return;
 
   std::string gid = (side ? ("B" + gidR) : ("A" + gidR));
-  batch.multiGeoms.push_back({gid, box, side, std::move(members)});
+  batch.multiGeoms.push_back({gid, 0, box, side, std::move(members)});
 }
 
 // _____________________________________________________________________________
@@ -1301,6 +1310,44 @@ void GeometryStore::addBatch(WriteBatch& cands, sj::SweepEventList* events) {
         if (cand.meta.side) _numSides = 2;
         cand.meta.id = _areaStore.add(cand.raw);
       }
+    }
+  }
+
+  // the multi geometries, with the sweep events of all their members, can only
+  // be written once the IDs of their members are known
+  std::vector<std::string> multiRaws;
+  multiRaws.reserve(cands.multiGeoms.size());
+
+  for (const auto& multi : cands.multiGeoms) {
+    MultiGeom multiGeom{multi.gid, {}};
+    multiGeom.events.reserve(2 * multi.members.size());
+
+    for (const auto* members :
+         {&multi.members.points, &multi.members.simpleLines,
+          &multi.members.lines, &multi.members.simpleAreas,
+          &multi.members.areas}) {
+      for (const auto& cand : *members) {
+        const auto& events = getSweepEvents(cand.meta);
+        multiGeom.events.push_back(events.first);
+        multiGeom.events.push_back(events.second);
+      }
+    }
+
+    // sort the events like a SweepEventList
+    std::sort(multiGeom.events.begin(), multiGeom.events.end(),
+              [](const BoxVal& a, const BoxVal& b) {
+                return boxCmp(&a, &b) < 0;
+              });
+
+    std::stringstream str;
+    _multiStore.writeTo(multiGeom, str);
+    multiRaws.push_back(str.str());
+  }
+
+  {
+    std::unique_lock<std::mutex> lock(_multiGeomCacheWriteMtx);
+    for (size_t i = 0; i < cands.multiGeoms.size(); i++) {
+      cands.multiGeoms[i].id = _multiStore.add(multiRaws[i]);
     }
   }
 
@@ -1433,6 +1480,7 @@ void GeometryStore::flush() {
   _simpleAreaStore.flush();
   _lineStore.flush();
   _simpleLineStore.flush();
+  _multiStore.flush();
 
   // TODO!!!!
   // duplicatesToReferences();
