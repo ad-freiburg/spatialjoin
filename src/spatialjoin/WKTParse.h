@@ -132,12 +132,10 @@ class WKTParserBase {
   }
 
  protected:
-  void parseLine(const char* c, size_t len, size_t gid, size_t t,
+  void parseLine(const char* c, size_t gid, size_t t,
                  sj::WriteBatch& batch, bool side, bool useIdEnhance,
                  bool strict = false) {
     using namespace util::geo;
-
-    const char* lastC = c + len;
 
     // search for first occurance of tab
     const char* idp = strchr(c, '\t');
@@ -164,58 +162,12 @@ class WKTParserBase {
 
     if (side) _twoSided[t] = true;
 
-    const char* afterCrs;
-    auto crsType = getCRSType(c, &afterCrs);
-
-    // An unsupported CRS IRI also starts with '<', but is followed by WKT.
-    bool isRef = lastC - afterCrs > 2 && *afterCrs == '<' &&
-                 !(crsType == util::geo::CRSType::UNSUPPORTED &&
-                   getWKTType(afterCrs) != util::geo::WKTType::NONE);
-
-    if (isRef) {
-      // handle reference geometries
-      c = afterCrs;
-      if (strict && !strchr(c, '>')) {
-        _numInvalid[t]++;  // unterminated reference
-        return;
-      }
-      const char* end = strchr(c, ',');
-      size_t subId = 0;
-      c += 1;
-
-      if (end) subId = 1;
-
-      if (!end) end = strrchr(c, '>');
-
-      do {
-        c += std::strspn(c, " \f\n\r\t\v");
-        if (!end) {
-          return;  // erroneous line, ignore
-        }
-
-        std::string referenceId;
-        referenceId.assign(c, end - c);
-
-        if (!referenceId.empty()) {
-          _store->add(
-              idEnhance(referenceId),
-              util::geo::I32Box({std::numeric_limits<int32_t>::min(),
-                                 std::numeric_limits<int32_t>::min()},
-                                {std::numeric_limits<int32_t>::max(),
-                                 std::numeric_limits<int32_t>::max()}),
-              id, subId, side, batch);
-          subId++;
-        }
-        c = end + 1;
-      } while (c < lastC && ((end = strchr(c, ',')) || (end = strchr(c, '>'))));
-    } else {
-      parseWKTGeometry(c, id, t, batch, side, strict);
-    }
+    parseWKTGeometry(c, id, t, batch, side, strict);
   };
 
   // Parse a single WKT geometry (with an optional CRS IRI prefix) and add it to
   // the sweeper under `id` and `side`. Unlike `parseLine`, `c` is only the WKT:
-  // there is no tab-separated id or side prefix and no reference geometries.
+  // there is no tab-separated id or side prefix.
   // In strict mode, invalid WKT (or WKT with an unsupported CRS) is skipped
   // and counted in `_numInvalid`, instead of being parsed partially.
   void parseWKTGeometry(const char* c, const std::string& id, size_t t,

@@ -30,7 +30,7 @@ void WKTParser::processQueue(size_t t) {
       if (_cancelled) break;
 
       if (job.str.size()) {
-        parseLine(job.str.c_str(), job.str.size(), job.line, t, w, job.side,
+        parseLine(job.str.c_str(), job.line, t, w, job.side,
                   true, _strict);
       } else {
         // parse point directly

@@ -893,27 +893,6 @@ void GeometryStore::multiAdd(const std::string& gid, bool side,
 }
 
 // _____________________________________________________________________________
-void GeometryStore::add(const std::string& parentR,
-                               const util::geo::I32Box& box,
-                               const std::string& gidR, size_t subid, bool side,
-                               WriteBatch& batch) const {
-  // NOTE: referencing atm *only* works if the referenced geometry is a non-
-  // multi geometry. If a multi geometry is referenced, the behavior is
-  // undefined.
-  std::string gid = (side ? ("B" + gidR) : ("A" + gidR));
-  std::string parent = (side ? ("B" + parentR) : ("A" + parentR));
-
-  BoxVal boxl, boxr;
-  boxl.side = side;
-  boxr.side = side;
-
-  boxl.val = box.getLowerLeft().getX();
-  boxr.val = box.getUpperRight().getX();
-
-  batch.refs.push_back({parent, gid, boxl, boxr, subid});
-}
-
-// _____________________________________________________________________________
 I32Box GeometryStore::add(const I32Polygon& poly, const std::string& gid,
                                  bool side, WriteBatch& batch) const {
   return add(poly, gid, 0, side, batch);
@@ -965,6 +944,10 @@ I32Box GeometryStore::add(const I32Polygon& poly,
 
   cur.subid = subid;
   cur.gid = gid;
+  cur.bbox = box;
+  cur.box45 = box45;
+  cur.areaOrLen = areaSize;
+  cur.side = side;
 
   if (poly.getInners().size() == 0 && subid == 0 &&
       gid.size() <= FOLD_MAX_LEN &&
@@ -991,6 +974,10 @@ I32Box GeometryStore::add(const I32Polygon& poly,
                      packPoint(rawBox.getUpperRight()),
                      box45,
                      side};
+    cur.type = FOLDED_BOX_POLYGON;
+    cur.point1 = rawBox.getUpperRight();
+    cur.point2 = rawBox.getLowerLeft();
+    cur.numAnchors = poly.size();
     batch.foldedBoxAreas.emplace_back(cur);
   } else if (poly.getInners().size() == 0 && poly.getOuter().size() < 10 &&
              poly.getOuter().size() == densePoly.getOuter().size() &&
@@ -1025,6 +1012,10 @@ I32Box GeometryStore::add(const I32Polygon& poly,
                      poly.size(),
                      box45,
                      side};
+    cur.type = SIMPLE_POLYGON;
+    cur.point1 = {};
+    cur.point2 = rightPoint;
+    cur.numAnchors = poly.size();
     batch.simpleAreas.emplace_back(cur);
   } else {
     if (!_cfg.useFastSweepSkip) {
@@ -1064,6 +1055,10 @@ I32Box GeometryStore::add(const I32Polygon& poly,
                      polySize,
                      box45,
                      side};
+    cur.type = POLYGON;
+    cur.point1 = {};
+    cur.point2 = rightPoint;
+    cur.numAnchors = polySize;
     batch.areas.emplace_back(cur);
   }
 
@@ -1128,6 +1123,10 @@ I32Box GeometryStore::add(const I32Line& line, const std::string& gidR,
 
   cur.subid = subid;
   cur.gid = gid;
+  cur.bbox = box;
+  cur.box45 = box45;
+  cur.areaOrLen = len;
+  cur.side = side;
 
   if (line.size() == 2 && denseLine.size() == line.size() &&
       (!_cfg.useBoxIds || boxIds.front().first == 1) && subid == 0) {
@@ -1157,12 +1156,19 @@ I32Box GeometryStore::add(const I32Line& line, const std::string& gidR,
                                                            : line.front()),
         box45,
         side};
+    cur.type = SIMPLE_LINE;
+    cur.point1 =
+        line.front().getX() < line.back().getX() ? line.back() : line.front();
+    cur.point2 =
+        line.front().getX() < line.back().getX() ? line.front() : line.back();
+    cur.numAnchors = lineSize;
 
     // check if we can fold the gid into the offset id, because the gid is all
     // we store in the cache for points
     if (subid == 0 && gid.size() <= FOLD_MAX_LEN) {
       cur.boxvalIn.setType(FOLDED_SIMPLE_LINE);
       cur.boxvalOut.setType(FOLDED_SIMPLE_LINE);
+      cur.type = FOLDED_SIMPLE_LINE;
       batch.foldedSimpleLines.emplace_back(cur);
     } else {
       std::stringstream str;
@@ -1206,6 +1212,10 @@ I32Box GeometryStore::add(const I32Line& line, const std::string& gidR,
                      lineSize,
                      box45,
                      side};
+    cur.type = LINE;
+    cur.point1 = {};
+    cur.point2 = rightPoint;
+    cur.numAnchors = lineSize;
     batch.lines.emplace_back(cur);
   }
 
@@ -1254,6 +1264,14 @@ I32Box GeometryStore::add(const I32Point& point, const std::string& gidR,
   if (!util::geo::intersects(box, _filterBox)) return {};
 
   auto pointR = util::geo::rotateSinCos(point, sin45, cos45, I32Point(0, 0));
+  cur.bbox = box;
+  cur.type = POINT;
+  cur.box45 = getPaddedBoundingBox(pointR, rawBox);
+  cur.point1 = point;
+  cur.point2 = point;
+  cur.numAnchors = 1;
+  cur.areaOrLen = 0;
+  cur.side = side;
   cur.boxvalIn = {typedId(0, POINT),  // placeholder ID
                   box.getLowerLeft().getY(),
                   box.getUpperRight().getY(),
@@ -1282,6 +1300,7 @@ I32Box GeometryStore::add(const I32Point& point, const std::string& gidR,
   if (subid == 0 && gid.size() <= FOLD_MAX_LEN) {
     cur.boxvalIn.setType(FOLDED_POINT);
     cur.boxvalOut.setType(FOLDED_POINT);
+    cur.type = FOLDED_POINT;
     batch.foldedPoints.emplace_back(cur);
   } else {
     std::stringstream str;
@@ -1410,14 +1429,6 @@ void GeometryStore::addBatch(WriteBatch& cands,
     }
   }
 
-  for (const auto& cand : cands.refs) {
-    if (cand.subid > 0) {
-      std::unique_lock<std::mutex> lock(_multiAddMtx);
-      multiAdd(cand.gid, cand.boxvalIn.side, cand.boxvalOut.val,
-               cand.boxvalOut.point);
-    }
-  }
-
   {
     std::unique_lock<std::mutex> lock(_sweepEventWriteMtx);
     for (const auto& cand : cands.foldedPoints) {
@@ -1465,13 +1476,6 @@ void GeometryStore::addBatch(WriteBatch& cands,
     for (const auto& cand : cands.areas) {
       events->add(cand.boxvalIn);
       events->add(cand.boxvalOut);
-      if (events->numObjects() % 1000000 == 0)
-        log("@ " + std::to_string(events->numObjects()));
-    }
-    for (const auto& cand : cands.refs) {
-      _refs[cand.raw][0][cand.gid] = cand.subid;
-      _selfCheckBounds[cand.raw] = util::geo::getBoundingBox(
-          I32Point{cand.boxvalIn.val, cand.boxvalIn.loY});
       if (events->numObjects() % 1000000 == 0)
         log("@ " + std::to_string(events->numObjects()));
     }

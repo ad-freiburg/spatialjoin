@@ -181,6 +181,20 @@ struct WriteCand {
   BoxVal boxvalIn;
   BoxVal boxvalOut;
   size_t subid;
+
+  // the (padded) bounding box
+  util::geo::I32Box bbox;
+  GeomType type;
+  // the (padded) bounding box of the geometry rotated by 45 degrees
+  util::geo::I32Box box45;
+  // the point of the IN event and of the OUT event, see BoxVal::point
+  util::geo::I32Point point1, point2;
+  // number of anchor points (for simple lines and folded box polygons, the
+  // events instead store the packed other point, see packPoint())
+  size_t numAnchors;
+  // area for polygons, length for lines, 0 for points
+  double areaOrLen;
+  bool side;
 };
 
 struct WriteBatch {
@@ -192,13 +206,12 @@ struct WriteBatch {
   std::vector<WriteCand> simpleAreas;
   std::vector<WriteCand> foldedBoxAreas;
   std::vector<WriteCand> areas;
-  std::vector<WriteCand> refs;
   std::vector<WriteCand> multiGeoms;
 
   size_t size() const {
     return points.size() + foldedSimpleLines.size() + foldedPoints.size() +
            simpleLines.size() + lines.size() + simpleAreas.size() +
-           areas.size() + refs.size();
+           areas.size();
   }
 };
 
@@ -251,10 +264,6 @@ class GeometryStore {
   util::geo::I32Box add(const util::geo::I32MultiPoint& a,
                         const std::string& gid, bool side,
                         WriteBatch& batch) const;
-
-  void add(const std::string& a, const util::geo::I32Box& box,
-           const std::string& gid, size_t subid, bool side,
-           WriteBatch& batch) const;
 
   void addBatch(WriteBatch& cands, sj::SweepEventList* events);
 

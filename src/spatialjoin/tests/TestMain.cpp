@@ -850,7 +850,7 @@ int main(int, char**) {
 
     for (std::string dataset :
          {"duplicate-references", "multitests", "collectiontests", "freiburg",
-          "references", "issue-23"}) {
+          "issue-23"}) {
       RunStats withDups, withoutDups;
 
       const auto& withDupRemoval =
@@ -869,118 +869,12 @@ int main(int, char**) {
     }
 
     {
-      RunStats stats;
-      auto res = fullRun(TEST_DATASET_DIR "/references", cfg, &stats);
-      // without box IDs, two polygons are converted into box polygons
-      if (cfg.useBoxIds) {
-        // TEST(stats.numReferences, ==, 16);
-      } else {
-        // TEST(stats.numReferences, ==, 14);
-      }
-
-      TEST(res.find("$RefA crosses TestC$") != std::string::npos);
-      TEST(res.find("$TestC crosses RefA$") != std::string::npos);
-      TEST(res.find("$TestA crosses RefA$") == std::string::npos);
-      TEST(res.find("$TestA crosses TestB$") != std::string::npos);
-      TEST(res.find("$TestB crosses TestA$") != std::string::npos);
-      TEST(res.find("$RefA crosses TestA$") == std::string::npos);
-      TEST(res.find("$RefA crosses TestB$") == std::string::npos);
-      TEST(res.find("$RefA intersects TestB$") != std::string::npos);
-      TEST(res.find("$TestB intersects RefA$") != std::string::npos);
-      TEST(res.find("$RefA intersects TestA$") != std::string::npos);
-      TEST(res.find("$TestA intersects RefA$") != std::string::npos);
-      TEST(res.find("$RefA covers TestA$") != std::string::npos);
-      TEST(res.find("$RefA covers TestB$") != std::string::npos);
-      TEST(res.find("$RefA covers TestC$") == std::string::npos);
-      TEST(res.find("$RefB equals TestA$") != std::string::npos);
-      TEST(res.find("$TestA equals RefB$") != std::string::npos);
-      TEST(res.find("$<> equals RefG$") != std::string::npos);
-      TEST(res.find("$RefG equals <>$") != std::string::npos);
-      TEST(res.find("$RefG equals RefJ$") != std::string::npos);
-      TEST(res.find("$<> equals RefJ$") != std::string::npos);
-      TEST(res.find("$RefJ equals RefG$") != std::string::npos);
-      TEST(res.find("$RefJ equals <>$") != std::string::npos);
-      TEST(res.find("$TestD1 equals TestD2$") != std::string::npos);
-      TEST(res.find("$TestD2 equals TestD1$") != std::string::npos);
-      TEST(res.find("$TestD1 intersects TestD2$") != std::string::npos);
-      TEST(res.find("$TestD2 intersects TestD1$") != std::string::npos);
-      TEST(res.find("$TestD1 covers TestD2$") != std::string::npos);
-      TEST(res.find("$TestD1 contains TestD2$") != std::string::npos);
-      TEST(res.find("$TestD2 covers TestD1$") != std::string::npos);
-      TEST(res.find("$TestD2 contains TestD1$") != std::string::npos);
-      TEST(res.find("$TestD3 covers TestD2$") != std::string::npos);
-      TEST(res.find("$TestD3 contains TestD2$") != std::string::npos);
-      TEST(res.find("$TestD3 covers TestD1$") != std::string::npos);
-      TEST(res.find("$TestD3 contains TestD1$") != std::string::npos);
-      TEST(res.find("$TestD1 intersects TestD3$") != std::string::npos);
-      TEST(res.find("$TestD2 intersects TestD3$") != std::string::npos);
-      TEST(res.find("$TestD3 intersects TestD1$") != std::string::npos);
-      TEST(res.find("$TestD3 intersects TestD2$") != std::string::npos);
-
-      TEST(res.find("$TestP1 touches TestD1$") != std::string::npos);
-      TEST(res.find("$TestP1 touches TestD2$") != std::string::npos);
-      TEST(res.find("$TestP1 touches TestD3$") != std::string::npos);
-      TEST(res.find("$TestP1 touches TestD4$") != std::string::npos);
-      TEST(res.find("$TestD1 touches TestP1$") != std::string::npos);
-      TEST(res.find("$TestD2 touches TestP1$") != std::string::npos);
-      TEST(res.find("$TestD3 touches TestP1$") != std::string::npos);
-      TEST(res.find("$TestD4 touches TestP1$") != std::string::npos);
-
-      TEST(res.find("$TestP2 touches TestD1$") != std::string::npos);
-      TEST(res.find("$TestP2 touches TestD2$") != std::string::npos);
-      TEST(res.find("$TestP2 touches TestD3$") != std::string::npos);
-      TEST(res.find("$TestP2 touches TestD4$") != std::string::npos);
-      TEST(res.find("$TestD1 touches TestP2$") != std::string::npos);
-      TEST(res.find("$TestD2 touches TestP2$") != std::string::npos);
-      TEST(res.find("$TestD3 touches TestP2$") != std::string::npos);
-      TEST(res.find("$TestD4 touches TestP2$") != std::string::npos);
-
-      TEST(res.find("$TestP1 intersects TestD1$") != std::string::npos);
-      TEST(res.find("$TestP1 intersects TestD2$") != std::string::npos);
-      TEST(res.find("$TestP1 intersects TestD3$") != std::string::npos);
-      TEST(res.find("$TestP1 intersects TestD4$") != std::string::npos);
-      TEST(res.find("$TestD1 intersects TestP1$") != std::string::npos);
-      TEST(res.find("$TestD2 intersects TestP1$") != std::string::npos);
-      TEST(res.find("$TestD3 intersects TestP1$") != std::string::npos);
-      TEST(res.find("$TestD4 intersects TestP1$") != std::string::npos);
-
-      TEST(res.find("$TestP2 intersects TestD1$") != std::string::npos);
-      TEST(res.find("$TestP2 intersects TestD2$") != std::string::npos);
-      TEST(res.find("$TestP2 intersects TestD3$") != std::string::npos);
-      TEST(res.find("$TestP2 intersects TestD4$") != std::string::npos);
-      TEST(res.find("$TestD1 intersects TestP2$") != std::string::npos);
-      TEST(res.find("$TestD2 intersects TestP2$") != std::string::npos);
-      TEST(res.find("$TestD3 intersects TestP2$") != std::string::npos);
-      TEST(res.find("$TestD4 intersects TestP2$") != std::string::npos);
-    }
-
-    {
-      // As with references just with different CRS IRIs for the geometries.
+      // geometries with different CRS IRIs
       RunStats stats;
       auto res = fullRun(TEST_DATASET_DIR "/crs_iris", cfg, &stats);
 
-      TEST(res.find("$RefA crosses TestC$") != std::string::npos);
-      TEST(res.find("$TestC crosses RefA$") != std::string::npos);
-      TEST(res.find("$TestA crosses RefA$") == std::string::npos);
       TEST(res.find("$TestA crosses TestB$") != std::string::npos);
       TEST(res.find("$TestB crosses TestA$") != std::string::npos);
-      TEST(res.find("$RefA crosses TestA$") == std::string::npos);
-      TEST(res.find("$RefA crosses TestB$") == std::string::npos);
-      TEST(res.find("$RefA intersects TestB$") != std::string::npos);
-      TEST(res.find("$TestB intersects RefA$") != std::string::npos);
-      TEST(res.find("$RefA intersects TestA$") != std::string::npos);
-      TEST(res.find("$TestA intersects RefA$") != std::string::npos);
-      TEST(res.find("$RefA covers TestA$") != std::string::npos);
-      TEST(res.find("$RefA covers TestB$") != std::string::npos);
-      TEST(res.find("$RefA covers TestC$") == std::string::npos);
-      TEST(res.find("$RefB equals TestA$") != std::string::npos);
-      TEST(res.find("$TestA equals RefB$") != std::string::npos);
-      TEST(res.find("$<> equals RefG$") != std::string::npos);
-      TEST(res.find("$RefG equals <>$") != std::string::npos);
-      TEST(res.find("$RefG equals RefJ$") != std::string::npos);
-      TEST(res.find("$<> equals RefJ$") != std::string::npos);
-      TEST(res.find("$RefJ equals RefG$") != std::string::npos);
-      TEST(res.find("$RefJ equals <>$") != std::string::npos);
       TEST(res.find("$TestD1 equals TestD2$") != std::string::npos);
       TEST(res.find("$TestD2 equals TestD1$") != std::string::npos);
       TEST(res.find("$TestD1 intersects TestD2$") != std::string::npos);
@@ -1007,15 +901,6 @@ int main(int, char**) {
       TEST(res.find("$TestD3 touches TestP1$") != std::string::npos);
       TEST(res.find("$TestD4 touches TestP1$") != std::string::npos);
 
-      TEST(res.find("$TestP2 touches TestD1$") != std::string::npos);
-      TEST(res.find("$TestP2 touches TestD2$") != std::string::npos);
-      TEST(res.find("$TestP2 touches TestD3$") != std::string::npos);
-      TEST(res.find("$TestP2 touches TestD4$") != std::string::npos);
-      TEST(res.find("$TestD1 touches TestP2$") != std::string::npos);
-      TEST(res.find("$TestD2 touches TestP2$") != std::string::npos);
-      TEST(res.find("$TestD3 touches TestP2$") != std::string::npos);
-      TEST(res.find("$TestD4 touches TestP2$") != std::string::npos);
-
       TEST(res.find("$TestP1 intersects TestD1$") != std::string::npos);
       TEST(res.find("$TestP1 intersects TestD2$") != std::string::npos);
       TEST(res.find("$TestP1 intersects TestD3$") != std::string::npos);
@@ -1024,15 +909,6 @@ int main(int, char**) {
       TEST(res.find("$TestD2 intersects TestP1$") != std::string::npos);
       TEST(res.find("$TestD3 intersects TestP1$") != std::string::npos);
       TEST(res.find("$TestD4 intersects TestP1$") != std::string::npos);
-
-      TEST(res.find("$TestP2 intersects TestD1$") != std::string::npos);
-      TEST(res.find("$TestP2 intersects TestD2$") != std::string::npos);
-      TEST(res.find("$TestP2 intersects TestD3$") != std::string::npos);
-      TEST(res.find("$TestP2 intersects TestD4$") != std::string::npos);
-      TEST(res.find("$TestD1 intersects TestP2$") != std::string::npos);
-      TEST(res.find("$TestD2 intersects TestP2$") != std::string::npos);
-      TEST(res.find("$TestD3 intersects TestP2$") != std::string::npos);
-      TEST(res.find("$TestD4 intersects TestP2$") != std::string::npos);
 
       TEST(res.find("$unsupported$") == std::string::npos);
       TEST(res.find("$unsupported2$") == std::string::npos);
@@ -1090,7 +966,7 @@ int main(int, char**) {
 
     for (std::string dataset :
          {"duplicate-references", "multitests", "collectiontests", "freiburg",
-          "references", "issue-23", "multi-threaded"}) {
+          "issue-23", "multi-threaded"}) {
       RunStats singleStats;
       const auto& single =
           fullRun(TEST_DATASET_DIR "/" + dataset, cfg, &singleStats);
@@ -1176,22 +1052,9 @@ int main(int, char**) {
       // no second time!
       TEST(res.find("$polyc\t2FFF1FFF2\tpolyb$", e + 1) == std::string::npos);
     }
-    {
-      RunStats stats;
-      auto res = fullRun(TEST_DATASET_DIR "/references", cfg, &stats);
-      if (cfg.useBoxIds) {
-        // TEST(stats.numReferences, ==, 16);
-      } else {
-        // TEST(stats.numReferences, ==, 14);
-      }
-      TEST(res.find("$TestB\t0F1FF0102\tTestA$") != std::string::npos);
-      TEST(res.find("$TestA\t0F1FF0102\tTestB$") != std::string::npos);
-      TEST(res.find("$TestB\t0F1FF0102\tRefB$") != std::string::npos);
-      TEST(res.find("$RefB\t0F1FF0102\tTestB$") != std::string::npos);
-    }
     for (std::string dataset :
          {"duplicate-references", "multitests", "collectiontests", "freiburg",
-          "references", "issue-23"}) {
+          "issue-23"}) {
       RunStats withDups, withoutDups;
 
       const auto& withDupRemoval =
@@ -1209,7 +1072,7 @@ int main(int, char**) {
 
       for (std::string dataset :
            {"duplicate-references", "multitests", "collectiontests", "freiburg",
-            "references", "issue-23", "multi-threaded"}) {
+            "issue-23", "multi-threaded"}) {
         RunStats singleStats;
         const auto& single =
             fullRun(TEST_DATASET_DIR "/" + dataset, cfg, &singleStats);
@@ -1248,11 +1111,10 @@ int main(int, char**) {
 
     RunStats stats;
     auto res = fullRun(TEST_DATASET_DIR "/wkt-fail", all, &stats, 0, true);
-    TEST(stats.numInvalid, ==, 10);
+    TEST(stats.numInvalid, ==, 9);
     TEST(res.find("$a contains g$") == std::string::npos);
     TEST(res.find("$a contains h$") == std::string::npos);
     TEST(res.find("$a contains u$") == std::string::npos);
-    TEST(res.find("$a contains r$") != std::string::npos);
     TEST(res.find("$a contains b$") != std::string::npos);
     TEST(res.find("$a contains c$") == std::string::npos);
     TEST(res.find("$a contains d$") == std::string::npos);
@@ -1277,24 +1139,6 @@ int main(int, char**) {
 
   // distance
   for (auto cfg : cfgs) {
-    cfg.withinDist = 1;
-    // {
-    // RunStats stats;
-    // auto res =
-    // fullRun("../src/spatialjoin/tests/datasets/references", cfg, &stats);
-    // if (cfg.useBoxIds) {
-    // TEST(stats.numReferences, ==, 16);
-    // } else {
-    // TEST(stats.numReferences, ==, 14);
-    // }
-    // TEST(res.find("$TestB\t0\tTestA$") != std::string::npos);
-    // TEST(res.find("$TestA\t0\tTestB$") != std::string::npos);
-    // TEST(res.find("$TestB\t0\tRefB$") != std::string::npos);
-    // TEST(res.find("$RefB\t0\tTestB$") != std::string::npos);
-    // TEST(res.find("$TestA\t0\tRefB$") != std::string::npos);
-    // TEST(res.find("$RefB\t0\tTestA$") != std::string::npos);
-    // }
-
     cfg.withinDist = 5000;
     {
       RunStats stats;
