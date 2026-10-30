@@ -120,7 +120,7 @@ std::vector<sj::BoxVal> Sweeper::multiIn(const BoxVal& multiIn) {
   }
 
   {
-    std::unique_lock<std::shared_timed_mutex> lock(_multiMetaMtx);
+    ExclusiveLock lock(_multiMetaMtx);
     _subSizes[multi.id] = subSize;
     _multiRightPoint[multi.id] = rightPoint;
   }

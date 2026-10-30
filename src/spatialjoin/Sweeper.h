@@ -15,7 +15,9 @@
 #include <functional>
 #include <mutex>
 #include <queue>
+#if __cplusplus >= 201402L
 #include <shared_mutex>
+#endif
 #include <thread>
 #include <unordered_map>
 #include <unordered_set>
@@ -32,6 +34,16 @@
 #endif
 
 namespace sj {
+
+// if available, use a shared_timed_mutex, if not, fall back to a normal mutex
+#if __cplusplus >= 201402L
+typedef std::shared_timed_mutex SharedMutex;
+typedef std::shared_lock<SharedMutex> SharedLock;
+#else
+typedef std::mutex SharedMutex;
+typedef std::unique_lock<SharedMutex> SharedLock;
+#endif
+typedef std::unique_lock<SharedMutex> ExclusiveLock;
 
 // a position in the sweep events of the multi geometries merged in during the
 // sweep, as (slot of the multi geometry, position of the event)
@@ -75,17 +87,17 @@ class Sweeper {
  private:
   // metadata of the multi geometries, available after their multi-IN event
   size_t subSize(const std::string& gid) const {
-    std::shared_lock<std::shared_timed_mutex> lock(_multiMetaMtx);
+    SharedLock lock(_multiMetaMtx);
     return _subSizes.at(gid);
   }
 
   bool isMulti(const std::string& gid) const {
-    std::shared_lock<std::shared_timed_mutex> lock(_multiMetaMtx);
+    SharedLock lock(_multiMetaMtx);
     return _subSizes.find(gid) != _subSizes.end();
   }
 
   util::geo::I32Point multiRightPoint(const std::string& gid) const {
-    std::shared_lock<std::shared_timed_mutex> lock(_multiMetaMtx);
+    SharedLock lock(_multiMetaMtx);
     auto i = _multiRightPoint.find(gid);
     if (i == _multiRightPoint.end()) return {};
     return i->second;
@@ -290,7 +302,7 @@ class Sweeper {
 
   std::unordered_map<std::string, size_t> _subSizes;
   std::unordered_map<std::string, util::geo::I32Point> _multiRightPoint;
-  mutable std::shared_timed_mutex _multiMetaMtx;
+  mutable SharedMutex _multiMetaMtx;
 
   const GeometryCache* _geomCache;
   const GeometryStore* _geomStore;
