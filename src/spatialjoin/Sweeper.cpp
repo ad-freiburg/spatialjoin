@@ -150,13 +150,13 @@ void Sweeper::multiOut(size_t tOut, const std::string& gidA,
       std::map<std::string, double> cur;
       {
         std::unique_lock<std::mutex> lock(_mutsDistance[t]);
-        auto i = _subDistance[t][sideA].find(gidA);
-        if (i == _subDistance[t][sideA].end()) continue;
+        auto i = _subDistance[sideA][t].find(gidA);
+        if (i == _subDistance[sideA][t].end()) continue;
 
         // swap i->second into cur, is deleted anyhow, and free
         // the lock immediately after
         cur.swap(i->second);
-        _subDistance[t][sideA].erase(i);
+        _subDistance[sideA][t].erase(i);
       }
 
       if (subDistance.empty()) {
@@ -197,13 +197,13 @@ void Sweeper::multiOut(size_t tOut, const std::string& gidA,
       std::map<std::string, util::geo::DE9IMatrix> cur;
       {
         std::unique_lock<std::mutex> lock(_mutsDE9IM[t]);
-        auto i = _subDE9IM[t][sideA].find(gidA);
-        if (i == _subDE9IM[t][sideA].end()) continue;
+        auto i = _subDE9IM[sideA][t].find(gidA);
+        if (i == _subDE9IM[sideA][t].end()) continue;
 
         // swap i->second into cur, is deleted anyhow, and free
         // the lock immediately after
         cur.swap(i->second);
-        _subDE9IM[t][sideA].erase(i);
+        _subDE9IM[sideA][t].erase(i);
       }
 
       if (subDE9IM.empty()) {
@@ -257,12 +257,12 @@ void Sweeper::multiOut(size_t tOut, const std::string& gidA,
   // collect equals
   for (size_t t = 0; t < _cfg.numThreads + 1; t++) {
     std::unique_lock<std::mutex> lock(_mutsEquals[t]);
-    auto i = _subEquals[t][sideA].find(gidA);
-    if (i != _subEquals[t][sideA].end()) {
+    auto i = _subEquals[sideA][t].find(gidA);
+    if (i != _subEquals[sideA][t].end()) {
       for (const auto& a : i->second) {
         subEqualsA[a.first] += a.second.size();
-        auto j = _subEquals[t][sideB].find(a.first);
-        if (j != _subEquals[t][sideB].end()) {
+        auto j = _subEquals[sideB][t].find(a.first);
+        if (j != _subEquals[sideB][t].end()) {
           auto k = j->second.find(gidA);
           if (k != j->second.end()) {
             subEqualsB[a.first] += k->second.size();
@@ -270,31 +270,31 @@ void Sweeper::multiOut(size_t tOut, const std::string& gidA,
           }
         }
       }
-      _subEquals[t][sideA].erase(i);
+      _subEquals[sideA][t].erase(i);
     }
   }
 
   // collect contains
   for (size_t t = 0; t < _cfg.numThreads + 1; t++) {
     std::unique_lock<std::mutex> lock(_mutsContains[t]);
-    auto i = _subContains[t][sideA].find(gidA);
-    if (i != _subContains[t][sideA].end()) {
+    auto i = _subContains[sideA][t].find(gidA);
+    if (i != _subContains[sideA][t].end()) {
       for (const auto& a : i->second) {
         subContains[a.first] += a.second.size();
       }
-      _subContains[t][sideA].erase(i);
+      _subContains[sideA][t].erase(i);
     }
   }
 
   // collect covers
   for (size_t t = 0; t < _cfg.numThreads + 1; t++) {
     std::unique_lock<std::mutex> lock(_mutsCovers[t]);
-    auto i = _subCovered[t][sideA].find(gidA);
-    if (i != _subCovered[t][sideA].end()) {
+    auto i = _subCovered[sideA][t].find(gidA);
+    if (i != _subCovered[sideA][t].end()) {
       for (const auto& a : i->second) {
         subCovered[a.first] += a.second.size();
       }
-      _subCovered[t][sideA].erase(i);
+      _subCovered[sideA][t].erase(i);
     }
   }
 
@@ -334,10 +334,10 @@ void Sweeper::multiOut(size_t tOut, const std::string& gidA,
 
   for (size_t t = 0; t < _cfg.numThreads + 1; t++) {
     std::unique_lock<std::mutex> lock(_mutsTouches[t]);
-    auto i = _subTouches[t][sideA].find(gidA);
-    if (i != _subTouches[t][sideA].end()) {
+    auto i = _subTouches[sideA][t].find(gidA);
+    if (i != _subTouches[sideA][t].end()) {
       touchesPartners.insert(i->second.begin(), i->second.end());
-      _subTouches[t][sideA].erase(i);
+      _subTouches[sideA][t].erase(i);
     }
   }
 
@@ -350,13 +350,13 @@ void Sweeper::multiOut(size_t tOut, const std::string& gidA,
     std::unique_lock<std::mutex> lock(_mutsTouches[t]);
     std::unique_lock<std::mutex> lock2(_mutsNotTouches[t]);
     for (const auto& gidB : touchesPartners) {
-      auto j = _subNotTouches[t][sideB].find(gidB);
-      if (j != _subNotTouches[t][sideB].end()) j->second.erase(gidA);
+      auto j = _subNotTouches[sideB][t].find(gidB);
+      if (j != _subNotTouches[sideB][t].end()) j->second.erase(gidA);
 
-      auto k = _subTouches[t][sideB].find(gidB);
-      if (k != _subTouches[t][sideB].end()) k->second.erase(gidA);
+      auto k = _subTouches[sideB][t].find(gidB);
+      if (k != _subTouches[sideB][t].end()) k->second.erase(gidA);
     }
-    _subNotTouches[t][sideA].erase(gidA);
+    _subNotTouches[sideA][t].erase(gidA);
   }
 
   for (const auto& p : touchesTmp) {
@@ -372,10 +372,10 @@ void Sweeper::multiOut(size_t tOut, const std::string& gidA,
 
   for (size_t t = 0; t < _cfg.numThreads + 1; t++) {
     std::unique_lock<std::mutex> lock(_mutsCrosses[t]);
-    auto i = _subCrosses[t][sideA].find(gidA);
-    if (i != _subCrosses[t][sideA].end()) {
+    auto i = _subCrosses[sideA][t].find(gidA);
+    if (i != _subCrosses[sideA][t].end()) {
       crossesPartners.insert(i->second.begin(), i->second.end());
-      _subCrosses[t][sideA].erase(i);
+      _subCrosses[sideA][t].erase(i);
     }
   }
 
@@ -388,13 +388,13 @@ void Sweeper::multiOut(size_t tOut, const std::string& gidA,
     std::unique_lock<std::mutex> lock(_mutsCrosses[t]);
     std::unique_lock<std::mutex> lock2(_mutsNotCrosses[t]);
     for (const auto& gidB : crossesPartners) {
-      auto j = _subNotCrosses[t][sideB].find(gidB);
-      if (j != _subNotCrosses[t][sideB].end()) j->second.erase(gidA);
+      auto j = _subNotCrosses[sideB][t].find(gidB);
+      if (j != _subNotCrosses[sideB][t].end()) j->second.erase(gidA);
 
-      auto k = _subCrosses[t][sideB].find(gidB);
-      if (k != _subCrosses[t][sideB].end()) k->second.erase(gidA);
+      auto k = _subCrosses[sideB][t].find(gidB);
+      if (k != _subCrosses[sideB][t].end()) k->second.erase(gidA);
     }
-    _subNotCrosses[t][sideA].erase(gidA);
+    _subNotCrosses[sideA][t].erase(gidA);
   }
 
   for (const auto& p : crossesTmp) {
@@ -427,10 +427,10 @@ void Sweeper::multiOut(size_t tOut, const std::string& gidA,
 
   for (size_t t = 0; t < _cfg.numThreads + 1; t++) {
     std::unique_lock<std::mutex> lock(_mutsOverlaps[t]);
-    auto i = _subOverlaps[t][sideA].find(gidA);
-    if (i != _subOverlaps[t][sideA].end()) {
+    auto i = _subOverlaps[sideA][t].find(gidA);
+    if (i != _subOverlaps[sideA][t].end()) {
       overlapsPartners.insert(i->second.begin(), i->second.end());
-      _subOverlaps[t][sideA].erase(i);
+      _subOverlaps[sideA][t].erase(i);
     }
   }
 
@@ -447,13 +447,13 @@ void Sweeper::multiOut(size_t tOut, const std::string& gidA,
     std::unique_lock<std::mutex> lock(_mutsOverlaps[t]);
     std::unique_lock<std::mutex> lock2(_mutsNotOverlaps[t]);
     for (const auto& gidB : overlapsPartners) {
-      auto j = _subNotOverlaps[t][sideB].find(gidB);
-      if (j != _subNotOverlaps[t][sideB].end()) j->second.erase(gidA);
+      auto j = _subNotOverlaps[sideB][t].find(gidB);
+      if (j != _subNotOverlaps[sideB][t].end()) j->second.erase(gidA);
 
-      auto k = _subOverlaps[t][sideB].find(gidB);
-      if (k != _subOverlaps[t][sideB].end()) k->second.erase(gidA);
+      auto k = _subOverlaps[sideB][t].find(gidB);
+      if (k != _subOverlaps[sideB][t].end()) k->second.erase(gidA);
     }
-    _subNotOverlaps[t][sideA].erase(gidA);
+    _subNotOverlaps[sideA][t].erase(gidA);
   }
 
   for (const auto& p : overlapsTmp) {
@@ -488,17 +488,19 @@ RelStats Sweeper::sweep(const SweepEventList* eventsA,
   _relStats.resize(_cfg.numThreads + 1);
   _checks.resize(_cfg.numThreads);
   _curX.resize(_cfg.numThreads);
-  _subEquals.resize(_cfg.numThreads + 1);
-  _subCovered.resize(_cfg.numThreads + 1);
-  _subContains.resize(_cfg.numThreads + 1);
-  _subDistance.resize(_cfg.numThreads + 1);
-  _subDE9IM.resize(_cfg.numThreads + 1);
-  _subNotOverlaps.resize(_cfg.numThreads + 1);
-  _subOverlaps.resize(_cfg.numThreads + 1);
-  _subNotTouches.resize(_cfg.numThreads + 1);
-  _subNotCrosses.resize(_cfg.numThreads + 1);
-  _subCrosses.resize(_cfg.numThreads + 1);
-  _subTouches.resize(_cfg.numThreads + 1);
+  for (size_t side = 0; side < 2; side++) {
+    _subEquals[side].resize(_cfg.numThreads + 1);
+    _subCovered[side].resize(_cfg.numThreads + 1);
+    _subContains[side].resize(_cfg.numThreads + 1);
+    _subDistance[side].resize(_cfg.numThreads + 1);
+    _subDE9IM[side].resize(_cfg.numThreads + 1);
+    _subNotOverlaps[side].resize(_cfg.numThreads + 1);
+    _subOverlaps[side].resize(_cfg.numThreads + 1);
+    _subNotTouches[side].resize(_cfg.numThreads + 1);
+    _subNotCrosses[side].resize(_cfg.numThreads + 1);
+    _subCrosses[side].resize(_cfg.numThreads + 1);
+    _subTouches[side].resize(_cfg.numThreads + 1);
+  }
 
   _mutsEquals = std::vector<std::mutex>(_cfg.numThreads + 1);
   _mutsCovers = std::vector<std::mutex>(_cfg.numThreads + 1);
@@ -994,7 +996,7 @@ void Sweeper::writeDE9IM(size_t t, const std::string& a, size_t aSub,
     if ((bSub > 0 || aSub > 0)) {
       std::unique_lock<std::mutex> lock(_mutsDE9IM[t]);
       if (bSub > 0) {
-        auto& m = _subDE9IM[t][bOrig.side][b];
+        auto& m = _subDE9IM[bOrig.side][t][b];
         auto i = m.lower_bound(a);
         if (i == m.end() || i->first != a) {
           m.emplace_hint(i, a, de9im.transpose());
@@ -1005,7 +1007,7 @@ void Sweeper::writeDE9IM(size_t t, const std::string& a, size_t aSub,
         }
       }
       if (aSub > 0) {
-        auto& m = _subDE9IM[t][aOrig.side][a];
+        auto& m = _subDE9IM[aOrig.side][t][a];
         auto i = m.lower_bound(b);
         if (i == m.end() || i->first != b) {
           m.emplace_hint(i, b, de9im);
@@ -1065,10 +1067,9 @@ void Sweeper::writeDist(size_t t, const std::string& a, size_t aSub,
         (b < a || (sameGeom(a, aOrig.side, b, bOrig.side) && bSub < aSub)))) {
     if (bSub > 0 || aSub > 0) {
       std::unique_lock<std::mutex> lock(_mutsDistance[t]);
-      auto& subDistance = _subDistance[t];
 
       if (bSub > 0) {
-        auto& m = subDistance[bOrig.side][b];
+        auto& m = _subDistance[bOrig.side][t][b];
         auto i = m.lower_bound(a);
         if (i == m.end() || i->first != a) {
           m.emplace_hint(i, a, dist);
@@ -1077,7 +1078,7 @@ void Sweeper::writeDist(size_t t, const std::string& a, size_t aSub,
         }
       }
       if (aSub > 0) {
-        auto& m = subDistance[aOrig.side][a];
+        auto& m = _subDistance[aOrig.side][t][a];
         auto i = m.lower_bound(b);
         if (i == m.end() || i->first != b) {
           m.emplace_hint(i, b, dist);
@@ -2401,8 +2402,8 @@ void Sweeper::writeOverlaps(size_t t, const std::string& a, size_t aSub,
     } else {
       std::unique_lock<std::mutex> lock(_mutsOverlaps[t]);
 
-      if (bSub != 0) _subOverlaps[t][bOrig.side][b].insert(a);
-      if (aSub != 0) _subOverlaps[t][aOrig.side][a].insert(b);
+      if (bSub != 0) _subOverlaps[bOrig.side][t][b].insert(a);
+      if (aSub != 0) _subOverlaps[aOrig.side][t][a].insert(b);
     }
   }
 
@@ -2440,8 +2441,8 @@ void Sweeper::writeNotOverlaps(size_t t, const std::string& a, size_t aSub,
   if (!sameGeom(a, aOrig.side, b, bOrig.side) && (aSub != 0 || bSub != 0)) {
     std::unique_lock<std::mutex> lock(_mutsNotOverlaps[t]);
 
-    if (bSub != 0) _subNotOverlaps[t][bOrig.side][b].insert(a);
-    if (aSub != 0) _subNotOverlaps[t][aOrig.side][a].insert(b);
+    if (bSub != 0) _subNotOverlaps[bOrig.side][t][b].insert(a);
+    if (aSub != 0) _subNotOverlaps[aOrig.side][t][a].insert(b);
   }
 
   if (!expandRefs || !hasRefs(aOrig, bOrig)) return;
@@ -2478,8 +2479,8 @@ void Sweeper::writeCrosses(size_t t, const std::string& a, size_t aSub,
   } else {
     std::unique_lock<std::mutex> lock(_mutsCrosses[t]);
 
-    if (bSub != 0) _subCrosses[t][bOrig.side][b].insert(a);
-    if (aSub != 0) _subCrosses[t][aOrig.side][a].insert(b);
+    if (bSub != 0) _subCrosses[bOrig.side][t][b].insert(a);
+    if (aSub != 0) _subCrosses[aOrig.side][t][a].insert(b);
   }
 
   if (!hasRefs(aOrig, bOrig)) return;
@@ -2515,8 +2516,8 @@ void Sweeper::writeNotCrosses(size_t t, const std::string& a, size_t aSub,
   if (!sameGeom(a, aOrig.side, b, bOrig.side) && (aSub != 0 || bSub != 0)) {
     std::unique_lock<std::mutex> lock(_mutsNotCrosses[t]);
 
-    if (bSub != 0) _subNotCrosses[t][bOrig.side][b].insert(a);
-    if (aSub != 0) _subNotCrosses[t][aOrig.side][a].insert(b);
+    if (bSub != 0) _subNotCrosses[bOrig.side][t][b].insert(a);
+    if (aSub != 0) _subNotCrosses[aOrig.side][t][a].insert(b);
   }
 
   if (!hasRefs(aOrig, bOrig)) return;
@@ -2591,8 +2592,8 @@ void Sweeper::writeTouches(size_t t, const std::string& a, size_t aSub,
   } else {
     std::unique_lock<std::mutex> lock(_mutsTouches[t]);
 
-    if (bSub != 0) _subTouches[t][bOrig.side][b].insert(a);
-    if (aSub != 0) _subTouches[t][aOrig.side][a].insert(b);
+    if (bSub != 0) _subTouches[bOrig.side][t][b].insert(a);
+    if (aSub != 0) _subTouches[aOrig.side][t][a].insert(b);
   }
 
   if (!hasRefs(aOrig, bOrig)) return;
@@ -2628,8 +2629,8 @@ void Sweeper::writeNotTouches(size_t t, const std::string& a, size_t aSub,
   if (!sameGeom(a, aOrig.side, b, bOrig.side) && (aSub != 0 || bSub != 0)) {
     std::unique_lock<std::mutex> lock(_mutsNotTouches[t]);
 
-    if (bSub != 0) _subNotTouches[t][bOrig.side][b].insert(a);
-    if (aSub != 0) _subNotTouches[t][aOrig.side][a].insert(b);
+    if (bSub != 0) _subNotTouches[bOrig.side][t][b].insert(a);
+    if (aSub != 0) _subNotTouches[aOrig.side][t][a].insert(b);
   }
 
   if (!hasRefs(aOrig, bOrig)) return;
@@ -2678,8 +2679,8 @@ void Sweeper::writeEquals(size_t t, const std::string& a, size_t aSub,
     } else {
       std::unique_lock<std::mutex> lock(_mutsEquals[t]);
 
-      _subEquals[t][bOrig.side][b][a].insert(aSub);
-      _subEquals[t][aOrig.side][a][b].insert(bSub);
+      _subEquals[bOrig.side][t][b][a].insert(aSub);
+      _subEquals[aOrig.side][t][a][b].insert(bSub);
     }
   }
 
@@ -2714,7 +2715,7 @@ void Sweeper::writeCovers(size_t t, const std::string& a, size_t aSub,
   if (!sameGeom(a, aOrig.side, b, bOrig.side)) {
     if (bSub > 0) {
       std::unique_lock<std::mutex> lock(_mutsCovers[t]);
-      _subCovered[t][bOrig.side][b][a].insert(bSub);
+      _subCovered[bOrig.side][t][b][a].insert(bSub);
     } else {
       writeRel(t, a, aOrig.side, b, bOrig.side, _cfg.sepCovers);
       _relStats[t].covers++;
@@ -2748,7 +2749,7 @@ void Sweeper::writeContains(size_t t, const std::string& a, size_t aSub,
   if (!sameGeom(a, aOrig.side, b, bOrig.side)) {
     if (bSub > 0) {
       std::unique_lock<std::mutex> lock(_mutsContains[t]);
-      _subContains[t][bOrig.side][b][a].insert(bSub);
+      _subContains[bOrig.side][t][b][a].insert(bSub);
     } else {
       writeRel(t, a, aOrig.side, b, bOrig.side, _cfg.sepContains);
       _relStats[t].contains++;
@@ -2779,8 +2780,8 @@ bool Sweeper::notCrosses(const std::string& a, bool aSide,
                          const std::string& b) {
   for (size_t t = 0; t < _cfg.numThreads + 1; t++) {
     std::unique_lock<std::mutex> lock(_mutsNotCrosses[t]);
-    auto i = _subNotCrosses[t][aSide].find(a);
-    if (i != _subNotCrosses[t][aSide].end() && i->second.count(b)) return true;
+    auto i = _subNotCrosses[aSide][t].find(a);
+    if (i != _subNotCrosses[aSide][t].end() && i->second.count(b)) return true;
   }
 
   return false;
@@ -2791,8 +2792,8 @@ bool Sweeper::notTouches(const std::string& a, bool aSide,
                          const std::string& b) {
   for (size_t t = 0; t < _cfg.numThreads + 1; t++) {
     std::unique_lock<std::mutex> lock(_mutsNotTouches[t]);
-    auto i = _subNotTouches[t][aSide].find(a);
-    if (i != _subNotTouches[t][aSide].end() && i->second.count(b)) return true;
+    auto i = _subNotTouches[aSide][t].find(a);
+    if (i != _subNotTouches[aSide][t].end() && i->second.count(b)) return true;
   }
 
   return false;
@@ -2810,8 +2811,8 @@ bool Sweeper::coversAll(const std::string& a, const std::string& b,
 
   for (size_t t = 0; t < _cfg.numThreads + 1; t++) {
     std::unique_lock<std::mutex> lock(_mutsCovers[t]);
-    auto i = _subCovered[t][bSide].find(b);
-    if (i == _subCovered[t][bSide].end()) continue;
+    auto i = _subCovered[bSide][t].find(b);
+    if (i == _subCovered[bSide][t].end()) continue;
     auto j = i->second.find(a);
     if (j != i->second.end()) covered += j->second.size();
   }
@@ -2824,8 +2825,8 @@ bool Sweeper::notOverlaps(const std::string& a, bool aSide,
                           const std::string& b) {
   for (size_t t = 0; t < _cfg.numThreads + 1; t++) {
     std::unique_lock<std::mutex> lock(_mutsNotOverlaps[t]);
-    auto i = _subNotOverlaps[t][aSide].find(a);
-    if (i != _subNotOverlaps[t][aSide].end() &&
+    auto i = _subNotOverlaps[aSide][t].find(a);
+    if (i != _subNotOverlaps[aSide][t].end() &&
         i->second.find(b) != i->second.end())
       return true;
   }
@@ -3593,18 +3594,17 @@ double Sweeper::getMaxMultiDist(const std::string& idA, size_t aSub,
   const double scale = euclidean ? PREC : 1;
 
   std::unique_lock<std::mutex> lock(_mutsDistance[t]);
-  const auto& subDistance = _subDistance[t];
 
   if (aSub > 0) {
-    auto i = subDistance[aOrig.side].find(idA);
-    if (i != subDistance[aOrig.side].end()) {
+    auto i = _subDistance[aOrig.side][t].find(idA);
+    if (i != _subDistance[aOrig.side][t].end()) {
       auto j = i->second.find(idB);
       if (j != i->second.end()) maxD = std::min(maxD, j->second * scale);
     }
   }
   if (bSub > 0) {
-    auto i = subDistance[bOrig.side].find(idB);
-    if (i != subDistance[bOrig.side].end()) {
+    auto i = _subDistance[bOrig.side][t].find(idB);
+    if (i != _subDistance[bOrig.side][t].end()) {
       auto j = i->second.find(idA);
       if (j != i->second.end()) maxD = std::min(maxD, j->second * scale);
     }

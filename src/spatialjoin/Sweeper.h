@@ -10,7 +10,6 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-#include <array>
 #include <atomic>
 #include <condition_variable>
 #include <functional>
@@ -126,11 +125,6 @@ typedef std::vector<Job> JobBatch;
 typedef std::tuple<bool, bool, bool, bool, bool> GeomCheckRes;
 
 static const size_t MAX_OUT_LINE_LENGTH = 1000;
-
-// one value per join side, see Sweeper::sweep(). Within a sweep, gids are only
-// unique per side, so all data keyed by gid is kept per side.
-template <typename T>
-using PerSide = std::array<T, 2>;
 
 // if available, use a shared_timed_mutex, if not, fall back to a normal mutex
 #if __cplusplus >= 201402L
@@ -405,47 +399,42 @@ class Sweeper {
 
   mutable std::vector<Stats> _stats;
 
-  // per thread, the results for the members of multi geometries, keyed by the
-  // side and the gid of the multi geometry, and the gid of the partner (which
-  // is on the other side)
+  std::vector<std::unordered_map<std::string, std::map<std::string, double>>>
+      _subDistance[2];
+  std::vector<std::unordered_map<std::string,
+                                 std::map<std::string, util::geo::DE9IMatrix>>>
+      _subDE9IM[2];
   std::vector<
-      PerSide<std::unordered_map<std::string, std::map<std::string, double>>>>
-      _subDistance;
-  std::vector<PerSide<std::unordered_map<
-      std::string, std::map<std::string, util::geo::DE9IMatrix>>>>
-      _subDE9IM;
-  std::vector<PerSide<
-      std::unordered_map<std::string, std::map<std::string, std::set<size_t>>>>>
-      _subContains;
-  std::vector<PerSide<
-      std::unordered_map<std::string, std::map<std::string, std::set<size_t>>>>>
-      _subCovered;
-  std::vector<PerSide<
-      std::unordered_map<std::string, std::map<std::string, std::set<size_t>>>>>
-      _subEquals;
-  std::vector<PerSide<std::unordered_map<std::string, std::set<std::string>>>>
-      _subTouches;
-  std::vector<PerSide<std::unordered_map<std::string, std::set<std::string>>>>
-      _subNotTouches;
-  std::vector<PerSide<std::unordered_map<std::string, std::set<std::string>>>>
-      _subCrosses;
-  std::vector<PerSide<std::unordered_map<std::string, std::set<std::string>>>>
-      _subNotCrosses;
-  std::vector<PerSide<std::unordered_map<std::string, std::set<std::string>>>>
-      _subOverlaps;
-  std::vector<PerSide<std::unordered_map<std::string, std::set<std::string>>>>
-      _subNotOverlaps;
+      std::unordered_map<std::string, std::map<std::string, std::set<size_t>>>>
+      _subContains[2];
+  std::vector<
+      std::unordered_map<std::string, std::map<std::string, std::set<size_t>>>>
+      _subCovered[2];
+  std::vector<
+      std::unordered_map<std::string, std::map<std::string, std::set<size_t>>>>
+      _subEquals[2];
+  std::vector<std::unordered_map<std::string, std::set<std::string>>>
+      _subTouches[2];
+  std::vector<std::unordered_map<std::string, std::set<std::string>>>
+      _subNotTouches[2];
+  std::vector<std::unordered_map<std::string, std::set<std::string>>>
+      _subCrosses[2];
+  std::vector<std::unordered_map<std::string, std::set<std::string>>>
+      _subNotCrosses[2];
+  std::vector<std::unordered_map<std::string, std::set<std::string>>>
+      _subOverlaps[2];
+  std::vector<std::unordered_map<std::string, std::set<std::string>>>
+      _subNotOverlaps[2];
 
   // multi geometries whose OUT event has been processed, with their side
   std::queue<std::pair<BoxVal, bool>> _finishedMultis;
 
   // per side, the gids of the multi geometries whose multi-IN event was
   // processed, keyed by their store and their offset in its multi store
-  PerSide<std::map<std::pair<uint8_t, size_t>, std::string>> _openMultiIDs;
+  std::map<std::pair<uint8_t, size_t>, std::string> _openMultiIDs[2];
 
-  PerSide<std::unordered_map<std::string, size_t>> _subSizes;
-  PerSide<std::unordered_map<std::string, util::geo::I32Point>>
-      _multiRightPoint;
+  std::unordered_map<std::string, size_t> _subSizes[2];
+  std::unordered_map<std::string, util::geo::I32Point> _multiRightPoint[2];
   mutable SharedMutex _multiMetaMtx;
 
   const GeometryCache* _geomCache;
