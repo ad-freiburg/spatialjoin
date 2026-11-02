@@ -3,9 +3,12 @@
 
 #include "SweepEventListTest.h"
 
+#include <dirent.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 #include <stdexcept>
+#include <string>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -54,6 +57,31 @@ std::vector<size_t> sorted(size_t offset, size_t n) {
   return ret;
 }
 
+// _____________________________________________________________________________
+std::vector<std::string> files(const std::string& dir) {
+  std::vector<std::string> ret;
+  DIR* d = opendir(dir.c_str());
+  TEST(d != 0);
+  while (const dirent* entry = readdir(d)) {
+    std::string name = entry->d_name;
+    if (name != "." && name != "..") ret.push_back(dir + "/" + name);
+  }
+  closedir(d);
+  return ret;
+}
+
+// _____________________________________________________________________________
+void removeDir(const std::string& dir) {
+  DIR* d = opendir(dir.c_str());
+  if (!d) return;
+  while (const dirent* entry = readdir(d)) {
+    std::string name = entry->d_name;
+    if (name != "." && name != "..") unlink((dir + "/" + name).c_str());
+  }
+  closedir(d);
+  rmdir(dir.c_str());
+}
+
 }  // namespace
 
 // _____________________________________________________________________________
@@ -72,7 +100,7 @@ void sweepEventListTest() {
   // test with different buffer sizes
   for (size_t bufSize : {sj::DEFAULT_BUFFER_S, SMALL_BUF}) {
     {
-      // move construction before finalize() 
+      // move construction before finalize()
       SweepEventList a(".", ".spatialjoin", bufSize);
       fill(&a, 0, 5);
 
@@ -91,7 +119,7 @@ void sweepEventListTest() {
     }
 
     {
-      // move construction after finalize() 
+      // move construction after finalize()
       SweepEventList a(".", ".spatialjoin", bufSize);
       fill(&a, 0, 7);
       a.finalize(1);
@@ -146,39 +174,59 @@ void sweepEventListTest() {
     }
 
     {
-      const std::string path = ".spatialjoin-test-events";
-      const std::string path2 = ".spatialjoin-test-events2";
+      // persisted lists are written to the file tmpPrefix in the cache
+      // directory
+      const std::string dir = "./.spatialjoin-test-persist";
+      const std::string path = dir + "/.spatialjoinevents";
 
-      SweepEventList a(".", ".spatialjoin", bufSize);
-      fill(&a, 0, 7);
-      a.finalize(1);
-      a.serializeToDisk(path);
+      // left over from an aborted earlier run
+      removeDir(dir);
+      TEST(mkdir(dir.c_str(), 0777) == 0);
 
-      SweepEventList b(path);
-      TEST(b.numEvents(), ==, 7);
-      TEST(ids(b) == sorted(0, 7));
+      {
+        // a list which is not persisted leaves no file
+        SweepEventList n(dir, ".spatialjoin", bufSize);
+        fill(&n, 0, 3);
+        n.finalize(1);
+        TEST(files(dir).empty());
+      }
 
-      // the original is unchanged
-      TEST(ids(a) == sorted(0, 7));
+      {
+        SweepEventList a(dir, ".spatialjoin", bufSize, true);
+        fill(&a, 0, 7);
+        a.finalize(1);
+        TEST(files(dir) == std::vector<std::string>{path});
 
-      // a loaded list can be serialized again, and moved
-      b.serializeToDisk(path2);
-      SweepEventList c(std::move(b));
-      SweepEventList d(path2);
-      TEST(d.numEvents(), ==, 7);
-      TEST(ids(d) == sorted(0, 7));
-      TEST(ids(c) == sorted(0, 7));
+        SweepEventList b(path);
+        TEST(b.numEvents(), ==, 7);
+        TEST(ids(b) == sorted(0, 7));
 
-      // an empty list
-      SweepEventList e(".", ".spatialjoin", bufSize);
-      e.finalize(1);
-      e.serializeToDisk(path);
-      SweepEventList f(path);
-      TEST(f.numEvents(), ==, 0);
-      TEST(ids(f).empty());
+        // the original is unchanged
+        TEST(ids(a) == sorted(0, 7));
 
-      unlink(path.c_str());
-      unlink(path2.c_str());
+        // a loaded list can be moved
+        SweepEventList c(std::move(b));
+        TEST(ids(c) == sorted(0, 7));
+      }
+
+      {
+        // the persisted file is kept after the list was destroyed
+        TEST(files(dir) == std::vector<std::string>{path});
+        TEST(ids(SweepEventList(path)) == sorted(0, 7));
+      }
+
+      {
+        // an empty list, which overwrites the existing file
+        SweepEventList e(dir, ".spatialjoin", bufSize, true);
+        e.finalize(1);
+        TEST(files(dir) == std::vector<std::string>{path});
+        SweepEventList f(path);
+        TEST(f.numEvents(), ==, 0);
+        TEST(ids(f).empty());
+        unlink(path.c_str());
+      }
+
+      TEST(rmdir(dir.c_str()) == 0);
     }
 
     {

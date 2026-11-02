@@ -341,10 +341,14 @@ class SweepEventList {
     const BoxVal** _last = 0;
   };
 
+  // if persistOnDisk is true, finalize() writes the sorted event list to
+  // a file <cacheDir>/<tmpPrefix>events
   SweepEventList(const std::string& cacheDir, const std::string& tmpPrefix,
-                 size_t bufferSize = DEFAULT_BUFFER_S)
+                 size_t bufferSize = DEFAULT_BUFFER_S,
+                 bool persistOnDisk = false)
       : _bufferSize(std::max(bufferSize / sizeof(BoxVal), size_t(1)) *
                     sizeof(BoxVal)),
+        _persistOnDisk(persistOnDisk),
         _cacheDir(cacheDir),
         _tmpPrefix(tmpPrefix),
         _file(-1) {}
@@ -430,42 +434,6 @@ class SweepEventList {
     return Reader(_file, bufSize);
   }
 
-  void serializeToDisk(const std::string& path) const {
-    int out = open(path.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0666);
-    if (out < 0) {
-      throw std::runtime_error("Could not open event list file " + path);
-    }
-
-    bool ok = true;
-
-    if (!_onDisk) {
-      ok = util::writeAll(
-               out, reinterpret_cast<const unsigned char*>(_buffer.data()),
-               _buffer.size() * sizeof(BoxVal)) >= 0;
-    } else {
-      // copy the sorted events from the events file
-      std::vector<unsigned char> buf(DEFAULT_RBUF_S);
-      size_t offset = 0;
-      ssize_t len;
-      while ((len = util::preadAll(_file, buf.data(), buf.size(), offset)) >
-             0) {
-        if (util::writeAll(out, buf.data(), len) < 0) break;
-        offset += len;
-      }
-      ok = len == 0;
-    }
-
-    if (!ok) {
-      std::stringstream ss;
-      ss << "Could not write event list file " << path << "\n";
-      ss << strerror(errno) << std::endl;
-      close(out);
-      throw std::runtime_error(ss.str());
-    }
-
-    close(out);
-  }
-
   void flushToDisk() {
     // the events file is only created once it is required
     if (_file < 0) {
@@ -500,10 +468,30 @@ class SweepEventList {
 
   void finalize(size_t numThreads = 4) {
     if (!_onDisk) {
-      // on-disk sort
+      // in-memory sort
       std::sort(
           _buffer.begin(), _buffer.end(),
           [](const BoxVal& a, const BoxVal& b) { return boxCmp(&a, &b) < 0; });
+
+      if (_persistOnDisk) {
+        auto fName = persistFName();
+        int out = open(fName.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0666);
+        if (out < 0) {
+          throw std::runtime_error("Could not open event list file " + fName);
+        }
+
+        ssize_t r = util::writeAll(
+            out, reinterpret_cast<const unsigned char*>(_buffer.data()),
+            _buffer.size() * sizeof(BoxVal));
+        close(out);
+
+        if (r < 0) {
+          std::stringstream ss;
+          ss << "Could not write event list file " << fName << "\n";
+          ss << strerror(errno) << std::endl;
+          throw std::runtime_error(ss.str());
+        }
+      }
       return;
     }
 
@@ -513,13 +501,16 @@ class SweepEventList {
     std::vector<BoxVal>().swap(_buffer);
 
     // on-disk merge sort
-    std::string newFName = util::getTmpFName(_cacheDir, _tmpPrefix, "sorttmp");
-    int newFile = open(newFName.c_str(), O_RDWR | O_CREAT, 0666);
-    unlink(newFName.c_str());
+    std::string newFName =
+        _persistOnDisk ? persistFName()
+                       : util::getTmpFName(_cacheDir, _tmpPrefix, "sorttmp");
+    int newFile = open(newFName.c_str(), O_RDWR | O_CREAT | O_TRUNC, 0666);
 
     if (newFile < 0) {
-      throw std::runtime_error("Could not open temporary file " + newFName);
+      throw std::runtime_error("Could not open file " + newFName);
     }
+
+    if (!_persistOnDisk) unlink(newFName.c_str());
 
 #ifdef __unix__
     posix_fadvise(newFile, 0, 0, POSIX_FADV_SEQUENTIAL);
@@ -540,10 +531,17 @@ class SweepEventList {
   }
 
  private:
+  std::string persistFName() const {
+    std::string dir = _cacheDir == "<tmp>" ? util::getTmpDir() : _cacheDir;
+    if (dir.size() && dir.back() != '/') dir += "/";
+    return dir + _tmpPrefix + "events";
+  }
+
   void swap(SweepEventList& other) noexcept {
     std::swap(_bufferSize, other._bufferSize);
     _buffer.swap(other._buffer);
     std::swap(_onDisk, other._onDisk);
+    std::swap(_persistOnDisk, other._persistOnDisk);
     _cacheDir.swap(other._cacheDir);
     _tmpPrefix.swap(other._tmpPrefix);
     std::swap(_file, other._file);
@@ -559,6 +557,8 @@ class SweepEventList {
 
   // any events on disk? If not, the final list is fully in memory
   bool _onDisk = false;
+
+  bool _persistOnDisk = false;
 
   std::string _cacheDir;
   std::string _tmpPrefix;
