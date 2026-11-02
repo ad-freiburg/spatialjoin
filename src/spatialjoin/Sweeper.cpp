@@ -518,6 +518,8 @@ RelStats Sweeper::sweep(const SweepEventList* eventsA,
   for (auto& curX : _atomicCurX) curX = std::numeric_limits<int32_t>::min();
 
   size_t counts = 0, totalCheckCount = 0, jj = 0, checkPairs = 0;
+
+  size_t listEvents = 0;
   auto t = TIME();
 
   // fire up worker threads for geometry checking
@@ -554,6 +556,7 @@ RelStats Sweeper::sweep(const SweepEventList* eventsA,
                    boxCmp(next, &multiEvents[multiHeads.top().first]
                                             [multiHeads.top().second]) <= 0)) {
         curVal = *next;
+        listEvents++;
         curSide = nextSide;
         next = reader.next();
         nextSide = reader.lastSide();
@@ -621,8 +624,9 @@ RelStats Sweeper::sweep(const SweepEventList* eventsA,
 
           auto cacheSize = _geomCache->size();
 
-          log(std::to_string(jj / 2) + " / " + std::to_string(numObjects) +
-              " (" + std::to_string((((1.0 * jj) / (1.0 * numEvents)) * 100)) +
+          log(std::to_string(listEvents / 2) + " / " +
+              std::to_string(numObjects) + " (" +
+              std::to_string((((1.0 * listEvents) / (1.0 * numEvents)) * 100)) +
               "%, " +
               std::to_string((500000.0 / double(TOOK(t))) * 1000000000.0) +
               " geoms/s, " +
@@ -641,7 +645,7 @@ RelStats Sweeper::sweep(const SweepEventList* eventsA,
         }
 
         if ((jj % 100 == 0) && _cfg.sweepProgressCb)
-          _cfg.sweepProgressCb(jj / 2);
+          _cfg.sweepProgressCb(listEvents / 2);
       } else {
         // OUT event
         actives[curSide].erase({cur->loY, cur->upY}, SweepVal(cur->id));

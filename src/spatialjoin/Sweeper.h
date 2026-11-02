@@ -157,13 +157,10 @@ class Sweeper {
  public:
   Sweeper(SweeperCfg cfg, const GeometryCache* geomCache)
       : _cfg(cfg),
-        _obufpos(0),
         _geomCache(geomCache),
         _jobs(100),
         _dontNeedFullDE9IM(!_cfg.computeDE9IM &&
-                           _cfg.de9imFilter == util::geo::FANY) {
-    _outBuffer = new unsigned char[BUFFER_S];
-  };
+                           _cfg.de9imFilter == util::geo::FANY) {}
 
   void log(const std::string& msg);
 
@@ -387,8 +384,6 @@ class Sweeper {
 
   // 1 for a self join, 2 for a non-self join, set in sweep()
   size_t _numSides = 1;
-  unsigned char* _outBuffer;
-  ssize_t _obufpos;
 
   std::vector<size_t> _checks;
   std::vector<int32_t> _curX;

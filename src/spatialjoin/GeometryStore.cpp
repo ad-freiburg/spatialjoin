@@ -1338,13 +1338,6 @@ void GeometryStore::addBatch(WriteBatch& cands, sj::SweepEventList* events,
         log("@ " + std::to_string(events->numObjects()));
     }
     for (const auto& multiEvent : multiEvents) events->add(multiEvent);
-
-    // the events of the members of multi geometries are not written to the
-    // event list, they are merged into the sweep on the fly from the multi
-    // geometry store
-    for (const auto& multi : cands.multiGeoms) {
-      events->addMerged(2 * multi.members.size());
-    }
   }
 }
 

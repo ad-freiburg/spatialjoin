@@ -16,6 +16,7 @@
 #include "spatialjoin/OutputWriter.h"
 #include "spatialjoin/Sweeper.h"
 #include "spatialjoin/WKTParse.h"
+#include "spatialjoin/tests/SweepEventListTest.h"
 #include "util/Test.h"
 #include "util/geo/Geo.h"
 #include "util/log/Log.h"
@@ -36,7 +37,8 @@ struct RunStats {
 std::string fullRun(const std::vector<std::string>& files, sj::SweeperCfg cfg,
                     RunStats* stats, double dupRemovalMinSize = 0,
                     bool strict = false, bool sharedStore = false,
-                    bool singleList = false) {
+                    bool singleList = false,
+                    size_t eventBufSize = 10 * sizeof(sj::BoxVal)) {
   {
     sj::OutputWriter outWriter(cfg.numThreads, "$", "$\n", ".resTmp", ".");
     cfg.writeRelCb = [&outWriter](size_t t, const char* a, size_t an,
@@ -68,7 +70,8 @@ std::string fullRun(const std::vector<std::string>& files, sj::SweeperCfg cfg,
       }
 
       if (sweepEvents.empty() || !singleList) {
-        sweepEvents.emplace_back(new SweepEventList(".", ".spatialjoin"));
+        sweepEvents.emplace_back(
+            new SweepEventList(".", ".spatialjoin", eventBufSize));
       }
 
       int f = open(file.c_str(), O_RDONLY);
@@ -96,7 +99,7 @@ std::string fullRun(const std::vector<std::string>& files, sj::SweeperCfg cfg,
 
     for (auto& store : geomStores) store->flush();
 
-    for (auto& events : sweepEvents) events->flush(1);
+    for (auto& events : sweepEvents) events->finalize(1);
 
     Sweeper sweeper(cfg, &geomCache);
     sweeper.sweep(sweepEvents[0].get(),
@@ -178,6 +181,8 @@ void writeMultiFlushDataset(const std::string& path) {
 
 // _____________________________________________________________________________
 int main(int, char**) {
+  sweepEventListTest();
+
   {
     using sj::boxids::GRID_H;
     using sj::boxids::GRID_W;
@@ -715,6 +720,19 @@ int main(int, char**) {
     }
 
     {
+      RunStats stats;
+      for (const auto& file :
+           {TEST_DATASET_DIR "/brandenburg", TEST_DATASET_DIR "/freiburg"}) {
+        auto onDisk = sortedRels(fullRun(file, cfg, &stats));
+        auto inMemory =
+            sortedRels(fullRun(std::vector<std::string>{file}, cfg, &stats, 0,
+                               false, false, false, sj::DEFAULT_BUFFER_S));
+        TEST(onDisk.size() > 0);
+        TEST(inMemory == onDisk);
+      }
+    }
+
+    {
       // a self join over a single event list holding the geometries of two
       // stores gives the same result as if they were in the same store
       RunStats stats;
@@ -732,9 +750,6 @@ int main(int, char**) {
     }
 
     {
-      // a non-self join of a dataset with itself, in two stores: all gids
-      // occur on both sides, but denote different geometries. The result
-      // contains the self join, and every geometry is related to itself
       RunStats stats;
       auto self =
           sortedRels(fullRun(TEST_DATASET_DIR "/brandenburg", cfg, &stats));

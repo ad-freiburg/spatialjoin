@@ -515,7 +515,7 @@ int main(int argc, char** argv) {
   for (auto& store : geomStores) store->flush();
 
   geomCache.log("Sorting events...");
-  for (auto& events : sweepEvents) events->flush(NUM_THREADS);
+  for (auto& events : sweepEvents) events->finalize(NUM_THREADS);
   geomCache.log("...done");
 
   Sweeper sweeper(sweeperCfg, &geomCache);

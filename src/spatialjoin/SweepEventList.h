@@ -5,9 +5,13 @@
 #define SPATIALJOINS_SWEEPEVENTLIST_H_
 
 #include <fcntl.h>
+#include <sys/stat.h>
 
+#include <algorithm>
 #include <sstream>
 #include <string>
+#include <utility>
+#include <vector>
 
 #include "util/Misc.h"
 #include "util/geo/Geo.h"
@@ -67,6 +71,28 @@ struct BoxVal {
   }
 };
 
+struct PreparedGeomMeta {
+  size_t id;               // typed ID
+  util::geo::I32Box bbox;  // (padded) bounding box
+  GeomType type;
+  util::geo::I32Box box45;  // (padded) rotated bounding box
+  util::geo::I32Point point1, point2;
+  // number of anchor points (for simple lines and folded box polygons, the
+  // events instead store the packed other point, see packPoint())
+  size_t numAnchors;
+  // area for polygons, length for lines, 0 for points
+  double areaOrLen;
+};
+
+// default size of the write buffer of a SweepEventList, must be multiple of
+// sizeof(BoxVal)
+static const size_t DEFAULT_BUFFER_S =
+    ((16 * 1024 * 1024 + sizeof(BoxVal)) / sizeof(BoxVal)) * sizeof(BoxVal);
+
+// default size of the read buffer of a SweepEventList::Reader, must be
+// multiple of sizeof(BoxVal)
+static const size_t DEFAULT_RBUF_S = 100000 * sizeof(BoxVal);
+
 // _____________________________________________________________________________
 inline size_t typedId(size_t id, GeomType type) {
   return (id & ID_MASK) | (static_cast<size_t>(type) << ID_TYPE_SHIFT);
@@ -77,27 +103,6 @@ inline size_t untypedId(size_t id) { return id & ID_MASK; }
 
 // _____________________________________________________________________________
 inline size_t getId(const BoxVal& bv) { return untypedId(bv.id); }
-
-// _____________________________________________________________________________
-inline std::string toString(const BoxVal& bv) {
-  std::stringstream ret;
-
-  ret << "(id=" << getId(bv);
-  ret << " loY=" << bv.loY;
-  ret << " upY=" << bv.upY;
-  ret << " val=" << bv.val;
-  ret << " out=" << bv.out;
-  ret << " type=" << (int)bv.getType();
-  ret << " point=" << util::geo::getWKT(bv.point);
-  // ret << " b45=" << util::geo::getWKT(bv.b45);
-  ret << ")";
-
-  return ret.str();
-}
-
-inline bool operator==(const BoxVal& a, const BoxVal& b) {
-  return a.id == b.id && a.loY == b.loY && a.upY == b.upY;
-}
 
 // _____________________________________________________________________________
 inline size_t packPoint(const util::geo::I32Point& p) {
@@ -122,27 +127,7 @@ inline util::geo::I32Point getOtherPoint(const BoxVal& bv) {
   return {bv.val, bv.point.getY() == bv.loY ? bv.upY : bv.loY};
 }
 
-// the metadata of a prepared geometry, from which its sweep events are built
-struct PreparedGeomMeta {
-  // typed ID, assigned in GeometryStore::addBatch(), see typedId()
-  size_t id;
-  // the (padded) bounding box
-  util::geo::I32Box bbox;
-  GeomType type;
-  // the (padded) bounding box of the geometry rotated by 45 degrees
-  util::geo::I32Box box45;
-  // the point of the IN event and of the OUT event, see BoxVal::point
-  util::geo::I32Point point1, point2;
-  // number of anchor points (for simple lines and folded box polygons, the
-  // events instead store the packed other point, see packPoint())
-  size_t numAnchors;
-  // area for polygons, length for lines, 0 for points
-  double areaOrLen;
-};
-
 // _____________________________________________________________________________
-// returns the IN and the OUT event of a geometry with typed ID id (see
-// typedId()), point1 and point2 are the points of the IN and the OUT event
 inline std::pair<BoxVal, BoxVal> getSweepEvents(
     size_t id, const util::geo::I32Box& bbox, const util::geo::I32Box& box45,
     const util::geo::I32Point& point1, const util::geo::I32Point& point2,
@@ -180,14 +165,13 @@ inline std::pair<BoxVal, BoxVal> getSweepEvents(
 }
 
 // _____________________________________________________________________________
-// returns the IN and the OUT event of a prepared geometry stored in the store
-// storeId
 inline std::pair<BoxVal, BoxVal> getSweepEvents(const PreparedGeomMeta& meta,
                                                 uint8_t storeId) {
   return getSweepEvents(meta.id, meta.bbox, meta.box45, meta.point1,
                         meta.point2, meta.numAnchors, meta.areaOrLen, storeId);
 }
 
+// _____________________________________________________________________________
 static int boxCmp(const void* a, const void* b) {
   const auto& boxa = static_cast<const BoxVal*>(a);
   const auto& boxb = static_cast<const BoxVal*>(b);
@@ -259,13 +243,6 @@ static int boxCmp(const void* a, const void* b) {
   return 0;
 }
 
-// buffer size _must_ be multiples of sizeof(BoxVal) and should hold at least
-// one element
-static const ssize_t BUFFER_S =
-    ((16 * 1024 * 1024 + sizeof(BoxVal)) / sizeof(BoxVal)) * sizeof(BoxVal);
-
-static const size_t RBUF_SIZE = 100000 * sizeof(BoxVal);
-
 class SweepEventList {
  public:
   // reader for streaming the event list
@@ -273,10 +250,20 @@ class SweepEventList {
    public:
     Reader() : _file(-1) {}
     Reader(int file, size_t bufSize) : _file(file), _buf(bufSize) {}
+    // reader for an event list held in memory, in mem with length len
+    Reader(const unsigned char* mem, size_t len)
+        : _file(-1), _mem(mem), _memLen(len) {}
 
     // returns 0 at the end of the event list. Returned pointer is
-    // valid until a call to next() or reset().
+    // valid until a call to next().
     const BoxVal* next() {
+      if (_mem) {
+        if (_readPtr >= static_cast<ssize_t>(_memLen)) return 0;
+        auto ret = reinterpret_cast<const BoxVal*>(_mem + _readPtr);
+        _readPtr += sizeof(BoxVal);
+        return ret;
+      }
+
       if (_file < 0) return 0;
       if (_readPtr >= _readBlockLen) {
         _readBlockLen =
@@ -305,15 +292,11 @@ class SweepEventList {
       return ret;
     }
 
-    void reset() {
-      _fileOffset = 0;
-      _readPtr = 0;
-      _readBlockLen = 0;
-    }
-
    private:
     int _file;
     std::vector<unsigned char> _buf;
+    const unsigned char* _mem = 0;
+    size_t _memLen = 0;
     size_t _fileOffset = 0;
     ssize_t _readPtr = 0;
     ssize_t _readBlockLen = 0;
@@ -322,7 +305,7 @@ class SweepEventList {
   class CombinedReader {
    public:
     CombinedReader(const SweepEventList* a, const SweepEventList* b = 0,
-                   size_t bufSize = RBUF_SIZE)
+                   size_t bufSize = DEFAULT_RBUF_S)
         : _readerA(a->newReader(bufSize)),
           _readerB(b ? b->newReader(bufSize) : Reader()) {
       _headA = _readerA.next();
@@ -358,41 +341,63 @@ class SweepEventList {
     const BoxVal** _last = 0;
   };
 
-  SweepEventList(const std::string& cacheDir, const std::string& tmpPrefix)
-      : _obufpos(0), _cacheDir(cacheDir) {
-    _outBuffer = new unsigned char[BUFFER_S];
+  SweepEventList(const std::string& cacheDir, const std::string& tmpPrefix,
+                 size_t bufferSize = DEFAULT_BUFFER_S)
+      : _bufferSize(std::max(bufferSize / sizeof(BoxVal), size_t(1)) *
+                    sizeof(BoxVal)),
+        _cacheDir(cacheDir),
+        _tmpPrefix(tmpPrefix),
+        _file(-1) {}
 
-    auto fname = util::getTmpFName(cacheDir, tmpPrefix, "events");
-    _file = open(fname.c_str(), O_RDWR | O_CREAT | O_TRUNC, 0666);
-
+  // construct SweepEventList directly from file on disk
+  explicit SweepEventList(const std::string& path)
+      : _bufferSize(0), _onDisk(true) {
+    _file = open(path.c_str(), O_RDONLY);
     if (_file < 0) {
-      throw std::runtime_error("Could not open temporary file " + fname);
+      throw std::runtime_error("Could not open event list file " + path);
     }
 
-    // immediately unlink
-    unlink(fname.c_str());
+    struct stat st;
+    if (fstat(_file, &st) != 0) {
+      close(_file);
+      throw std::runtime_error("Could not stat event list file " + path);
+    }
+
+    _curSweepId = st.st_size / sizeof(BoxVal);
 
 #ifdef __unix__
     posix_fadvise(_file, 0, 0, POSIX_FADV_SEQUENTIAL);
 #endif
   }
 
-  ~SweepEventList() { close(_file); }
+  SweepEventList(const SweepEventList&) = delete;
+  SweepEventList& operator=(const SweepEventList&) = delete;
+
+  SweepEventList(SweepEventList&& other) noexcept : _bufferSize(0), _file(-1) {
+    swap(other);
+  }
+
+  SweepEventList& operator=(SweepEventList&& other) noexcept {
+    SweepEventList tmp(std::move(other));
+    swap(tmp);
+    return *this;
+  }
+
+  ~SweepEventList() {
+    if (_file >= 0) close(_file);
+  }
 
   void add(const BoxVal& bv) {
-    memcpy(_outBuffer + _obufpos, &bv, sizeof(BoxVal));
-    _obufpos += sizeof(BoxVal);
+    const size_t N = _bufferSize / sizeof(BoxVal);
 
-    if (_obufpos + sizeof(BoxVal) > BUFFER_S) {
-      ssize_t r = util::writeAll(_file, _outBuffer, _obufpos);
-      if (r < 0) {
-        std::stringstream ss;
-        ss << "Could not write to events file\n";
-        ss << strerror(errno) << std::endl;
-        throw std::runtime_error(ss.str());
-      }
-      _obufpos = 0;
+    // buffer must have size of max _bufferSize
+    if (_buffer.size() == _buffer.capacity()) {
+      _buffer.reserve(std::min(std::max(2 * _buffer.capacity(), size_t(1)), N));
     }
+
+    _buffer.push_back(bv);
+
+    if (_buffer.size() == N) flushToDisk();
     _curSweepId++;
   }
 
@@ -406,54 +411,121 @@ class SweepEventList {
     add(events.second);
   }
 
-  // adds the IN and the OUT event of a prepared geometry in the store storeId
+  // add meta to this list, using store storeId
   void add(const PreparedGeomMeta& meta, uint8_t storeId) {
     add(meta.id, meta.bbox, meta.box45, meta.point1, meta.point2,
         meta.numAnchors, meta.areaOrLen, storeId);
   }
 
-  // counts n events which are not stored in this list, but merged into the
-  // sweep on the fly (the events of the members of multi geometries)
-  void addMerged(size_t n) { _numMergedEvents += n; }
-
   size_t numObjects() const { return numEvents() / 2; }
-  size_t numEvents() const { return _curSweepId + _numMergedEvents; }
+  size_t numEvents() const { return _curSweepId; }
 
-  Reader newReader(size_t bufSize = RBUF_SIZE) const {
-    // the buffer size must be a multiple of sizeof(BoxVal) and must
-    // hold _at least_ 1 element
-    if (bufSize < sizeof(BoxVal)) bufSize = sizeof(BoxVal);
-    return Reader(_file, (bufSize / sizeof(BoxVal)) * sizeof(BoxVal));
+  Reader newReader(size_t bufSize = DEFAULT_RBUF_S) const {
+    if (!_onDisk) {
+      return Reader(reinterpret_cast<const unsigned char*>(_buffer.data()),
+                    _buffer.size() * sizeof(BoxVal));
+    }
+
+    bufSize = std::max(bufSize / sizeof(BoxVal), size_t(1)) * sizeof(BoxVal);
+    return Reader(_file, bufSize);
   }
 
-  void flush(size_t numThreads = 4) {
-    ssize_t r = util::writeAll(_file, _outBuffer, _obufpos);
+  void serializeToDisk(const std::string& path) const {
+    int out = open(path.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0666);
+    if (out < 0) {
+      throw std::runtime_error("Could not open event list file " + path);
+    }
+
+    bool ok = true;
+
+    if (!_onDisk) {
+      ok = util::writeAll(
+               out, reinterpret_cast<const unsigned char*>(_buffer.data()),
+               _buffer.size() * sizeof(BoxVal)) >= 0;
+    } else {
+      // copy the sorted events from the events file
+      std::vector<unsigned char> buf(DEFAULT_RBUF_S);
+      size_t offset = 0;
+      ssize_t len;
+      while ((len = util::preadAll(_file, buf.data(), buf.size(), offset)) >
+             0) {
+        if (util::writeAll(out, buf.data(), len) < 0) break;
+        offset += len;
+      }
+      ok = len == 0;
+    }
+
+    if (!ok) {
+      std::stringstream ss;
+      ss << "Could not write event list file " << path << "\n";
+      ss << strerror(errno) << std::endl;
+      close(out);
+      throw std::runtime_error(ss.str());
+    }
+
+    close(out);
+  }
+
+  void flushToDisk() {
+    // the events file is only created once it is required
+    if (_file < 0) {
+      auto fname = util::getTmpFName(_cacheDir, _tmpPrefix, "events");
+      _file = open(fname.c_str(), O_RDWR | O_CREAT | O_TRUNC, 0666);
+
+      if (_file < 0) {
+        throw std::runtime_error("Could not open temporary file " + fname);
+      }
+
+      // immediately unlink
+      unlink(fname.c_str());
+
+#ifdef __unix__
+      posix_fadvise(_file, 0, 0, POSIX_FADV_SEQUENTIAL);
+#endif
+    }
+
+    ssize_t r = util::writeAll(
+        _file, reinterpret_cast<const unsigned char*>(_buffer.data()),
+        _buffer.size() * sizeof(BoxVal));
     if (r < 0) {
       std::stringstream ss;
       ss << "Could not write to events file\n";
       ss << strerror(errno) << std::endl;
       throw std::runtime_error(ss.str());
     }
+    // keeps the capacity of the buffer for the next events
+    _buffer.clear();
+    _onDisk = true;
+  }
 
-    delete[] _outBuffer;
+  void finalize(size_t numThreads = 4) {
+    if (!_onDisk) {
+      // on-disk sort
+      std::sort(
+          _buffer.begin(), _buffer.end(),
+          [](const BoxVal& a, const BoxVal& b) { return boxCmp(&a, &b) < 0; });
+      return;
+    }
 
-    _obufpos = 0;
+    flushToDisk();
 
-    std::string newFName =
-        util::getTmpFName(_cacheDir, ".spatialjoin", "sorttmp");
+    // clear buffer
+    std::vector<BoxVal>().swap(_buffer);
+
+    // on-disk merge sort
+    std::string newFName = util::getTmpFName(_cacheDir, _tmpPrefix, "sorttmp");
     int newFile = open(newFName.c_str(), O_RDWR | O_CREAT, 0666);
     unlink(newFName.c_str());
 
     if (newFile < 0) {
       throw std::runtime_error("Could not open temporary file " + newFName);
-      exit(1);
     }
 
 #ifdef __unix__
     posix_fadvise(newFile, 0, 0, POSIX_FADV_SEQUENTIAL);
 #endif
-    r = util::externalSort(_file, newFile, sizeof(BoxVal), _curSweepId,
-                           numThreads, boxCmp);
+    ssize_t r = util::externalSort(_file, newFile, sizeof(BoxVal), _curSweepId,
+                                   numThreads, boxCmp);
 
     if (r < 0) {
       std::stringstream ss;
@@ -462,25 +534,37 @@ class SweepEventList {
       throw std::runtime_error(ss.str());
     }
 
-    fsync(newFile);
-
     close(_file);
 
     _file = newFile;
-
-#ifdef __unix__
-    posix_fadvise(_file, 0, 0, POSIX_FADV_SEQUENTIAL);
-#endif
   }
 
  private:
-  unsigned char* _outBuffer;
-  ssize_t _obufpos;
+  void swap(SweepEventList& other) noexcept {
+    std::swap(_bufferSize, other._bufferSize);
+    _buffer.swap(other._buffer);
+    std::swap(_onDisk, other._onDisk);
+    _cacheDir.swap(other._cacheDir);
+    _tmpPrefix.swap(other._tmpPrefix);
+    std::swap(_file, other._file);
+    std::swap(_curSweepId, other._curSweepId);
+  }
+
+  // the maximum size of _buffer in bytes
+  size_t _bufferSize;
+
+  // the events not yet written to the events file. If no events were written
+  // to it, the (finalized) event list is held here
+  std::vector<BoxVal> _buffer;
+
+  // any events on disk? If not, the final list is fully in memory
+  bool _onDisk = false;
+
   std::string _cacheDir;
+  std::string _tmpPrefix;
   int _file;
 
   size_t _curSweepId = 0;
-  size_t _numMergedEvents = 0;
 };
 
 }  // namespace sj
