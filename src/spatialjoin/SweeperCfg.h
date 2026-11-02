@@ -33,7 +33,6 @@ struct SweeperCfg {
   bool haversineApprox;
   bool computeDE9IM;
   util::geo::DE9IMFilter de9imFilter;
-  bool forceTwoSided;
   std::function<void(size_t t, const char* a, size_t an, const char* b,
                      size_t bn, const char* pred, size_t predn)>
       writeRelCb;

@@ -6,6 +6,9 @@
 
 #include <fcntl.h>
 
+#include <sstream>
+#include <string>
+
 #include "util/Misc.h"
 #include "util/geo/Geo.h"
 
@@ -44,6 +47,8 @@ struct BoxVal {
   int32_t upY;       // the upper Y value of the box
   int32_t val;       // the left X value of the box
   bool out : 1;      // whether this is an IN or OUT event
+  uint16_t storeId;  // the store (see GeometryCache::addStore()) the geometry
+                     // is stored in
   double areaOrLen;  // area or len
   util::geo::I32Point point;
   size_t numAnchors;      // for polygons and lines: number of anchor points,
@@ -52,7 +57,6 @@ struct BoxVal {
                           // box polygons: the other box corner, see
                           // packPoint()
   util::geo::I32Box b45;  // oriented bounding box
-  bool side;
 
   GeomType getType() const {
     return static_cast<GeomType>(id >> ID_TYPE_SHIFT);
@@ -73,6 +77,27 @@ inline size_t untypedId(size_t id) { return id & ID_MASK; }
 
 // _____________________________________________________________________________
 inline size_t getId(const BoxVal& bv) { return untypedId(bv.id); }
+
+// _____________________________________________________________________________
+inline std::string toString(const BoxVal& bv) {
+  std::stringstream ret;
+
+  ret << "(id=" << getId(bv);
+  ret << " loY=" << bv.loY;
+  ret << " upY=" << bv.upY;
+  ret << " val=" << bv.val;
+  ret << " out=" << bv.out;
+  ret << " type=" << (int)bv.getType();
+  ret << " point=" << util::geo::getWKT(bv.point);
+  // ret << " b45=" << util::geo::getWKT(bv.b45);
+  ret << ")";
+
+  return ret.str();
+}
+
+inline bool operator==(const BoxVal& a, const BoxVal& b) {
+  return a.id == b.id && a.loY == b.loY && a.upY == b.upY;
+}
 
 // _____________________________________________________________________________
 inline size_t packPoint(const util::geo::I32Point& p) {
@@ -113,7 +138,6 @@ struct PreparedGeomMeta {
   size_t numAnchors;
   // area for polygons, length for lines, 0 for points
   double areaOrLen;
-  bool side;
 };
 
 // _____________________________________________________________________________
@@ -122,27 +146,27 @@ struct PreparedGeomMeta {
 inline std::pair<BoxVal, BoxVal> getSweepEvents(
     size_t id, const util::geo::I32Box& bbox, const util::geo::I32Box& box45,
     const util::geo::I32Point& point1, const util::geo::I32Point& point2,
-    size_t numAnchors, double areaOrLen, bool side) {
+    size_t numAnchors, double areaOrLen, uint16_t storeId) {
   BoxVal in{id,
             bbox.getLowerLeft().getY(),
             bbox.getUpperRight().getY(),
             bbox.getLowerLeft().getX(),
             false,
+            storeId,
             areaOrLen,
             point1,
             numAnchors,
-            box45,
-            side};
+            box45};
   BoxVal out{id,
              bbox.getLowerLeft().getY(),
              bbox.getUpperRight().getY(),
              bbox.getUpperRight().getX(),
              true,
+             storeId,
              areaOrLen,
              point2,
              numAnchors,
-             box45,
-             side};
+             box45};
 
   // simple lines and folded box polygons store the packed point of the other
   // event instead of the number of anchors, see getOtherPoint()
@@ -156,11 +180,12 @@ inline std::pair<BoxVal, BoxVal> getSweepEvents(
 }
 
 // _____________________________________________________________________________
-// returns the IN and the OUT event of a prepared geometry
-inline std::pair<BoxVal, BoxVal> getSweepEvents(const PreparedGeomMeta& meta) {
+// returns the IN and the OUT event of a prepared geometry stored in the store
+// storeId
+inline std::pair<BoxVal, BoxVal> getSweepEvents(const PreparedGeomMeta& meta,
+                                                uint16_t storeId) {
   return getSweepEvents(meta.id, meta.bbox, meta.box45, meta.point1,
-                        meta.point2, meta.numAnchors, meta.areaOrLen,
-                        meta.side);
+                        meta.point2, meta.numAnchors, meta.areaOrLen, storeId);
 }
 
 static int boxCmp(const void* a, const void* b) {
@@ -229,7 +254,6 @@ static int boxCmp(const void* a, const void* b) {
   // make ordernig of equal geoms deterministic
   if (boxa->getType() != boxb->getType())
     return boxa->getType() < boxb->getType() ? -1 : 1;
-  if (boxa->side != boxb->side) return boxa->side ? 1 : -1;
   if (boxa->id != boxb->id) return boxa->id < boxb->id ? -1 : 1;
 
   return 0;
@@ -322,6 +346,10 @@ class SweepEventList {
       return *_last;
     }
 
+    // the side (0 for list a, 1 for list b) of the event last returned by
+    // next()
+    bool lastSide() const { return _last == &_headB; }
+
    private:
     Reader _readerA;
     Reader _readerB;
@@ -368,22 +396,20 @@ class SweepEventList {
     _curSweepId++;
   }
 
-  // adds the IN and the OUT event of a geometry with typed ID id (see
-  // typedId()), point1 and point2 are the points of the IN and the OUT event
   void add(size_t id, const util::geo::I32Box& bbox,
            const util::geo::I32Box& box45, const util::geo::I32Point& point1,
            const util::geo::I32Point& point2, size_t numAnchors,
-           double areaOrLen, bool side) {
+           double areaOrLen, uint16_t storeId) {
     const auto& events = getSweepEvents(id, bbox, box45, point1, point2,
-                                        numAnchors, areaOrLen, side);
+                                        numAnchors, areaOrLen, storeId);
     add(events.first);
     add(events.second);
   }
 
-  // adds the IN and the OUT event of a prepared geometry
-  void add(const PreparedGeomMeta& meta) {
+  // adds the IN and the OUT event of a prepared geometry in the store storeId
+  void add(const PreparedGeomMeta& meta, uint16_t storeId) {
     add(meta.id, meta.bbox, meta.box45, meta.point1, meta.point2,
-        meta.numAnchors, meta.areaOrLen, meta.side);
+        meta.numAnchors, meta.areaOrLen, storeId);
   }
 
   // counts n events which are not stored in this list, but merged into the

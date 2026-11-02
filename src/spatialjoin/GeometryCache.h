@@ -4,121 +4,19 @@
 #ifndef SPATIALJOINS_GEOMETRYCACHE_H_
 #define SPATIALJOINS_GEOMETRYCACHE_H_
 
-#include <fcntl.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <sys/stat.h>
-#include <unistd.h>
-
-#include <atomic>
-#include <condition_variable>
-#include <functional>
 #include <list>
+#include <memory>
 #include <mutex>
-#include <queue>
-#include <thread>
+#include <string>
 #include <unordered_map>
-#include <unordered_set>
+#include <utility>
+#include <vector>
 
 #include "GeometryStore.h"
-#include "Stats.h"
 #include "SweepEventList.h"
-#include "util/JobQueue.h"
 #include "util/geo/Geo.h"
-#include "util/geo/IntervalIdx.h"
-
-#ifndef POSIX_FADV_SEQUENTIAL
-#define POSIX_FADV_SEQUENTIAL 2
-#endif
 
 namespace sj {
-
-inline std::string toString(const BoxVal& bv) {
-  std::stringstream ret;
-
-  ret << "(id=" << getId(bv);
-  ret << " loY=" << bv.loY;
-  ret << " upY=" << bv.upY;
-  ret << " val=" << bv.val;
-  ret << " out=" << bv.out;
-  ret << " type=" << (int)bv.getType();
-  ret << " point=" << util::geo::getWKT(bv.point);
-  // ret << " b45=" << util::geo::getWKT(bv.b45);
-  ret << " side=" << bv.side;
-  ret << ")";
-
-  return ret.str();
-}
-
-inline bool operator==(const BoxVal& a, const BoxVal& b) {
-  return a.id == b.id && a.loY == b.loY && a.upY == b.upY;
-}
-
-struct SweepVal {
-  SweepVal(size_t id) : id(id), side(false) {}
-  SweepVal(size_t id, util::geo::I32Box b45, util::geo::I32Point point,
-           util::geo::I32Point point2, bool side)
-      : id(id), b45(b45), point(point), point2(point2), side(side) {}
-  SweepVal() : id(typedId(0, POLYGON)) {}
-  size_t id;  // typed ID, see typedId()
-  util::geo::I32Box b45;
-  util::geo::I32Point point, point2;
-  bool side;
-
-  size_t getId() const { return untypedId(id); }
-  GeomType getType() const {
-    return static_cast<GeomType>(id >> ID_TYPE_SHIFT);
-  }
-};
-
-struct JobVal {
-  size_t id;  // typed ID, see typedId()
-  util::geo::I32Point point, point2;
-  int32_t val;
-
-  JobVal() : id(typedId(0, POLYGON)) {}
-  JobVal(const BoxVal& bv)
-      : id(bv.id), point(bv.point), point2(getOtherPoint(bv)), val(bv.val){};
-  JobVal(const SweepVal& sv)
-      : id(sv.id), point(sv.point), point2(sv.point2), val(0){};
-
-  size_t getId() const { return untypedId(id); }
-  GeomType getType() const {
-    return static_cast<GeomType>(id >> ID_TYPE_SHIFT);
-  }
-};
-
-inline bool operator==(const JobVal& a, const JobVal& b) {
-  return a.id == b.id;
-}
-
-inline bool operator==(const SweepVal& a, const SweepVal& b) {
-  return a.id == b.id;
-}
-
-inline bool operator<(const SweepVal& a, const SweepVal& b) {
-  return a.id < b.id;
-}
-
-struct Job {
-  JobVal boxVal, sweepVal;
-  std::string multiOut;
-};
-
-inline bool operator==(const Job& a, const Job& b) {
-  return a.boxVal == b.boxVal && a.sweepVal == b.sweepVal &&
-         a.multiOut == b.multiOut;
-}
-
-typedef std::vector<Job> JobBatch;
-
-// intersects, contains, covers, touches, crosses / overlaps
-typedef std::tuple<bool, bool, bool, bool, bool> GeomCheckRes;
-
-static const size_t MAX_OUT_LINE_LENGTH = 1000;
-
-static const size_t POINT_CACHE_MAX_ELEMENTS = 10000;
-static const size_t SIMPLE_LINE_CACHE_MAX_ELEMENTS = 10000;
 
 template <typename W>
 struct ValEntry {
@@ -195,7 +93,7 @@ class GeometryCache {
   // the LRU caches for the geometries of a single GeometryStore
   struct StoreCaches {
     StoreCaches(const SweeperCfg& cfg)
-        : pointCache(cfg.geomCacheMaxSize, POINT_CACHE_MAX_ELEMENTS,
+        : pointCache(cfg.geomCacheMaxSize, cfg.geomCacheMaxNumElements,
                      cfg.numCacheThreads),
           areaCache(cfg.geomCacheMaxSize, cfg.geomCacheMaxNumElements,
                     cfg.numCacheThreads),
@@ -203,7 +101,7 @@ class GeometryCache {
                           cfg.numCacheThreads),
           lineCache(cfg.geomCacheMaxSize, cfg.geomCacheMaxNumElements,
                     cfg.numCacheThreads),
-          simpleLineCache(cfg.geomCacheMaxSize, SIMPLE_LINE_CACHE_MAX_ELEMENTS,
+          simpleLineCache(cfg.geomCacheMaxSize, cfg.geomCacheMaxNumElements,
                           cfg.numCacheThreads) {}
 
     TypedGeometryCache<Point> pointCache;

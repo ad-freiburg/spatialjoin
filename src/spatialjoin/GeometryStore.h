@@ -206,7 +206,6 @@ struct MultiWriteCand {
   size_t id;
   // the (padded) bounding box of all members
   util::geo::I32Box bbox;
-  bool side;
   WriteBatch members;
 };
 
@@ -229,52 +228,45 @@ class GeometryStore {
         _simpleAreaStore(cfg.numCacheThreads, cache, tmpPrefix),
         _lineStore(cfg.numCacheThreads, cache, tmpPrefix),
         _simpleLineStore(cfg.numCacheThreads, cache, tmpPrefix),
-        _multiStore(cfg.numCacheThreads, cache, tmpPrefix),
-        _numSides(1) {
-    if (_cfg.forceTwoSided) _numSides = 2;
-  };
+        _multiStore(cfg.numCacheThreads, cache, tmpPrefix){};
 
   void log(const std::string& msg);
 
   util::geo::I32Box add(const util::geo::I32MultiPolygon& a,
-                        const std::string& gid, bool side,
-                        WriteBatch& batch) const;
+                        const std::string& gid, WriteBatch& batch) const;
   util::geo::I32Box add(const util::geo::I32MultiPolygon& a,
-                        const std::string& gid, size_t, bool side,
+                        const std::string& gid, size_t,
                         WriteBatch& batch) const;
   util::geo::I32Box add(const util::geo::I32Polygon& a, const std::string& gid,
-                        bool side, WriteBatch& batch) const;
+                        WriteBatch& batch) const;
   util::geo::I32Box add(const util::geo::I32Polygon& a, const std::string& gid,
-                        size_t subId, bool side, WriteBatch& batch) const;
+                        size_t subId, WriteBatch& batch) const;
 
   util::geo::I32Box add(const util::geo::I32MultiLine& a,
-                        const std::string& gid, size_t, bool side,
+                        const std::string& gid, size_t,
                         WriteBatch& batch) const;
   util::geo::I32Box add(const util::geo::I32MultiLine& a,
-                        const std::string& gid, bool side,
+                        const std::string& gid, WriteBatch& batch) const;
+  util::geo::I32Box add(const util::geo::I32Line& a, const std::string& gid,
                         WriteBatch& batch) const;
   util::geo::I32Box add(const util::geo::I32Line& a, const std::string& gid,
-                        bool side, WriteBatch& batch) const;
-  util::geo::I32Box add(const util::geo::I32Line& a, const std::string& gid,
-                        size_t subid, bool side, WriteBatch& batch) const;
+                        size_t subid, WriteBatch& batch) const;
 
   util::geo::I32Box add(const util::geo::I32Point& a, const std::string& gid,
-                        bool side, WriteBatch& batch) const;
+                        WriteBatch& batch) const;
   util::geo::I32Box add(const util::geo::I32Point& a, const std::string& gid,
-                        size_t subid, bool side, WriteBatch& batch) const;
+                        size_t subid, WriteBatch& batch) const;
   util::geo::I32Box add(const util::geo::I32MultiPoint& a,
-                        const std::string& gid, size_t, bool side,
+                        const std::string& gid, size_t,
                         WriteBatch& batch) const;
   util::geo::I32Box add(const util::geo::I32MultiPoint& a,
-                        const std::string& gid, bool side,
-                        WriteBatch& batch) const;
+                        const std::string& gid, WriteBatch& batch) const;
 
-  // adds the members (added with a subid > 0) of the multi geometry gid with
-  // bounding box box as a single multi geometry to batch
   void addMulti(WriteBatch&& members, const util::geo::I32Box& box,
-                const std::string& gid, bool side, WriteBatch& batch) const;
+                const std::string& gid, WriteBatch& batch) const;
 
-  void addBatch(WriteBatch& cands, sj::SweepEventList* events);
+  void addBatch(WriteBatch& cands, sj::SweepEventList* events,
+                uint16_t storeId);
 
   void flush();
 
@@ -300,10 +292,6 @@ class GeometryStore {
   const TypedGeometryStore<MultiGeom>& multiStore() const {
     return _multiStore;
   }
-
-  size_t numSides() const { return _numSides; }
-
-  void setNumSides(size_t sides) { _numSides = sides; }
 
   bool hasRefs() const { return _refs.size() != 0; }
 
@@ -357,8 +345,6 @@ class GeometryStore {
 
   // number of multi geometries, guarded by _multiGeomCacheWriteMtx
   size_t _numMultis = 0;
-
-  std::atomic<uint8_t> _numSides;
 
   mutable std::mutex _sweepEventWriteMtx;
   mutable std::mutex _pointGeomCacheWriteMtx;

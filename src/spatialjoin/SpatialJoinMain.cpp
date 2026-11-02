@@ -3,6 +3,7 @@
 // Authors: Patrick Brosi <brosi@informatik.uni-freiburg.de>
 
 #include <iostream>
+#include <memory>
 
 #include "BoxIds.h"
 #include "GeometryCache.h"
@@ -393,7 +394,6 @@ int main(int argc, char** argv) {
                             haversineApprox,
                             computeDE9IM,
                             de9imFilter,
-                            inputFiles.size() == 2,
                             writeRelCb,
                             {},
                             {},
@@ -408,113 +408,122 @@ int main(int argc, char** argv) {
       LOGTO(INFO, std::cerr) << s;
     };
 
-  sj::GeometryStore geomStore(sweeperCfg, cacheDir, ".spatialjoin");
   GeometryCache geomCache(sweeperCfg);
-  geomCache.addStore(&geomStore);
-  sj::SweepEventList sweepEvents(cacheDir, ".spatialjoin");
+
+  if (inputFiles.size() > 2) {
+    std::cerr << "Either 1 input files (for self join), or 2 input files "
+                 "(for non-self join) can be provided."
+              << std::endl;
+    exit(1);
+  }
+
+  // sweep event lists
+  std::vector<std::unique_ptr<sj::SweepEventList>> sweepEvents;
 
   geomCache.log("Parsing input geometries...");
   auto ts = TIME();
 
-  sj::WKTParser parser(&geomStore, &sweepEvents, NUM_THREADS, wktStrict);
+  // geometry stores, here we use one store per side
+  std::vector<std::unique_ptr<sj::GeometryStore>> geomStores;
 
-  if (!inputFiles.empty()) {
-    if (inputFiles.size() > 2) {
-      std::cerr << "Either 1 input files (for self join), or 2 input files "
-                   "(for non-self join) can be provided."
+  size_t numInvalid = 0;
+
+  for (size_t i = 0; i < std::max<size_t>(inputFiles.size(), 1); i++) {
+    sweepEvents.emplace_back(new sj::SweepEventList(cacheDir, ".spatialjoin"));
+
+    geomStores.emplace_back(
+        new sj::GeometryStore(sweeperCfg, cacheDir, ".spatialjoin"));
+    size_t storeId = geomCache.addStore(geomStores.back().get());
+
+    sj::WKTParser parser(geomStores.back().get(), storeId,
+                         sweepEvents.back().get(), NUM_THREADS, wktStrict);
+
+    if (inputFiles.empty()) {
+      while ((len = util::readAll(0, buf, CACHE_SIZE)) > 0) {
+        parser.parse(reinterpret_cast<char*>(buf), len);
+      }
+    } else if (util::endsWith(inputFiles[i], ".bz2")) {
+#ifndef SPATIALJOIN_NO_BZIP2
+      auto fh = fopen(inputFiles[i].c_str(), "r");
+      if (!fh) {
+        std::cerr << "Could not open input file " << inputFiles[i] << std::endl;
+        exit(1);
+      }
+      int err;
+      BZFILE* f = BZ2_bzReadOpen(&err, fh, 0, 0, NULL, 0);
+      if (!f || err != BZ_OK) {
+        std::cerr << "Could not open input file " << inputFiles[i] << std::endl;
+        exit(1);
+      }
+      while ((len = util::bz2readAll(f, buf, CACHE_SIZE)) > 0) {
+        parser.parse(reinterpret_cast<char*>(buf), len);
+      }
+
+      BZ2_bzReadClose(&err, f);
+      fclose(fh);
+#else
+      std::cerr << "Could not open input file " << inputFiles[i]
+                << ", spatialjoin was compiled without BZip2 support"
                 << std::endl;
       exit(1);
-    }
-
-    for (size_t i = 0; i < inputFiles.size(); i++) {
-      if (util::endsWith(inputFiles[i], ".bz2")) {
-#ifndef SPATIALJOIN_NO_BZIP2
-        auto fh = fopen(inputFiles[i].c_str(), "r");
-        if (!fh) {
-          std::cerr << "Could not open input file " << inputFiles[i]
-                    << std::endl;
-          exit(1);
-        }
-        int err;
-        BZFILE* f = BZ2_bzReadOpen(&err, fh, 0, 0, NULL, 0);
-        if (!f || err != BZ_OK) {
-          std::cerr << "Could not open input file " << inputFiles[i]
-                    << std::endl;
-          exit(1);
-        }
-        while ((len = util::bz2readAll(f, buf, CACHE_SIZE)) > 0) {
-          parser.parse(reinterpret_cast<char*>(buf), len, i != 0);
-        }
-
-        BZ2_bzReadClose(&err, f);
-        fclose(fh);
-#else
-        std::cerr << "Could not open input file " << inputFiles[i]
-                  << ", spatialjoin was compiled without BZip2 support"
-                  << std::endl;
-        exit(1);
 #endif
-      } else if (util::endsWith(inputFiles[i], ".gz")) {
+    } else if (util::endsWith(inputFiles[i], ".gz")) {
 #ifndef SPATIALJOIN_NO_ZLIB
-        gzFile f = gzopen(inputFiles[i].c_str(), "r");
-        if (f == Z_NULL) {
-          std::cerr << "Could not open input file " << inputFiles[i]
-                    << std::endl;
-          exit(1);
-        }
-        while ((len = util::zreadAll(f, buf, CACHE_SIZE)) > 0) {
-          parser.parse(reinterpret_cast<char*>(buf), len, i != 0);
-        }
-
-        gzclose(f);
-#else
-        std::cerr << "Could not open input file " << inputFiles[i]
-                  << ", spatialjoin was compiled without gzip support"
-                  << std::endl;
+      gzFile f = gzopen(inputFiles[i].c_str(), "r");
+      if (f == Z_NULL) {
+        std::cerr << "Could not open input file " << inputFiles[i] << std::endl;
         exit(1);
-#endif
-      } else {
-        int f = open(inputFiles[i].c_str(), O_RDONLY);
-
-        if (f < 0) {
-          std::cerr << "Could not open input file " << inputFiles[i]
-                    << std::endl;
-          exit(1);
-        }
-
-        while ((len = util::readAll(f, buf, CACHE_SIZE)) > 0) {
-          parser.parse(reinterpret_cast<char*>(buf), len, i != 0);
-        }
-
-        close(f);
       }
+      while ((len = util::zreadAll(f, buf, CACHE_SIZE)) > 0) {
+        parser.parse(reinterpret_cast<char*>(buf), len);
+      }
+
+      gzclose(f);
+#else
+      std::cerr << "Could not open input file " << inputFiles[i]
+                << ", spatialjoin was compiled without gzip support"
+                << std::endl;
+      exit(1);
+#endif
+    } else {
+      int f = open(inputFiles[i].c_str(), O_RDONLY);
+
+      if (f < 0) {
+        std::cerr << "Could not open input file " << inputFiles[i] << std::endl;
+        exit(1);
+      }
+
+      while ((len = util::readAll(f, buf, CACHE_SIZE)) > 0) {
+        parser.parse(reinterpret_cast<char*>(buf), len);
+      }
+
+      close(f);
     }
-  } else {
-    while ((len = util::readAll(0, buf, CACHE_SIZE)) > 0) {
-      parser.parse(reinterpret_cast<char*>(buf), len, 0);
-    }
+
+    parser.done();
+
+    numInvalid += parser.getNumInvalid();
   }
 
-  parser.done();
-
-  if (parser.getNumInvalid() > 0)
-    geomCache.log("Note: skipped " + std::to_string(parser.getNumInvalid()) +
+  if (numInvalid > 0)
+    geomCache.log("Note: skipped " + std::to_string(numInvalid) +
                   " invalid WKT literals");
 
   geomCache.log("Done parsing (" + std::to_string(TOOK(ts) / 1000000000.0) +
                 "s).");
 
-  geomStore.flush();
+  for (auto& store : geomStores) store->flush();
 
   geomCache.log("Sorting events...");
-  sweepEvents.flush(NUM_THREADS);
+  for (auto& events : sweepEvents) events->flush(NUM_THREADS);
   geomCache.log("...done");
 
   Sweeper sweeper(sweeperCfg, &geomCache);
 
   geomCache.log("Sweeping...");
   ts = TIME();
-  sweeper.sweep(&sweepEvents, 0);
+  sweeper.sweep(sweepEvents[0].get(),
+                sweepEvents.size() > 1 ? sweepEvents[1].get() : 0);
   geomCache.log("done (" + std::to_string(TOOK(ts) / 1000000000.0) + "s).");
 
   delete[] buf;

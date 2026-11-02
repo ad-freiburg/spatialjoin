@@ -12,9 +12,9 @@ using sj::WKTParser;
 using sj::WKTParserBase;
 
 // _____________________________________________________________________________
-WKTParser::WKTParser(sj::GeometryStore* store,
+WKTParser::WKTParser(sj::GeometryStore* store, uint16_t storeId,
                      sj::SweepEventList* events, size_t numThreads, bool strict)
-    : WKTParserBase<ParseJob>(store, events, numThreads),
+    : WKTParserBase<ParseJob>(store, storeId, events, numThreads),
       _strict(strict) {
   for (size_t i = 0; i < _thrds.size(); i++) {
     _thrds[i] = std::thread(&WKTParser::processQueue, this, i);
@@ -30,33 +30,29 @@ void WKTParser::processQueue(size_t t) {
       if (_cancelled) break;
 
       if (job.str.size()) {
-        parseLine(job.str.c_str(), job.line, t, w, job.side,
-                  true, _strict);
+        parseLine(job.str.c_str(), job.line, t, w, true, _strict);
       } else {
         // parse point directly
         auto mercPoint = latLngToWebMerc(job.point);
 
-        if (job.side) _twoSided[t] = true;
-
         util::geo::I32Point addPoint{static_cast<int>(mercPoint.getX() * PREC),
                                      static_cast<int>(mercPoint.getY() * PREC)};
         _bboxes[t] = util::geo::extendBox(
-            _store->add(addPoint, std::to_string(job.line), job.side, w),
-            _bboxes[t]);
+            _store->add(addPoint, std::to_string(job.line), w), _bboxes[t]);
       }
     }
 
-    _store->addBatch(w, _events);
+    _store->addBatch(w, _events, _storeId);
   }
 }
 
 // _____________________________________________________________________________
-void WKTParser::parseWKT(const char* c, size_t id, bool side) {
+void WKTParser::parseWKT(const char* c, size_t id) {
   // dont parse empty strings
   if (*c == 0) return;
 
   _curBatch.reserve(10000);
-  _curBatch.push_back({std::string(c), id, side, {0, 0}});
+  _curBatch.push_back({std::string(c), id, {0, 0}});
 
   if (_curBatch.size() > 10000) {
     _jobs.add(std::move(_curBatch));
@@ -65,11 +61,11 @@ void WKTParser::parseWKT(const char* c, size_t id, bool side) {
 }
 
 // _____________________________________________________________________________
-void WKTParser::parseWKT(const std::string& str, size_t id, bool side) {
+void WKTParser::parseWKT(const std::string& str, size_t id) {
   if (str.empty()) return;
 
   _curBatch.reserve(10000);
-  _curBatch.push_back({str, id, side, {0, 0}});
+  _curBatch.push_back({str, id, {0, 0}});
 
   if (_curBatch.size() > 10000) {
     _jobs.add(std::move(_curBatch));
@@ -79,12 +75,12 @@ void WKTParser::parseWKT(const std::string& str, size_t id, bool side) {
 
 #ifdef __cpp_lib_string_view
 // _____________________________________________________________________________
-void WKTParser::parseWKT(const std::string_view str, size_t id, bool side) {
+void WKTParser::parseWKT(const std::string_view str, size_t id) {
   // dont parse empty strings
   if (str.empty()) return;
 
   _curBatch.reserve(10000);
-  _curBatch.push_back({std::string{str}, id, side, {0, 0}});
+  _curBatch.push_back({std::string{str}, id, {0, 0}});
 
   if (_curBatch.size() > 10000) {
     _jobs.add(std::move(_curBatch));
@@ -95,9 +91,9 @@ void WKTParser::parseWKT(const std::string_view str, size_t id, bool side) {
 #endif
 
 // _____________________________________________________________________________
-void WKTParser::parsePoint(util::geo::DPoint point, size_t id, bool side) {
+void WKTParser::parsePoint(util::geo::DPoint point, size_t id) {
   _curBatch.reserve(10000);
-  _curBatch.push_back({"", id, side, point});
+  _curBatch.push_back({"", id, point});
 
   if (_curBatch.size() > 10000) {
     _jobs.add(std::move(_curBatch));
@@ -106,7 +102,7 @@ void WKTParser::parsePoint(util::geo::DPoint point, size_t id, bool side) {
 }
 
 // _____________________________________________________________________________
-void WKTParser::parse(char* c, size_t size, bool side) {
+void WKTParser::parse(char* c, size_t size) {
   size_t p = 0;
 
   while (true) {
@@ -118,10 +114,10 @@ void WKTParser::parse(char* c, size_t size, bool side) {
 
       if (_dangling.size()) {
         _dangling += (c + p);  // guaranteed to be null terminated
-        _curBatch.push_back({_dangling, _gid, side, {0, 0}});
+        _curBatch.push_back({_dangling, _gid, {0, 0}});
         _dangling.clear();
       } else {
-        if (*(c + p)) _curBatch.push_back({c + p, _gid, side, {0, 0}});
+        if (*(c + p)) _curBatch.push_back({c + p, _gid, {0, 0}});
 
         if (_curBatch.size() > 1000) {
           _jobs.add(std::move(_curBatch));

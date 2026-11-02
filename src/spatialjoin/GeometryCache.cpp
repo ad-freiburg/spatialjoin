@@ -22,10 +22,8 @@
 #include "BoxIds.h"
 #include "GeometryCache.h"
 #include "util/Misc.h"
-#include "util/geo/IntervalIdx.h"
 #include "util/log/Log.h"
 
-using sj::GeomCheckRes;
 using sj::GeometryCache;
 using sj::GeomType;
 using sj::boxids::boxIdIsect;
