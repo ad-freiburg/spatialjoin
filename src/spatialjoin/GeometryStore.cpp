@@ -4,6 +4,7 @@
 #include "GeometryStore.h"
 
 #include <errno.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 #include <algorithm>
@@ -12,6 +13,7 @@
 #include <fstream>
 #include <iostream>
 #include <sstream>
+#include <stdexcept>
 #include <unordered_set>
 #include <vector>
 
@@ -442,11 +444,62 @@ size_t sj::TypedGeometryStore<sj::Area>::writeTo(const sj::Area& val,
 
 // ____________________________________________________________________________
 template <typename W>
+sj::TypedGeometryStore<W>::TypedGeometryStore(size_t numthreads,
+                                              const std::string& path)
+    : _numThreads(numthreads) {
+  _inMemory = false;
+
+  struct stat st;
+  if (stat(path.c_str(), &st) != 0) {
+    throw std::runtime_error("Could not open geometry store file " + path);
+  }
+  _geomsOffset = st.st_size;
+
+  _geomsFReads.resize(numthreads);
+  for (auto& read : _geomsFReads) {
+    read.open(path, std::ios::in | std::ios::binary);
+    if (!read.is_open()) {
+      throw std::runtime_error("Could not open geometry store file " + path);
+    }
+  }
+}
+
+// ____________________________________________________________________________
+template <typename W>
 void sj::TypedGeometryStore<W>::flush() {
   if (_geomsF.is_open()) {
     _geomsF.flush();
     _geomsF.close();
   }
+
+  if (_inMemory && _persistOnDisk) {
+    const auto fName = persistFName();
+    std::ofstream out(fName,
+                      std::ios::out | std::ios::binary | std::ios::trunc);
+
+      for (const auto& val : _memStore) {
+        writeTo(*val.second.get(), out);
+      }
+    out.close();
+
+    if (!out) {
+      throw std::runtime_error("Could not write geometry store file " + fName);
+    }
+  }
+}
+
+// ____________________________________________________________________________
+template <typename W>
+std::string sj::TypedGeometryStore<W>::getFName() const {
+  return util::getTmpFName(_dir, _tmpPrefix, typeName());
+}
+
+// ____________________________________________________________________________
+template <typename W>
+std::string sj::TypedGeometryStore<W>::persistFName() const {
+  std::string dir = _dir == "<tmp>" ? util::getTmpDir() : _dir;
+  if (dir.size() && dir.back() != '/') dir += "/";
+  return dir + _tmpPrefix + typeName();
 }
 
 // ____________________________________________________________________________
@@ -696,32 +749,32 @@ size_t sj::TypedGeometryStore<W>::writeLine(
 
 // ____________________________________________________________________________
 template <>
-std::string sj::TypedGeometryStore<sj::Area>::getFName() const {
-  return util::getTmpFName(_dir, _tmpPrefix, "areas");
+std::string sj::TypedGeometryStore<sj::Area>::typeName() {
+  return "areas";
 }
 
 // ____________________________________________________________________________
 template <>
-std::string sj::TypedGeometryStore<sj::Line>::getFName() const {
-  return util::getTmpFName(_dir, _tmpPrefix, "lines");
+std::string sj::TypedGeometryStore<sj::Line>::typeName() {
+  return "lines";
 }
 
 // ____________________________________________________________________________
 template <>
-std::string sj::TypedGeometryStore<sj::Point>::getFName() const {
-  return util::getTmpFName(_dir, _tmpPrefix, "points");
+std::string sj::TypedGeometryStore<sj::Point>::typeName() {
+  return "points";
 }
 
 // ____________________________________________________________________________
 template <>
-std::string sj::TypedGeometryStore<sj::SimpleLine>::getFName() const {
-  return util::getTmpFName(_dir, _tmpPrefix, "simplelines");
+std::string sj::TypedGeometryStore<sj::SimpleLine>::typeName() {
+  return "simplelines";
 }
 
 // ____________________________________________________________________________
 template <>
-std::string sj::TypedGeometryStore<sj::SimpleArea>::getFName() const {
-  return util::getTmpFName(_dir, ".spatialjoin", "simpleareas");
+std::string sj::TypedGeometryStore<sj::SimpleArea>::typeName() {
+  return "simpleareas";
 }
 
 // ____________________________________________________________________________
@@ -736,8 +789,8 @@ sj::MultiGeom sj::TypedGeometryStore<sj::MultiGeom>::getMulti(
 
 // ____________________________________________________________________________
 template <>
-std::string sj::TypedGeometryStore<sj::MultiGeom>::getFName() const {
-  return util::getTmpFName(_dir, _tmpPrefix, "multis");
+std::string sj::TypedGeometryStore<sj::MultiGeom>::typeName() {
+  return "multis";
 }
 
 // ____________________________________________________________________________

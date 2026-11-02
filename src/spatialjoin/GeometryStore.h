@@ -84,11 +84,16 @@ const static size_t WRITE_BUFF_SIZE = 1024 * 1024 * 4l;
 template <typename W>
 class TypedGeometryStore {
  public:
-  TypedGeometryStore(size_t numthreads, const std::string& dir)
-      : TypedGeometryStore(numthreads, dir, ".spatialjoin"){};
+  // if persistOnDisk is true, flush() writes the geoms to
+  // a file <dir>/<tmpPrefix><type>
   TypedGeometryStore(size_t numthreads, const std::string& dir,
-                     const std::string& tmpPrefix)
-      : _numThreads(numthreads), _dir(dir), _tmpPrefix(tmpPrefix) {}
+                     const std::string& tmpPrefix, bool persistOnDisk = false)
+      : _numThreads(numthreads),
+        _dir(dir),
+        _tmpPrefix(tmpPrefix),
+        _persistOnDisk(persistOnDisk) {}
+
+  TypedGeometryStore(size_t numthreads, const std::string& path);
 
   ~TypedGeometryStore() {
     if (_geomsF.is_open()) _geomsF.close();
@@ -137,7 +142,14 @@ class TypedGeometryStore {
   }
 
  private:
+  // string repr of the type this store holds
+  static std::string typeName();
+
+  // the name of the (temporary) geometry file
   std::string getFName() const;
+
+  // the file a store constructed with persistOnDisk is persisted to
+  std::string persistFName() const;
 
   void swap(TypedGeometryStore& other) {
     _geomsF.swap(other._geomsF);
@@ -150,10 +162,11 @@ class TypedGeometryStore {
     _fName.swap(other._fName);
     _memStore.swap(other._memStore);
     std::swap(_inMemory, other._inMemory);
+    std::swap(_persistOnDisk, other._persistOnDisk);
   }
 
   void openFile() {
-    _fName = getFName();
+    _fName = _persistOnDisk ? persistFName() : getFName();
 
     _writeBuffer = new char[WRITE_BUFF_SIZE];
 
@@ -164,7 +177,7 @@ class TypedGeometryStore {
     for (size_t i = 0; i < _geomsFReads.size(); i++) {
       _geomsFReads[i].open(_fName, std::ios::in | std::ios::binary);
     }
-    unlink(_fName.c_str());
+    if (!_persistOnDisk) unlink(_fName.c_str());
   }
 
   // the geometry type the IDs returned by add() are tagged with
@@ -188,6 +201,9 @@ class TypedGeometryStore {
   // must be ordered map to ensure correct writing order when flushing to disk!
   std::map<size_t, std::shared_ptr<W>> _memStore;
   bool _inMemory = true;
+
+  // whether flush() writes the geometries to a file which is kept
+  bool _persistOnDisk = false;
 
   char* _writeBuffer = 0;
 };
