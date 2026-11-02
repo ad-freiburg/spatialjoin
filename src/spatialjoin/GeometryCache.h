@@ -51,8 +51,8 @@ class GeometryCache {
 
   void log(const std::string& msg);
 
-  // adds a (non-owned) geometry store, returns its store id
-  size_t addStore(const GeometryStore* store);
+  // adds a geometry store, returns its store id
+  uint8_t addStore(const GeometryStore* store);
 
   const GeometryStore& getStore(size_t storeId = 0) const {
     return *_stores[storeId];

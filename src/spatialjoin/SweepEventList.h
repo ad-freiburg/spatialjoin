@@ -47,7 +47,7 @@ struct BoxVal {
   int32_t upY;       // the upper Y value of the box
   int32_t val;       // the left X value of the box
   bool out : 1;      // whether this is an IN or OUT event
-  uint16_t storeId;  // the store (see GeometryCache::addStore()) the geometry
+  uint8_t storeId;   // the store (see GeometryCache::addStore()) the geometry
                      // is stored in
   double areaOrLen;  // area or len
   util::geo::I32Point point;
@@ -146,7 +146,7 @@ struct PreparedGeomMeta {
 inline std::pair<BoxVal, BoxVal> getSweepEvents(
     size_t id, const util::geo::I32Box& bbox, const util::geo::I32Box& box45,
     const util::geo::I32Point& point1, const util::geo::I32Point& point2,
-    size_t numAnchors, double areaOrLen, uint16_t storeId) {
+    size_t numAnchors, double areaOrLen, uint8_t storeId) {
   BoxVal in{id,
             bbox.getLowerLeft().getY(),
             bbox.getUpperRight().getY(),
@@ -183,7 +183,7 @@ inline std::pair<BoxVal, BoxVal> getSweepEvents(
 // returns the IN and the OUT event of a prepared geometry stored in the store
 // storeId
 inline std::pair<BoxVal, BoxVal> getSweepEvents(const PreparedGeomMeta& meta,
-                                                uint16_t storeId) {
+                                                uint8_t storeId) {
   return getSweepEvents(meta.id, meta.bbox, meta.box45, meta.point1,
                         meta.point2, meta.numAnchors, meta.areaOrLen, storeId);
 }
@@ -399,7 +399,7 @@ class SweepEventList {
   void add(size_t id, const util::geo::I32Box& bbox,
            const util::geo::I32Box& box45, const util::geo::I32Point& point1,
            const util::geo::I32Point& point2, size_t numAnchors,
-           double areaOrLen, uint16_t storeId) {
+           double areaOrLen, uint8_t storeId) {
     const auto& events = getSweepEvents(id, bbox, box45, point1, point2,
                                         numAnchors, areaOrLen, storeId);
     add(events.first);
@@ -407,7 +407,7 @@ class SweepEventList {
   }
 
   // adds the IN and the OUT event of a prepared geometry in the store storeId
-  void add(const PreparedGeomMeta& meta, uint16_t storeId) {
+  void add(const PreparedGeomMeta& meta, uint8_t storeId) {
     add(meta.id, meta.bbox, meta.box45, meta.point1, meta.point2,
         meta.numAnchors, meta.areaOrLen, storeId);
   }

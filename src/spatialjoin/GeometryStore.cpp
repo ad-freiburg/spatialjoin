@@ -1141,7 +1141,7 @@ void GeometryStore::addMulti(WriteBatch&& members, const I32Box& box,
 
 // _____________________________________________________________________________
 void GeometryStore::addBatch(WriteBatch& cands, sj::SweepEventList* events,
-                             uint16_t storeId) {
+                             uint8_t storeId) {
   // we go over each class of candidates. Note that in .multiGeoms, multi-geoms
   // are kept together, and each class (POINT, POLYGON...) may appear there,
   // too. The id is written into the candidate and will be available at the

@@ -16,8 +16,10 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <limits>
 #include <set>
 #include <sstream>
+#include <stdexcept>
 
 #include "BoxIds.h"
 #include "GeometryCache.h"
@@ -169,7 +171,15 @@ std::pair<size_t, size_t> GeometryCache::size() const {
 }
 
 // _____________________________________________________________________________
-size_t GeometryCache::addStore(const GeometryStore* store) {
+uint8_t GeometryCache::addStore(const GeometryStore* store) {
+  // store IDs are kept in 8 bits
+  if (_stores.size() > std::numeric_limits<uint8_t>::max()) {
+    throw std::runtime_error(
+        "Cannot add more than " +
+        std::to_string(std::numeric_limits<uint8_t>::max() + 1) +
+        " stores");
+  }
+
   _stores.push_back(store);
   _caches.push_back(std::unique_ptr<StoreCaches>(new StoreCaches(_cfg)));
   return _stores.size() - 1;

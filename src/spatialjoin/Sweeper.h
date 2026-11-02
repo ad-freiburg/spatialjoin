@@ -39,7 +39,7 @@ namespace sj {
 struct SweepVal {
   SweepVal(size_t id) : id(id), side(false), storeId(0) {}
   SweepVal(size_t id, util::geo::I32Box b45, util::geo::I32Point point,
-           util::geo::I32Point point2, bool side, uint16_t storeId)
+           util::geo::I32Point point2, bool side, uint8_t storeId)
       : id(id),
         b45(b45),
         point(point),
@@ -53,7 +53,7 @@ struct SweepVal {
   // the join side, given by the SweepEventList the geometry came from
   bool side;
   // the store the geometry is stored in, see GeometryCache::addStore()
-  uint16_t storeId;
+  uint8_t storeId;
 
   size_t getId() const { return untypedId(id); }
   GeomType getType() const {
@@ -65,7 +65,7 @@ struct SweepVal {
 // SweepEventList it came from), and the store it is stored in
 struct GeomOrigin {
   bool side;
-  uint16_t storeId;
+  uint8_t storeId;
 };
 
 struct JobVal {
@@ -73,7 +73,7 @@ struct JobVal {
   util::geo::I32Point point, point2;
   int32_t val;
   bool side;
-  uint16_t storeId;
+  uint8_t storeId;
 
   JobVal() : id(typedId(0, POLYGON)), val(0), side(false), storeId(0) {}
   JobVal(const BoxVal& bv, bool side)
@@ -217,7 +217,7 @@ class Sweeper {
   }
 
   // the store with id storeId
-  const GeometryStore& store(uint16_t storeId) const {
+  const GeometryStore& store(uint8_t storeId) const {
     return _geomCache->getStore(storeId);
   }
 
@@ -441,7 +441,7 @@ class Sweeper {
 
   // per side, the gids of the multi geometries whose multi-IN event was
   // processed, keyed by their store and their offset in its multi store
-  PerSide<std::map<std::pair<uint16_t, size_t>, std::string>> _openMultiIDs;
+  PerSide<std::map<std::pair<uint8_t, size_t>, std::string>> _openMultiIDs;
 
   PerSide<std::unordered_map<std::string, size_t>> _subSizes;
   PerSide<std::unordered_map<std::string, util::geo::I32Point>>

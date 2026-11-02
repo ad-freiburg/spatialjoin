@@ -265,8 +265,7 @@ class GeometryStore {
   void addMulti(WriteBatch&& members, const util::geo::I32Box& box,
                 const std::string& gid, WriteBatch& batch) const;
 
-  void addBatch(WriteBatch& cands, sj::SweepEventList* events,
-                uint16_t storeId);
+  void addBatch(WriteBatch& cands, sj::SweepEventList* events, uint8_t storeId);
 
   void flush();
 

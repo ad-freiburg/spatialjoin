@@ -68,7 +68,7 @@ class WKTParserBase {
  public:
   // parsed geometries are written to store, which has the id storeId in the
   // GeometryCache they will be swept with, and their events to events
-  WKTParserBase(sj::GeometryStore* store, uint16_t storeId,
+  WKTParserBase(sj::GeometryStore* store, uint8_t storeId,
                 sj::SweepEventList* events, size_t numThreads)
       : _store(store),
         _storeId(storeId),
@@ -289,7 +289,7 @@ class WKTParserBase {
   std::string _dangling;
 
   sj::GeometryStore* _store;
-  uint16_t _storeId;
+  uint8_t _storeId;
   sj::SweepEventList* _events;
 
   std::vector<ParseJobT> _curBatch;
@@ -307,7 +307,7 @@ class WKTParserBase {
 
 class WKTParser : public WKTParserBase<ParseJob> {
  public:
-  WKTParser(sj::GeometryStore* store, uint16_t storeId,
+  WKTParser(sj::GeometryStore* store, uint8_t storeId,
             sj::SweepEventList* events, size_t numThreads, bool strict = false);
   void parse(char* c, size_t size);
   void parseWKT(const char* c, size_t id);

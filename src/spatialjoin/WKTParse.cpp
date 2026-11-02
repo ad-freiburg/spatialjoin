@@ -12,7 +12,7 @@ using sj::WKTParser;
 using sj::WKTParserBase;
 
 // _____________________________________________________________________________
-WKTParser::WKTParser(sj::GeometryStore* store, uint16_t storeId,
+WKTParser::WKTParser(sj::GeometryStore* store, uint8_t storeId,
                      sj::SweepEventList* events, size_t numThreads, bool strict)
     : WKTParserBase<ParseJob>(store, storeId, events, numThreads),
       _strict(strict) {
