@@ -287,6 +287,7 @@ size_t sj::TypedGeometryStore<W>::add(const std::string& raw) {
 
     if (_geomsOffset > MAX_MEM_CACHE_SIZE) {
       _inMemory = false;
+      openFile();
 
       for (const auto& val : _memStore) {
         writeTo(*val.second.get(), _geomsF);

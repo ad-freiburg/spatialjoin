@@ -12,6 +12,7 @@
 #include <mutex>
 #include <string>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include "BoxIds.h"
@@ -87,21 +88,7 @@ class TypedGeometryStore {
       : TypedGeometryStore(numthreads, dir, ".spatialjoin"){};
   TypedGeometryStore(size_t numthreads, const std::string& dir,
                      const std::string& tmpPrefix)
-      : _numThreads(numthreads), _dir(dir), _tmpPrefix(tmpPrefix) {
-    _geomsFReads.resize(numthreads);
-
-    _fName = getFName();
-
-    _writeBuffer = new char[WRITE_BUFF_SIZE];
-
-    _geomsF.rdbuf()->pubsetbuf(_writeBuffer, WRITE_BUFF_SIZE);
-    _geomsF.open(_fName, std::ios::out | std::ios::binary | std::ios::trunc);
-
-    for (size_t i = 0; i < _geomsFReads.size(); i++) {
-      _geomsFReads[i].open(_fName, std::ios::in | std::ios::binary);
-    }
-    unlink(_fName.c_str());
-  }
+      : _numThreads(numthreads), _dir(dir), _tmpPrefix(tmpPrefix) {}
 
   ~TypedGeometryStore() {
     if (_geomsF.is_open()) _geomsF.close();
@@ -136,21 +123,49 @@ class TypedGeometryStore {
 
   void flush();
 
+  TypedGeometryStore(const TypedGeometryStore&) = delete;
+  TypedGeometryStore& operator=(const TypedGeometryStore&) = delete;
+
+  TypedGeometryStore(TypedGeometryStore&& other) : _numThreads(0) {
+    swap(other);
+  }
+
   TypedGeometryStore& operator=(TypedGeometryStore&& other) {
-    other._geomsF.flush();
-    _geomsF = std::move(other._geomsF);
-    _geomsFReads = std::move(other._geomsFReads);
-    _geomsOffset = other._geomsOffset;
-
-    _dir = other._dir;
-    _fName = other._fName;
-    _numThreads = other._numThreads;
-
+    TypedGeometryStore tmp(std::move(other));
+    swap(tmp);
     return *this;
   }
 
  private:
   std::string getFName() const;
+
+  void swap(TypedGeometryStore& other) {
+    _geomsF.swap(other._geomsF);
+    std::swap(_writeBuffer, other._writeBuffer);
+    _geomsFReads.swap(other._geomsFReads);
+    std::swap(_geomsOffset, other._geomsOffset);
+    std::swap(_numThreads, other._numThreads);
+    _dir.swap(other._dir);
+    _tmpPrefix.swap(other._tmpPrefix);
+    _fName.swap(other._fName);
+    _memStore.swap(other._memStore);
+    std::swap(_inMemory, other._inMemory);
+  }
+
+  void openFile() {
+    _fName = getFName();
+
+    _writeBuffer = new char[WRITE_BUFF_SIZE];
+
+    _geomsF.rdbuf()->pubsetbuf(_writeBuffer, WRITE_BUFF_SIZE);
+    _geomsF.open(_fName, std::ios::out | std::ios::binary | std::ios::trunc);
+
+    _geomsFReads.resize(_numThreads);
+    for (size_t i = 0; i < _geomsFReads.size(); i++) {
+      _geomsFReads[i].open(_fName, std::ios::in | std::ios::binary);
+    }
+    unlink(_fName.c_str());
+  }
 
   // the geometry type the IDs returned by add() are tagged with
   static GeomType geomType();

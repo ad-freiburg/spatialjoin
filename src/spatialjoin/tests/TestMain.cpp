@@ -17,6 +17,7 @@
 #include "spatialjoin/Sweeper.h"
 #include "spatialjoin/WKTParse.h"
 #include "spatialjoin/tests/SweepEventListTest.h"
+#include "spatialjoin/tests/TypedGeometryStoreTest.h"
 #include "util/Test.h"
 #include "util/geo/Geo.h"
 #include "util/log/Log.h"
@@ -182,6 +183,7 @@ void writeMultiFlushDataset(const std::string& path) {
 // _____________________________________________________________________________
 int main(int, char**) {
   sweepEventListTest();
+  typedGeometryStoreTest();
 
   {
     using sj::boxids::GRID_H;
