@@ -8,6 +8,7 @@
 #include "BoxIds.h"
 #include "GeometryCache.h"
 #include "OutputWriter.h"
+#include "SpatialJoinCfg.h"
 #include "Sweeper.h"
 #include "WKTParse.h"
 #include "util/Misc.h"
@@ -36,9 +37,11 @@ static const char* COPY =
     "University of Freiburg - Chair of Algorithms and Data Structures";
 static const char* AUTHORS = "Patrick Brosi <brosi@informatik.uni-freiburg.de>";
 
-static const size_t NUM_THREADS = std::thread::hardware_concurrency();
-static const size_t DEFAULT_CACHE_SIZE = 1000 * 1000 * 1000;
-static const size_t DEFAULT_CACHE_NUM_ELEMENTS = 10000;
+static const sj::SpatialJoinCfg DEFAULT_CFG;
+static const size_t NUM_THREADS = DEFAULT_CFG.numThreads;
+static const size_t DEFAULT_CACHE_SIZE = DEFAULT_CFG.geomCacheMaxSize;
+static const size_t DEFAULT_CACHE_NUM_ELEMENTS =
+    DEFAULT_CFG.geomCacheMaxNumElements;
 
 // _____________________________________________________________________________
 void printHelp(int argc, char** argv) {
@@ -142,34 +145,34 @@ int main(int argc, char** argv) {
   std::string prefix = "";
   std::string output = "";
   std::string cacheDir = ".";
-  std::string contains = " contains ";
-  std::string intersects = " intersects ";
-  std::string covers = " covers ";
-  std::string touches = " touches ";
-  std::string equals = " equals ";
-  std::string overlaps = " overlaps ";
-  std::string crosses = " crosses ";
+  std::string contains = DEFAULT_CFG.sepContains;
+  std::string intersects = DEFAULT_CFG.sepIsect;
+  std::string covers = DEFAULT_CFG.sepCovers;
+  std::string touches = DEFAULT_CFG.sepTouches;
+  std::string equals = DEFAULT_CFG.sepEquals;
+  std::string overlaps = DEFAULT_CFG.sepOverlaps;
+  std::string crosses = DEFAULT_CFG.sepCrosses;
   std::string suffix = "\n";
-  double withinDist = -1;
-  bool euclideanDist = false;
-  bool haversineApprox = false;
+  double withinDist = DEFAULT_CFG.withinDist;
+  bool euclideanDist = DEFAULT_CFG.euclideanDist;
+  bool haversineApprox = DEFAULT_CFG.haversineApprox;
 
-  bool useBoxIds = true;
-  bool useArea = true;
-  bool useDiagBox = true;
-  bool useFastSweepSkip = true;
-  bool noGeometryChecks = false;
-  bool computeDE9IM = false;
+  bool useBoxIds = DEFAULT_CFG.useBoxIds;
+  bool useArea = DEFAULT_CFG.useArea;
+  bool useDiagBox = DEFAULT_CFG.useDiagBox;
+  bool useFastSweepSkip = DEFAULT_CFG.useFastSweepSkip;
+  bool noGeometryChecks = DEFAULT_CFG.noGeometryChecks;
+  bool computeDE9IM = DEFAULT_CFG.computeDE9IM;
   bool wktStrict = false;
 
   bool printStats = false;
   bool verbose = false;
 
   size_t numThreads = NUM_THREADS;
-  size_t numCaches = NUM_THREADS;
+  size_t numCaches = DEFAULT_CFG.numCacheThreads;
   size_t geomCacheMaxSizeBytes = DEFAULT_CACHE_SIZE;
   size_t geomCacheMaxNumElements = DEFAULT_CACHE_NUM_ELEMENTS;
-  DE9IMFilter de9imFilter;
+  DE9IMFilter de9imFilter = DEFAULT_CFG.de9imFilter;
 
   std::vector<std::string> inputFiles;
 
@@ -357,9 +360,6 @@ int main(int argc, char** argv) {
     return 0;
   }
 
-  const static size_t CACHE_SIZE = 1024 * 1024;
-  unsigned char* buf = new unsigned char[CACHE_SIZE];
-  size_t len;
 
   sj::OutputWriter outWriter(numThreads, prefix, suffix, output, cacheDir);
 
@@ -373,42 +373,42 @@ int main(int argc, char** argv) {
       outWriter.writeRelCb(t, a, an, b, bn, pred, predn);
     };
 
-  sj::SweeperCfg sweeperCfg{numThreads,
-                            numCaches,
-                            geomCacheMaxSizeBytes,
-                            geomCacheMaxNumElements,
-                            intersects,
-                            contains,
-                            covers,
-                            touches,
-                            equals,
-                            overlaps,
-                            crosses,
-                            useBoxIds,
-                            useArea,
-                            useDiagBox,
-                            useFastSweepSkip,
-                            noGeometryChecks,
-                            withinDist,
-                            euclideanDist,
-                            haversineApprox,
-                            computeDE9IM,
-                            de9imFilter,
-                            writeRelCb,
-                            {},
-                            {},
-                            {},
-                            {}};
+  sj::SpatialJoinCfg spatialJoinCfg{numThreads,
+                                    numCaches,
+                                    geomCacheMaxSizeBytes,
+                                    geomCacheMaxNumElements,
+                                    intersects,
+                                    contains,
+                                    covers,
+                                    touches,
+                                    equals,
+                                    overlaps,
+                                    crosses,
+                                    useBoxIds,
+                                    useArea,
+                                    useDiagBox,
+                                    useFastSweepSkip,
+                                    noGeometryChecks,
+                                    withinDist,
+                                    euclideanDist,
+                                    haversineApprox,
+                                    computeDE9IM,
+                                    de9imFilter,
+                                    writeRelCb,
+                                    {},
+                                    {},
+                                    {},
+                                    {}};
 
   if (printStats)
-    sweeperCfg.statsCb = [](const std::string& s) { std::cerr << s; };
+    spatialJoinCfg.statsCb = [](const std::string& s) { std::cerr << s; };
 
   if (verbose)
-    sweeperCfg.logCb = [](const std::string& s) {
+    spatialJoinCfg.logCb = [](const std::string& s) {
       LOGTO(INFO, std::cerr) << s;
     };
 
-  GeometryCache geomCache(sweeperCfg);
+  GeometryCache geomCache(spatialJoinCfg);
 
   if (inputFiles.size() > 2) {
     std::cerr << "Either 1 input files (for self join), or 2 input files "
@@ -432,72 +432,21 @@ int main(int argc, char** argv) {
     sweepEvents.emplace_back(new sj::SweepEventList(cacheDir, ".spatialjoin"));
 
     geomStores.emplace_back(
-        new sj::GeometryStore(sweeperCfg, cacheDir, ".spatialjoin", false));
+        new sj::GeometryStore(spatialJoinCfg, cacheDir, ".spatialjoin", false));
     size_t storeId = geomCache.addStore(geomStores.back().get());
 
     sj::WKTParser parser(geomStores.back().get(), storeId,
                          sweepEvents.back().get(), NUM_THREADS, wktStrict);
 
-    if (inputFiles.empty()) {
-      while ((len = util::readAll(0, buf, CACHE_SIZE)) > 0) {
-        parser.parse(reinterpret_cast<char*>(buf), len);
+    try {
+      if (inputFiles.empty()) {
+        parser.parseFd(0);
+      } else {
+        parser.parseFile(inputFiles[i]);
       }
-    } else if (util::endsWith(inputFiles[i], ".bz2")) {
-#ifndef SPATIALJOIN_NO_BZIP2
-      auto fh = fopen(inputFiles[i].c_str(), "r");
-      if (!fh) {
-        std::cerr << "Could not open input file " << inputFiles[i] << std::endl;
-        exit(1);
-      }
-      int err;
-      BZFILE* f = BZ2_bzReadOpen(&err, fh, 0, 0, NULL, 0);
-      if (!f || err != BZ_OK) {
-        std::cerr << "Could not open input file " << inputFiles[i] << std::endl;
-        exit(1);
-      }
-      while ((len = util::bz2readAll(f, buf, CACHE_SIZE)) > 0) {
-        parser.parse(reinterpret_cast<char*>(buf), len);
-      }
-
-      BZ2_bzReadClose(&err, f);
-      fclose(fh);
-#else
-      std::cerr << "Could not open input file " << inputFiles[i]
-                << ", spatialjoin was compiled without BZip2 support"
-                << std::endl;
+    } catch (const std::runtime_error& e) {
+      std::cerr << e.what() << std::endl;
       exit(1);
-#endif
-    } else if (util::endsWith(inputFiles[i], ".gz")) {
-#ifndef SPATIALJOIN_NO_ZLIB
-      gzFile f = gzopen(inputFiles[i].c_str(), "r");
-      if (f == Z_NULL) {
-        std::cerr << "Could not open input file " << inputFiles[i] << std::endl;
-        exit(1);
-      }
-      while ((len = util::zreadAll(f, buf, CACHE_SIZE)) > 0) {
-        parser.parse(reinterpret_cast<char*>(buf), len);
-      }
-
-      gzclose(f);
-#else
-      std::cerr << "Could not open input file " << inputFiles[i]
-                << ", spatialjoin was compiled without gzip support"
-                << std::endl;
-      exit(1);
-#endif
-    } else {
-      int f = open(inputFiles[i].c_str(), O_RDONLY);
-
-      if (f < 0) {
-        std::cerr << "Could not open input file " << inputFiles[i] << std::endl;
-        exit(1);
-      }
-
-      while ((len = util::readAll(f, buf, CACHE_SIZE)) > 0) {
-        parser.parse(reinterpret_cast<char*>(buf), len);
-      }
-
-      close(f);
     }
 
     parser.done();
@@ -520,7 +469,7 @@ int main(int argc, char** argv) {
 
   for (auto& events : sweepEvents) events->duplicatesToReferences(geomCache);
 
-  Sweeper sweeper(sweeperCfg, &geomCache);
+  Sweeper sweeper(spatialJoinCfg, &geomCache);
 
   geomCache.log("Sweeping...");
   ts = TIME();
@@ -528,7 +477,6 @@ int main(int argc, char** argv) {
                 sweepEvents.size() > 1 ? sweepEvents[1].get() : 0);
   geomCache.log("done (" + std::to_string(TOOK(ts) / 1000000000.0) + "s).");
 
-  delete[] buf;
 
   return 0;
 }

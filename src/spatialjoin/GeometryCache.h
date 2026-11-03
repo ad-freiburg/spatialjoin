@@ -47,7 +47,7 @@ struct TypedGeometryCache {
 
 class GeometryCache {
  public:
-  GeometryCache(SweeperCfg cfg) : _cfg(cfg) {}
+  GeometryCache(SpatialJoinCfg cfg) : _cfg(cfg) {}
 
   void log(const std::string& msg);
 
@@ -58,7 +58,7 @@ class GeometryCache {
     return *_stores[storeId];
   }
 
-  const SweeperCfg& cfg() const { return _cfg; }
+  const SpatialJoinCfg& cfg() const { return _cfg; }
 
   std::shared_ptr<sj::Line> getLine(size_t id, size_t tid,
                                     size_t storeId = 0) const {
@@ -106,7 +106,7 @@ class GeometryCache {
  private:
   // the LRU caches for the geometries of a single GeometryStore
   struct StoreCaches {
-    StoreCaches(const SweeperCfg& cfg)
+    StoreCaches(const SpatialJoinCfg& cfg)
         : pointCache(cfg.geomCacheMaxSize, cfg.geomCacheMaxNumElements,
                      cfg.numCacheThreads),
           areaCache(cfg.geomCacheMaxSize, cfg.geomCacheMaxNumElements,
@@ -154,7 +154,7 @@ class GeometryCache {
   template <typename W>
   static std::pair<size_t, size_t> size(const TypedGeometryCache<W>& cache);
 
-  const SweeperCfg _cfg;
+  const SpatialJoinCfg _cfg;
 
   std::vector<const GeometryStore*> _stores;
   std::vector<std::unique_ptr<StoreCaches>> _caches;

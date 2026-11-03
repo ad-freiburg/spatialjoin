@@ -4,9 +4,26 @@
 
 #include "WKTParse.h"
 
+#include <fcntl.h>
+#include <unistd.h>
+#ifndef SPATIALJOIN_NO_ZLIB
+#include <zlib.h>
+#endif
+#ifndef SPATIALJOIN_NO_BZIP2
+#include <bzlib.h>
+#endif
+
+#include <stdexcept>
+#include <string>
+#include <vector>
 #ifdef __cpp_lib_string_view
 #include <string_view>
 #endif
+
+#include "util/Misc.h"
+
+// size of the read buffer used by the parseFile() methods
+static const size_t READ_BUFF_SIZE = 1024 * 1024;
 
 using sj::WKTParser;
 using sj::WKTParserBase;
@@ -99,6 +116,90 @@ void WKTParser::parsePoint(util::geo::DPoint point, size_t id) {
     _jobs.add(std::move(_curBatch));
     _curBatch.clear();
   }
+}
+
+// _____________________________________________________________________________
+void WKTParser::parseFd(int fd) {
+  std::vector<unsigned char> buf(READ_BUFF_SIZE);
+  ssize_t len;
+
+  while ((len = util::readAll(fd, buf.data(), buf.size())) > 0) {
+    parse(reinterpret_cast<char*>(buf.data()), len);
+  }
+
+  if (len < 0) throw std::runtime_error("Could not read input");
+}
+
+// _____________________________________________________________________________
+void WKTParser::parseFile(const std::string& path) {
+  if (util::endsWith(path, ".bz2")) return parseBz2File(path);
+  if (util::endsWith(path, ".gz")) return parseGzFile(path);
+
+  int f = open(path.c_str(), O_RDONLY);
+  if (f < 0) throw std::runtime_error("Could not open input file " + path);
+
+  try {
+    parseFd(f);
+  } catch (const std::runtime_error&) {
+    close(f);
+    throw std::runtime_error("Could not read input file " + path);
+  }
+
+  close(f);
+}
+
+// _____________________________________________________________________________
+void WKTParser::parseGzFile(const std::string& path) {
+#ifndef SPATIALJOIN_NO_ZLIB
+  gzFile f = gzopen(path.c_str(), "r");
+  if (f == Z_NULL) {
+    throw std::runtime_error("Could not open input file " + path);
+  }
+
+  std::vector<unsigned char> buf(READ_BUFF_SIZE);
+  ssize_t len;
+
+  while ((len = util::zreadAll(f, buf.data(), buf.size())) > 0) {
+    parse(reinterpret_cast<char*>(buf.data()), len);
+  }
+
+  gzclose(f);
+
+  if (len < 0) throw std::runtime_error("Could not read input file " + path);
+#else
+  throw std::runtime_error("Could not open input file " + path +
+                           ", spatialjoin was compiled without gzip support");
+#endif
+}
+
+// _____________________________________________________________________________
+void WKTParser::parseBz2File(const std::string& path) {
+#ifndef SPATIALJOIN_NO_BZIP2
+  auto fh = fopen(path.c_str(), "r");
+  if (!fh) throw std::runtime_error("Could not open input file " + path);
+
+  int err;
+  BZFILE* f = BZ2_bzReadOpen(&err, fh, 0, 0, NULL, 0);
+  if (!f || err != BZ_OK) {
+    fclose(fh);
+    throw std::runtime_error("Could not open input file " + path);
+  }
+
+  std::vector<unsigned char> buf(READ_BUFF_SIZE);
+  ssize_t len;
+
+  while ((len = util::bz2readAll(f, buf.data(), buf.size())) > 0) {
+    parse(reinterpret_cast<char*>(buf.data()), len);
+  }
+
+  BZ2_bzReadClose(&err, f);
+  fclose(fh);
+
+  if (len < 0) throw std::runtime_error("Could not read input file " + path);
+#else
+  throw std::runtime_error("Could not open input file " + path +
+                           ", spatialjoin was compiled without BZip2 support");
+#endif
 }
 
 // _____________________________________________________________________________

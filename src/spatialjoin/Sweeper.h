@@ -156,7 +156,7 @@ typedef std::priority_queue<MultiEventPos, std::vector<MultiEventPos>,
 
 class Sweeper {
  public:
-  Sweeper(SweeperCfg cfg, const GeometryCache* geomCache)
+  Sweeper(SpatialJoinCfg cfg, const GeometryCache* geomCache)
       : _cfg(cfg),
         _geomCache(geomCache),
         _jobs(100),
@@ -382,7 +382,7 @@ class Sweeper {
                  const util::geo::IntervalIdx<int32_t, SweepVal>* actives,
                  const BoxVal* cur, bool side) const;
 
-  const SweeperCfg _cfg;
+  const SpatialJoinCfg _cfg;
   size_t _curSweepId = 0;
 
   // 1 for a self join, 2 for a non-self join, set in sweep()

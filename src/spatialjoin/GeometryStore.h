@@ -16,8 +16,8 @@
 #include <vector>
 
 #include "BoxIds.h"
+#include "SpatialJoinCfg.h"
 #include "SweepEventList.h"
-#include "SweeperCfg.h"
 #include "util/geo/Geo.h"
 
 namespace sj {
@@ -267,21 +267,19 @@ class GeometryStore {
   // if persistOnDisk is true, flush() writes the geometries to files
   // <cache>/<prefix><type>, which can be read again with
   // GeometryStore(cfg, cache, prefix)
-  GeometryStore(const SweeperCfg& cfg, const std::string& cache,
+  GeometryStore(const SpatialJoinCfg& cfg, const std::string& cache,
                 const std::string& prefix, bool persistOnDisk)
       : _cfg(cfg),
         _pointStore(cfg.numCacheThreads, cache, prefix, persistOnDisk),
         _areaStore(cfg.numCacheThreads, cache, prefix, persistOnDisk),
-        _simpleAreaStore(cfg.numCacheThreads, cache, prefix,
-                         persistOnDisk),
+        _simpleAreaStore(cfg.numCacheThreads, cache, prefix, persistOnDisk),
         _lineStore(cfg.numCacheThreads, cache, prefix, persistOnDisk),
-        _simpleLineStore(cfg.numCacheThreads, cache, prefix,
-                         persistOnDisk),
+        _simpleLineStore(cfg.numCacheThreads, cache, prefix, persistOnDisk),
         _multiStore(cfg.numCacheThreads, cache, prefix, persistOnDisk) {}
 
   // construct a GeometryStore from the files persisted in dir with prefix
   // by a GeometryStore constructed with persistOnDisk
-  GeometryStore(const SweeperCfg& cfg, const std::string& dir,
+  GeometryStore(const SpatialJoinCfg& cfg, const std::string& dir,
                 const std::string& prefix)
       : _cfg(cfg),
         _pointStore(cfg.numCacheThreads,
@@ -297,8 +295,7 @@ class GeometryStore {
             cfg.numCacheThreads,
             TypedGeometryStore<SimpleLine>::persistFName(dir, prefix)),
         _multiStore(cfg.numCacheThreads,
-                    TypedGeometryStore<MultiGeom>::persistFName(dir, prefix)) {
-  }
+                    TypedGeometryStore<MultiGeom>::persistFName(dir, prefix)) {}
 
   void log(const std::string& msg);
 
@@ -374,7 +371,7 @@ class GeometryStore {
   template <typename W>
   static std::shared_ptr<W> get(const TypedGeometryStore<W>& store, size_t off);
 
-  const SweeperCfg _cfg;
+  const SpatialJoinCfg _cfg;
 
   TypedGeometryStore<Point> _pointStore;
   TypedGeometryStore<Area> _areaStore;

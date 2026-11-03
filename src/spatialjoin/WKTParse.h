@@ -310,6 +310,19 @@ class WKTParser : public WKTParserBase<ParseJob> {
   WKTParser(sj::GeometryStore* store, uint8_t storeId,
             sj::SweepEventList* events, size_t numThreads, bool strict = false);
   void parse(char* c, size_t size);
+
+  // parse all lines of the file at path, throws std::runtime_error if the
+  // file cannot be read. done() must still be called after the last input.
+  // parseFile() reads files ending in .gz with parseGzFile(), files ending in
+  // .bz2 with parseBz2File(), and all other files as plain text.
+  void parseFile(const std::string& path);
+  void parseGzFile(const std::string& path);
+  void parseBz2File(const std::string& path);
+
+  // parse all lines readable from file descriptor fd (e.g. 0 for stdin),
+  // throws std::runtime_error on a read error
+  void parseFd(int fd);
+
   void parseWKT(const char* c, size_t id);
   void parseWKT(const std::string& str, size_t id);
 #ifdef __cpp_lib_string_view
