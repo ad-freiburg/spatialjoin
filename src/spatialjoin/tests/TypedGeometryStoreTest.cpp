@@ -84,6 +84,42 @@ void removeDir(const std::string& dir) {
   rmdir(dir.c_str());
 }
 
+// _____________________________________________________________________________
+template <typename W>
+std::string rawOf(const sj::TypedGeometryStore<W>& store, const W& val) {
+  std::stringstream ss;
+  store.writeTo(val, ss);
+  return ss.str();
+}
+
+// _____________________________________________________________________________
+// getId() of a store holding vals, in memory and on disk
+template <typename W>
+void checkGetId(const std::string& dir, const std::string& fname,
+                const std::vector<W>& vals,
+                const std::vector<sj::GeomId>& expected) {
+  sj::TypedGeometryStore<W> a(NUM_THREADS, dir, ".spatialjoin", true);
+  std::vector<size_t> offs;
+  for (const auto& val : vals) offs.push_back(a.add(rawOf(a, val)));
+  a.flush();
+
+  TEST(a.inMemory());
+  sj::TypedGeometryStore<W> b(NUM_THREADS, dir + "/.spatialjoin" + fname);
+  TEST(!b.inMemory());
+
+  for (size_t i = 0; i < vals.size(); i++) {
+    for (size_t t = 0; t < NUM_THREADS; t++) {
+      for (const auto* store : {&a, &b}) {
+        auto id = store->getId(offs[i], t).second;
+        TEST(id.id, ==, expected[i].id);
+        TEST(id.subId, ==, expected[i].subId);
+      }
+    }
+    // the full geometry still deserializes correctly after the id
+    TEST(b.getFrom(offs[i], 0).second.id, ==, expected[i].id);
+  }
+}
+
 }  // namespace
 
 // _____________________________________________________________________________
@@ -215,6 +251,37 @@ void typedGeometryStoreTest() {
       checkOnDisk(b, offs);
     }
 
+    removeDir(dir);
+  }
+
+  {
+    // getId() reads only the gid and the sub id, which are serialized first
+    const std::string dir = "./.spatialjoin-test-get-id";
+    removeDir(dir);
+    TEST(mkdir(dir.c_str(), 0777) == 0);
+
+    util::geo::Ring<int32_t> ring{{0, 0}, {10, 0}, {10, 10}, {0, 10}, {0, 0}};
+    util::geo::I32Line line{{0, 0}, {10, 10}, {20, 0}};
+
+    checkGetId<sj::Area>(
+        dir, "areas",
+        {sj::Area{"a", 0, util::geo::I32XSortedPolygon(ring), {}},
+         sj::Area{"", 3, util::geo::I32XSortedPolygon(ring), {{1, 0}}},
+         sj::Area{longId(1), 7, util::geo::I32XSortedPolygon(ring), {}}},
+        {{"a", 0}, {"", 3}, {longId(1), 7}});
+    removeDir(dir);
+    TEST(mkdir(dir.c_str(), 0777) == 0);
+
+    checkGetId<sj::Line>(
+        dir, "lines",
+        {sj::Line{"l", 2, util::geo::I32XSortedLine(line), {}},
+         sj::Line{"m", 0, util::geo::I32XSortedLine(line), {{1, 0}}}},
+        {{"l", 2}, {"m", 0}});
+    removeDir(dir);
+    TEST(mkdir(dir.c_str(), 0777) == 0);
+
+    checkGetId<sj::SimpleArea>(dir, "simpleareas",
+                               {sj::SimpleArea{"s", ring}}, {{"s", 0}});
     removeDir(dir);
   }
 }

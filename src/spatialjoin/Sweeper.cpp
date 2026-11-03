@@ -477,6 +477,9 @@ RelStats Sweeper::sweep(const SweepEventList* eventsA,
 
   _numSides = eventsB ? 2 : 1;
 
+  _events[0] = eventsA;
+  _events[1] = eventsB ? eventsB : eventsA;
+
   _cancelled = false;
 
   const size_t batchSize = 100000;
@@ -730,7 +733,7 @@ sj::Area Sweeper::areaFromSimpleArea(const SimpleArea* sa) const {
     spoly.getOuter().setMaxSegLen(std::numeric_limits<int32_t>::max());
   }
 
-  return {std::move(spoly), sa->id, 0,
+  return {sa->id, 0, std::move(spoly),
           (_cfg.useBoxIds ? BoxIdList{{1, 0}, {-getBoxId(sa->geom.front()), 0}}
                           : BoxIdList{})};
 }
@@ -1039,8 +1042,8 @@ void Sweeper::writeDE9IM(size_t t, const std::string& a, size_t aSub,
 
   if (!hasRefs(aOrig, bOrig)) return;
 
-  const auto* referersA = store(aOrig.storeId).getRefs(a, aSub);
-  const auto* referersB = store(bOrig.storeId).getRefs(b, bSub);
+  const auto* referersA = _events[aOrig.side]->getRefs(aOrig.storeId, a, aSub);
+  const auto* referersB = _events[bOrig.side]->getRefs(bOrig.storeId, b, bSub);
 
   if (expandB && referersB) {
     for (const auto& idB : *referersB) {
@@ -1101,8 +1104,8 @@ void Sweeper::writeDist(size_t t, const std::string& a, size_t aSub,
 
   if (!hasRefs(aOrig, bOrig)) return;
 
-  const auto* referersA = store(aOrig.storeId).getRefs(a, aSub);
-  const auto* referersB = store(bOrig.storeId).getRefs(b, bSub);
+  const auto* referersA = _events[aOrig.side]->getRefs(aOrig.storeId, a, aSub);
+  const auto* referersB = _events[bOrig.side]->getRefs(bOrig.storeId, b, bSub);
 
   if (expandB && referersB) {
     for (const auto& idB : *referersB) {
@@ -1141,8 +1144,8 @@ void Sweeper::writeIntersect(size_t t, const std::string& a, size_t aSub,
 
   // handle references
 
-  const auto* referersA = store(aOrig.storeId).getRefs(a, aSub);
-  const auto* referersB = store(bOrig.storeId).getRefs(b, bSub);
+  const auto* referersA = _events[aOrig.side]->getRefs(aOrig.storeId, a, aSub);
+  const auto* referersB = _events[bOrig.side]->getRefs(bOrig.storeId, b, bSub);
 
   if (expandB && referersB) {
     for (const auto& idB : *referersB) {
@@ -1159,6 +1162,21 @@ void Sweeper::writeIntersect(size_t t, const std::string& a, size_t aSub,
                      selfExp);
     }
   }
+}
+
+// ____________________________________________________________________________
+void Sweeper::selfCheck(const JobVal& cur, size_t t) {
+  GeomId ref;
+  if (cur.getType() == SELF_CHECK_AREA) {
+    ref = _geomCache->getAreaId(cur.getId(), t, cur.storeId);
+  } else if (cur.getType() == SELF_CHECK_LINE) {
+    ref = _geomCache->getLineId(cur.getId(), t, cur.storeId);
+  } else {
+    throw std::runtime_error("Unsupported self check event type " +
+                             std::to_string(cur.getType()));
+  }
+
+  selfCheck(ref.id, ref.subId, cur.origin(), cur.getType(), t);
 }
 
 // ____________________________________________________________________________
@@ -1196,8 +1214,7 @@ void Sweeper::doDE9IMCheck(const JobVal cur, const JobVal sv, size_t t) {
 
   if (cur.getType() == SELF_CHECK || cur.getType() == SELF_CHECK_AREA ||
       cur.getType() == SELF_CHECK_LINE || cur.getType() == SELF_CHECK_POINT) {
-    auto sc = store(cur.storeId).selfCheck(cur.getId());
-    return selfCheck(sc.first, sc.second, cur.origin(), cur.getType(), t);
+    return selfCheck(cur, t);
   }
 
   if (cur.getType() == sv.getType() && cur.getId() == sv.getId() &&
@@ -1474,8 +1491,7 @@ void Sweeper::doDistCheck(const JobVal cur, const JobVal sv, size_t t) {
 
   if (cur.getType() == SELF_CHECK || cur.getType() == SELF_CHECK_AREA ||
       cur.getType() == SELF_CHECK_LINE || cur.getType() == SELF_CHECK_POINT) {
-    auto sc = store(cur.storeId).selfCheck(cur.getId());
-    return selfCheck(sc.first, sc.second, cur.origin(), cur.getType(), t);
+    return selfCheck(cur, t);
   }
 
   if (cur.getType() == sv.getType() && cur.getId() == sv.getId() &&
@@ -1682,8 +1698,7 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
 
   if (cur.getType() == SELF_CHECK || cur.getType() == SELF_CHECK_AREA ||
       cur.getType() == SELF_CHECK_LINE || cur.getType() == SELF_CHECK_POINT) {
-    auto sc = store(cur.storeId).selfCheck(cur.getId());
-    return selfCheck(sc.first, sc.second, cur.origin(), cur.getType(), t);
+    return selfCheck(cur, t);
   }
 
   if (cur.getType() == sv.getType() && cur.getId() == sv.getId() &&
@@ -1745,7 +1760,7 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
     } else if (res.intersects()) {
       // if a is not a multi-geom, and is completey covered, we wont
       // be finding a touch as we assume non-self-intersecting geoms
-      if (store(cur.storeId).isRefed(a->id) ||
+      if (_events[cur.side]->isRefed(cur.storeId, a->id) ||
           !(a->subId == 0 && res.coveredBy())) {
         writeNotTouches(t, a->id, a->subId, cur.origin(), b->id, b->subId,
                         sv.origin());
@@ -1804,7 +1819,7 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
     } else if (res.intersects()) {
       // if a is not a multi-geom, and is completey covered, we wont
       // be finding a touch as we assume non-self-intersecting geoms
-      if (store(cur.storeId).isRefed(a->id) ||
+      if (_events[cur.side]->isRefed(cur.storeId, a->id) ||
           !(a->subId == 0 && res.coveredBy())) {
         writeNotTouches(t, a->id, a->subId, cur.origin(), b->id, b->subId,
                         sv.origin());
@@ -1857,7 +1872,7 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
     if (res.touches()) {
       writeTouches(t, a->id, 0, cur.origin(), b->id, b->subId, sv.origin());
     } else if (res.intersects()) {
-      if (store(cur.storeId).isRefed(a->id) || !(res.coveredBy())) {
+      if (_events[cur.side]->isRefed(cur.storeId, a->id) || !(res.coveredBy())) {
         writeNotTouches(t, a->id, 0, cur.origin(), b->id, b->subId,
                         sv.origin());
       }
@@ -1915,7 +1930,7 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
     } else if (res.intersects()) {
       // if b is not a multi-geom, and is completey covered, we wont
       // be finding a touch as we assume non-self-intersecting geoms
-      if (store(cur.storeId).isRefed(a->id) ||
+      if (_events[cur.side]->isRefed(cur.storeId, a->id) ||
           !(b->subId == 0 && res.coveredBy())) {
         writeNotTouches(t, a->id, a->subId, cur.origin(), b->id, b->subId,
                         sv.origin());
@@ -1965,7 +1980,7 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
     if (res.touches()) {
       writeTouches(t, a->id, a->subId, cur.origin(), b->id, 0, sv.origin());
     } else if (res.intersects()) {
-      if (store(cur.storeId).isRefed(a->id) || !res.coveredBy()) {
+      if (_events[cur.side]->isRefed(cur.storeId, a->id) || !res.coveredBy()) {
         writeNotTouches(t, a->id, a->subId, cur.origin(), b->id, 0,
                         sv.origin());
       }
@@ -2324,7 +2339,7 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
         writeContains(t, b->id, b->subId, sv.origin(), a->id, a->subId,
                       cur.origin());
 
-        if (store(cur.storeId).isRefed(a->id) || a->subId != 0) {
+        if (_events[cur.side]->isRefed(cur.storeId, a->id) || a->subId != 0) {
           writeNotTouches(t, a->id, a->subId, cur.origin(), b->id, b->subId,
                           sv.origin());
         }
@@ -2415,8 +2430,8 @@ void Sweeper::writeOverlaps(size_t t, const std::string& a, size_t aSub,
 
   // handle references
 
-  const auto* referersA = store(aOrig.storeId).getRefs(a, aSub);
-  const auto* referersB = store(bOrig.storeId).getRefs(b, bSub);
+  const auto* referersA = _events[aOrig.side]->getRefs(aOrig.storeId, a, aSub);
+  const auto* referersB = _events[bOrig.side]->getRefs(bOrig.storeId, b, bSub);
 
   if (expandB && referersB) {
     for (const auto& idB : *referersB) {
@@ -2453,8 +2468,8 @@ void Sweeper::writeNotOverlaps(size_t t, const std::string& a, size_t aSub,
 
   // handle references
 
-  const auto* referersA = store(aOrig.storeId).getRefs(a, aSub);
-  const auto* referersB = store(bOrig.storeId).getRefs(b, bSub);
+  const auto* referersA = _events[aOrig.side]->getRefs(aOrig.storeId, a, aSub);
+  const auto* referersB = _events[bOrig.side]->getRefs(bOrig.storeId, b, bSub);
 
   if (expandB && referersB) {
     for (const auto& idB : *referersB) {
@@ -2491,8 +2506,8 @@ void Sweeper::writeCrosses(size_t t, const std::string& a, size_t aSub,
 
   // handle references
 
-  const auto* referersA = store(aOrig.storeId).getRefs(a, aSub);
-  const auto* referersB = store(bOrig.storeId).getRefs(b, bSub);
+  const auto* referersA = _events[aOrig.side]->getRefs(aOrig.storeId, a, aSub);
+  const auto* referersB = _events[bOrig.side]->getRefs(bOrig.storeId, b, bSub);
 
   if (expandB && referersB) {
     for (const auto& idB : *referersB) {
@@ -2528,8 +2543,8 @@ void Sweeper::writeNotCrosses(size_t t, const std::string& a, size_t aSub,
 
   // handle references
 
-  const auto* referersA = store(aOrig.storeId).getRefs(a, aSub);
-  const auto* referersB = store(bOrig.storeId).getRefs(b, bSub);
+  const auto* referersA = _events[aOrig.side]->getRefs(aOrig.storeId, a, aSub);
+  const auto* referersB = _events[bOrig.side]->getRefs(bOrig.storeId, b, bSub);
 
   if (expandB && referersB) {
     for (const auto& idB : *referersB) {
@@ -2563,8 +2578,8 @@ void Sweeper::writeCrossesOneWay(size_t t, const std::string& a, size_t aSub,
 
   // handle references
 
-  const auto* referersA = store(aOrig.storeId).getRefs(a, aSub);
-  const auto* referersB = store(bOrig.storeId).getRefs(b, bSub);
+  const auto* referersA = _events[aOrig.side]->getRefs(aOrig.storeId, a, aSub);
+  const auto* referersB = _events[bOrig.side]->getRefs(bOrig.storeId, b, bSub);
 
   if (expandB && referersB) {
     for (const auto& idB : *referersB) {
@@ -2604,8 +2619,8 @@ void Sweeper::writeTouches(size_t t, const std::string& a, size_t aSub,
 
   // handle references
 
-  const auto* referersA = store(aOrig.storeId).getRefs(a, aSub);
-  const auto* referersB = store(bOrig.storeId).getRefs(b, bSub);
+  const auto* referersA = _events[aOrig.side]->getRefs(aOrig.storeId, a, aSub);
+  const auto* referersB = _events[bOrig.side]->getRefs(bOrig.storeId, b, bSub);
 
   if (expandB && referersB) {
     for (const auto& idB : *referersB) {
@@ -2641,8 +2656,8 @@ void Sweeper::writeNotTouches(size_t t, const std::string& a, size_t aSub,
 
   // handle references
 
-  const auto* referersA = store(aOrig.storeId).getRefs(a, aSub);
-  const auto* referersB = store(bOrig.storeId).getRefs(b, bSub);
+  const auto* referersA = _events[aOrig.side]->getRefs(aOrig.storeId, a, aSub);
+  const auto* referersB = _events[bOrig.side]->getRefs(bOrig.storeId, b, bSub);
 
   if (expandB && referersB) {
     for (const auto& idB : *referersB) {
@@ -2692,8 +2707,8 @@ void Sweeper::writeEquals(size_t t, const std::string& a, size_t aSub,
 
   // handle references
 
-  const auto* referersA = store(aOrig.storeId).getRefs(a, aSub);
-  const auto* referersB = store(bOrig.storeId).getRefs(b, bSub);
+  const auto* referersA = _events[aOrig.side]->getRefs(aOrig.storeId, a, aSub);
+  const auto* referersB = _events[bOrig.side]->getRefs(bOrig.storeId, b, bSub);
 
   if (expandB && referersB) {
     for (const auto& idB : *referersB) {
@@ -2730,8 +2745,8 @@ void Sweeper::writeCovers(size_t t, const std::string& a, size_t aSub,
 
   // handle references
 
-  const auto* referersA = store(aOrig.storeId).getRefs(a, aSub);
-  const auto* referersB = store(bOrig.storeId).getRefs(b, bSub);
+  const auto* referersA = _events[aOrig.side]->getRefs(aOrig.storeId, a, aSub);
+  const auto* referersB = _events[bOrig.side]->getRefs(bOrig.storeId, b, bSub);
 
   if (expandB && referersB) {
     for (const auto& idB : *referersB) {
@@ -2763,8 +2778,8 @@ void Sweeper::writeContains(size_t t, const std::string& a, size_t aSub,
   if (!hasRefs(aOrig, bOrig)) return;
 
   // handle references
-  const auto* referersA = store(aOrig.storeId).getRefs(a, aSub);
-  const auto* referersB = store(bOrig.storeId).getRefs(b, bSub);
+  const auto* referersA = _events[aOrig.side]->getRefs(aOrig.storeId, a, aSub);
+  const auto* referersB = _events[bOrig.side]->getRefs(bOrig.storeId, b, bSub);
 
   if (expandB && referersB) {
     for (const auto& idB : *referersB) {
@@ -3577,7 +3592,7 @@ double Sweeper::getMaxMultiDist(const std::string& idA, size_t aSub,
   // TODO: why do we return here directly for euclidean, check this!
   if (euclidean) return maxD;
 
-  if (store(aOrig.storeId).isRefed(idA) || store(bOrig.storeId).isRefed(idB))
+  if (_events[aOrig.side]->isRefed(aOrig.storeId, idA) || _events[bOrig.side]->isRefed(bOrig.storeId, idB))
     return maxD;
 
   // for multigeometries, we may already have a minimum distance above which we

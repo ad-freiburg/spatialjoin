@@ -25,6 +25,7 @@
 #include "GeometryCache.h"
 #include "GeometryStore.h"
 #include "Stats.h"
+#include "SweepEventList.h"
 #include "util/JobQueue.h"
 #include "util/geo/Geo.h"
 #include "util/geo/IntervalIdx.h"
@@ -196,9 +197,9 @@ class Sweeper {
     return i->second;
   }
 
-  // whether the stores of a or b hold references
+  // whether the event lists of a or b hold references
   bool hasRefs(GeomOrigin a, GeomOrigin b) const {
-    return store(a.storeId).hasRefs() || store(b.storeId).hasRefs();
+    return _events[a.side]->hasRefs() || _events[b.side]->hasRefs();
   }
 
   // whether gid a on aSide and gid b on bSide denote the same geometry
@@ -328,6 +329,8 @@ class Sweeper {
   void doCheck(JobVal cur, JobVal sv, size_t t);
   void doDistCheck(JobVal cur, JobVal sv, size_t t);
   void doDE9IMCheck(JobVal cur, JobVal sv, size_t t);
+  // the self check of the referenced geometry of self check event cur
+  void selfCheck(const JobVal& cur, size_t t);
   void selfCheck(const std::string& a, size_t subId, GeomOrigin origin,
                  GeomType type, size_t t);
   void processQueue(size_t t);
@@ -384,6 +387,8 @@ class Sweeper {
 
   // 1 for a self join, 2 for a non-self join, set in sweep()
   size_t _numSides = 1;
+
+  const SweepEventList* _events[2] = {0, 0};
 
   std::vector<size_t> _checks;
   std::vector<int32_t> _curX;

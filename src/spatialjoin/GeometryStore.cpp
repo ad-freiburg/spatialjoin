@@ -14,6 +14,7 @@
 #include <iostream>
 #include <sstream>
 #include <stdexcept>
+#include <type_traits>
 #include <unordered_set>
 #include <vector>
 
@@ -22,6 +23,26 @@
 #include "util/geo/Geo.h"
 
 const static size_t MAX_MEM_CACHE_SIZE = 3 * 1024 * 1024 * 20l;
+
+namespace {
+// the sub id of a geometry, 0 for geometry types without one
+template <typename W>
+size_t subIdOf(const W& val) {
+  return val.subId;
+}
+template <>
+size_t subIdOf(const sj::SimpleArea&) {
+  return 0;
+}
+template <>
+size_t subIdOf(const sj::SimpleLine&) {
+  return 0;
+}
+template <>
+size_t subIdOf(const sj::MultiGeom&) {
+  return 0;
+}
+}  // namespace
 
 
 // ____________________________________________________________________________
@@ -110,6 +131,15 @@ sj::TypedGeometryStore<sj::SimpleArea>::getFrom(size_t off,
 
   str.seekg(off);
 
+  // id
+  uint16_t len;
+  str.read(reinterpret_cast<char*>(&len), sizeof(uint16_t));
+  ret.id.resize(len);
+
+  if (len) {
+    str.read(reinterpret_cast<char*>(&ret.id[0]), len * sizeof(char));
+  }
+
   // geom
   uint32_t size;
   str.read(reinterpret_cast<char*>(&size), sizeof(uint32_t));
@@ -118,15 +148,6 @@ sj::TypedGeometryStore<sj::SimpleArea>::getFrom(size_t off,
   if (size) {
     str.read(reinterpret_cast<char*>(&ret.geom[0]),
              size * sizeof(util::geo::I32Point));
-  }
-
-  // id
-  uint16_t len;
-  str.read(reinterpret_cast<char*>(&len), sizeof(uint16_t));
-  ret.id.resize(len);
-
-  if (len) {
-    str.read(reinterpret_cast<char*>(&ret.id[0]), len * sizeof(char));
   }
 
   return {sizeof(uint32_t) + size * sizeof(util::geo::I32Point) +
@@ -143,9 +164,6 @@ std::pair<size_t, sj::Line> sj::TypedGeometryStore<sj::Line>::getFrom(
 
   str.seekg(off);
 
-  // geom
-  estSize += readLine(str, ret.geom);
-
   // id
   uint16_t len;
   str.read(reinterpret_cast<char*>(&len), sizeof(uint16_t));
@@ -159,6 +177,9 @@ std::pair<size_t, sj::Line> sj::TypedGeometryStore<sj::Line>::getFrom(
   // sub id
   str.read(reinterpret_cast<char*>(&ret.subId), sizeof(size_t));
   estSize += sizeof(size_t);
+
+  // geom
+  estSize += readLine(str, ret.geom);
 
   // boxIds
   uint32_t numBoxIds;
@@ -182,9 +203,6 @@ std::pair<size_t, sj::Area> sj::TypedGeometryStore<sj::Area>::getFrom(
 
   str.seekg(off);
 
-  // geom
-  estSize += readPoly(str, ret.geom);
-
   // id
   uint16_t len;
   str.read(reinterpret_cast<char*>(&len), sizeof(uint16_t));
@@ -198,6 +216,9 @@ std::pair<size_t, sj::Area> sj::TypedGeometryStore<sj::Area>::getFrom(
   // sub id
   str.read(reinterpret_cast<char*>(&ret.subId), sizeof(size_t));
   estSize += sizeof(size_t);
+
+  // geom
+  estSize += readPoly(str, ret.geom);
 
   // boxIds
   uint32_t numBoxIds;
@@ -313,17 +334,6 @@ size_t sj::TypedGeometryStore<sj::SimpleArea>::writeTo(
     const sj::SimpleArea& val, std::ostream& str) const {
   size_t ret = 0;
 
-  // geom
-  uint32_t len = val.geom.size();
-  str.write(reinterpret_cast<const char*>(&len), sizeof(uint32_t));
-  ret += sizeof(uint32_t);
-
-  if (len) {
-    str.write(reinterpret_cast<const char*>(&val.geom[0]),
-              len * sizeof(util::geo::I32Point));
-    ret += sizeof(util::geo::I32Point) * len;
-  }
-
   // id
   if (val.id.size() > std::numeric_limits<uint16_t>::max()) {
     throw std::out_of_range(
@@ -336,6 +346,17 @@ size_t sj::TypedGeometryStore<sj::SimpleArea>::writeTo(
   str.write(reinterpret_cast<const char*>(val.id.c_str()),
             val.id.size() * sizeof(char));
   ret += sizeof(char) * val.id.size();
+
+  // geom
+  uint32_t len = val.geom.size();
+  str.write(reinterpret_cast<const char*>(&len), sizeof(uint32_t));
+  ret += sizeof(uint32_t);
+
+  if (len) {
+    str.write(reinterpret_cast<const char*>(&val.geom[0]),
+              len * sizeof(util::geo::I32Point));
+    ret += sizeof(util::geo::I32Point) * len;
+  }
 
   return ret;
 }
@@ -369,9 +390,6 @@ size_t sj::TypedGeometryStore<sj::Line>::writeTo(const sj::Line& val,
                                                  std::ostream& str) const {
   size_t ret = 0;
 
-  // geoms
-  ret += writeLine(val.geom, str);
-
   // id
   if (val.id.size() > std::numeric_limits<uint16_t>::max()) {
     throw std::out_of_range(
@@ -388,6 +406,9 @@ size_t sj::TypedGeometryStore<sj::Line>::writeTo(const sj::Line& val,
   // sub id
   str.write(reinterpret_cast<const char*>(&val.subId), sizeof(size_t));
   ret += sizeof(size_t);
+
+  // geoms
+  ret += writeLine(val.geom, str);
 
   // boxIds
   uint32_t size = val.boxIds.size();
@@ -408,9 +429,6 @@ size_t sj::TypedGeometryStore<sj::Area>::writeTo(const sj::Area& val,
                                                  std::ostream& str) const {
   size_t ret = 0;
 
-  // geoms
-  ret += writePoly(val.geom, str);
-
   // id
   if (val.id.size() > std::numeric_limits<uint16_t>::max()) {
     throw std::out_of_range(
@@ -429,6 +447,9 @@ size_t sj::TypedGeometryStore<sj::Area>::writeTo(const sj::Area& val,
   str.write(reinterpret_cast<const char*>(&val.subId), sizeof(size_t));
   ret += sizeof(size_t);
 
+  // geoms
+  ret += writePoly(val.geom, str);
+
   // boxIds
   uint32_t size = val.boxIds.size();
   str.write(reinterpret_cast<const char*>(&size), sizeof(uint32_t));
@@ -440,6 +461,47 @@ size_t sj::TypedGeometryStore<sj::Area>::writeTo(const sj::Area& val,
   ret += sizeof(uint32_t) + sizeof(sj::boxids::BoxId) * size;
 
   return ret;
+}
+
+// ____________________________________________________________________________
+template <typename W>
+std::pair<size_t, sj::GeomId> sj::TypedGeometryStore<W>::getIdFrom(
+    size_t off, std::istream& str) const {
+  // all geometry types are serialized starting with the gid, followed by the
+  // sub id for those types which have one
+  constexpr bool hasSubId = std::is_same<W, sj::Area>::value ||
+                            std::is_same<W, sj::Line>::value ||
+                            std::is_same<W, sj::Point>::value;
+
+  sj::GeomId ret{"", 0};
+
+  str.seekg(off);
+
+  // id
+  uint16_t len;
+  str.read(reinterpret_cast<char*>(&len), sizeof(uint16_t));
+  ret.id.resize(len);
+
+  if (len) {
+    str.read(reinterpret_cast<char*>(&ret.id[0]), len * sizeof(char));
+  }
+
+  // sub id
+  if (hasSubId) str.read(reinterpret_cast<char*>(&ret.subId), sizeof(size_t));
+
+  return {len * sizeof(char) + sizeof(size_t), ret};
+}
+
+// ____________________________________________________________________________
+template <typename W>
+std::pair<size_t, sj::GeomId> sj::TypedGeometryStore<W>::getId(
+    size_t off, size_t tid) const {
+  if (_inMemory) {
+    const auto& val = getFromMem(off);
+    return {val->id.size() * sizeof(char) + sizeof(size_t),
+            {val->id, subIdOf(*val)}};
+  }
+  return getIdFrom(untypedId(off), _geomsFReads[tid]);
 }
 
 // ____________________________________________________________________________
@@ -1006,7 +1068,7 @@ I32Box GeometryStore::add(const I32Polygon& poly, const std::string& gid,
              poly.getOuter().size() == densePoly.getOuter().size() &&
              subid == 0 && (!_cfg.useBoxIds || boxIds.front().first == 1)) {
     std::stringstream str;
-    _simpleAreaStore.writeTo({poly.getOuter(), gid}, str);
+    _simpleAreaStore.writeTo({gid, poly.getOuter()}, str);
     cur.raw = str.str();
 
     auto rightPoint = poly.getOuter().front();
@@ -1033,7 +1095,7 @@ I32Box GeometryStore::add(const I32Polygon& poly, const std::string& gid,
     auto rightPoint = spoly.getOuter().rawRing().back().p;
 
     std::stringstream str;
-    _areaStore.writeTo({std::move(spoly), gid, subid, boxIds}, str);
+    _areaStore.writeTo({gid, subid, std::move(spoly), boxIds}, str);
     ;
 
     cur.raw = str.str();
@@ -1124,7 +1186,7 @@ I32Box GeometryStore::add(const I32Line& line, const std::string& gid,
     }
 
     std::stringstream str;
-    _lineStore.writeTo({std::move(sline), gid, subid, boxIds}, str);
+    _lineStore.writeTo({gid, subid, std::move(sline), boxIds}, str);
     cur.raw = str.str();
 
     cur.meta.type = LINE;
@@ -1406,164 +1468,6 @@ void GeometryStore::flush() {
   _lineStore.flush();
   _simpleLineStore.flush();
   _multiStore.flush();
-
-  // TODO!!!!
-  // duplicatesToReferences();
-
-  log(std::to_string(_refs.size()) + " reference geometries");
-}
-
-// _____________________________________________________________________________
-void GeometryStore::duplicatesToReferences(int file) {
-  // start at beginning of file
-  lseek(file, 0, SEEK_SET);
-
-  const size_t RBUF_SIZE = 100000;
-  unsigned char* buf = new unsigned char[sizeof(BoxVal) * RBUF_SIZE];
-
-  std::unordered_set<size_t> deletedLines;
-  std::unordered_set<size_t> referencedLines;
-  std::unordered_set<size_t> deletedPolys;
-  std::unordered_set<size_t> referencedPolys;
-
-  log("Removing duplicates...");
-
-  ssize_t len;
-  size_t jj = 0;
-
-  int32_t curX = 0;
-
-  std::unordered_map<uint64_t, size_t> duplicatePolys, duplicateLines;
-
-  size_t pos = 0;
-
-  try {
-    while ((len = preadAll(file, buf, sizeof(BoxVal) * RBUF_SIZE, pos)) != 0) {
-      size_t posOld = pos;
-      pos += len;
-      if (len < 0) {
-        std::stringstream ss;
-        ss << "Could not read from events file \n";
-        ss << strerror(errno) << std::endl;
-        throw std::runtime_error(ss.str());
-      }
-
-      if (len % sizeof(BoxVal))
-        throw std::runtime_error("Corrupted events file");
-
-      bool updated = false;
-
-      for (ssize_t i = 0; i < len; i += sizeof(BoxVal)) {
-        auto cur = reinterpret_cast<BoxVal*>(buf + i);
-
-        if (_cfg.sweepCancellationCb && jj % 10000 == 0) {
-          _cfg.sweepCancellationCb();
-        }
-
-        jj++;
-
-        if (cur->out) {
-          if (cur->getType() == POLYGON) {
-            if (deletedPolys.erase(getId(*cur))) {
-              // erase it if present, to avoid unnecessary memory consumption
-              cur->setType(DELETED);
-              updated = true;
-            }
-            referencedPolys.erase(getId(*cur));
-          }
-
-          if (cur->getType() == LINE) {
-            if (deletedLines.erase(getId(*cur))) {
-              // erase it if present, to avoid unnecessary memory consumption
-              cur->setType(DELETED);
-              updated = true;
-            }
-            referencedLines.erase(getId(*cur));
-          }
-
-          continue;
-        }
-
-        if (curX != cur->val) {
-          // new equal-X block
-          duplicatePolys = {};
-          duplicateLines = {};
-          curX = cur->val;
-        }
-
-        if (cur->getType() == POLYGON &&
-            cur->numAnchors >= DUPLICATE_REMOVAL_MIN_SIZE) {
-          size_t h = cur->numAnchors;
-          const auto& existing = duplicatePolys.find(h);
-
-          if (existing != duplicatePolys.end()) {
-            auto a = get(_areaStore, getId(*cur));
-            auto b = get(_areaStore, existing->second);
-
-            if (a->geom == b->geom) {
-              deletedPolys.insert(getId(*cur));
-              if (referencedPolys.insert(existing->second).second) {
-                // for the first element referencing this, modify this
-                // event to the self check of the referenced geom
-                cur->setType(SELF_CHECK_AREA);
-                _selfChecks.push_back({b->id, b->subId});
-                cur->id = typedId(_selfChecks.size() - 1, cur->getType());
-              } else {
-                cur->setType(DELETED);
-              }
-
-              updated = true;
-              _refs[b->id][b->subId][a->id] = a->subId;
-            }
-          } else {
-            duplicatePolys[h] = getId(*cur);
-          }
-        }
-
-        if (cur->getType() == LINE &&
-            cur->numAnchors >= DUPLICATE_REMOVAL_MIN_SIZE) {
-          size_t h = cur->numAnchors;
-          const auto& existing = duplicateLines.find(h);
-
-          if (existing != duplicateLines.end()) {
-            auto a = get(_lineStore, getId(*cur));
-            auto b = get(_lineStore, existing->second);
-
-            if (a->geom == b->geom) {
-              deletedLines.insert(getId(*cur));
-              if (referencedLines.insert(existing->second).second) {
-                // for the first element referencing this, modify this
-                // event to the self check of the referenced geom
-                cur->setType(SELF_CHECK_LINE);
-                _selfChecks.push_back({b->id, b->subId});
-                cur->id = typedId(_selfChecks.size() - 1, cur->getType());
-              } else {
-                cur->setType(DELETED);
-              }
-              updated = true;
-              _refs[b->id][b->subId][a->id] = a->subId;
-            }
-          } else {
-            duplicateLines[h] = getId(*cur);
-          }
-        }
-      }
-
-      // if we changed something in this buffer, write it back
-      if (updated) pwriteAll(file, buf, len, posOld);
-    }
-  } catch (...) {
-    // graceful handling of an exception during sweep
-
-    delete[] buf;
-
-    // rethrow exception
-    throw;
-  }
-
-  delete[] buf;
-
-  log("...done");
 }
 
 // _____________________________________________________________________________

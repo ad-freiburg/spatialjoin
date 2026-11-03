@@ -90,21 +90,34 @@ std::shared_ptr<W> GeometryCache::get(const TypedGeometryStore<W>& store,
   return it->second->second.val;
 }
 
-template std::shared_ptr<sj::Point> GeometryCache::get(
-    const sj::TypedGeometryStore<sj::Point>&,
-    sj::TypedGeometryCache<sj::Point>&, size_t, size_t) const;
-template std::shared_ptr<sj::Area> GeometryCache::get(
-    const sj::TypedGeometryStore<sj::Area>&, sj::TypedGeometryCache<sj::Area>&,
-    size_t, size_t) const;
-template std::shared_ptr<sj::SimpleArea> GeometryCache::get(
-    const sj::TypedGeometryStore<sj::SimpleArea>&,
-    sj::TypedGeometryCache<sj::SimpleArea>&, size_t, size_t) const;
-template std::shared_ptr<sj::Line> GeometryCache::get(
-    const sj::TypedGeometryStore<sj::Line>&, sj::TypedGeometryCache<sj::Line>&,
-    size_t, size_t) const;
-template std::shared_ptr<sj::SimpleLine> GeometryCache::get(
-    const sj::TypedGeometryStore<sj::SimpleLine>&,
-    sj::TypedGeometryCache<sj::SimpleLine>&, size_t, size_t) const;
+// _____________________________________________________________________________
+template <typename W>
+std::shared_ptr<sj::GeomId> GeometryCache::getId(
+    const TypedGeometryStore<W>& store, TypedGeometryCache<GeomId>& cache,
+    size_t off, size_t tid) const {
+  // completely circumvent cache system
+  if (store.inMemory()) {
+    return std::make_shared<GeomId>(store.getId(off, 0).second);
+  }
+
+  tid = tid % _cfg.numCacheThreads;
+
+  std::unique_lock<std::mutex> lock(cache.mutexes[tid]);
+
+  // check if value is in cache
+  auto it = cache.idMap[tid].find(off);
+
+  if (it == cache.idMap[tid].end()) {
+    // if not, load, cache and return
+    const auto& val = store.getId(off, tid);
+    return this->cache(cache, off, val.second, val.first, tid);
+  }
+
+  // if in cache, move to front of list and return
+  cache.vals[tid].splice(cache.vals[tid].begin(), cache.vals[tid], it->second);
+
+  return it->second->second.val;
+}
 
 // _____________________________________________________________________________
 template <typename W>
@@ -162,7 +175,8 @@ std::pair<size_t, size_t> GeometryCache::size() const {
     for (const auto& cacheSize :
          {size(caches->pointCache), size(caches->areaCache),
           size(caches->simpleAreaCache), size(caches->simpleLineCache),
-          size(caches->lineCache)}) {
+          size(caches->lineCache), size(caches->areaIdCache),
+          size(caches->lineIdCache)}) {
       ret.first += cacheSize.first;
       ret.second += cacheSize.second;
     }
@@ -189,3 +203,27 @@ uint8_t GeometryCache::addStore(const GeometryStore* store) {
 void GeometryCache::log(const std::string& msg) {
   if (_cfg.logCb) _cfg.logCb(msg);
 }
+
+template std::shared_ptr<sj::GeomId> GeometryCache::getId(
+    const sj::TypedGeometryStore<sj::Area>&,
+    sj::TypedGeometryCache<sj::GeomId>&, size_t, size_t) const;
+template std::shared_ptr<sj::GeomId> GeometryCache::getId(
+    const sj::TypedGeometryStore<sj::Line>&,
+    sj::TypedGeometryCache<sj::GeomId>&, size_t, size_t) const;
+
+template std::shared_ptr<sj::Point> GeometryCache::get(
+    const sj::TypedGeometryStore<sj::Point>&,
+    sj::TypedGeometryCache<sj::Point>&, size_t, size_t) const;
+template std::shared_ptr<sj::Area> GeometryCache::get(
+    const sj::TypedGeometryStore<sj::Area>&, sj::TypedGeometryCache<sj::Area>&,
+    size_t, size_t) const;
+template std::shared_ptr<sj::SimpleArea> GeometryCache::get(
+    const sj::TypedGeometryStore<sj::SimpleArea>&,
+    sj::TypedGeometryCache<sj::SimpleArea>&, size_t, size_t) const;
+template std::shared_ptr<sj::Line> GeometryCache::get(
+    const sj::TypedGeometryStore<sj::Line>&, sj::TypedGeometryCache<sj::Line>&,
+    size_t, size_t) const;
+template std::shared_ptr<sj::SimpleLine> GeometryCache::get(
+    const sj::TypedGeometryStore<sj::SimpleLine>&,
+    sj::TypedGeometryCache<sj::SimpleLine>&, size_t, size_t) const;
+

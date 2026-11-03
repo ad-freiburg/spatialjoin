@@ -22,6 +22,11 @@
 
 namespace sj {
 
+struct GeomId {
+  std::string id;
+  size_t subId;
+};
+
 struct MultiGeom {
   // id
   std::string id;
@@ -31,22 +36,22 @@ struct MultiGeom {
 };
 
 struct SimpleArea {
-  // polygon
-  util::geo::Ring<int32_t> geom;
-
   // id
   std::string id;
+
+  // polygon
+  util::geo::Ring<int32_t> geom;
 };
 
 struct Area {
-  // polygons
-  util::geo::I32XSortedPolygon geom;
-
   // id
   std::string id;
 
   // sub id (for multipolygons)
   size_t subId;
+
+  // polygons
+  util::geo::I32XSortedPolygon geom;
 
   // box ids
   std::vector<sj::boxids::BoxId> boxIds;
@@ -58,14 +63,14 @@ struct SimpleLine {
 };
 
 struct Line {
-  // line
-  util::geo::I32XSortedLine geom;
-
   // id
   std::string id;
 
   // sub id (for multilines)
   size_t subId;
+
+  // line
+  util::geo::I32XSortedLine geom;
 
   // box ids
   std::vector<sj::boxids::BoxId> boxIds;
@@ -107,6 +112,14 @@ class TypedGeometryStore {
   size_t writeTo(const W& val, std::ostream& str) const;
 
   std::pair<size_t, W> getFrom(size_t off, std::istream& str) const;
+
+  // reads only the gid and sub id of the geometry at off from str, returns
+  // the estimated size and the id
+  std::pair<size_t, GeomId> getIdFrom(size_t off, std::istream& str) const;
+
+  // reads only the gid and sub id of the geometry at off (from memory, or
+  // using the read stream of thread tid, see getFrom())
+  std::pair<size_t, GeomId> getId(size_t off, size_t tid) const;
 
   // reads the geometry at off from disk, using the read stream of thread tid
   // (0 <= tid < numthreads). Not thread-safe for the same tid!
@@ -300,16 +313,6 @@ class GeometryStore {
 
   void flush();
 
-  size_t numReferences() const {
-    size_t ret = 0;
-    for (const auto& subs : _refs) {
-      for (const auto& refd : subs.second) {
-        ret += refd.second.size();
-      }
-    }
-    return ret;
-  }
-
   const TypedGeometryStore<Point>& pointStore() const { return _pointStore; }
   const TypedGeometryStore<Area>& areaStore() const { return _areaStore; }
   const TypedGeometryStore<SimpleArea>& simpleAreaStore() const {
@@ -321,23 +324,6 @@ class GeometryStore {
   }
   const TypedGeometryStore<MultiGeom>& multiStore() const {
     return _multiStore;
-  }
-
-  bool hasRefs() const { return _refs.size() != 0; }
-
-  bool isRefed(const std::string& gid) const { return _refs.count(gid); }
-
-  const std::unordered_map<std::string, size_t>* getRefs(const std::string& gid,
-                                                         size_t subId) const {
-    auto i = _refs.find(gid);
-    if (i == _refs.end()) return nullptr;
-    auto j = i->second.find(subId);
-    if (j == i->second.end()) return nullptr;
-    return &j->second;
-  }
-
-  std::pair<std::string, size_t> selfCheck(size_t id) const {
-    return _selfChecks[id];
   }
 
   void setFilterBox(const util::geo::I32Box& filterBox) {
@@ -362,8 +348,6 @@ class GeometryStore {
   template <typename W>
   static std::shared_ptr<W> get(const TypedGeometryStore<W>& store, size_t off);
 
-  void duplicatesToReferences(int file);
-
   const SweeperCfg _cfg;
 
   TypedGeometryStore<Point> _pointStore;
@@ -383,15 +367,6 @@ class GeometryStore {
   mutable std::mutex _areaGeomCacheWriteMtx;
   mutable std::mutex _simpleAreaGeomCacheWriteMtx;
   mutable std::mutex _multiGeomCacheWriteMtx;
-
-  std::unordered_map<std::string, util::geo::I32Box> _selfCheckBounds;
-
-  std::unordered_map<
-      std::string,
-      std::unordered_map<size_t, std::unordered_map<std::string, size_t>>>
-      _refs;
-
-  std::vector<std::pair<std::string, size_t>> _selfChecks;
 
   util::geo::I32Box _filterBox = {{std::numeric_limits<int32_t>::lowest(),
                                    std::numeric_limits<int32_t>::lowest()},

@@ -6,10 +6,13 @@
 
 #include <fcntl.h>
 #include <sys/stat.h>
+#include <unistd.h>
 
 #include <algorithm>
 #include <sstream>
 #include <string>
+#include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -17,6 +20,8 @@
 #include "util/geo/Geo.h"
 
 namespace sj {
+
+class GeometryCache;
 
 enum GeomType : uint8_t {
   POLYGON = 0,
@@ -372,6 +377,9 @@ class SweepEventList {
 #ifdef __unix__
     posix_fadvise(_file, 0, 0, POSIX_FADV_SEQUENTIAL);
 #endif
+
+    // the references created by duplicatesToReferences(), if any
+    readRefs(refsFName(path));
   }
 
   SweepEventList(const SweepEventList&) = delete;
@@ -474,26 +482,14 @@ class SweepEventList {
           [](const BoxVal& a, const BoxVal& b) { return boxCmp(&a, &b) < 0; });
 
       if (_persistOnDisk) {
-        auto fName = persistFName();
-        int out = open(fName.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0666);
-        if (out < 0) {
-          throw std::runtime_error("Could not open event list file " + fName);
-        }
-
-        ssize_t r = util::writeAll(
-            out, reinterpret_cast<const unsigned char*>(_buffer.data()),
-            _buffer.size() * sizeof(BoxVal));
-        close(out);
-
-        if (r < 0) {
-          std::stringstream ss;
-          ss << "Could not write event list file " << fName << "\n";
-          ss << strerror(errno) << std::endl;
-          throw std::runtime_error(ss.str());
-        }
+        // remove stale references of a previous list persisted to the same file
+        unlink(refsFName(persistFName()).c_str());
+        writeBufferToPersistFile();
       }
       return;
     }
+
+    if (_persistOnDisk) unlink(refsFName(persistFName()).c_str());
 
     flushToDisk();
 
@@ -530,7 +526,92 @@ class SweepEventList {
     _file = newFile;
   }
 
+  void duplicatesToReferences(GeometryCache& cache);
+
+  // whether duplicatesToReferences() created any references
+  bool hasRefs() const { return _hasRefs; }
+
+  // whether geometry gid of store storeId is referenced by duplicates
+  bool isRefed(uint8_t storeId, const std::string& gid) const {
+    return storeId < _refs.size() && _refs[storeId].count(gid);
+  }
+
+  // the duplicates (gid -> subId) of geometry (gid, subId) of store storeId, or
+  // nullptr if there are none
+  const std::unordered_map<std::string, size_t>* getRefs(
+      uint8_t storeId, const std::string& gid, size_t subId) const {
+    if (storeId >= _refs.size()) return nullptr;
+    auto i = _refs[storeId].find(gid);
+    if (i == _refs[storeId].end()) return nullptr;
+    auto j = i->second.find(subId);
+    if (j == i->second.end()) return nullptr;
+    return &j->second;
+  }
+
+  // total number of duplicates replaced by references
+  size_t numReferences() const;
+
  private:
+  // referenced geometry gid -> its subId -> duplicates (gid -> subId)
+  typedef std::unordered_map<
+      std::string,
+      std::unordered_map<size_t, std::unordered_map<std::string, size_t>>>
+      RefMap;
+
+  struct DuplicateState {
+    std::unordered_set<size_t> deletedLines;
+    std::unordered_set<size_t> referencedLines;
+    std::unordered_set<size_t> deletedPolys;
+    std::unordered_set<size_t> referencedPolys;
+    std::unordered_map<size_t, size_t> duplicatePolys, duplicateLines;
+    int32_t curX = 0;
+    size_t numEvents = 0;
+  };
+
+  bool duplicatesToReferences(BoxVal* events, size_t n, GeometryCache& cache,
+                              DuplicateState& state);
+
+  // duplicatesToReferences(GeometryCache&) for an event list on disk
+  void duplicatesOnDiskToReferences(GeometryCache& cache,
+                                    DuplicateState& state);
+
+  // registers geometry (gid, subId) of store storeId as a duplicate of
+  // (refGid, refSubId)
+  void addReference(uint8_t storeId, const std::string& refGid,
+                    size_t refSubId, const std::string& gid, size_t subId);
+
+  static size_t duplicateId(uint8_t storeId, size_t v) {
+    return (static_cast<size_t>(storeId) << ID_TYPE_SHIFT) | untypedId(v);
+  }
+
+  static std::string refsFName(const std::string& path) {
+    return path + "refs";
+  }
+
+  void writeRefs(const std::string& fName) const;
+  void readRefs(const std::string& fName);
+
+  // writes the (in-memory) _buffer to persistFName()
+  void writeBufferToPersistFile() const {
+    auto fName = persistFName();
+    int out = open(fName.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0666);
+    if (out < 0) {
+      throw std::runtime_error("Could not open event list file " + fName);
+    }
+
+    ssize_t r = util::writeAll(
+        out, reinterpret_cast<const unsigned char*>(_buffer.data()),
+        _buffer.size() * sizeof(BoxVal));
+    close(out);
+
+    if (r < 0) {
+      std::stringstream ss;
+      ss << "Could not write event list file " << fName << "\n";
+      ss << strerror(errno) << std::endl;
+      throw std::runtime_error(ss.str());
+    }
+  }
+
   std::string persistFName() const {
     std::string dir = _cacheDir == "<tmp>" ? util::getTmpDir() : _cacheDir;
     if (dir.size() && dir.back() != '/') dir += "/";
@@ -546,6 +627,8 @@ class SweepEventList {
     _tmpPrefix.swap(other._tmpPrefix);
     std::swap(_file, other._file);
     std::swap(_curSweepId, other._curSweepId);
+    _refs.swap(other._refs);
+    std::swap(_hasRefs, other._hasRefs);
   }
 
   // the maximum size of _buffer in bytes
@@ -565,6 +648,11 @@ class SweepEventList {
   int _file;
 
   size_t _curSweepId = 0;
+
+  // references created by duplicatesToReferences(), indexed by store id
+  std::vector<RefMap> _refs;
+
+  bool _hasRefs = false;
 };
 
 }  // namespace sj

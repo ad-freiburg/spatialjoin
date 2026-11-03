@@ -107,8 +107,8 @@ std::string fullRun(const std::vector<std::string>& files, sj::SweeperCfg cfg,
                   sweepEvents.size() > 1 ? sweepEvents[1].get() : 0);
 
     stats->numReferences = 0;
-    for (auto& store : geomStores)
-      stats->numReferences += store->numReferences();
+    for (auto& events : sweepEvents)
+      stats->numReferences += events->numReferences();
   }
 
   std::string ret;

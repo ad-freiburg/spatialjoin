@@ -58,6 +58,8 @@ class GeometryCache {
     return *_stores[storeId];
   }
 
+  const SweeperCfg& cfg() const { return _cfg; }
+
   std::shared_ptr<sj::Line> getLine(size_t id, size_t tid,
                                     size_t storeId = 0) const {
     return get(_stores[storeId]->lineStore(), _caches[storeId]->lineCache, id,
@@ -87,6 +89,18 @@ class GeometryCache {
                tid);
   }
 
+  // the gid and sub id of the area / line with id, read without reading the
+  // geometry, and cached in the LRU id cache of thread tid
+  GeomId getAreaId(size_t id, size_t tid, size_t storeId = 0) const {
+    return *getId(_stores[storeId]->areaStore(), _caches[storeId]->areaIdCache,
+                  id, tid);
+  }
+
+  GeomId getLineId(size_t id, size_t tid, size_t storeId = 0) const {
+    return *getId(_stores[storeId]->lineStore(), _caches[storeId]->lineIdCache,
+                  id, tid);
+  }
+
   std::pair<size_t, size_t> size() const;
 
  private:
@@ -102,13 +116,21 @@ class GeometryCache {
           lineCache(cfg.geomCacheMaxSize, cfg.geomCacheMaxNumElements,
                     cfg.numCacheThreads),
           simpleLineCache(cfg.geomCacheMaxSize, cfg.geomCacheMaxNumElements,
-                          cfg.numCacheThreads) {}
+                          cfg.numCacheThreads),
+          areaIdCache(cfg.geomCacheMaxSize, cfg.geomCacheMaxNumElements,
+                      cfg.numCacheThreads),
+          lineIdCache(cfg.geomCacheMaxSize, cfg.geomCacheMaxNumElements,
+                      cfg.numCacheThreads) {}
 
     TypedGeometryCache<Point> pointCache;
     TypedGeometryCache<Area> areaCache;
     TypedGeometryCache<SimpleArea> simpleAreaCache;
     TypedGeometryCache<Line> lineCache;
     TypedGeometryCache<SimpleLine> simpleLineCache;
+
+    // caches for the ids only, see getAreaId() / getLineId()
+    TypedGeometryCache<GeomId> areaIdCache;
+    TypedGeometryCache<GeomId> lineIdCache;
   };
 
   // returns the geometry stored at off in store, cached in the LRU cache of
@@ -117,6 +139,13 @@ class GeometryCache {
   std::shared_ptr<W> get(const TypedGeometryStore<W>& store,
                          TypedGeometryCache<W>& cache, size_t off,
                          size_t tid) const;
+
+  // returns the gid and sub id of the geometry stored at off in store, cached
+  // in the LRU id cache of thread tid
+  template <typename W>
+  std::shared_ptr<GeomId> getId(const TypedGeometryStore<W>& store,
+                                TypedGeometryCache<GeomId>& cache, size_t off,
+                                size_t tid) const;
 
   template <typename W>
   std::shared_ptr<W> cache(TypedGeometryCache<W>& cache, size_t off,
