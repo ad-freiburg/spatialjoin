@@ -4,6 +4,7 @@
 
 #include <iostream>
 #include <memory>
+#include <mutex>
 
 #include "BoxIds.h"
 #include "GeometryCache.h"
@@ -435,8 +436,16 @@ int main(int argc, char** argv) {
         new sj::GeometryStore(spatialJoinCfg, cacheDir, ".spatialjoin", false));
     size_t storeId = geomCache.addStore(geomStores.back().get());
 
-    sj::WKTParser parser(geomStores.back().get(), storeId,
-                         sweepEvents.back().get(), NUM_THREADS, wktStrict);
+    auto* events = sweepEvents.back().get();
+    std::mutex eventsMtx;
+    sj::WKTParser parser(
+        geomStores.back().get(),
+        [events, storeId, &eventsMtx](size_t,
+                                      const sj::PreparedGeomMeta& meta) {
+          std::lock_guard<std::mutex> lock(eventsMtx);
+          events->add(meta, storeId);
+        },
+        NUM_THREADS, wktStrict);
 
     try {
       if (inputFiles.empty()) {

@@ -132,6 +132,10 @@ std::vector<sj::BoxVal> Sweeper::multiIn(const BoxVal& multiIn, bool side) {
 
   _openMultiIDs[side][{multiIn.storeId, getId(multiIn)}] = multi.id;
 
+  // the member events are stored without a store id, they are in the store of
+  // their multi geometry
+  for (auto& event : multi.events) event.storeId = multiIn.storeId;
+
   return std::move(multi.events);
 }
 

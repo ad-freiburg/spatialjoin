@@ -66,13 +66,10 @@ typedef std::vector<ParseJob> ParseBatch;
 template <typename ParseJobT>
 class WKTParserBase {
  public:
-  // parsed geometries are written to store, which has the id storeId in the
-  // GeometryCache they will be swept with, and their events to events
-  WKTParserBase(sj::GeometryStore* store, uint8_t storeId,
-                sj::SweepEventList* events, size_t numThreads)
+  WKTParserBase(sj::GeometryStore* store, sj::PreparedGeomMetaCb metaCb,
+                size_t numThreads)
       : _store(store),
-        _storeId(storeId),
-        _events(events),
+        _metaCb(std::move(metaCb)),
         _jobs(1000),
         _thrds(numThreads),
         _bboxes(numThreads),
@@ -98,7 +95,7 @@ class WKTParserBase {
   void setNextGid(size_t gid) { _gid = gid; }
 
   // Number of geometries skipped because they were invalid or had an
-  // unsupported CRS in strict mode. Only valid after `done()`.
+  // unsupported CRS in strict mode. Only valid after done().
   size_t getNumInvalid() const {
     size_t ret = 0;
     for (auto n : _numInvalid) ret += n;
@@ -153,7 +150,7 @@ class WKTParserBase {
   };
 
   // Parse a single WKT geometry (with an optional CRS IRI prefix) and add it to
-  // the sweeper under `id`. Unlike `parseLine`, `c` is only the WKT: there is
+  // the store under `id`. Unlike `parseLine`, `c` is only the WKT: there is
   // no tab-separated id prefix.
   // In strict mode, invalid WKT (or WKT with an unsupported CRS) is skipped
   // and counted in `_numInvalid`, instead of being parsed partially.
@@ -175,7 +172,7 @@ class WKTParserBase {
       return;
     }
 
-    // All parsing happens before anything is added to the sweeper, so on an
+    // All parsing happens before anything is added to the store, so on an
     // exception, nothing of this geometry has been added.
     const char* end = nullptr;
     // `checkWKTEnd(nullptr)` is a no-op, so trailing input is only rejected in
@@ -289,8 +286,7 @@ class WKTParserBase {
   std::string _dangling;
 
   sj::GeometryStore* _store;
-  uint8_t _storeId;
-  sj::SweepEventList* _events;
+  sj::PreparedGeomMetaCb _metaCb;
 
   std::vector<ParseJobT> _curBatch;
 
@@ -307,8 +303,8 @@ class WKTParserBase {
 
 class WKTParser : public WKTParserBase<ParseJob> {
  public:
-  WKTParser(sj::GeometryStore* store, uint8_t storeId,
-            sj::SweepEventList* events, size_t numThreads, bool strict = false);
+  WKTParser(sj::GeometryStore* store, sj::PreparedGeomMetaCb metaCb,
+            size_t numThreads, bool strict = false);
   void parse(char* c, size_t size);
 
   // parse all lines of the file at path, throws std::runtime_error if the

@@ -29,9 +29,9 @@ using sj::WKTParser;
 using sj::WKTParserBase;
 
 // _____________________________________________________________________________
-WKTParser::WKTParser(sj::GeometryStore* store, uint8_t storeId,
-                     sj::SweepEventList* events, size_t numThreads, bool strict)
-    : WKTParserBase<ParseJob>(store, storeId, events, numThreads),
+WKTParser::WKTParser(sj::GeometryStore* store, sj::PreparedGeomMetaCb metaCb,
+                     size_t numThreads, bool strict)
+    : WKTParserBase<ParseJob>(store, std::move(metaCb), numThreads),
       _strict(strict) {
   for (size_t i = 0; i < _thrds.size(); i++) {
     _thrds[i] = std::thread(&WKTParser::processQueue, this, i);
@@ -59,7 +59,7 @@ void WKTParser::processQueue(size_t t) {
       }
     }
 
-    _store->addBatch(w, _events, _storeId);
+    _store->addBatch(w, t, _metaCb);
   }
 }
 

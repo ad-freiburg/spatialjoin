@@ -6,6 +6,7 @@
 #include <iostream>
 #include <limits>
 #include <memory>
+#include <mutex>
 #include <regex>
 #include <set>
 #include <string>
@@ -91,8 +92,16 @@ std::string fullRun(const std::vector<std::string>& files,
       int f = open(file.c_str(), O_RDONLY);
       TEST(f >= 0);
 
-      sj::WKTParser parser(geomStores.back().get(), storeId,
-                           sweepEvents.back().get(), 1, strict);
+      auto* events = sweepEvents.back().get();
+      std::mutex eventsMtx;
+      sj::WKTParser parser(
+          geomStores.back().get(),
+          [events, storeId, &eventsMtx](size_t,
+                                        const sj::PreparedGeomMeta& meta) {
+            std::lock_guard<std::mutex> lock(eventsMtx);
+            events->add(meta, storeId);
+          },
+          1, strict);
 
       // the gids within a store and within an event list must be unique, so
       // continue the line numbering
@@ -325,6 +334,67 @@ int main(int, char**) {
     // undtermined
     TEST(boxIdIsectPadded(a, {{1, 0}, {c + 100, 0}}, GRID_W * 10));
     TEST(boxIdIsectPadded(a, {{0, 0}}, 100));
+  }
+
+  {
+    // the metaCb of GeometryStore::addBatch() is called once for each
+    // geometry, also for multi geometries
+    sj::SpatialJoinCfg cfg;
+    cfg.numThreads = cfg.numCacheThreads = 1;
+    sj::GeometryStore store(cfg, ".", ".spatialjoin", false);
+    SweepEventList events(".", ".spatialjoin");
+
+    util::geo::I32Polygon poly1(
+        {{0, 0}, {100, 0}, {100, 100}, {0, 100}, {0, 0}});
+    util::geo::I32Polygon poly2(
+        {{500, 300}, {700, 300}, {600, 900}, {500, 300}});
+    util::geo::I32Polygon poly3(
+        {{-50, -20}, {10, -20}, {10, 30}, {-40, 60}, {-50, -20}});
+
+    sj::WriteBatch batch;
+    store.add(util::geo::I32Point{5, 5}, "point", batch);
+    store.add(util::geo::I32Line{{0, 0}, {50, 70}, {90, 10}}, "line", batch);
+    store.add(poly1, "poly", batch);
+    auto multiBox =
+        store.add(util::geo::I32MultiPolygon{poly2, poly3}, "multi", batch);
+
+    std::vector<sj::PreparedGeomMeta> metas;
+    store.addBatch(batch, 3,
+                   [&metas, &events](size_t t, const sj::PreparedGeomMeta& m) {
+                     // the thread index passed to addBatch()
+                     TEST(t, ==, 3);
+                     metas.push_back(m);
+                     events.add(m, 0);
+                   });
+
+    TEST(metas.size(), ==, 4);
+    TEST(events.numObjects(), ==, metas.size());
+
+    size_t numMultis = 0;
+    for (const auto& m : metas) {
+      if (m.type != sj::MULTI) continue;
+      numMultis++;
+      TEST(m.id >> sj::ID_TYPE_SHIFT, ==, sj::MULTI);
+      TEST(m.bbox == multiBox);
+      TEST(m.box45.isNull() == false);
+      TEST(m.numAnchors, ==, poly2.getOuter().size() + poly3.getOuter().size());
+      TEST(m.areaOrLen, ==, 0);
+    }
+    TEST(numMultis, ==, 1);
+
+    // the multi-IN and multi-OUT events added for the multi geometry are at
+    // its left and right x
+    events.finalize(1);
+    auto reader = events.newReader();
+    size_t numMultiEvents = 0;
+    while (const auto* ev = reader.next()) {
+      if (ev->getType() != sj::MULTI) continue;
+      numMultiEvents++;
+      TEST(ev->val, ==,
+           ev->out ? multiBox.getUpperRight().getX()
+                   : multiBox.getLowerLeft().getX());
+    }
+    TEST(numMultiEvents, ==, 2);
   }
 
   sj::SpatialJoinCfg baseline{NUM_THREADS,

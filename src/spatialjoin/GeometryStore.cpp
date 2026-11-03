@@ -1265,8 +1265,8 @@ void GeometryStore::addMulti(WriteBatch&& members, const I32Box& box,
 }
 
 // _____________________________________________________________________________
-void GeometryStore::addBatch(WriteBatch& cands, sj::SweepEventList* events,
-                             uint8_t storeId) {
+void GeometryStore::addBatch(WriteBatch& cands, size_t t,
+                             const PreparedGeomMetaCb& metaCb) {
   // we go over each class of candidates. Note that in .multiGeoms, multi-geoms
   // are kept together, and each class (POINT, POLYGON...) may appear there,
   // too. The id is written into the candidate and will be available at the
@@ -1367,7 +1367,7 @@ void GeometryStore::addBatch(WriteBatch& cands, sj::SweepEventList* events,
           &multi.members.lines, &multi.members.simpleAreas,
           &multi.members.areas}) {
       for (const auto& cand : *members) {
-        const auto& events = getSweepEvents(cand.meta, storeId);
+        const auto& events = getSweepEvents(cand.meta, 0);
         multiGeom.events.push_back(events.first);
         multiGeom.events.push_back(events.second);
       }
@@ -1392,77 +1392,42 @@ void GeometryStore::addBatch(WriteBatch& cands, sj::SweepEventList* events,
     _numMultis += cands.multiGeoms.size();
   }
 
-  // all members of a multi geometry are kept together (several input lines
-  // with the same gid are undefined behavior), so each multi geometry is
-  // complete here, and we can write its multi-IN and multi-OUT event
-  std::vector<BoxVal> multiEvents;
+  std::vector<PreparedGeomMeta> multiMetas;
+  multiMetas.reserve(cands.multiGeoms.size());
 
   for (const auto& multi : cands.multiGeoms) {
-    int32_t leftX = std::numeric_limits<int32_t>::max();
-    int32_t rightX = std::numeric_limits<int32_t>::min();
+    PreparedGeomMeta multiMeta{multi.id, {}, MULTI, {}, {}, {}, 0, 0.0};
 
     for (const auto* members :
          {&multi.members.points, &multi.members.simpleLines,
           &multi.members.lines, &multi.members.simpleAreas,
           &multi.members.areas}) {
       for (const auto& cand : *members) {
-        leftX = std::min(leftX, cand.meta.bbox.getLowerLeft().getX());
-        rightX = std::max(rightX, cand.meta.bbox.getUpperRight().getX());
+        multiMeta.bbox = util::geo::extendBox(cand.meta.bbox, multiMeta.bbox);
+        multiMeta.box45 =
+            util::geo::extendBox(cand.meta.box45, multiMeta.box45);
+        multiMeta.numAnchors += cand.meta.numAnchors;
       }
     }
 
-    // special multi-IN event, at the left x of the multi geometry, and special
-    // multi-OUT event, at the right x of the multi geometry, both with the ID
-    // of the multi geometry in the multi geometry store
-    multiEvents.push_back(
-        {multi.id, 0, 0, leftX, false, storeId, 0.0, {}, 0, {}});
-    multiEvents.push_back(
-        {multi.id, 0, 0, rightX, true, storeId, 0.0, {}, 0, {}});
+    multiMetas.push_back(multiMeta);
   }
 
-  {
-    std::unique_lock<std::mutex> lock(_sweepEventWriteMtx);
-    for (const auto& cand : cands.foldedPoints) {
-      events->add(cand.meta, storeId);
-      if (events->numObjects() % 1000000 == 0)
-        log("@ " + std::to_string(events->numObjects()));
+  for (const auto* list :
+       {&cands.foldedPoints, &cands.points, &cands.foldedSimpleLines,
+        &cands.foldedBoxAreas, &cands.simpleLines, &cands.lines,
+        &cands.simpleAreas, &cands.areas}) {
+    for (const auto& cand : *list) {
+      metaCb(t, cand.meta);
+      size_t n = ++_numReported;
+      if (n % 1000000 == 0) log("@ " + std::to_string(n));
     }
-    for (const auto& cand : cands.points) {
-      events->add(cand.meta, storeId);
-      if (events->numObjects() % 1000000 == 0)
-        log("@ " + std::to_string(events->numObjects()));
-    }
-    for (const auto& cand : cands.foldedSimpleLines) {
-      events->add(cand.meta, storeId);
-      if (events->numObjects() % 1000000 == 0)
-        log("@ " + std::to_string(events->numObjects()));
-    }
-    for (const auto& cand : cands.foldedBoxAreas) {
-      events->add(cand.meta, storeId);
-      if (events->numObjects() % 1000000 == 0)
-        log("@ " + std::to_string(events->numObjects()));
-    }
-    for (const auto& cand : cands.simpleLines) {
-      events->add(cand.meta, storeId);
-      if (events->numObjects() % 1000000 == 0)
-        log("@ " + std::to_string(events->numObjects()));
-    }
-    for (const auto& cand : cands.lines) {
-      events->add(cand.meta, storeId);
-      if (events->numObjects() % 1000000 == 0)
-        log("@ " + std::to_string(events->numObjects()));
-    }
-    for (const auto& cand : cands.simpleAreas) {
-      events->add(cand.meta, storeId);
-      if (events->numObjects() % 1000000 == 0)
-        log("@ " + std::to_string(events->numObjects()));
-    }
-    for (const auto& cand : cands.areas) {
-      events->add(cand.meta, storeId);
-      if (events->numObjects() % 1000000 == 0)
-        log("@ " + std::to_string(events->numObjects()));
-    }
-    for (const auto& multiEvent : multiEvents) events->add(multiEvent);
+  }
+
+  for (const auto& multiMeta : multiMetas) {
+    metaCb(t, multiMeta);
+    size_t n = ++_numReported;
+    if (n % 1000000 == 0) log("@ " + std::to_string(n));
   }
 }
 

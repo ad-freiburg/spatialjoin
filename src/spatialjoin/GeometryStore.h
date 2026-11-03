@@ -6,6 +6,7 @@
 
 #include <atomic>
 #include <fstream>
+#include <functional>
 #include <iostream>
 #include <map>
 #include <memory>
@@ -85,6 +86,11 @@ struct Point {
 };
 
 const static size_t WRITE_BUFF_SIZE = 1024 * 1024 * 4l;
+
+// called by thread t with the metadata of each geometry added to a
+// GeometryStore, see GeometryStore::addBatch()
+typedef std::function<void(size_t t, const PreparedGeomMeta&)>
+    PreparedGeomMetaCb;
 
 template <typename W>
 class TypedGeometryStore {
@@ -332,7 +338,7 @@ class GeometryStore {
   void addMulti(WriteBatch&& members, const util::geo::I32Box& box,
                 const std::string& gid, WriteBatch& batch) const;
 
-  void addBatch(WriteBatch& cands, sj::SweepEventList* events, uint8_t storeId);
+  void addBatch(WriteBatch& cands, size_t t, const PreparedGeomMetaCb& metaCb);
 
   void flush();
 
@@ -383,7 +389,8 @@ class GeometryStore {
   // number of multi geometries, guarded by _multiGeomCacheWriteMtx
   size_t _numMultis = 0;
 
-  mutable std::mutex _sweepEventWriteMtx;
+  // number of geometries reported by addBatch()
+  std::atomic<size_t> _numReported{0};
   mutable std::mutex _pointGeomCacheWriteMtx;
   mutable std::mutex _lineGeomCacheWriteMtx;
   mutable std::mutex _simpleLineGeomCacheWriteMtx;
