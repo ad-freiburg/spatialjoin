@@ -132,20 +132,25 @@ void WKTParser::parseFd(int fd) {
 
 // _____________________________________________________________________________
 void WKTParser::parseFile(const std::string& path) {
-  if (util::endsWith(path, ".bz2")) return parseBz2File(path);
-  if (util::endsWith(path, ".gz")) return parseGzFile(path);
+  if (util::endsWith(path, ".bz2")) {
+    parseBz2File(path);
+  } else if (util::endsWith(path, ".gz")) {
+    parseGzFile(path);
+  } else {
+    int f = open(path.c_str(), O_RDONLY);
+    if (f < 0) throw std::runtime_error("Could not open input file " + path);
 
-  int f = open(path.c_str(), O_RDONLY);
-  if (f < 0) throw std::runtime_error("Could not open input file " + path);
+    try {
+      parseFd(f);
+    } catch (const std::runtime_error&) {
+      close(f);
+      throw std::runtime_error("Could not read input file " + path);
+    }
 
-  try {
-    parseFd(f);
-  } catch (const std::runtime_error&) {
     close(f);
-    throw std::runtime_error("Could not read input file " + path);
   }
 
-  close(f);
+  done();
 }
 
 // _____________________________________________________________________________

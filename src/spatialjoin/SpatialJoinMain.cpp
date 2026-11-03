@@ -361,7 +361,6 @@ int main(int argc, char** argv) {
     return 0;
   }
 
-
   sj::OutputWriter outWriter(numThreads, prefix, suffix, output, cacheDir);
 
   std::function<void(size_t, const char*, size_t, const char*, size_t,
@@ -374,42 +373,36 @@ int main(int argc, char** argv) {
       outWriter.writeRelCb(t, a, an, b, bn, pred, predn);
     };
 
-  sj::SpatialJoinCfg spatialJoinCfg{numThreads,
-                                    numCaches,
-                                    geomCacheMaxSizeBytes,
-                                    geomCacheMaxNumElements,
-                                    intersects,
-                                    contains,
-                                    covers,
-                                    touches,
-                                    equals,
-                                    overlaps,
-                                    crosses,
-                                    useBoxIds,
-                                    useArea,
-                                    useDiagBox,
-                                    useFastSweepSkip,
-                                    noGeometryChecks,
-                                    withinDist,
-                                    euclideanDist,
-                                    haversineApprox,
-                                    computeDE9IM,
-                                    de9imFilter,
-                                    writeRelCb,
-                                    {},
-                                    {},
-                                    {},
-                                    {}};
+  sj::SpatialJoinCfg cfg;
+  cfg.numThreads = numThreads;
+  cfg.numCacheThreads = numCaches;
+  cfg.geomCacheMaxSize = geomCacheMaxSizeBytes;
+  cfg.geomCacheMaxNumElements = geomCacheMaxNumElements;
+  cfg.sepIsect = intersects;
+  cfg.sepContains = contains;
+  cfg.sepCovers = covers;
+  cfg.sepTouches = touches;
+  cfg.sepEquals = equals;
+  cfg.sepOverlaps = overlaps;
+  cfg.sepCrosses = crosses;
+  cfg.useBoxIds = useBoxIds;
+  cfg.useArea = useArea;
+  cfg.useDiagBox = useDiagBox;
+  cfg.useFastSweepSkip = useFastSweepSkip;
+  cfg.noGeometryChecks = noGeometryChecks;
+  cfg.withinDist = withinDist;
+  cfg.euclideanDist = euclideanDist;
+  cfg.haversineApprox = haversineApprox;
+  cfg.computeDE9IM = computeDE9IM;
+  cfg.de9imFilter = de9imFilter;
+  cfg.writeRelCb = writeRelCb;
 
-  if (printStats)
-    spatialJoinCfg.statsCb = [](const std::string& s) { std::cerr << s; };
+  if (printStats) cfg.statsCb = [](const std::string& s) { std::cerr << s; };
 
   if (verbose)
-    spatialJoinCfg.logCb = [](const std::string& s) {
-      LOGTO(INFO, std::cerr) << s;
-    };
+    cfg.logCb = [](const std::string& s) { LOGTO(INFO, std::cerr) << s; };
 
-  GeometryCache geomCache(spatialJoinCfg);
+  GeometryCache geomCache(cfg);
 
   if (inputFiles.size() > 2) {
     std::cerr << "Either 1 input files (for self join), or 2 input files "
@@ -433,7 +426,7 @@ int main(int argc, char** argv) {
     sweepEvents.emplace_back(new sj::SweepEventList(cacheDir, ".spatialjoin"));
 
     geomStores.emplace_back(
-        new sj::GeometryStore(spatialJoinCfg, cacheDir, ".spatialjoin", false));
+        new sj::GeometryStore(cfg, cacheDir, ".spatialjoin", false));
     size_t storeId = geomCache.addStore(geomStores.back().get());
 
     auto* events = sweepEvents.back().get();
@@ -450,15 +443,15 @@ int main(int argc, char** argv) {
     try {
       if (inputFiles.empty()) {
         parser.parseFd(0);
+        parser.done();
       } else {
+        // calls done()
         parser.parseFile(inputFiles[i]);
       }
     } catch (const std::runtime_error& e) {
       std::cerr << e.what() << std::endl;
       exit(1);
     }
-
-    parser.done();
 
     numInvalid += parser.getNumInvalid();
   }
@@ -478,7 +471,7 @@ int main(int argc, char** argv) {
 
   for (auto& events : sweepEvents) events->duplicatesToReferences(geomCache);
 
-  Sweeper sweeper(spatialJoinCfg, &geomCache);
+  Sweeper sweeper(cfg, &geomCache);
 
   geomCache.log("Sweeping...");
   ts = TIME();
