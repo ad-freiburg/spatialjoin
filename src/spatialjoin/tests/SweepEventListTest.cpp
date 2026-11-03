@@ -101,7 +101,7 @@ void sweepEventListTest() {
   for (size_t bufSize : {sj::DEFAULT_BUFFER_S, SMALL_BUF}) {
     {
       // move construction before finalize()
-      SweepEventList a(".", ".spatialjoin", bufSize);
+      SweepEventList a(sj::SpatialJoinCfg(), ".", ".spatialjoin", bufSize);
       fill(&a, 0, 5);
 
       SweepEventList b(std::move(a));
@@ -120,7 +120,7 @@ void sweepEventListTest() {
 
     {
       // move construction after finalize()
-      SweepEventList a(".", ".spatialjoin", bufSize);
+      SweepEventList a(sj::SpatialJoinCfg(), ".", ".spatialjoin", bufSize);
       fill(&a, 0, 7);
       a.finalize(1);
 
@@ -130,7 +130,7 @@ void sweepEventListTest() {
     }
 
     {
-      SweepEventList a(".", ".spatialjoin", bufSize);
+      SweepEventList a(sj::SpatialJoinCfg(), ".", ".spatialjoin", bufSize);
       fill(&a, 0, 3);
       a.finalize(1);
       auto reader = a.newReader();
@@ -143,9 +143,9 @@ void sweepEventListTest() {
     }
 
     {
-      SweepEventList a(".", ".spatialjoin", bufSize);
+      SweepEventList a(sj::SpatialJoinCfg(), ".", ".spatialjoin", bufSize);
       fill(&a, 0, 4);
-      SweepEventList b(".", ".spatialjoin", bufSize);
+      SweepEventList b(sj::SpatialJoinCfg(), ".", ".spatialjoin", bufSize);
       fill(&b, 100, 6);
 
       b = std::move(a);
@@ -155,10 +155,10 @@ void sweepEventListTest() {
     }
 
     {
-      SweepEventList a(".", ".spatialjoin", bufSize);
+      SweepEventList a(sj::SpatialJoinCfg(), ".", ".spatialjoin", bufSize);
       fill(&a, 0, 4);
       a.finalize(1);
-      SweepEventList b(".", ".spatialjoin", bufSize);
+      SweepEventList b(sj::SpatialJoinCfg(), ".", ".spatialjoin", bufSize);
       fill(&b, 100, 6);
       b.finalize(1);
 
@@ -166,7 +166,7 @@ void sweepEventListTest() {
       TEST(b.numEvents(), ==, 4);
       TEST(ids(b) == sorted(0, 4));
 
-      SweepEventList c(".", ".spatialjoin", bufSize);
+      SweepEventList c(sj::SpatialJoinCfg(), ".", ".spatialjoin", bufSize);
       fill(&c, 200, 2);
       c.finalize(1);
       a = std::move(c);
@@ -185,14 +185,15 @@ void sweepEventListTest() {
 
       {
         // a list which is not persisted leaves no file
-        SweepEventList n(dir, ".spatialjoin", bufSize);
+        SweepEventList n(sj::SpatialJoinCfg(), dir, ".spatialjoin", bufSize);
         fill(&n, 0, 3);
         n.finalize(1);
         TEST(files(dir).empty());
       }
 
       {
-        SweepEventList a(dir, ".spatialjoin", bufSize, true);
+        SweepEventList a(sj::SpatialJoinCfg(), dir, ".spatialjoin", bufSize,
+                         true);
         fill(&a, 0, 7);
         a.finalize(1);
         TEST(files(dir) == std::vector<std::string>{path});
@@ -217,7 +218,8 @@ void sweepEventListTest() {
 
       {
         // an empty list, which overwrites the existing file
-        SweepEventList e(dir, ".spatialjoin", bufSize, true);
+        SweepEventList e(sj::SpatialJoinCfg(), dir, ".spatialjoin", bufSize,
+                         true);
         e.finalize(1);
         TEST(files(dir) == std::vector<std::string>{path});
         SweepEventList f(path);
@@ -233,7 +235,7 @@ void sweepEventListTest() {
       // event lists in a vector, which moves them when growing
       std::vector<SweepEventList> lists;
       for (size_t i = 0; i < 10; i++) {
-        lists.emplace_back(".", ".spatialjoin", bufSize);
+        lists.emplace_back(sj::SpatialJoinCfg(), ".", ".spatialjoin", bufSize);
         fill(&lists.back(), i * 10, 3);
       }
 

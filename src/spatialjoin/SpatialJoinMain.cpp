@@ -423,7 +423,8 @@ int main(int argc, char** argv) {
   size_t numInvalid = 0;
 
   for (size_t i = 0; i < std::max<size_t>(inputFiles.size(), 1); i++) {
-    sweepEvents.emplace_back(new sj::SweepEventList(cacheDir, ".spatialjoin"));
+    sweepEvents.emplace_back(
+        new sj::SweepEventList(cfg, cacheDir, ".spatialjoin"));
 
     geomStores.emplace_back(
         new sj::GeometryStore(cfg, cacheDir, ".spatialjoin", false));

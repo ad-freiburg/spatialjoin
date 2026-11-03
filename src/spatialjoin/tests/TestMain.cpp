@@ -84,7 +84,7 @@ std::string fullRun(const std::vector<std::string>& files,
 
       if (sweepEvents.empty() || !singleList) {
         sweepEvents.emplace_back(new SweepEventList(
-            ".",
+            cfg, ".",
             reload ? eventsPrefix(sweepEvents.size()) : ".spatialjoin",
             eventBufSize, reload));
       }
@@ -342,7 +342,7 @@ int main(int, char**) {
     sj::SpatialJoinCfg cfg;
     cfg.numThreads = cfg.numCacheThreads = 1;
     sj::GeometryStore store(cfg, ".", ".spatialjoin", false);
-    SweepEventList events(".", ".spatialjoin");
+    SweepEventList events(cfg, ".", ".spatialjoin");
 
     util::geo::I32Polygon poly1(
         {{0, 0}, {100, 0}, {100, 100}, {0, 100}, {0, 0}});

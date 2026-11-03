@@ -9,6 +9,7 @@
 #include <unistd.h>
 
 #include <algorithm>
+#include <cmath>
 #include <sstream>
 #include <string>
 #include <unordered_map>
@@ -16,6 +17,8 @@
 #include <utility>
 #include <vector>
 
+#include "BoxIds.h"
+#include "SpatialJoinCfg.h"
 #include "util/Misc.h"
 #include "util/geo/Geo.h"
 
@@ -78,9 +81,9 @@ struct BoxVal {
 
 struct PreparedGeomMeta {
   size_t id;               // typed ID
-  util::geo::I32Box bbox;  // (padded) bounding box
+  util::geo::I32Box bbox;  // bounding box (unpadded!!)
   GeomType type;
-  util::geo::I32Box box45;  // (padded) rotated bounding box
+  util::geo::I32Box box45;  // rotated bounding box (unpadded!!)
   util::geo::I32Point point1, point2;
   // number of anchor points (for simple lines and folded box polygons, the
   // events instead store the packed other point, see packPoint())
@@ -130,6 +133,73 @@ inline util::geo::I32Point getOtherPoint(const BoxVal& bv) {
       bv.getType() == FOLDED_BOX_POLYGON)
     return unpackPoint(bv.numAnchors);
   return {bv.val, bv.point.getY() == bv.loY ? bv.upY : bv.loY};
+}
+
+// _____________________________________________________________________________
+inline util::geo::I32Box padBox(const util::geo::I32Box& box,
+                                const util::geo::I32Box& refBox,
+                                const SpatialJoinCfg& cfg) {
+  if (cfg.withinDist < 0 || box.isNull()) return box;
+
+  if (cfg.euclideanDist && !cfg.haversineApprox)
+    return util::geo::pad(box, cfg.withinDist * PREC / 2.0);
+
+  // convert distanceUpperBound (meters) to maximum latitude padding (degrees)
+  // we have to "pad" the box by -dy and dy because the distance path could
+  // be within that padded box, and thus the distortions have to be computed
+  // based on that path
+  double dLat =
+      cfg.withinDist / util::geo::MIN_METERS_PER_LAT_RAD * util::geo::IRAD;
+  auto upper = util::geo::webMercToLatLng<double>(
+      0.0, refBox.getUpperRight().getY() * 1.0 / PREC);
+  auto lower = util::geo::webMercToLatLng<double>(
+      0.0, refBox.getLowerLeft().getY() * 1.0 / PREC);
+
+  double scaleLatUp =
+      cos(std::min(90.0 - util::geo::EPSILON, (upper.getY() + dLat)) *
+          util::geo::RAD);
+  double scaleLatLow =
+      cos(std::max(-90.0 + util::geo::EPSILON, (lower.getY() - dLat)) *
+          util::geo::RAD);
+  double scaleFactor = std::min(scaleLatUp, scaleLatLow);
+
+  double pad = (cfg.withinDist / 2.0) / scaleFactor * PREC;
+
+  double llx = box.getLowerLeft().getX();
+  double lly = box.getLowerLeft().getY();
+  double urx = box.getUpperRight().getX();
+  double ury = box.getUpperRight().getY();
+
+  double m = sj::boxids::WORLD_W / 2.0;
+
+  // restrict padding to world extent
+  int32_t llxt = -m;
+  int32_t llyt = -m;
+  int32_t urxt = m;
+  int32_t uryt = m;
+
+  if (llx - pad > -m) llxt = llx - pad;
+  if (lly - pad > -m) llyt = lly - pad;
+  if (urx + pad < m) urxt = urx + pad;
+  if (ury + pad < m) uryt = ury + pad;
+
+  return {{llxt, llyt}, {urxt, uryt}};
+}
+
+// _____________________________________________________________________________
+inline void padSweepEvent(BoxVal* bv, const SpatialJoinCfg& cfg) {
+  if (cfg.withinDist < 0) return;
+
+  // the event only holds the x of its side of the box, which is padded
+  // independently of the other side
+  const util::geo::I32Box box{{bv->val, bv->loY}, {bv->val, bv->upY}};
+  const auto padded = padBox(box, box, cfg);
+
+  bv->val =
+      bv->out ? padded.getUpperRight().getX() : padded.getLowerLeft().getX();
+  bv->loY = padded.getLowerLeft().getY();
+  bv->upY = padded.getUpperRight().getY();
+  bv->b45 = padBox(bv->b45, box, cfg);
 }
 
 // _____________________________________________________________________________
@@ -348,10 +418,12 @@ class SweepEventList {
 
   // if persistOnDisk is true, finalize() writes the sorted event list to
   // a file <cacheDir>/<tmpPrefix>events
-  SweepEventList(const std::string& cacheDir, const std::string& tmpPrefix,
+  SweepEventList(const SpatialJoinCfg& cfg, const std::string& cacheDir,
+                 const std::string& tmpPrefix,
                  size_t bufferSize = DEFAULT_BUFFER_S,
                  bool persistOnDisk = false)
-      : _bufferSize(std::max(bufferSize / sizeof(BoxVal), size_t(1)) *
+      : _cfg(cfg),
+        _bufferSize(std::max(bufferSize / sizeof(BoxVal), size_t(1)) *
                     sizeof(BoxVal)),
         _persistOnDisk(persistOnDisk),
         _cacheDir(cacheDir),
@@ -399,6 +471,7 @@ class SweepEventList {
     if (_file >= 0) close(_file);
   }
 
+  // adds bv as given, without any padding
   void add(const BoxVal& bv) {
     const size_t N = _bufferSize / sizeof(BoxVal);
 
@@ -417,13 +490,16 @@ class SweepEventList {
            const util::geo::I32Box& box45, const util::geo::I32Point& point1,
            const util::geo::I32Point& point2, size_t numAnchors,
            double areaOrLen, uint8_t storeId) {
-    const auto& events = getSweepEvents(id, bbox, box45, point1, point2,
-                                        numAnchors, areaOrLen, storeId);
+    auto events = getSweepEvents(id, bbox, box45, point1, point2, numAnchors,
+                                 areaOrLen, storeId);
+    padSweepEvent(&events.first, _cfg);
+    padSweepEvent(&events.second, _cfg);
     add(events.first);
     add(events.second);
   }
 
-  // add meta to this list, using store storeId
+  // add the IN and OUT event of meta (with unpadded boxes) to this list, using
+  // store storeId. The boxes are padded for within-distance joins from the cfg
   void add(const PreparedGeomMeta& meta, uint8_t storeId) {
     add(meta.id, meta.bbox, meta.box45, meta.point1, meta.point2,
         meta.numAnchors, meta.areaOrLen, storeId);
@@ -619,6 +695,7 @@ class SweepEventList {
   }
 
   void swap(SweepEventList& other) noexcept {
+    std::swap(_cfg, other._cfg);
     std::swap(_bufferSize, other._bufferSize);
     _buffer.swap(other._buffer);
     std::swap(_onDisk, other._onDisk);
@@ -630,6 +707,10 @@ class SweepEventList {
     _refs.swap(other._refs);
     std::swap(_hasRefs, other._hasRefs);
   }
+
+  // the configuration, the events added via add(meta, storeId) are padded
+  // as given by it
+  SpatialJoinCfg _cfg;
 
   // the maximum size of _buffer in bytes
   size_t _bufferSize;

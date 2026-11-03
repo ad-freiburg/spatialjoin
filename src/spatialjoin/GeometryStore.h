@@ -32,7 +32,7 @@ struct MultiGeom {
   // id
   std::string id;
 
-  // the sweep events (IN and OUT) of all members, sorted by boxCmp()
+  // the sweep events (IN and OUT) of all members (sorted)
   std::vector<BoxVal> events;
 };
 

@@ -1054,12 +1054,12 @@ I32Box GeometryStore::add(const I32Polygon& poly, const std::string& gid,
   I32Box box45;
   if (_cfg.useDiagBox) {
     auto polyR = util::geo::rotateSinCos(poly, sin45, cos45, I32Point(0, 0));
-    box45 = getPaddedBoundingBox(polyR, rawBox);
+    box45 = util::geo::getBoundingBox(polyR);
   }
 
   cur.subid = subid;
   cur.gid = gid;
-  cur.meta.bbox = box;
+  cur.meta.bbox = rawBox;
   cur.meta.box45 = box45;
   cur.meta.areaOrLen = areaSize;
 
@@ -1151,12 +1151,12 @@ I32Box GeometryStore::add(const I32Line& line, const std::string& gid,
   I32Box box45;
   if (_cfg.useDiagBox) {
     auto lineR = util::geo::rotateSinCos(line, sin45, cos45, I32Point(0, 0));
-    box45 = getPaddedBoundingBox(lineR, rawBox);
+    box45 = util::geo::getBoundingBox(lineR);
   }
 
   cur.subid = subid;
   cur.gid = gid;
-  cur.meta.bbox = box;
+  cur.meta.bbox = rawBox;
   cur.meta.box45 = box45;
   cur.meta.areaOrLen = len;
 
@@ -1229,9 +1229,9 @@ I32Box GeometryStore::add(const I32Point& point, const std::string& gid,
   if (!util::geo::intersects(box, _filterBox)) return {};
 
   auto pointR = util::geo::rotateSinCos(point, sin45, cos45, I32Point(0, 0));
-  cur.meta.bbox = box;
+  cur.meta.bbox = rawBox;
   cur.meta.type = POINT;
-  cur.meta.box45 = getPaddedBoundingBox(pointR, rawBox);
+  cur.meta.box45 = util::geo::getBoundingBox(pointR);
   cur.meta.point1 = point;
   cur.meta.point2 = point;
   cur.meta.numAnchors = 1;
@@ -1454,71 +1454,8 @@ template <template <typename> class G1, template <typename> class G2,
           typename T>
 util::geo::I32Box GeometryStore::getPaddedBoundingBox(
     const G1<T>& geom, const G2<T>& refGeom) const {
-  auto bbox = util::geo::getBoundingBox(geom);
-
-  if (_cfg.withinDist >= 0) {
-    if (_cfg.euclideanDist && !_cfg.haversineApprox)
-      return util::geo::pad(bbox, _cfg.withinDist * PREC / 2.0);
-
-    auto a = (reinterpret_cast<const void*>(&geom) ==
-                      reinterpret_cast<const void*>(&refGeom)
-                  ? bbox
-                  : util::geo::getBoundingBox(refGeom));
-
-    // convert distanceUpperBound (meters) to maximum latitude padding (degrees)
-    // we have to "pad" the box by -dy and dy because the distance path could
-    // be within that padded box, and thus the distortions have to be computed
-    // based on that path
-    double dLat =
-        _cfg.withinDist / util::geo::MIN_METERS_PER_LAT_RAD * util::geo::IRAD;
-    auto upper = util::geo::webMercToLatLng<double>(
-        0.0, a.getUpperRight().getY() * 1.0 / PREC);
-    auto lower = util::geo::webMercToLatLng<double>(
-        0.0, a.getLowerLeft().getY() * 1.0 / PREC);
-
-    double scaleLatUp =
-        cos(std::min(90.0 - util::geo::EPSILON, (upper.getY() + dLat)) *
-            util::geo::RAD);
-    double scaleLatLow =
-        cos(std::max(-90.0 + util::geo::EPSILON, (lower.getY() - dLat)) *
-            util::geo::RAD);
-    double scaleFactor = std::min(scaleLatUp, scaleLatLow);
-
-    double pad = (_cfg.withinDist / 2.0) / scaleFactor * PREC;
-
-    double llx = bbox.getLowerLeft().getX();
-    double lly = bbox.getLowerLeft().getY();
-    double urx = bbox.getUpperRight().getX();
-    double ury = bbox.getUpperRight().getY();
-
-    double m = sj::boxids::WORLD_W / 2.0;
-
-    // restrict padding to world extent
-    T llxt = -m;
-    T llyt = -m;
-    T urxt = m;
-    T uryt = m;
-
-    if (llx - pad > -m) {
-      llxt = llx - pad;
-    }
-
-    if (lly - pad > -m) {
-      llyt = lly - pad;
-    }
-
-    if (urx + pad < m) {
-      urxt = urx + pad;
-    }
-
-    if (ury + pad < m) {
-      uryt = ury + pad;
-    }
-
-    return {{llxt, llyt}, {urxt, uryt}};
-  }
-
-  return bbox;
+  return padBox(util::geo::getBoundingBox(geom),
+                util::geo::getBoundingBox(refGeom), _cfg);
 }
 
 // _____________________________________________________________________________

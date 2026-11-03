@@ -102,9 +102,6 @@ class WKTParserBase {
     return ret;
   }
 
-  // finishes parsing: processes all remaining input and stops the worker
-  // threads, so no more input can be parsed afterwards. Further calls do
-  // nothing.
   void done() {
     if (_done) return;
     _done = true;
