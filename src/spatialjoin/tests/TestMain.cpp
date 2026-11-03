@@ -102,6 +102,8 @@ std::string fullRun(const std::vector<std::string>& files, sj::SweeperCfg cfg,
 
     for (auto& events : sweepEvents) events->finalize(1);
 
+    for (auto& events : sweepEvents) events->duplicatesToReferences(geomCache);
+
     Sweeper sweeper(cfg, &geomCache);
     sweeper.sweep(sweepEvents[0].get(),
                   sweepEvents.size() > 1 ? sweepEvents[1].get() : 0);
@@ -428,7 +430,7 @@ int main(int, char**) {
       RunStats stats;
       auto res = fullRun(TEST_DATASET_DIR "/freiburg", cfg, &stats);
 
-      // TEST(stats.numReferences, ==, 3);
+      TEST(stats.numReferences, ==, 3);
 
       TEST(res.find("$freiburg1 covers freiburg2$") != std::string::npos);
       TEST(res.find("$freiburg1 covers freiburg2$") != std::string::npos);
@@ -625,7 +627,7 @@ int main(int, char**) {
     {
       RunStats stats;
       auto res = fullRun(TEST_DATASET_DIR "/brandenburg_test", cfg, &stats);
-      // TEST(stats.numReferences, ==, 0);
+      TEST(stats.numReferences, ==, 0);
       TEST(res.find("$Brandenburg-Point intersects Brandenburg-Way$") !=
            std::string::npos);
     }
@@ -633,6 +635,7 @@ int main(int, char**) {
     {
       RunStats stats;
       auto res = fullRun(TEST_DATASET_DIR "/brandenburg", cfg, &stats);
+      // TODO: duplicates in multi geometries are not yet removed
       // TEST(stats.numReferences, ==, 7);
       TEST(res.find("$Brandenburg covers Brandenburg2$") != std::string::npos);
       TEST(res.find("$Brandenburg intersects Brandenburg-Way$") !=
@@ -684,6 +687,7 @@ int main(int, char**) {
           cfg, &statsShared, 0, false, true);
       TEST(sortedRels(resShared) == sortedRels(res));
 
+      // TODO: duplicates in multi geometries are not yet removed
       // TEST(stats.numReferences, ==, 7);
       TEST(res.find("$Brandenburg covers Brandenburg2$") == std::string::npos);
       TEST(res.find("$Brandenburg intersects Brandenburg-Way$") ==
@@ -792,8 +796,10 @@ int main(int, char**) {
       auto res = fullRun(TEST_DATASET_DIR "/collectiontests", cfg, &stats);
       // without box IDs, a polygon is converted into a box polygon
       if (cfg.useBoxIds) {
+        // TODO: duplicates in multi geometries are not yet removed
         // TEST(stats.numReferences, ==, 11);
       } else {
+        // TODO: duplicates in multi geometries are not yet removed
         // TEST(stats.numReferences, ==, 10);
       }
 
@@ -895,8 +901,10 @@ int main(int, char**) {
 
       // without box IDs, a polygon is converted into a box polygon
       if (cfg.useBoxIds) {
+        // TODO: duplicates in multi geometries are not yet removed
         // TEST(stats.numReferences, ==, 7);
       } else {
+        // TODO: duplicates in multi geometries are not yet removed
         // TEST(stats.numReferences, ==, 6);
       }
 
@@ -991,7 +999,7 @@ int main(int, char**) {
     {
       RunStats stats;
       auto res = fullRun(TEST_DATASET_DIR "/coverfail", cfg, &stats);
-      // TEST(stats.numReferences, ==, 0);
+      TEST(stats.numReferences, ==, 0);
       TEST(res.find("$1 intersects 2$") != std::string::npos);
       TEST(res.find("$2 intersects 1$") != std::string::npos);
       TEST(res.find("$1 contains 2$") == std::string::npos);
@@ -1005,7 +1013,7 @@ int main(int, char**) {
     {
       RunStats stats;
       auto res = fullRun(TEST_DATASET_DIR "/touchfail", cfg, &stats);
-      // TEST(stats.numReferences, ==, 0);
+      TEST(stats.numReferences, ==, 0);
       TEST(res.find("$1 intersects 2$") != std::string::npos);
       TEST(res.find("$2 intersects 1$") != std::string::npos);
       TEST(res.find("$1 overlaps 2$") != std::string::npos);
@@ -1017,7 +1025,7 @@ int main(int, char**) {
     {
       RunStats stats;
       auto res = fullRun(TEST_DATASET_DIR "/touchwayfail", cfg, &stats);
-      // TEST(stats.numReferences, ==, 0);
+      TEST(stats.numReferences, ==, 0);
       TEST(res.find("$1 touches 2$") != std::string::npos);
       TEST(res.find("$2 touches 1$") != std::string::npos);
     }
@@ -1025,7 +1033,7 @@ int main(int, char**) {
     {
       RunStats stats;
       auto res = fullRun(TEST_DATASET_DIR "/simpleareafail", cfg, &stats);
-      // TEST(stats.numReferences, ==, 0);
+      TEST(stats.numReferences, ==, 0);
       TEST(res.find("$1 intersects 2$") != std::string::npos);
       TEST(res.find("$2 intersects 1$") != std::string::npos);
       TEST(res.find("$2 crosses 1$") != std::string::npos);
@@ -1034,7 +1042,7 @@ int main(int, char**) {
     {
       RunStats stats;
       auto res = fullRun(TEST_DATASET_DIR "/touchfail2", cfg, &stats);
-      // TEST(stats.numReferences, ==, 0);
+      TEST(stats.numReferences, ==, 0);
       TEST(res.find("$1 covers 2$") != std::string::npos);
       TEST(res.find("$1 intersects 2$") != std::string::npos);
       TEST(res.find("$2 intersects 1$") != std::string::npos);
@@ -1043,7 +1051,7 @@ int main(int, char**) {
     {
       RunStats stats;
       auto res = fullRun(TEST_DATASET_DIR "/boxidfail", cfg, &stats);
-      // TEST(stats.numReferences, ==, 0);
+      TEST(stats.numReferences, ==, 0);
       TEST(res.find("$osmway:312944635 intersects osmway:312944634$") !=
            std::string::npos);
       TEST(res.find("$osmway:312944634 intersects osmway:312944635$") !=
@@ -1052,7 +1060,7 @@ int main(int, char**) {
     {
       RunStats stats;
       auto res = fullRun(TEST_DATASET_DIR "/boxidfail2", cfg, &stats);
-      // TEST(stats.numReferences, ==, 0);
+      TEST(stats.numReferences, ==, 0);
       TEST(res.find("$osmway:205756242 intersects osmway:50218266$") !=
            std::string::npos);
       TEST(res.find("$osmway:50218266 intersects osmway:205756242$") !=
@@ -1061,7 +1069,7 @@ int main(int, char**) {
     {
       RunStats stats;
       auto res = fullRun(TEST_DATASET_DIR "/boxidfail3", cfg, &stats);
-      // TEST(stats.numReferences, ==, 0);
+      TEST(stats.numReferences, ==, 0);
       TEST(res.find("$osmway:901094335 intersects osmnode:8370757906$") !=
            std::string::npos);
       TEST(res.find("$osmnode:8370757906 intersects osmway:901094335$") !=
@@ -1071,7 +1079,7 @@ int main(int, char**) {
     {
       RunStats stats;
       auto res = fullRun(TEST_DATASET_DIR "/issue-23", cfg, &stats);
-      // TEST(stats.numReferences, ==, 4);
+      TEST(stats.numReferences, ==, 4);
 
       size_t a = res.find("$lsa equals lsb$");
       TEST(a != std::string::npos);
@@ -1095,7 +1103,9 @@ int main(int, char**) {
           fullRun(TEST_DATASET_DIR "/" + dataset, cfg, &withoutDups,
                   std::numeric_limits<double>::max());
 
-      // TEST(withDups.numReferences > withoutDups.numReferences);
+      // TODO: duplicates in multi geometries are not yet removed
+      if (dataset != "multitests" && dataset != "collectiontests")
+        TEST(withDups.numReferences > withoutDups.numReferences);
       TEST(sortedRels(withDupRemoval) == sortedRels(withoutDupRemoval));
 
       // this tests for contradicting relations (two geometries contain AND
@@ -1153,6 +1163,7 @@ int main(int, char**) {
     {
       RunStats stats;
       auto res = fullRun(TEST_DATASET_DIR "/bawue", cfg, &stats);
+      // TODO: duplicates in multi geometries are not yet removed
       // TEST(stats.numReferences, ==, 1);
       TEST(res.find("$germany covers bawue$") != std::string::npos);
       TEST(res.find("$germany contains bawue$") != std::string::npos);
@@ -1227,7 +1238,7 @@ int main(int, char**) {
     {
       RunStats stats;
       auto res = fullRun(TEST_DATASET_DIR "/freiburg", cfg, &stats);
-      // TEST(stats.numReferences, ==, 3);
+      TEST(stats.numReferences, ==, 3);
       TEST(res.find("$freiburg1\t2FFF1FFF2\tfreiburg2$") != std::string::npos);
       TEST(res.find("$freiburg2\t2FFF1FFF2\tfreiburg1$") != std::string::npos);
       TEST(res.find("$freiburg1\t2FFF1FFF2\tfreiburg2$") != std::string::npos);
@@ -1256,7 +1267,7 @@ int main(int, char**) {
     {
       RunStats stats;
       auto res = fullRun(TEST_DATASET_DIR "/issue-23", cfg, &stats);
-      // TEST(stats.numReferences, ==, 4);
+      TEST(stats.numReferences, ==, 4);
 
       size_t a = res.find("$lsa\t1FFF0FFF2\tlsb$");
       TEST(a != std::string::npos);
@@ -1299,7 +1310,9 @@ int main(int, char**) {
           fullRun(TEST_DATASET_DIR "/" + dataset, cfg, &withoutDups,
                   std::numeric_limits<double>::max());
 
-      // TEST(withDups.numReferences > withoutDups.numReferences);
+      // TODO: duplicates in multi geometries are not yet removed
+      if (dataset != "multitests" && dataset != "collectiontests")
+        TEST(withDups.numReferences > withoutDups.numReferences);
       TEST(sortedRels(withDupRemoval) == sortedRels(withoutDupRemoval));
     }
 
@@ -1382,7 +1395,7 @@ int main(int, char**) {
     {
       RunStats stats;
       auto res = fullRun(TEST_DATASET_DIR "/freiburg", cfg, &stats);
-      // TEST(stats.numReferences, ==, 3);
+      TEST(stats.numReferences, ==, 3);
       TEST(res.find("$freiburg1\t0\tfreiburg2$") != std::string::npos);
       TEST(res.find("$freiburg2\t0\tfreiburg1$") != std::string::npos);
       TEST(res.find("$freiburg1\t0\tfreiburg2$") != std::string::npos);

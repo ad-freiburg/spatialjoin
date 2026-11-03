@@ -518,6 +518,8 @@ int main(int argc, char** argv) {
   for (auto& events : sweepEvents) events->finalize(NUM_THREADS);
   geomCache.log("...done");
 
+  for (auto& events : sweepEvents) events->duplicatesToReferences(geomCache);
+
   Sweeper sweeper(sweeperCfg, &geomCache);
 
   geomCache.log("Sweeping...");
