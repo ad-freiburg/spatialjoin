@@ -90,12 +90,12 @@ template <typename W>
 class TypedGeometryStore {
  public:
   // if persistOnDisk is true, flush() writes the geoms to
-  // a file <dir>/<tmpPrefix><type>
+  // a file <dir>/<prefix><type>
   TypedGeometryStore(size_t numthreads, const std::string& dir,
-                     const std::string& tmpPrefix, bool persistOnDisk = false)
+                     const std::string& prefix, bool persistOnDisk = false)
       : _numThreads(numthreads),
         _dir(dir),
-        _tmpPrefix(tmpPrefix),
+        _prefix(prefix),
         _persistOnDisk(persistOnDisk) {}
 
   TypedGeometryStore(size_t numthreads, const std::string& path);
@@ -141,6 +141,9 @@ class TypedGeometryStore {
 
   void flush();
 
+  static std::string persistFName(const std::string& dir,
+                                  const std::string& prefix);
+
   TypedGeometryStore(const TypedGeometryStore&) = delete;
   TypedGeometryStore& operator=(const TypedGeometryStore&) = delete;
 
@@ -161,9 +164,6 @@ class TypedGeometryStore {
   // the name of the (temporary) geometry file
   std::string getFName() const;
 
-  // the file a store constructed with persistOnDisk is persisted to
-  std::string persistFName() const;
-
   void swap(TypedGeometryStore& other) {
     _geomsF.swap(other._geomsF);
     std::swap(_writeBuffer, other._writeBuffer);
@@ -171,7 +171,7 @@ class TypedGeometryStore {
     std::swap(_geomsOffset, other._geomsOffset);
     std::swap(_numThreads, other._numThreads);
     _dir.swap(other._dir);
-    _tmpPrefix.swap(other._tmpPrefix);
+    _prefix.swap(other._prefix);
     _fName.swap(other._fName);
     _memStore.swap(other._memStore);
     std::swap(_inMemory, other._inMemory);
@@ -179,7 +179,7 @@ class TypedGeometryStore {
   }
 
   void openFile() {
-    _fName = _persistOnDisk ? persistFName() : getFName();
+    _fName = _persistOnDisk ? persistFName(_dir, _prefix) : getFName();
 
     _writeBuffer = new char[WRITE_BUFF_SIZE];
 
@@ -208,7 +208,7 @@ class TypedGeometryStore {
   size_t _geomsOffset = 0;
 
   size_t _numThreads;
-  std::string _dir, _tmpPrefix;
+  std::string _dir, _prefix;
   std::string _fName;
 
   // must be ordered map to ensure correct writing order when flushing to disk!
@@ -264,15 +264,41 @@ inline size_t WriteBatch::size() const {
 // holds all geometries and their metadata written during the add phase
 class GeometryStore {
  public:
+  // if persistOnDisk is true, flush() writes the geometries to files
+  // <cache>/<prefix><type>, which can be read again with
+  // GeometryStore(cfg, cache, prefix)
   GeometryStore(const SweeperCfg& cfg, const std::string& cache,
-                const std::string& tmpPrefix)
+                const std::string& prefix, bool persistOnDisk)
       : _cfg(cfg),
-        _pointStore(cfg.numCacheThreads, cache, tmpPrefix),
-        _areaStore(cfg.numCacheThreads, cache, tmpPrefix),
-        _simpleAreaStore(cfg.numCacheThreads, cache, tmpPrefix),
-        _lineStore(cfg.numCacheThreads, cache, tmpPrefix),
-        _simpleLineStore(cfg.numCacheThreads, cache, tmpPrefix),
-        _multiStore(cfg.numCacheThreads, cache, tmpPrefix){};
+        _pointStore(cfg.numCacheThreads, cache, prefix, persistOnDisk),
+        _areaStore(cfg.numCacheThreads, cache, prefix, persistOnDisk),
+        _simpleAreaStore(cfg.numCacheThreads, cache, prefix,
+                         persistOnDisk),
+        _lineStore(cfg.numCacheThreads, cache, prefix, persistOnDisk),
+        _simpleLineStore(cfg.numCacheThreads, cache, prefix,
+                         persistOnDisk),
+        _multiStore(cfg.numCacheThreads, cache, prefix, persistOnDisk) {}
+
+  // construct a GeometryStore from the files persisted in dir with prefix
+  // by a GeometryStore constructed with persistOnDisk
+  GeometryStore(const SweeperCfg& cfg, const std::string& dir,
+                const std::string& prefix)
+      : _cfg(cfg),
+        _pointStore(cfg.numCacheThreads,
+                    TypedGeometryStore<Point>::persistFName(dir, prefix)),
+        _areaStore(cfg.numCacheThreads,
+                   TypedGeometryStore<Area>::persistFName(dir, prefix)),
+        _simpleAreaStore(
+            cfg.numCacheThreads,
+            TypedGeometryStore<SimpleArea>::persistFName(dir, prefix)),
+        _lineStore(cfg.numCacheThreads,
+                   TypedGeometryStore<Line>::persistFName(dir, prefix)),
+        _simpleLineStore(
+            cfg.numCacheThreads,
+            TypedGeometryStore<SimpleLine>::persistFName(dir, prefix)),
+        _multiStore(cfg.numCacheThreads,
+                    TypedGeometryStore<MultiGeom>::persistFName(dir, prefix)) {
+  }
 
   void log(const std::string& msg);
 

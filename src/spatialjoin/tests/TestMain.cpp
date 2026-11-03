@@ -39,7 +39,17 @@ std::string fullRun(const std::vector<std::string>& files, sj::SweeperCfg cfg,
                     RunStats* stats, double dupRemovalMinSize = 0,
                     bool strict = false, bool sharedStore = false,
                     bool singleList = false,
-                    size_t eventBufSize = 10 * sizeof(sj::BoxVal)) {
+                    size_t eventBufSize = 10 * sizeof(sj::BoxVal),
+                    bool reload = false) {
+  // with reload, the geometry stores and the event lists are persisted to disk,
+  // and the sweep runs on stores and event lists read back from these files
+  auto storePrefix = [](size_t i) {
+    return ".spatialjoin-store" + std::to_string(i);
+  };
+  auto eventsPrefix = [](size_t i) {
+    return ".spatialjoin-list" + std::to_string(i);
+  };
+
   {
     sj::OutputWriter outWriter(cfg.numThreads, "$", "$\n", ".resTmp", ".");
     cfg.writeRelCb = [&outWriter](size_t t, const char* a, size_t an,
@@ -64,15 +74,18 @@ std::string fullRun(const std::vector<std::string>& files, sj::SweeperCfg cfg,
 
     for (const auto& file : files) {
       if (geomStores.empty() || !sharedStore) {
-        geomStores.emplace_back(
-            new sj::GeometryStore(cfg, ".", ".spatialjoin"));
+        geomStores.emplace_back(new sj::GeometryStore(
+            cfg, ".", reload ? storePrefix(geomStores.size()) : ".spatialjoin",
+            reload));
         geomStores.back()->DUPLICATE_REMOVAL_MIN_SIZE = dupRemovalMinSize;
         storeId = geomCache.addStore(geomStores.back().get());
       }
 
       if (sweepEvents.empty() || !singleList) {
-        sweepEvents.emplace_back(
-            new SweepEventList(".", ".spatialjoin", eventBufSize));
+        sweepEvents.emplace_back(new SweepEventList(
+            ".",
+            reload ? eventsPrefix(sweepEvents.size()) : ".spatialjoin",
+            eventBufSize, reload));
       }
 
       int f = open(file.c_str(), O_RDONLY);
@@ -104,13 +117,67 @@ std::string fullRun(const std::vector<std::string>& files, sj::SweeperCfg cfg,
 
     for (auto& events : sweepEvents) events->duplicatesToReferences(geomCache);
 
-    Sweeper sweeper(cfg, &geomCache);
-    sweeper.sweep(sweepEvents[0].get(),
-                  sweepEvents.size() > 1 ? sweepEvents[1].get() : 0);
+    if (reload) {
+      // read back the persisted stores and event lists, keeping the store ids
+      GeometryCache loadedCache(cfg);
+      std::vector<std::unique_ptr<sj::GeometryStore>> loadedStores;
+      std::vector<std::unique_ptr<SweepEventList>> loadedEvents;
 
-    stats->numReferences = 0;
-    for (auto& events : sweepEvents)
-      stats->numReferences += events->numReferences();
+      for (size_t i = 0; i < geomStores.size(); i++) {
+        loadedStores.emplace_back(
+            new sj::GeometryStore(cfg, ".", storePrefix(i)));
+        TEST(loadedCache.addStore(loadedStores.back().get()), ==, i);
+      }
+
+      for (size_t i = 0; i < sweepEvents.size(); i++) {
+        loadedEvents.emplace_back(
+            new SweepEventList("./" + eventsPrefix(i) + "events"));
+        TEST(loadedEvents.back()->numEvents(), ==,
+             sweepEvents[i]->numEvents());
+      }
+
+      Sweeper sweeper(cfg, &loadedCache);
+      sweeper.sweep(loadedEvents[0].get(),
+                    loadedEvents.size() > 1 ? loadedEvents[1].get() : 0);
+
+      stats->numReferences = 0;
+      for (size_t i = 0; i < loadedEvents.size(); i++) {
+        TEST(loadedEvents[i]->numReferences(), ==,
+             sweepEvents[i]->numReferences());
+        stats->numReferences += loadedEvents[i]->numReferences();
+      }
+
+      for (size_t i = 0; i < geomStores.size(); i++) {
+        for (const auto& fName :
+             {sj::TypedGeometryStore<sj::Point>::persistFName(".",
+                                                              storePrefix(i)),
+              sj::TypedGeometryStore<sj::Area>::persistFName(".",
+                                                             storePrefix(i)),
+              sj::TypedGeometryStore<sj::SimpleArea>::persistFName(
+                  ".", storePrefix(i)),
+              sj::TypedGeometryStore<sj::Line>::persistFName(".",
+                                                             storePrefix(i)),
+              sj::TypedGeometryStore<sj::SimpleLine>::persistFName(
+                  ".", storePrefix(i)),
+              sj::TypedGeometryStore<sj::MultiGeom>::persistFName(
+                  ".", storePrefix(i))}) {
+          TEST(unlink(fName.c_str()), ==, 0);
+        }
+      }
+      for (size_t i = 0; i < sweepEvents.size(); i++) {
+        TEST(unlink(("./" + eventsPrefix(i) + "events").c_str()), ==, 0);
+        // only written if duplicates were replaced by references
+        unlink(("./" + eventsPrefix(i) + "eventsrefs").c_str());
+      }
+    } else {
+      Sweeper sweeper(cfg, &geomCache);
+      sweeper.sweep(sweepEvents[0].get(),
+                    sweepEvents.size() > 1 ? sweepEvents[1].get() : 0);
+
+      stats->numReferences = 0;
+      for (auto& events : sweepEvents)
+        stats->numReferences += events->numReferences();
+    }
   }
 
   std::string ret;
@@ -735,6 +802,31 @@ int main(int, char**) {
                                false, false, false, sj::DEFAULT_BUFFER_S));
         TEST(onDisk.size() > 0);
         TEST(inMemory == onDisk);
+      }
+    }
+
+    {
+      // a sweep over geometry stores and event lists read back from disk gives
+      // the same result, in memory and on disk, with and without duplicates
+      // replaced by references
+      for (const auto& files : std::vector<std::vector<std::string>>{
+               {TEST_DATASET_DIR "/brandenburg"},
+               {TEST_DATASET_DIR "/duplicate-references"},
+               {TEST_DATASET_DIR "/multitests"},
+               {TEST_DATASET_DIR "/freiburg"},
+               {TEST_DATASET_DIR "/brandenburg_nonself-side1",
+                TEST_DATASET_DIR "/brandenburg_nonself-side2"}}) {
+        for (size_t bufSize : {10 * sizeof(sj::BoxVal), sj::DEFAULT_BUFFER_S}) {
+          RunStats stats, statsReloaded;
+          auto res = sortedRels(fullRun(files, cfg, &stats, 0, false, false,
+                                        false, bufSize));
+          auto reloaded = sortedRels(fullRun(files, cfg, &statsReloaded, 0,
+                                             false, false, false, bufSize,
+                                             true));
+          TEST(res.size() > 0);
+          TEST(reloaded == res);
+          TEST(statsReloaded.numReferences, ==, stats.numReferences);
+        }
       }
     }
 

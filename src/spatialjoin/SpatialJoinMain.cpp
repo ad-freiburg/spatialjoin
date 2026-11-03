@@ -432,7 +432,7 @@ int main(int argc, char** argv) {
     sweepEvents.emplace_back(new sj::SweepEventList(cacheDir, ".spatialjoin"));
 
     geomStores.emplace_back(
-        new sj::GeometryStore(sweeperCfg, cacheDir, ".spatialjoin"));
+        new sj::GeometryStore(sweeperCfg, cacheDir, ".spatialjoin", false));
     size_t storeId = geomCache.addStore(geomStores.back().get());
 
     sj::WKTParser parser(geomStores.back().get(), storeId,

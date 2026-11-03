@@ -24,25 +24,39 @@
 
 const static size_t MAX_MEM_CACHE_SIZE = 3 * 1024 * 1024 * 20l;
 
-namespace {
-// the sub id of a geometry, 0 for geometry types without one
-template <typename W>
-size_t subIdOf(const W& val) {
-  return val.subId;
-}
-template <>
-size_t subIdOf(const sj::SimpleArea&) {
-  return 0;
-}
-template <>
-size_t subIdOf(const sj::SimpleLine&) {
-  return 0;
-}
-template <>
-size_t subIdOf(const sj::MultiGeom&) {
-  return 0;
-}
-}  // namespace
+using sj::GeometryStore;
+using sj::GeomType;
+using sj::boxids::boxIdIsect;
+using sj::boxids::BoxIdList;
+using sj::boxids::getBoxId;
+using sj::boxids::getBoxIds;
+using sj::boxids::packBoxIds;
+using util::preadAll;
+using util::pwriteAll;
+using util::readAll;
+using util::writeAll;
+using util::geo::area;
+using util::geo::DE9IM;
+using util::geo::DPoint;
+using util::geo::FPoint;
+using util::geo::getBoundingBox;
+using util::geo::I32Box;
+using util::geo::I32Line;
+using util::geo::I32MultiLine;
+using util::geo::I32MultiPoint;
+using util::geo::I32MultiPolygon;
+using util::geo::I32Point;
+using util::geo::I32Polygon;
+using util::geo::I32XSortedLine;
+using util::geo::I32XSortedPolygon;
+using util::geo::intersectsContainsCovers;
+using util::geo::intersectsCovers;
+using util::geo::LineSegment;
+using util::geo::Point;
+using util::geo::webMercToLatLng;
+
+const static double sin45 = 1.0 / sqrt(2);
+const static double cos45 = 1.0 / sqrt(2);
 
 
 // ____________________________________________________________________________
@@ -499,7 +513,43 @@ std::pair<size_t, sj::GeomId> sj::TypedGeometryStore<W>::getId(
   if (_inMemory) {
     const auto& val = getFromMem(off);
     return {val->id.size() * sizeof(char) + sizeof(size_t),
-            {val->id, subIdOf(*val)}};
+            {val->id, val->subId}};
+  }
+  return getIdFrom(untypedId(off), _geomsFReads[tid]);
+}
+
+// ____________________________________________________________________________
+template <>
+std::pair<size_t, sj::GeomId> sj::TypedGeometryStore<sj::SimpleArea>::getId(
+    size_t off, size_t tid) const {
+  // no sub id
+  if (_inMemory) {
+    const auto& val = getFromMem(off);
+    return {val->id.size() * sizeof(char) + sizeof(size_t), {val->id, 0}};
+  }
+  return getIdFrom(untypedId(off), _geomsFReads[tid]);
+}
+
+// ____________________________________________________________________________
+template <>
+std::pair<size_t, sj::GeomId> sj::TypedGeometryStore<sj::SimpleLine>::getId(
+    size_t off, size_t tid) const {
+  // no sub id
+  if (_inMemory) {
+    const auto& val = getFromMem(off);
+    return {val->id.size() * sizeof(char) + sizeof(size_t), {val->id, 0}};
+  }
+  return getIdFrom(untypedId(off), _geomsFReads[tid]);
+}
+
+// ____________________________________________________________________________
+template <>
+std::pair<size_t, sj::GeomId> sj::TypedGeometryStore<sj::MultiGeom>::getId(
+    size_t off, size_t tid) const {
+  // no sub id
+  if (_inMemory) {
+    const auto& val = getFromMem(off);
+    return {val->id.size() * sizeof(char) + sizeof(size_t), {val->id, 0}};
   }
   return getIdFrom(untypedId(off), _geomsFReads[tid]);
 }
@@ -535,7 +585,7 @@ void sj::TypedGeometryStore<W>::flush() {
   }
 
   if (_inMemory && _persistOnDisk) {
-    const auto fName = persistFName();
+    const auto fName = persistFName(_dir, _prefix);
     std::ofstream out(fName,
                       std::ios::out | std::ios::binary | std::ios::trunc);
 
@@ -553,15 +603,16 @@ void sj::TypedGeometryStore<W>::flush() {
 // ____________________________________________________________________________
 template <typename W>
 std::string sj::TypedGeometryStore<W>::getFName() const {
-  return util::getTmpFName(_dir, _tmpPrefix, typeName());
+  return util::getTmpFName(_dir, _prefix, typeName());
 }
 
 // ____________________________________________________________________________
 template <typename W>
-std::string sj::TypedGeometryStore<W>::persistFName() const {
-  std::string dir = _dir == "<tmp>" ? util::getTmpDir() : _dir;
-  if (dir.size() && dir.back() != '/') dir += "/";
-  return dir + _tmpPrefix + typeName();
+std::string sj::TypedGeometryStore<W>::persistFName(
+    const std::string& dir, const std::string& prefix) {
+  std::string d = dir == "<tmp>" ? util::getTmpDir() : dir;
+  if (d.size() && d.back() != '/') d += "/";
+  return d + prefix + typeName();
 }
 
 // ____________________________________________________________________________
@@ -890,48 +941,6 @@ template <>
 sj::GeomType sj::TypedGeometryStore<sj::MultiGeom>::geomType() {
   return sj::MULTI;
 }
-
-// ____________________________________________________________________________
-template class sj::TypedGeometryStore<sj::Area>;
-template class sj::TypedGeometryStore<sj::Line>;
-template class sj::TypedGeometryStore<sj::SimpleLine>;
-template class sj::TypedGeometryStore<sj::Point>;
-template class sj::TypedGeometryStore<sj::SimpleArea>;
-template class sj::TypedGeometryStore<sj::MultiGeom>;
-
-using sj::GeometryStore;
-using sj::GeomType;
-using sj::boxids::boxIdIsect;
-using sj::boxids::BoxIdList;
-using sj::boxids::getBoxId;
-using sj::boxids::getBoxIds;
-using sj::boxids::packBoxIds;
-using util::preadAll;
-using util::pwriteAll;
-using util::readAll;
-using util::writeAll;
-using util::geo::area;
-using util::geo::DE9IM;
-using util::geo::DPoint;
-using util::geo::FPoint;
-using util::geo::getBoundingBox;
-using util::geo::I32Box;
-using util::geo::I32Line;
-using util::geo::I32MultiLine;
-using util::geo::I32MultiPoint;
-using util::geo::I32MultiPolygon;
-using util::geo::I32Point;
-using util::geo::I32Polygon;
-using util::geo::I32XSortedLine;
-using util::geo::I32XSortedPolygon;
-using util::geo::intersectsContainsCovers;
-using util::geo::intersectsCovers;
-using util::geo::LineSegment;
-using util::geo::Point;
-using util::geo::webMercToLatLng;
-
-const static double sin45 = 1.0 / sqrt(2);
-const static double cos45 = 1.0 / sqrt(2);
 
 // _____________________________________________________________________________
 I32Box GeometryStore::add(const I32MultiPolygon& a, const std::string& gid,
@@ -1567,3 +1576,10 @@ std::shared_ptr<W> GeometryStore::get(const sj::TypedGeometryStore<W>& store,
   if (store.inMemory()) return store.getFromMem(off);
   return std::make_shared<W>(store.getFrom(off, 0).second);
 }
+
+template class sj::TypedGeometryStore<sj::Area>;
+template class sj::TypedGeometryStore<sj::Line>;
+template class sj::TypedGeometryStore<sj::SimpleLine>;
+template class sj::TypedGeometryStore<sj::Point>;
+template class sj::TypedGeometryStore<sj::SimpleArea>;
+template class sj::TypedGeometryStore<sj::MultiGeom>;
