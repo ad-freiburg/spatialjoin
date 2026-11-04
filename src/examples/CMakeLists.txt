@@ -2,7 +2,7 @@ if(PROJECT_IS_TOP_LEVEL)
     set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}")
 endif()
 
-foreach(example SelfJoin)
+foreach(example SelfJoin NonSelfJoin NonSelfJoinSameStorage SelfJoinStorageReuse)
 	add_executable(${example} ${example}.cpp)
 	target_link_libraries(${example} PRIVATE spatialjoin-dev pb_util pb_util_geo -lpthread)
 	if (BZIP2_FOUND)

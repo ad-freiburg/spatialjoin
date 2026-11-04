@@ -1,6 +1,6 @@
 # `libspatialjoin` integration examples
 
-This folder contains several (TODO: atm only 1) integration examples of `libspatialjoin`.
+This folder contains several (TODO: atm only 4) integration examples of `libspatialjoin`.
 
 ## Overview
 
@@ -19,11 +19,15 @@ A single self join from a single dataset read from a file.
 
 ## `NonSelfJoin.cpp`
 
-TODO
+A single non-self join between two datasets read from two files into two storages.
+
+## `NonSelfJoinSameStorage.cpp`
+
+A single non-self join within a single dataset read from a file into a single storage. Left and right `SweepEventList` are than build manually.
 
 ## `SelfJoinStorageReuse.cpp`
 
-TODO
+A self join on a persisted storage.
 
 ## `NonSelfJoinStorageReuse.cpp`
 
