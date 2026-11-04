@@ -329,6 +329,8 @@ class GeometryStore {
                         WriteBatch& batch) const;
   util::geo::I32Box add(const util::geo::I32MultiPoint& a,
                         const std::string& gid, WriteBatch& batch) const;
+  util::geo::I32Box add(const util::geo::I32Collection& a,
+                        const std::string& gid, WriteBatch& batch) const;
 
   void addMulti(WriteBatch&& members, const util::geo::I32Box& box,
                 const std::string& gid, WriteBatch& batch) const;
@@ -368,6 +370,10 @@ class GeometryStore {
   double DUPLICATE_REMOVAL_MIN_SIZE = 500;
 
  private:
+  util::geo::I32Box addMembers(const util::geo::I32Collection& col,
+                               const std::string& gid, size_t& subId,
+                               WriteBatch& target) const;
+
   // returns the geometry stored at off in store, bypassing any cache
   template <typename W>
   static std::shared_ptr<W> get(const TypedGeometryStore<W>& store, size_t off);

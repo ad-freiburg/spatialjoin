@@ -42,7 +42,8 @@ int main(int argc, char** argv) {
   // std::mutex eventsMtx;
   // sj::WKTParser parser(
       // &store,
-      // [&events, &eventsMtx](size_t, const sj::PreparedGeomMeta& meta) {
+      // [&events, &eventsMtx](size_t, const std::string&,
+      //                       const sj::PreparedGeomMeta& meta) {
         // // the PreparedGeomMetas may also be stored elsewhere :)
         // std::lock_guard<std::mutex> lock(eventsMtx);
         // events.add(meta, 0);

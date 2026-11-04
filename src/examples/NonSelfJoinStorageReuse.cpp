@@ -30,7 +30,8 @@ std::vector<sj::PreparedGeomMeta> writePersistedStorage(
   std::mutex metasMtx;
   sj::WKTParser parser(
       &store,
-      [&metas, &metasMtx](size_t, const sj::PreparedGeomMeta& meta) {
+      [&metas, &metasMtx](size_t, const std::string&,
+                          const sj::PreparedGeomMeta& meta) {
         std::lock_guard<std::mutex> lock(metasMtx);
         // metas are collected in a simple vector
         metas.push_back(meta);

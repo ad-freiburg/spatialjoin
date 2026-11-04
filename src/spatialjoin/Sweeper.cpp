@@ -1738,30 +1738,36 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
                      sv.origin());
     }
 
+    const bool equalArea =
+        res.coveredBy() &&
+        fabs(a->geom.area() - b->geom.area()) < util::geo::EPSILON;
+    const bool bWithinA = res.contains() || equalArea;
+    const bool bCoveredByA = res.covers() || equalArea;
+
     // contained
     if (res.within()) {
       writeContains(t, b->id, b->subId, sv.origin(), a->id, a->subId,
                     cur.origin());
+    }
+    if (bWithinA) {
+      writeContains(t, a->id, a->subId, cur.origin(), b->id, b->subId,
+                    sv.origin());
     }
 
     // covered
     if (res.coveredBy()) {
       writeCovers(t, b->id, b->subId, sv.origin(), a->id, a->subId,
                   cur.origin());
+    }
+    if (bCoveredByA) {
+      writeCovers(t, a->id, a->subId, cur.origin(), b->id, b->subId,
+                  sv.origin());
+    }
 
-      if (fabs(a->geom.area() - b->geom.area()) < util::geo::EPSILON) {
-        // both areas were equivalent
-        writeEquals(t, a->id, a->subId, cur.origin(), b->id, b->subId,
-                    sv.origin());
-
-        // covers in other direction
-        writeCovers(t, a->id, a->subId, cur.origin(), b->id, b->subId,
-                    sv.origin());
-
-        // contains in other direction
-        writeContains(t, a->id, a->subId, cur.origin(), b->id, b->subId,
-                      sv.origin());
-      }
+    // equals
+    if (res.coveredBy() && bCoveredByA) {
+      writeEquals(t, a->id, a->subId, cur.origin(), b->id, b->subId,
+                  sv.origin());
     }
 
     // touches
@@ -1769,10 +1775,13 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
       writeTouches(t, a->id, a->subId, cur.origin(), b->id, b->subId,
                    sv.origin());
     } else if (res.intersects()) {
-      // if a is not a multi-geom, and is completey covered, we wont
+      // if a (or b) is not a multi-geom, and is completey covered, we wont
       // be finding a touch as we assume non-self-intersecting geoms
-      if (_events[cur.side]->isRefed(cur.storeId, a->id) ||
-          !(a->subId == 0 && res.coveredBy())) {
+      const bool aCovered = !_events[cur.side]->isRefed(cur.storeId, a->id) &&
+                            a->subId == 0 && res.coveredBy();
+      const bool bCovered = !_events[sv.side]->isRefed(sv.storeId, b->id) &&
+                            b->subId == 0 && bCoveredByA;
+      if (!aCovered && !bCovered) {
         writeNotTouches(t, a->id, a->subId, cur.origin(), b->id, b->subId,
                         sv.origin());
       }
@@ -1883,7 +1892,8 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
     if (res.touches()) {
       writeTouches(t, a->id, 0, cur.origin(), b->id, b->subId, sv.origin());
     } else if (res.intersects()) {
-      if (_events[cur.side]->isRefed(cur.storeId, a->id) || !(res.coveredBy())) {
+      if (_events[cur.side]->isRefed(cur.storeId, a->id) ||
+          !(res.coveredBy())) {
         writeNotTouches(t, a->id, 0, cur.origin(), b->id, b->subId,
                         sv.origin());
       }
@@ -2036,20 +2046,27 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
 
       writeCovers(t, b->id, b->subId, sv.origin(), a->id, a->subId,
                   cur.origin());
-
-      if (fabs(a->geom.length() - b->geom.length()) < util::geo::EPSILON) {
-        // both lines were equivalent
-        writeEquals(t, a->id, a->subId, cur.origin(), b->id, b->subId,
-                    sv.origin());
-
-        writeCovers(t, a->id, a->subId, cur.origin(), b->id, b->subId,
-                    sv.origin());
-
-        writeContains(t, a->id, a->subId, cur.origin(), b->id, b->subId,
-                      sv.origin());
-        writeContains(t, b->id, b->subId, sv.origin(), a->id, a->subId,
+    }
+    if (res.covers()) {
+      writeNotCrosses(t, b->id, b->subId, sv.origin(), a->id, a->subId,
                       cur.origin());
-      }
+      if (b->subId == 0)
+        writeNotOverlaps(t, b->id, b->subId, sv.origin(), a->id, a->subId,
+                         cur.origin());
+
+      writeCovers(t, a->id, a->subId, cur.origin(), b->id, b->subId,
+                  sv.origin());
+    }
+
+    if (res.coveredBy() && res.covers()) {
+      // both lines were equivalent
+      writeEquals(t, a->id, a->subId, cur.origin(), b->id, b->subId,
+                  sv.origin());
+
+      writeContains(t, a->id, a->subId, cur.origin(), b->id, b->subId,
+                    sv.origin());
+      writeContains(t, b->id, b->subId, sv.origin(), a->id, a->subId,
+                    cur.origin());
     }
 
     // touches
@@ -2102,15 +2119,16 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
     if (res.coveredBy()) {
       writeCovers(t, b->id, 0, sv.origin(), a->id, a->subId, cur.origin());
       writeNotCrosses(t, a->id, a->subId, cur.origin(), b->id, 0, sv.origin());
+    }
+    if (res.covers()) {
+      writeNotCrosses(t, b->id, 0, sv.origin(), a->id, a->subId, cur.origin());
+      writeCovers(t, a->id, a->subId, cur.origin(), b->id, 0, sv.origin());
+      writeNotOverlaps(t, b->id, 0, sv.origin(), a->id, a->subId, cur.origin());
+    }
 
-      if (fabs(a->geom.length() -
-               util::geo::len(LineSegment<int32_t>(sv.point, sv.point2))) <
-          util::geo::EPSILON) {
-        // both lines were equivalent
-        writeCovers(t, a->id, a->subId, cur.origin(), b->id, 0, sv.origin());
-
-        writeEquals(t, a->id, a->subId, cur.origin(), b->id, 0, sv.origin());
-      }
+    if (res.coveredBy() && res.covers()) {
+      // both lines were equivalent
+      writeEquals(t, a->id, a->subId, cur.origin(), b->id, 0, sv.origin());
     }
 
     // touches
@@ -2162,13 +2180,14 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
       writeCovers(t, b->id, b->subId, sv.origin(), a->id, 0, cur.origin());
 
       writeNotOverlaps(t, a->id, 0, cur.origin(), b->id, b->subId, sv.origin());
+    }
+    if (res.covers()) {
+      writeCovers(t, a->id, 0, cur.origin(), b->id, b->subId, sv.origin());
+      writeNotCrosses(t, b->id, b->subId, sv.origin(), a->id, 0, cur.origin());
+    }
 
-      if (fabs(util::geo::len(LineSegment<int32_t>(cur.point, cur.point2)) -
-               b->geom.length()) < util::geo::EPSILON) {
-        writeEquals(t, a->id, 0, cur.origin(), b->id, b->subId, sv.origin());
-
-        writeCovers(t, a->id, 0, cur.origin(), b->id, b->subId, sv.origin());
-      }
+    if (res.coveredBy() && res.covers()) {
+      writeEquals(t, a->id, 0, cur.origin(), b->id, b->subId, sv.origin());
     }
 
     // touches
@@ -2211,15 +2230,16 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
       writeIntersect(t, a->id, 0, cur.origin(), b->id, 0, sv.origin());
     }
 
+    // covers
     if (res.coveredBy()) {
       writeCovers(t, b->id, 0, sv.origin(), a->id, 0, cur.origin());
+    }
+    if (res.covers()) {
+      writeCovers(t, a->id, 0, cur.origin(), b->id, 0, sv.origin());
+    }
 
-      if (fabs(util::geo::len(LineSegment<int32_t>(cur.point, cur.point2)) -
-               util::geo::len(LineSegment<int32_t>(sv.point, sv.point2))) <
-          util::geo::EPSILON) {
-        writeEquals(t, a->id, 0, cur.origin(), b->id, 0, sv.origin());
-        writeCovers(t, a->id, 0, cur.origin(), b->id, 0, sv.origin());
-      }
+    if (res.coveredBy() && res.covers()) {
+      writeEquals(t, a->id, 0, cur.origin(), b->id, 0, sv.origin());
     }
 
     // touches
@@ -3603,7 +3623,8 @@ double Sweeper::getMaxMultiDist(const std::string& idA, size_t aSub,
   // TODO: why do we return here directly for euclidean, check this!
   if (euclidean) return maxD;
 
-  if (_events[aOrig.side]->isRefed(aOrig.storeId, idA) || _events[bOrig.side]->isRefed(bOrig.storeId, idB))
+  if (_events[aOrig.side]->isRefed(aOrig.storeId, idA) ||
+      _events[bOrig.side]->isRefed(bOrig.storeId, idB))
     return maxD;
 
   // for multigeometries, we may already have a minimum distance above which we

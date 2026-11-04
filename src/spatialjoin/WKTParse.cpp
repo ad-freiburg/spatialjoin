@@ -31,8 +31,14 @@ using sj::WKTParserBase;
 // _____________________________________________________________________________
 WKTParser::WKTParser(sj::GeometryStore* store, sj::PreparedGeomMetaCb metaCb,
                      size_t numThreads, bool strict)
+    : WKTParser(store, std::move(metaCb), numThreads, strict, false) {}
+
+// _____________________________________________________________________________
+WKTParser::WKTParser(sj::GeometryStore* store, sj::PreparedGeomMetaCb metaCb,
+                     size_t numThreads, bool strict, bool encodeIds)
     : WKTParserBase<ParseJob>(store, std::move(metaCb), numThreads),
-      _strict(strict) {
+      _strict(strict),
+      _encodeIds(encodeIds) {
   for (size_t i = 0; i < _thrds.size(); i++) {
     _thrds[i] = std::thread(&WKTParser::processQueue, this, i);
   }
@@ -47,15 +53,16 @@ void WKTParser::processQueue(size_t t) {
       if (_cancelled) break;
 
       if (job.str.size()) {
-        parseLine(job.str.c_str(), job.line, t, w, true, _strict);
+        parseLine(job.str.c_str(), job.line, t, w, _encodeIds, _strict);
       } else {
         // parse point directly
         auto mercPoint = latLngToWebMerc(job.point);
 
         util::geo::I32Point addPoint{static_cast<int>(mercPoint.getX() * PREC),
                                      static_cast<int>(mercPoint.getY() * PREC)};
-        _bboxes[t] = util::geo::extendBox(
-            _store->add(addPoint, std::to_string(job.line), w), _bboxes[t]);
+        std::string id = std::to_string(job.line);
+        if (_encodeIds) id = idEnhance(id);
+        _store->add(addPoint, id, w);
       }
     }
 

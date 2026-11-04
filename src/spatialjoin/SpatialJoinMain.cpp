@@ -360,7 +360,8 @@ int main(int argc, char** argv) {
     return 0;
   }
 
-  sj::OutputWriter outWriter(numThreads, prefix, suffix, output, cacheDir);
+  sj::IDDecodingOutputWriter outWriter(numThreads, prefix, suffix, output,
+                                       cacheDir);
 
   std::function<void(size_t, const char*, size_t, const char*, size_t,
                      const char*, size_t)>
@@ -429,16 +430,15 @@ int main(int argc, char** argv) {
         new sj::GeometryStore(cfg, cacheDir, ".spatialjoin", false));
     size_t storeId = geomCache.addStore(geomStores.back().get());
 
-    sj::WKTParser parser(geomStores.back().get(),
-                         sweepEvents.back()->addCb(storeId), NUM_THREADS,
-                         wktStrict);
+    sj::IDEncodingWKTParser parser(geomStores.back().get(),
+                                   sweepEvents.back()->addCb(storeId),
+                                   NUM_THREADS, wktStrict);
 
     try {
       if (inputFiles.empty()) {
         parser.parseFd(0);
         parser.done();
       } else {
-        // calls done()
         parser.parseFile(inputFiles[i]);
       }
     } catch (const std::runtime_error& e) {
@@ -471,7 +471,6 @@ int main(int argc, char** argv) {
   sweeper.sweep(sweepEvents[0].get(),
                 sweepEvents.size() > 1 ? sweepEvents[1].get() : 0);
   geomCache.log("done (" + std::to_string(TOOK(ts) / 1000000000.0) + "s).");
-
 
   return 0;
 }

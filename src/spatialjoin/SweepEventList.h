@@ -63,7 +63,6 @@ struct BoxVal {
   bool out : 1;      // whether this is an IN or OUT event
   uint8_t storeId;   // the store (see GeometryCache::addStore()) the geometry
                      // is stored in
-  double areaOrLen;  // area or len
   util::geo::I32Point point;
   size_t numAnchors;      // for polygons and lines: number of anchor points,
                           // used for DUPLICATE REMOVAL
@@ -90,11 +89,10 @@ struct PreparedGeomMeta {
   // number of anchor points (for simple lines and folded box polygons, the
   // events instead store the packed other point, see packPoint())
   size_t numAnchors;
-  // area for polygons, length for lines, 0 for points
-  double areaOrLen;
 };
 
-typedef std::function<void(size_t t, const PreparedGeomMeta&)>
+typedef std::function<void(size_t t, const std::string& gid,
+                           const PreparedGeomMeta&)>
     PreparedGeomMetaCb;
 
 // default size of the write buffer of a SweepEventList, must be multiple of
@@ -211,14 +209,13 @@ inline void padSweepEvent(BoxVal* bv, const SpatialJoinCfg& cfg) {
 inline std::pair<BoxVal, BoxVal> getSweepEvents(
     size_t id, const util::geo::I32Box& bbox, const util::geo::I32Box& box45,
     const util::geo::I32Point& point1, const util::geo::I32Point& point2,
-    size_t numAnchors, double areaOrLen, uint8_t storeId) {
+    size_t numAnchors, uint8_t storeId) {
   BoxVal in{id,
             bbox.getLowerLeft().getY(),
             bbox.getUpperRight().getY(),
             bbox.getLowerLeft().getX(),
             false,
             storeId,
-            areaOrLen,
             point1,
             numAnchors,
             box45};
@@ -228,7 +225,6 @@ inline std::pair<BoxVal, BoxVal> getSweepEvents(
              bbox.getUpperRight().getX(),
              true,
              storeId,
-             areaOrLen,
              point2,
              numAnchors,
              box45};
@@ -248,7 +244,7 @@ inline std::pair<BoxVal, BoxVal> getSweepEvents(
 inline std::pair<BoxVal, BoxVal> getSweepEvents(const PreparedGeomMeta& meta,
                                                 uint8_t storeId) {
   return getSweepEvents(meta.id, meta.bbox, meta.box45, meta.point1,
-                        meta.point2, meta.numAnchors, meta.areaOrLen, storeId);
+                        meta.point2, meta.numAnchors, storeId);
 }
 
 // _____________________________________________________________________________
@@ -285,34 +281,6 @@ static int boxCmp(const void* a, const void* b) {
   if ((boxb->getType() == POINT || boxb->getType() == FOLDED_POINT) &&
       (boxa->getType() == SIMPLE_LINE || boxa->getType() == LINE ||
        boxa->getType() == FOLDED_SIMPLE_LINE))
-    return 1;
-
-  // smaller polygons before larger
-  if ((boxa->getType() == POLYGON || boxa->getType() == SIMPLE_POLYGON ||
-       boxa->getType() == FOLDED_BOX_POLYGON) &&
-      (boxb->getType() == POLYGON || boxb->getType() == SIMPLE_POLYGON ||
-       boxb->getType() == FOLDED_BOX_POLYGON) &&
-      boxa->areaOrLen < boxb->areaOrLen)
-    return -1;
-  if ((boxa->getType() == POLYGON || boxa->getType() == SIMPLE_POLYGON ||
-       boxa->getType() == FOLDED_BOX_POLYGON) &&
-      (boxb->getType() == POLYGON || boxb->getType() == SIMPLE_POLYGON ||
-       boxb->getType() == FOLDED_BOX_POLYGON) &&
-      boxa->areaOrLen > boxb->areaOrLen)
-    return 1;
-
-  // shorter lines before longer
-  if ((boxa->getType() == LINE || boxa->getType() == SIMPLE_LINE ||
-       boxa->getType() == FOLDED_SIMPLE_LINE) &&
-      (boxb->getType() == LINE || boxb->getType() == SIMPLE_LINE ||
-       boxb->getType() == FOLDED_SIMPLE_LINE) &&
-      boxa->areaOrLen < boxb->areaOrLen)
-    return -1;
-  if ((boxa->getType() == LINE || boxa->getType() == SIMPLE_LINE ||
-       boxa->getType() == FOLDED_SIMPLE_LINE) &&
-      (boxb->getType() == LINE || boxb->getType() == SIMPLE_LINE ||
-       boxb->getType() == FOLDED_SIMPLE_LINE) &&
-      boxa->areaOrLen > boxb->areaOrLen)
     return 1;
 
   // make ordernig of equal geoms deterministic
@@ -494,9 +462,9 @@ class SweepEventList {
   void add(size_t id, const util::geo::I32Box& bbox,
            const util::geo::I32Box& box45, const util::geo::I32Point& point1,
            const util::geo::I32Point& point2, size_t numAnchors,
-           double areaOrLen, uint8_t storeId) {
-    auto events = getSweepEvents(id, bbox, box45, point1, point2, numAnchors,
-                                 areaOrLen, storeId);
+           uint8_t storeId) {
+    auto events =
+        getSweepEvents(id, bbox, box45, point1, point2, numAnchors, storeId);
     padSweepEvent(&events.first, _cfg);
     padSweepEvent(&events.second, _cfg);
     add(events.first);
@@ -507,12 +475,13 @@ class SweepEventList {
   // store storeId. The boxes are padded for within-distance joins from the cfg
   void add(const PreparedGeomMeta& meta, uint8_t storeId) {
     add(meta.id, meta.bbox, meta.box45, meta.point1, meta.point2,
-        meta.numAnchors, meta.areaOrLen, storeId);
+        meta.numAnchors, storeId);
   }
 
   // thread safe callback for `WKTParser()`
   PreparedGeomMetaCb addCb(uint8_t storeId) {
-    return [this, storeId](size_t, const PreparedGeomMeta& meta) {
+    return [this, storeId](size_t, const std::string&,
+                           const PreparedGeomMeta& meta) {
       std::lock_guard<std::mutex> lock(_addMtx);
       add(meta, storeId);
     };

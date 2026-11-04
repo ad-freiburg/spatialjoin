@@ -350,26 +350,36 @@ int main(int, char**) {
         store.add(util::geo::I32MultiPolygon{poly2, poly3}, "multi", batch);
 
     std::vector<sj::PreparedGeomMeta> metas;
+    std::vector<std::string> gids;
     store.addBatch(batch, 3,
-                   [&metas, &events](size_t t, const sj::PreparedGeomMeta& m) {
+                   [&metas, &gids, &events](size_t t, const std::string& gid,
+                                            const sj::PreparedGeomMeta& m) {
                      // the thread index passed to addBatch()
                      TEST(t, ==, 3);
                      metas.push_back(m);
+                     gids.push_back(gid);
                      events.add(m, 0);
                    });
 
     TEST(metas.size(), ==, 4);
+
+    // the gids given to add() are passed through
+    auto sortedGids = gids;
+    std::sort(sortedGids.begin(), sortedGids.end());
+    TEST(sortedGids ==
+         std::vector<std::string>({"line", "multi", "point", "poly"}));
     TEST(events.numObjects(), ==, metas.size());
 
     size_t numMultis = 0;
-    for (const auto& m : metas) {
+    for (size_t i = 0; i < metas.size(); i++) {
+      const auto& m = metas[i];
       if (m.type != sj::MULTI) continue;
       numMultis++;
+      TEST(gids[i], ==, "multi");
       TEST(m.id >> sj::ID_TYPE_SHIFT, ==, sj::MULTI);
       TEST(m.bbox == multiBox);
       TEST(m.box45.isNull() == false);
       TEST(m.numAnchors, ==, poly2.getOuter().size() + poly3.getOuter().size());
-      TEST(m.areaOrLen, ==, 0);
     }
     TEST(numMultis, ==, 1);
 

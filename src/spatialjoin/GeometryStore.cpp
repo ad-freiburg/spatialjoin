@@ -41,6 +41,7 @@ using util::geo::DPoint;
 using util::geo::FPoint;
 using util::geo::getBoundingBox;
 using util::geo::I32Box;
+using util::geo::I32Collection;
 using util::geo::I32Line;
 using util::geo::I32MultiLine;
 using util::geo::I32MultiPoint;
@@ -979,11 +980,84 @@ I32Box GeometryStore::add(const I32MultiPoint& a, const std::string& gid,
 }
 
 // _____________________________________________________________________________
+static size_t numMembers(const I32Collection& c) {
+  size_t ret = 0;
+  for (const auto& a : c) {
+    if (a.getType() == 0 || a.getType() == 1 || a.getType() == 2) ret++;
+    if (a.getType() == 3) ret += a.getMultiLine().size();
+    if (a.getType() == 4) ret += a.getMultiPolygon().size();
+    if (a.getType() == 5) ret += numMembers(a.getCollection());
+    if (a.getType() == 6) ret += a.getMultiPoint().size();
+  }
+  return ret;
+}
+
+// _____________________________________________________________________________
+I32Box GeometryStore::add(const I32Collection& col, const std::string& gid,
+                          WriteBatch& batch) const {
+  size_t numGeoms = numMembers(col);
+
+  // a subid of 0 means "single geometry"
+  size_t subId = numGeoms > 1 ? 1 : 0;
+
+  // the members of a multi collection are kept together
+  WriteBatch members;
+  auto colBox = addMembers(col, gid, subId, numGeoms > 1 ? members : batch);
+
+  if (numGeoms > 1) addMulti(std::move(members), colBox, gid, batch);
+
+  return colBox;
+}
+
+// _____________________________________________________________________________
+I32Box GeometryStore::addMembers(const I32Collection& col,
+                                 const std::string& gid, size_t& subId,
+                                 WriteBatch& target) const {
+  I32Box colBox;
+
+  for (const auto& a : col) {
+    if (a.getType() == 0)
+      colBox = util::geo::extendBox(add(a.getPoint(), gid, subId, target),
+                                    colBox);
+    if (a.getType() == 1)
+      colBox =
+          util::geo::extendBox(add(a.getLine(), gid, subId, target), colBox);
+    if (a.getType() == 2)
+      colBox = util::geo::extendBox(add(a.getPolygon(), gid, subId, target),
+                                    colBox);
+    if (a.getType() == 3)
+      colBox = util::geo::extendBox(add(a.getMultiLine(), gid, subId, target),
+                                    colBox);
+    if (a.getType() == 4)
+      colBox = util::geo::extendBox(
+          add(a.getMultiPolygon(), gid, subId, target), colBox);
+    if (a.getType() == 5)
+      // nested collections are flattened, their members take the next sub IDs
+      colBox = util::geo::extendBox(
+          addMembers(a.getCollection(), gid, subId, target), colBox);
+    if (a.getType() == 6)
+      colBox = util::geo::extendBox(
+          add(a.getMultiPoint(), gid, subId, target), colBox);
+
+    // the members of a multi element each take their own sub ID
+    if (a.getType() == 3)
+      subId += a.getMultiLine().size();
+    else if (a.getType() == 4)
+      subId += a.getMultiPolygon().size();
+    else if (a.getType() == 6)
+      subId += a.getMultiPoint().size();
+    else if (a.getType() != 5)  // already advanced by addMembers()
+      subId++;
+  }
+
+  return colBox;
+}
+
+// _____________________________________________________________________________
 I32Box GeometryStore::add(const I32MultiPolygon& a, const std::string& gid,
                           size_t subId, WriteBatch& batch) const {
   I32Box ret;
   for (const auto& poly : a) {
-    if (poly.getOuter().size() < 2) continue;
     auto box = add(poly, gid, subId, batch);
     if (box.isNull()) continue;
     ret = util::geo::extendBox(box, ret);
@@ -1032,6 +1106,8 @@ I32Box GeometryStore::add(const I32Polygon& poly, const std::string& gid,
 // _____________________________________________________________________________
 I32Box GeometryStore::add(const I32Polygon& poly, const std::string& gid,
                           size_t subid, WriteBatch& batch) const {
+  if (poly.getOuter().size() < 2) return {};
+
   WriteCand cur;
   const auto& densePoly = util::geo::densifyX(poly, 500 * PREC);
   I32XSortedPolygon spoly(densePoly);
@@ -1061,7 +1137,6 @@ I32Box GeometryStore::add(const I32Polygon& poly, const std::string& gid,
   cur.gid = gid;
   cur.meta.bbox = rawBox;
   cur.meta.box45 = box45;
-  cur.meta.areaOrLen = areaSize;
 
   if (poly.getInners().size() == 0 && subid == 0 &&
       gid.size() <= FOLD_MAX_LEN &&
@@ -1145,7 +1220,6 @@ I32Box GeometryStore::add(const I32Line& line, const std::string& gid,
     boxIds = packBoxIds(getBoxIds(line, rawBox));
   }
 
-  const double len = util::geo::len(line);
   size_t lineSize = line.size();
 
   I32Box box45;
@@ -1158,7 +1232,6 @@ I32Box GeometryStore::add(const I32Line& line, const std::string& gid,
   cur.gid = gid;
   cur.meta.bbox = rawBox;
   cur.meta.box45 = box45;
-  cur.meta.areaOrLen = len;
 
   if (line.size() == 2 && denseLine.size() == line.size() &&
       (!_cfg.useBoxIds || boxIds.front().first == 1) && subid == 0) {
@@ -1235,7 +1308,6 @@ I32Box GeometryStore::add(const I32Point& point, const std::string& gid,
   cur.meta.point1 = point;
   cur.meta.point2 = point;
   cur.meta.numAnchors = 1;
-  cur.meta.areaOrLen = 0;
 
   cur.gid = gid;
 
@@ -1396,7 +1468,7 @@ void GeometryStore::addBatch(WriteBatch& cands, size_t t,
   multiMetas.reserve(cands.multiGeoms.size());
 
   for (const auto& multi : cands.multiGeoms) {
-    PreparedGeomMeta multiMeta{multi.id, {}, MULTI, {}, {}, {}, 0, 0.0};
+    PreparedGeomMeta multiMeta{multi.id, {}, MULTI, {}, {}, {}, 0};
 
     for (const auto* members :
          {&multi.members.points, &multi.members.simpleLines,
@@ -1418,14 +1490,15 @@ void GeometryStore::addBatch(WriteBatch& cands, size_t t,
         &cands.foldedBoxAreas, &cands.simpleLines, &cands.lines,
         &cands.simpleAreas, &cands.areas}) {
     for (const auto& cand : *list) {
-      metaCb(t, cand.meta);
+      metaCb(t, cand.gid, cand.meta);
       size_t n = ++_numReported;
       if (n % 1000000 == 0) log("@ " + std::to_string(n));
     }
   }
 
-  for (const auto& multiMeta : multiMetas) {
-    metaCb(t, multiMeta);
+  // multiMetas[i] belongs to cands.multiGeoms[i]
+  for (size_t i = 0; i < multiMetas.size(); i++) {
+    metaCb(t, cands.multiGeoms[i].gid, multiMetas[i]);
     size_t n = ++_numReported;
     if (n % 1000000 == 0) log("@ " + std::to_string(n));
   }
@@ -1433,8 +1506,7 @@ void GeometryStore::addBatch(WriteBatch& cands, size_t t,
 
 // _____________________________________________________________________________
 void GeometryStore::flush() {
-  log(std::to_string(_numMultis) +
-      " multi geometries");
+  log(std::to_string(_numMultis) + " multi geometries");
 
   _pointStore.flush();
   _areaStore.flush();
