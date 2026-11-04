@@ -66,6 +66,7 @@ int main(int argc, char** argv) {
     // use the persisted store.
     sj::GeometryStore store(cfg, ".", "spatialjoin");
     sj::GeometryCache cache(cfg);
+    cache.addStore(&store);
 
     // build the sweep event list from the metas
     sj::SweepEventList events(cfg, ".", "spatialjoin");

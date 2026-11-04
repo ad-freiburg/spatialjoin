@@ -1,6 +1,6 @@
 # `libspatialjoin` integration examples
 
-This folder contains several (TODO: atm only 4) integration examples of `libspatialjoin`.
+This folder contains several integration examples of `libspatialjoin`.
 
 ## Overview
 
@@ -31,4 +31,8 @@ A self join on a persisted storage.
 
 ## `NonSelfJoinStorageReuse.cpp`
 
-TODO
+A non-self join on two persisted storages.
+
+## `ThreeStoresJoin.cpp`
+
+A non-self join over three storages.
