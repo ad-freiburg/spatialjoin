@@ -26,9 +26,6 @@
 
 namespace sj {
 
-typedef std::function<void(size_t t, const PreparedGeomMeta&)>
-    PreparedGeomMetaCb;
-
 class GeometryCache;
 
 enum GeomType : uint8_t {
@@ -96,6 +93,9 @@ struct PreparedGeomMeta {
   // area for polygons, length for lines, 0 for points
   double areaOrLen;
 };
+
+typedef std::function<void(size_t t, const PreparedGeomMeta&)>
+    PreparedGeomMetaCb;
 
 // default size of the write buffer of a SweepEventList, must be multiple of
 // sizeof(BoxVal)
