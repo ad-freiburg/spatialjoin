@@ -373,10 +373,9 @@ int main(int, char**) {
     size_t numMultis = 0;
     for (size_t i = 0; i < metas.size(); i++) {
       const auto& m = metas[i];
-      if (m.type != sj::MULTI) continue;
+      if (m.getType() != sj::MULTI) continue;
       numMultis++;
       TEST(gids[i], ==, "multi");
-      TEST(m.id >> sj::ID_TYPE_SHIFT, ==, sj::MULTI);
       TEST(m.bbox == multiBox);
       TEST(m.box45.isNull() == false);
       TEST(m.numAnchors, ==, poly2.getOuter().size() + poly3.getOuter().size());

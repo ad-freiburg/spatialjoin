@@ -56,9 +56,7 @@ struct SweepVal {
   uint8_t storeId;
 
   size_t getId() const { return untypedId(id); }
-  GeomType getType() const {
-    return static_cast<GeomType>(id >> ID_TYPE_SHIFT);
-  }
+  GeomType getType() const { return idType(id); }
 };
 
 // where a geometry in a sweep comes from: its join side (given by the
@@ -92,9 +90,7 @@ struct JobVal {
         storeId(sv.storeId){};
 
   size_t getId() const { return untypedId(id); }
-  GeomType getType() const {
-    return static_cast<GeomType>(id >> ID_TYPE_SHIFT);
-  }
+  GeomType getType() const { return idType(id); }
   GeomOrigin origin() const { return {side, storeId}; }
 };
 
@@ -351,13 +347,9 @@ class Sweeper {
 
   std::shared_ptr<sj::SimpleLine> getSimpleLine(const JobVal& cur,
                                                 size_t t) const;
-  static bool isLine(GeomType gt) {
-    return gt == LINE || gt == SIMPLE_LINE || gt == FOLDED_SIMPLE_LINE;
-  }
+  static bool isLine(GeomType gt) { return gt == LINE || isSimpleLine(gt); }
 
-  static bool isSimpleLine(GeomType gt) {
-    return gt == SIMPLE_LINE || gt == FOLDED_SIMPLE_LINE;
-  }
+  static bool isSimpleLine(GeomType gt) { return sj::isSimpleLine(gt); }
 
   static double meterDist(const util::geo::I32Point& p1,
                           const util::geo::I32Point& p2, double maxDist);

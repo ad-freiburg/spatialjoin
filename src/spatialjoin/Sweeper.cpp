@@ -3578,7 +3578,7 @@ std::shared_ptr<sj::Point> Sweeper::getPoint(const JobVal& j, size_t t) const {
 // _____________________________________________________________________________
 std::shared_ptr<sj::SimpleLine> Sweeper::getSimpleLine(const JobVal& cur,
                                                        size_t t) const {
-  if (cur.getType() == sj::FOLDED_SIMPLE_LINE) {
+  if (sj::isFoldedSimpleLine(cur.getType())) {
     return std::make_shared<sj::SimpleLine>(
         sj::SimpleLine{unfoldString(cur.getId())});
   }

@@ -928,7 +928,7 @@ sj::GeomType sj::TypedGeometryStore<sj::Point>::geomType() {
 // ____________________________________________________________________________
 template <>
 sj::GeomType sj::TypedGeometryStore<sj::SimpleLine>::geomType() {
-  return sj::SIMPLE_LINE;
+  return sj::SIMPLE_LINE_RISING;
 }
 
 // ____________________________________________________________________________
@@ -1143,9 +1143,7 @@ I32Box GeometryStore::add(const I32Polygon& poly, const std::string& gid,
       poly.getOuter().size() == densePoly.getOuter().size() &&
       (!_cfg.useBoxIds || boxIds.front().first == 1) &&
       area(rawBox) == areaSize) {
-    cur.meta.type = FOLDED_BOX_POLYGON;
-    cur.meta.point1 = rawBox.getUpperRight();
-    cur.meta.point2 = rawBox.getLowerLeft();
+    cur.type = FOLDED_BOX_POLYGON;
     cur.meta.numAnchors = poly.size();
     batch.foldedBoxAreas.emplace_back(cur);
   } else if (poly.getInners().size() == 0 && poly.getOuter().size() < 10 &&
@@ -1161,9 +1159,8 @@ I32Box GeometryStore::add(const I32Polygon& poly, const std::string& gid,
       if (p.getX() > rightPoint.getX()) rightPoint = p;
     }
 
-    cur.meta.type = SIMPLE_POLYGON;
-    cur.meta.point1 = {};
-    cur.meta.point2 = rightPoint;
+    cur.type = SIMPLE_POLYGON;
+    cur.rightPoint = rightPoint;
     cur.meta.numAnchors = poly.size();
     batch.simpleAreas.emplace_back(cur);
   } else {
@@ -1184,9 +1181,8 @@ I32Box GeometryStore::add(const I32Polygon& poly, const std::string& gid,
 
     cur.raw = str.str();
 
-    cur.meta.type = POLYGON;
-    cur.meta.point1 = {};
-    cur.meta.point2 = rightPoint;
+    cur.type = POLYGON;
+    cur.rightPoint = rightPoint;
     cur.meta.numAnchors = polySize;
     batch.areas.emplace_back(cur);
   }
@@ -1237,17 +1233,20 @@ I32Box GeometryStore::add(const I32Line& line, const std::string& gid,
       (!_cfg.useBoxIds || boxIds.front().first == 1) && subid == 0) {
     // simple line
 
-    cur.meta.type = SIMPLE_LINE;
-    cur.meta.point1 =
+    const auto& right =
         line.front().getX() < line.back().getX() ? line.back() : line.front();
-    cur.meta.point2 =
+    const auto& left =
         line.front().getX() < line.back().getX() ? line.front() : line.back();
+    const bool rising = right.getY() >= left.getY();
+
+    cur.type = rising ? SIMPLE_LINE_RISING : SIMPLE_LINE_FALLING;
     cur.meta.numAnchors = lineSize;
 
     // check if we can fold the gid into the offset id, because the gid is all
     // we store in the cache for points
     if (subid == 0 && gid.size() <= FOLD_MAX_LEN) {
-      cur.meta.type = FOLDED_SIMPLE_LINE;
+      cur.type =
+          rising ? FOLDED_SIMPLE_LINE_RISING : FOLDED_SIMPLE_LINE_FALLING;
       batch.foldedSimpleLines.emplace_back(cur);
     } else {
       std::stringstream str;
@@ -1271,9 +1270,8 @@ I32Box GeometryStore::add(const I32Line& line, const std::string& gid,
     _lineStore.writeTo({gid, subid, std::move(sline), boxIds}, str);
     cur.raw = str.str();
 
-    cur.meta.type = LINE;
-    cur.meta.point1 = {};
-    cur.meta.point2 = rightPoint;
+    cur.type = LINE;
+    cur.rightPoint = rightPoint;
     cur.meta.numAnchors = lineSize;
     batch.lines.emplace_back(cur);
   }
@@ -1303,10 +1301,8 @@ I32Box GeometryStore::add(const I32Point& point, const std::string& gid,
 
   auto pointR = util::geo::rotateSinCos(point, sin45, cos45, I32Point(0, 0));
   cur.meta.bbox = rawBox;
-  cur.meta.type = POINT;
+  cur.type = POINT;
   cur.meta.box45 = util::geo::getBoundingBox(pointR);
-  cur.meta.point1 = point;
-  cur.meta.point2 = point;
   cur.meta.numAnchors = 1;
 
   cur.gid = gid;
@@ -1314,7 +1310,7 @@ I32Box GeometryStore::add(const I32Point& point, const std::string& gid,
   // check if we can fold the gid into the offset id, because the gid is all
   // we store in the cache for points
   if (subid == 0 && gid.size() <= FOLD_MAX_LEN) {
-    cur.meta.type = FOLDED_POINT;
+    cur.type = FOLDED_POINT;
     batch.foldedPoints.emplace_back(cur);
   } else {
     std::stringstream str;
@@ -1346,7 +1342,7 @@ void GeometryStore::addBatch(WriteBatch& cands, size_t t,
 
   {
     for (auto& cand : cands.foldedPoints) {
-      cand.meta.id = typedId(foldString(cand.gid), cand.meta.type);
+      cand.meta.id = typedId(foldString(cand.gid), cand.type);
     }
     // note: folded geoms can never be multi
   }
@@ -1378,25 +1374,27 @@ void GeometryStore::addBatch(WriteBatch& cands, size_t t,
   {
     std::unique_lock<std::mutex> lock(_simpleLineGeomCacheWriteMtx);
     for (auto& cand : cands.simpleLines) {
-      cand.meta.id = _simpleLineStore.add(cand.raw);
+      cand.meta.id =
+          typedId(untypedId(_simpleLineStore.add(cand.raw)), cand.type);
     }
     for (auto& multi : cands.multiGeoms) {
       for (auto& cand : multi.members.simpleLines) {
-        cand.meta.id = _simpleLineStore.add(cand.raw);
+        cand.meta.id = typedId(untypedId(_simpleLineStore.add(cand.raw)),
+                               cand.type);
       }
     }
   }
 
   {
     for (auto& cand : cands.foldedSimpleLines) {
-      cand.meta.id = typedId(foldString(cand.gid), cand.meta.type);
+      cand.meta.id = typedId(foldString(cand.gid), cand.type);
     }
     // note: folded geoms can never be multi
   }
 
   {
     for (auto& cand : cands.foldedBoxAreas) {
-      cand.meta.id = typedId(foldString(cand.gid), cand.meta.type);
+      cand.meta.id = typedId(foldString(cand.gid), cand.type);
     }
     // note: folded geoms can never be multi
   }
@@ -1439,7 +1437,7 @@ void GeometryStore::addBatch(WriteBatch& cands, size_t t,
           &multi.members.lines, &multi.members.simpleAreas,
           &multi.members.areas}) {
       for (const auto& cand : *members) {
-        const auto& events = getSweepEvents(cand.meta, 0);
+        const auto& events = getSweepEvents(cand.meta, 0, cand.rightPoint);
         multiGeom.events.push_back(events.first);
         multiGeom.events.push_back(events.second);
       }
@@ -1468,7 +1466,7 @@ void GeometryStore::addBatch(WriteBatch& cands, size_t t,
   multiMetas.reserve(cands.multiGeoms.size());
 
   for (const auto& multi : cands.multiGeoms) {
-    PreparedGeomMeta multiMeta{multi.id, {}, MULTI, {}, {}, {}, 0};
+    PreparedGeomMeta multiMeta{multi.id, {}, {}, 0};
 
     for (const auto* members :
          {&multi.members.points, &multi.members.simpleLines,

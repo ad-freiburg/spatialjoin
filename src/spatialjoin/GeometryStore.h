@@ -226,6 +226,8 @@ struct WriteCand {
   std::string gid;
   size_t subid;
   PreparedGeomMeta meta;
+  GeomType type;
+  util::geo::I32Point rightPoint;
 };
 
 struct MultiWriteCand;
