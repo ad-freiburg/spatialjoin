@@ -6,7 +6,6 @@
 #include <iostream>
 #include <limits>
 #include <memory>
-#include <mutex>
 #include <regex>
 #include <set>
 #include <string>
@@ -92,16 +91,8 @@ std::string fullRun(const std::vector<std::string>& files,
       int f = open(file.c_str(), O_RDONLY);
       TEST(f >= 0);
 
-      auto* events = sweepEvents.back().get();
-      std::mutex eventsMtx;
-      sj::WKTParser parser(
-          geomStores.back().get(),
-          [events, storeId, &eventsMtx](size_t,
-                                        const sj::PreparedGeomMeta& meta) {
-            std::lock_guard<std::mutex> lock(eventsMtx);
-            events->add(meta, storeId);
-          },
-          1, strict);
+      sj::WKTParser parser(geomStores.back().get(),
+                           sweepEvents.back()->addCb(storeId), 1, strict);
 
       // the gids within a store and within an event list must be unique, so
       // continue the line numbering

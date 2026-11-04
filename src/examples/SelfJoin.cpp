@@ -4,7 +4,6 @@
 // Integration example for a simple self-join
 
 #include <iostream>
-#include <mutex>
 #include <stdexcept>
 #include <string>
 
@@ -37,15 +36,18 @@ int main(int argc, char** argv) {
   sj::GeometryStore store(cfg, dir, prefix, false);
   sj::SweepEventList events(cfg, dir, prefix);
 
-  std::mutex eventsMtx;
-  sj::WKTParser parser(
-      &store,
-      [&events, &eventsMtx](size_t, const sj::PreparedGeomMeta& meta) {
-        // the PreparedGeomMetas may also be stored elsewhere :)
-        std::lock_guard<std::mutex> lock(eventsMtx);
-        events.add(meta, 0);
-      },
-      cfg.numThreads);
+  sj::WKTParser parser(&store, events.addCb(0), cfg.numThreads);
+
+  // EQUIVALENT, with explicit callback:
+  // std::mutex eventsMtx;
+  // sj::WKTParser parser(
+      // &store,
+      // [&events, &eventsMtx](size_t, const sj::PreparedGeomMeta& meta) {
+        // // the PreparedGeomMetas may also be stored elsewhere :)
+        // std::lock_guard<std::mutex> lock(eventsMtx);
+        // events.add(meta, 0);
+      // },
+      // cfg.numThreads);
 
   sj::GeometryCache cache(cfg);
   cache.addStore(&store);

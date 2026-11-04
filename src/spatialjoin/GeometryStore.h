@@ -87,11 +87,6 @@ struct Point {
 
 const static size_t WRITE_BUFF_SIZE = 1024 * 1024 * 4l;
 
-// called by thread t with the metadata of each geometry added to a
-// GeometryStore, see GeometryStore::addBatch()
-typedef std::function<void(size_t t, const PreparedGeomMeta&)>
-    PreparedGeomMetaCb;
-
 template <typename W>
 class TypedGeometryStore {
  public:

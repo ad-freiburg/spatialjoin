@@ -10,6 +10,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <functional>
+#include <mutex>
 #include <sstream>
 #include <string>
 #include <unordered_map>
@@ -23,6 +25,9 @@
 #include "util/geo/Geo.h"
 
 namespace sj {
+
+typedef std::function<void(size_t t, const PreparedGeomMeta&)>
+    PreparedGeomMetaCb;
 
 class GeometryCache;
 
@@ -505,6 +510,14 @@ class SweepEventList {
         meta.numAnchors, meta.areaOrLen, storeId);
   }
 
+  // thread safe callback for `WKTParser()`
+  PreparedGeomMetaCb addCb(uint8_t storeId) {
+    return [this, storeId](size_t, const PreparedGeomMeta& meta) {
+      std::lock_guard<std::mutex> lock(_addMtx);
+      add(meta, storeId);
+    };
+  }
+
   size_t numObjects() const { return numEvents() / 2; }
   size_t numEvents() const { return _curSweepId; }
 
@@ -734,6 +747,9 @@ class SweepEventList {
   std::vector<RefMap> _refs;
 
   bool _hasRefs = false;
+
+  // guards add() calls via addCb(), not swapped
+  std::mutex _addMtx;
 };
 
 }  // namespace sj
