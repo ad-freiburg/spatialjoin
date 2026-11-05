@@ -1164,14 +1164,6 @@ I32Box GeometryStore::add(const I32Polygon& poly, const std::string& gid,
     cur.meta.numAnchors = poly.size();
     batch.simpleAreas.emplace_back(cur);
   } else {
-    if (!_cfg.useFastSweepSkip) {
-      spoly.setInnerMaxSegLen(std::numeric_limits<int32_t>::max());
-      spoly.getOuter().setMaxSegLen(std::numeric_limits<int32_t>::max());
-      for (auto& inner : spoly.getInners()) {
-        inner.setMaxSegLen(std::numeric_limits<int32_t>::max());
-      }
-    }
-
     // careful, assign this before move below
     auto rightPoint = spoly.getOuter().rawRing().back().p;
 
@@ -1261,10 +1253,6 @@ I32Box GeometryStore::add(const I32Line& line, const std::string& gid,
     if (line.empty()) return {};
     if (sline.rawLine().empty()) return {};
     auto rightPoint = sline.rawLine().back().p;
-
-    if (!_cfg.useFastSweepSkip) {
-      sline.setMaxSegLen(std::numeric_limits<int32_t>::max());
-    }
 
     std::stringstream str;
     _lineStore.writeTo({gid, subid, std::move(sline), boxIds}, str);

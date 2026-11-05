@@ -100,9 +100,7 @@ void printHelp(int argc, char** argv) {
       << std::setw(42) << "  --no-surface-area"
       << "disable surface area criteria for polygon contains/covers\n"
       << std::setw(42) << "  --no-diag-box"
-      << "disable diagonal bounding-box based pre-filter\n"
-      << std::setw(42) << "  --no-fast-sweep-skip"
-      << "disable fast sweep skip using binary search\n\n"
+      << "disable diagonal bounding-box based pre-filter\n\n"
       << std::setfill(' ') << std::left << "Misc:\n"
       << std::setw(42) << "  --wkt-strict"
       << "use strict WKT parsing\n"
@@ -160,7 +158,6 @@ int main(int argc, char** argv) {
   bool useBoxIds = DEFAULT_CFG.useBoxIds;
   bool useArea = DEFAULT_CFG.useArea;
   bool useDiagBox = DEFAULT_CFG.useDiagBox;
-  bool useFastSweepSkip = DEFAULT_CFG.useFastSweepSkip;
   bool noGeometryChecks = DEFAULT_CFG.noGeometryChecks;
   bool computeDE9IM = DEFAULT_CFG.computeDE9IM;
   bool wktStrict = false;
@@ -232,8 +229,6 @@ int main(int argc, char** argv) {
           useDiagBox = false;
         } else if (cur == "--no-geometry-checks") {
           noGeometryChecks = true;
-        } else if (cur == "--no-fast-sweep-skip") {
-          useFastSweepSkip = false;
         } else if (cur == "--euclidean-dist") {
           euclideanDist = true;
         } else if (cur == "--haversine-approx") {
@@ -388,7 +383,6 @@ int main(int argc, char** argv) {
   cfg.useBoxIds = useBoxIds;
   cfg.useArea = useArea;
   cfg.useDiagBox = useDiagBox;
-  cfg.useFastSweepSkip = useFastSweepSkip;
   cfg.noGeometryChecks = noGeometryChecks;
   cfg.withinDist = withinDist;
   cfg.euclideanDist = euclideanDist;

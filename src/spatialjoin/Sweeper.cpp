@@ -740,13 +740,7 @@ RelStats Sweeper::sweep(const SweepEventList* eventsA,
 
 // _____________________________________________________________________________
 sj::Area Sweeper::areaFromSimpleArea(const SimpleArea* sa) const {
-  auto spoly = I32XSortedPolygon(sa->geom);
-
-  if (!_cfg.useFastSweepSkip) {
-    spoly.getOuter().setMaxSegLen(std::numeric_limits<int32_t>::max());
-  }
-
-  return {sa->id, 0, std::move(spoly),
+  return {sa->id, 0, I32XSortedPolygon(sa->geom),
           (_cfg.useBoxIds ? BoxIdList{{1, 0}, {-getBoxId(sa->geom.front()), 0}}
                           : BoxIdList{})};
 }

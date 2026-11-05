@@ -71,7 +71,6 @@ def compute(args: argparse.Namespace):
         log_file.close()
 
     # Try all combinations of the options.
-    sweep_mode = " --no-fast-sweep-skip" if args.no_fast_sweep_skip else ""
     count = 0
     for name, combination in all_combinations(options):
         # Consider only combinations compatible with `args.combinations`.
@@ -80,7 +79,7 @@ def compute(args: argparse.Namespace):
 
         # The command line for this combination.
         cmd = (f"cat {args.basename}.spatialjoin-input.tsv |"
-               f" spatialjoin{sweep_mode} {combination}")
+               f" spatialjoin {combination}")
 
         # Optionally, generate RDF output.
         if args.rdf_output:
@@ -323,9 +322,6 @@ if __name__ == "__main__":
                         default="0,1,2,3,4,5",
                         help="Comma-separated list of option indexes "
                         "(default: 0,1,2,3,4,5)")
-    parser.add_argument("--no-fast-sweep-skip", action="store_true",
-                        default=False,
-                        help="Call spatialjoin with --no-fast-sweep-skip")
     combinations = ["ALL", "bcsdoi,Bcsdoi,BCsdoi,BCSdoi,BCSDoi,BCSdOi,BCSdoI"]
     parser.add_argument("--combinations", type=str,
                         default="ALL",

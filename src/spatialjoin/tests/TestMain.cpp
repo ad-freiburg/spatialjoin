@@ -397,8 +397,7 @@ int main(int, char**) {
     TEST(numMultiEvents, ==, 2);
   }
 
-  auto mkCfg = [](bool useBoxIds, bool useArea, bool useDiagBox,
-                  bool useFastSweepSkip) {
+  auto mkCfg = [](bool useBoxIds, bool useArea, bool useDiagBox) {
     sj::SpatialJoinCfg cfg;
     cfg.numThreads = NUM_THREADS;
     cfg.numCacheThreads = NUM_THREADS;
@@ -407,19 +406,17 @@ int main(int, char**) {
     cfg.useBoxIds = useBoxIds;
     cfg.useArea = useArea;
     cfg.useDiagBox = useDiagBox;
-    cfg.useFastSweepSkip = useFastSweepSkip;
     return cfg;
   };
 
-  sj::SpatialJoinCfg baseline = mkCfg(false, false, false, false);
-  sj::SpatialJoinCfg all = mkCfg(true, true, true, true);
-  sj::SpatialJoinCfg noSurfaceArea = mkCfg(true, false, true, true);
-  sj::SpatialJoinCfg noBoxIds = mkCfg(false, true, true, true);
-  sj::SpatialJoinCfg noDiagBox = mkCfg(true, true, false, true);
-  sj::SpatialJoinCfg noFastSweep = mkCfg(true, true, true, false);
+  sj::SpatialJoinCfg baseline = mkCfg(false, false, false);
+  sj::SpatialJoinCfg all = mkCfg(true, true, true);
+  sj::SpatialJoinCfg noSurfaceArea = mkCfg(true, false, true);
+  sj::SpatialJoinCfg noBoxIds = mkCfg(false, true, true);
+  sj::SpatialJoinCfg noDiagBox = mkCfg(true, true, false);
 
-  std::vector<sj::SpatialJoinCfg> cfgs{baseline, all,       noSurfaceArea,
-                                       noBoxIds, noDiagBox, noFastSweep};
+  std::vector<sj::SpatialJoinCfg> cfgs{baseline, all, noSurfaceArea, noBoxIds,
+                                       noDiagBox};
 
   for (auto cfg : cfgs) {
     {

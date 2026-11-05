@@ -28,7 +28,6 @@ struct SpatialJoinCfg {
   bool useBoxIds = true;
   bool useArea = true;
   bool useDiagBox = true;
-  bool useFastSweepSkip = true;
   bool noGeometryChecks = false;
   double withinDist = -1;  // < 0: no distance join
   bool euclideanDist = false;
