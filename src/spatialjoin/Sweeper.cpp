@@ -65,11 +65,6 @@ using util::LogLevel::INFO;
 using util::LogLevel::VDEBUG;
 using util::LogLevel::WARN;
 
-const static size_t OBB_MIN_SIZE = 100;
-
-const static double sin45 = 1.0 / sqrt(2);
-const static double cos45 = 1.0 / sqrt(2);
-
 // _____________________________________________________________________________
 void Sweeper::clearMultis(bool force) {
   JobBatch curBatch;

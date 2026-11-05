@@ -120,8 +120,6 @@ typedef std::vector<Job> JobBatch;
 // intersects, contains, covers, touches, crosses / overlaps
 typedef std::tuple<bool, bool, bool, bool, bool> GeomCheckRes;
 
-static const size_t MAX_OUT_LINE_LENGTH = 1000;
-
 // if available, use a shared_timed_mutex, if not, fall back to a normal mutex
 #if __cplusplus >= 201402L
 typedef std::shared_timed_mutex SharedMutex;
@@ -162,8 +160,6 @@ class Sweeper {
 
   RelStats sweep(const SweepEventList* eventsA,
                  const SweepEventList* eventsB = 0);
-
-  size_t numElements() const { return _curSweepId / 2; }
 
   static std::string unfoldString(size_t folded);
 
@@ -210,7 +206,6 @@ class Sweeper {
   bool otherSide(bool side) const { return _numSides == 2 ? !side : side; }
 
   Area areaFromSimpleArea(const SimpleArea* sa) const;
-  Line lineFromSimpleLine(const SimpleLine* sl) const;
 
   double distCheck(const util::geo::I32Point& a, const Point* aMeta,
                    const Area* b, GeomOrigin aOrig, GeomOrigin bOrig, size_t t);
@@ -262,8 +257,6 @@ class Sweeper {
       const util::geo::I32Box& boxA, const util::geo::I32Box& boxB,
       double distanceUpperBound);
   double getMaxScaleFactor(const util::geo::I32Point& geom) const;
-
-  void diskAdd(const BoxVal& bv);
 
   void multiOut(size_t t, const std::string& gid, GeomOrigin origin);
   void clearMultis(bool force);
@@ -368,7 +361,6 @@ class Sweeper {
                  const BoxVal* cur, bool side) const;
 
   const SpatialJoinCfg _cfg;
-  size_t _curSweepId = 0;
 
   // 1 for a self join, 2 for a non-self join, set in sweep()
   size_t _numSides = 1;
