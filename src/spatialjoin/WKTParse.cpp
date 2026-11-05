@@ -24,6 +24,7 @@
 
 // size of the read buffer used by the parseFile() methods
 static const size_t READ_BUFF_SIZE = 1024 * 1024;
+static const size_t MAX_BATCH_BYTES = 16 * 1024;
 
 using sj::WKTParser;
 using sj::WKTParserBase;
@@ -217,6 +218,7 @@ void WKTParser::parseBz2File(const std::string& path) {
 // _____________________________________________________________________________
 void WKTParser::parse(char* c, size_t size) {
   size_t p = 0;
+  size_t batchStart = 0;
 
   while (true) {
     char* newLine = reinterpret_cast<char*>(memchr(c + p, '\n', size - p));
@@ -232,10 +234,11 @@ void WKTParser::parse(char* c, size_t size) {
       } else {
         if (*(c + p)) _curBatch.push_back({c + p, _gid, {0, 0}});
 
-        if (_curBatch.size() > 1000) {
+        if (_curBatch.size() > 1000 || pNext - batchStart > MAX_BATCH_BYTES) {
           _jobs.add(std::move(_curBatch));
           _curBatch.clear();  // std doesnt guarantee that after move
           _curBatch.reserve(1000);
+          batchStart = pNext + 1;
         }
       }
 

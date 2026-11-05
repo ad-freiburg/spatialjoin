@@ -59,8 +59,7 @@ struct SweepVal {
   GeomType getType() const { return idType(id); }
 };
 
-// where a geometry in a sweep comes from: its join side (given by the
-// SweepEventList it came from), and the store it is stored in
+// where a geometry in a sweep comes from (side and store)
 struct GeomOrigin {
   bool side;
   uint8_t storeId;
@@ -161,12 +160,6 @@ class Sweeper {
 
   void log(const std::string& msg);
 
-  // with eventsB == 0, a self join over eventsA, otherwise a non-self join
-  // between eventsA (the left side) and eventsB (the right side). Each event
-  // references its geometry in the store given by BoxVal::storeId, so a single
-  // event list may hold geometries from several stores, and both event lists
-  // may hold geometries from the same store. The gids of the geometries of
-  // each side have to be unique.
   RelStats sweep(const SweepEventList* eventsA,
                  const SweepEventList* eventsB = 0);
 
