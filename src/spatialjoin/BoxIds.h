@@ -83,7 +83,7 @@ inline void getBoxIds(const util::geo::I32XSortedLine& line,
 
       if (!util::geo::intersects(box, envelope)) continue;
 
-      const util::geo::I32XSortedPolygon boxPoly{util::geo::I32Polygon(box)};
+      const util::geo::I32XSortedPolygon boxPoly(box);
 
       auto check = util::geo::intersectsContainsCovers(line, boxPoly, &firstInA,
                                                        &firstInB);
@@ -133,7 +133,7 @@ inline void getBoxIds(const util::geo::I32XSortedPolygon& poly,
 
       if (!util::geo::intersects(box, envelope)) continue;
 
-      const util::geo::I32XSortedPolygon boxPoly{util::geo::I32Polygon(box)};
+      const util::geo::I32XSortedPolygon boxPoly(box);
 
       const auto& de9im = util::geo::DE9IM(boxPoly, poly, &firstInA, &firstInB);
 
