@@ -2420,8 +2420,10 @@ void Sweeper::fillBatch(
   const auto& overlaps = actives->overlap_find_all({cur->loY, cur->upY});
 
   for (const auto& p : overlaps) {
-    // check if diagonal boxes intersect, if not, ignore this pair
-    if (_cfg.useDiagBox && !util::geo::intersects(p.v.b45, cur->b45)) continue;
+    // check if diagonal boxes intersect, if not, ignore this pair.
+    if (!p.v.b45.isNull() && !cur->b45.isNull() &&
+        !util::geo::intersects(p.v.b45, cur->b45))
+      continue;
 
     JobVal a(*cur, side);
     JobVal b(p.v);

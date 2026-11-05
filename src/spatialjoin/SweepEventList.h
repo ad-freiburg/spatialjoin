@@ -505,6 +505,10 @@ class SweepEventList {
     add(events.second);
   }
 
+  void add(size_t id, const util::geo::I32Box& bbox, uint8_t storeId) {
+    add(id, bbox, util::geo::I32Box(), 0, storeId);
+  }
+
   // add the IN and OUT event of meta (with unpadded boxes) to this list, using
   // store storeId. The boxes are padded for within-distance joins from the cfg
   void add(const PreparedGeomMeta& meta, uint8_t storeId) {

@@ -80,7 +80,11 @@ int main(int, char**) {
 
     // the left sweep event list
     sj::SweepEventList eventsLeft(cfg, ".", "spatialjoin-left");
-    for (const auto& meta : metasFr) eventsLeft.add(meta, storeIdFr);
+    // the typed ID and the bounding box are enough to add a geometry (the
+    // diagonal box pre-filter is not effective then and the duplicate removal
+    // does not do anything)
+    for (const auto& meta : metasFr)
+      eventsLeft.add(meta.id, meta.bbox, storeIdFr);
     for (const auto& meta : metasBuild)eventsLeft.add(meta, storeIdBuild);
 
     // the right sweep event list is filled during parsing
