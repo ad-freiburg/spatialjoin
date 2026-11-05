@@ -65,7 +65,7 @@ inline GeomType idType(size_t id) {
   return static_cast<GeomType>(id >> ID_TYPE_SHIFT);
 }
 
-// a folded gid (see GeometryStore::foldString()) stores its length in the byte
+// a folded gid stores its length in the byte
 // directly below the type bits, and up to FOLD_MAX_LEN chars below that
 const static size_t FOLD_LEN_SHIFT = ID_TYPE_SHIFT - 8;
 const static size_t FOLD_MAX_LEN = FOLD_LEN_SHIFT / 8;
@@ -77,8 +77,7 @@ struct BoxVal {
   int32_t upY;       // the upper Y value of the box
   int32_t val;       // the left X value of the box
   bool out : 1;      // whether this is an IN or OUT event
-  uint8_t storeId;   // the store (see GeometryCache::addStore()) the geometry
-                     // is stored in
+  uint8_t storeId;   // the store the geometry is in
   util::geo::I32Point point;
   size_t numAnchors;      // for polygons and lines: number of anchor points,
                           // used for DUPLICATE REMOVAL

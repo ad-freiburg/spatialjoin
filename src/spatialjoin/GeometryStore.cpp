@@ -22,8 +22,6 @@
 #include "util/Misc.h"
 #include "util/geo/Geo.h"
 
-const static size_t MAX_MEM_CACHE_SIZE = 3 * 1024 * 1024 * 20l;
-
 using sj::GeometryStore;
 using sj::GeomType;
 using sj::boxids::boxIdIsect;
@@ -313,17 +311,22 @@ size_t sj::TypedGeometryStore<sj::MultiGeom>::writeTo(const sj::MultiGeom& val,
 
 // ____________________________________________________________________________
 template <typename W>
-size_t sj::TypedGeometryStore<W>::add(const std::string& raw) {
+size_t sj::TypedGeometryStore<W>::add(const std::string& raw,
+                                      std::shared_ptr<W> val) {
   size_t ret = _geomsOffset;
   _geomsOffset += raw.size();
 
   if (_inMemory) {
     // cache for later use
-    std::istringstream ss(raw);
-    auto val = getFrom(0, ss);
-    _memStore[ret] = std::make_shared<W>(std::move(val.second));
+    if (val) {
+      _memStore[ret] = std::move(val);
+    } else {
+      std::istringstream ss(raw);
+      auto des = getFrom(0, ss);
+      _memStore[ret] = std::make_shared<W>(std::move(des.second));
+    }
 
-    if (_geomsOffset > MAX_MEM_CACHE_SIZE) {
+    if (_geomsOffset > _maxMemCacheSize) {
       _inMemory = false;
       openFile();
 
@@ -1149,9 +1152,12 @@ I32Box GeometryStore::add(const I32Polygon& poly, const std::string& gid,
   } else if (poly.getInners().size() == 0 && poly.getOuter().size() < 10 &&
              poly.getOuter().size() == densePoly.getOuter().size() &&
              subid == 0 && (!_cfg.useBoxIds || boxIds.front().first == 1)) {
+    auto geom =
+        std::make_shared<SimpleArea>(SimpleArea{gid, poly.getOuter()});
     std::stringstream str;
-    _simpleAreaStore.writeTo({gid, poly.getOuter()}, str);
+    _simpleAreaStore.writeTo(*geom, str);
     cur.raw = str.str();
+    cur.geom = std::move(geom);
 
     auto rightPoint = poly.getOuter().front();
 
@@ -1162,21 +1168,22 @@ I32Box GeometryStore::add(const I32Polygon& poly, const std::string& gid,
     cur.type = SIMPLE_POLYGON;
     cur.rightPoint = rightPoint;
     cur.meta.numAnchors = poly.size();
-    batch.simpleAreas.emplace_back(cur);
+    batch.simpleAreas.emplace_back(std::move(cur));
   } else {
     // careful, assign this before move below
     auto rightPoint = spoly.getOuter().rawRing().back().p;
 
+    auto geom = std::make_shared<Area>(
+        Area{gid, subid, std::move(spoly), std::move(boxIds)});
     std::stringstream str;
-    _areaStore.writeTo({gid, subid, std::move(spoly), boxIds}, str);
-    ;
-
+    _areaStore.writeTo(*geom, str);
     cur.raw = str.str();
+    cur.geom = std::move(geom);
 
     cur.type = POLYGON;
     cur.rightPoint = rightPoint;
     cur.meta.numAnchors = polySize;
-    batch.areas.emplace_back(cur);
+    batch.areas.emplace_back(std::move(cur));
   }
 
   return box;
@@ -1241,12 +1248,13 @@ I32Box GeometryStore::add(const I32Line& line, const std::string& gid,
           rising ? FOLDED_SIMPLE_LINE_RISING : FOLDED_SIMPLE_LINE_FALLING;
       batch.foldedSimpleLines.emplace_back(cur);
     } else {
+      auto geom = std::make_shared<SimpleLine>(SimpleLine{gid});
       std::stringstream str;
-      _simpleLineStore.writeTo({gid}, str);
-
+      _simpleLineStore.writeTo(*geom, str);
       cur.raw = str.str();
+      cur.geom = std::move(geom);
 
-      batch.simpleLines.emplace_back(cur);
+      batch.simpleLines.emplace_back(std::move(cur));
     }
   } else {
     // normal line
@@ -1254,14 +1262,17 @@ I32Box GeometryStore::add(const I32Line& line, const std::string& gid,
     if (sline.rawLine().empty()) return {};
     auto rightPoint = sline.rawLine().back().p;
 
+    auto geom = std::make_shared<Line>(
+        Line{gid, subid, std::move(sline), std::move(boxIds)});
     std::stringstream str;
-    _lineStore.writeTo({gid, subid, std::move(sline), boxIds}, str);
+    _lineStore.writeTo(*geom, str);
     cur.raw = str.str();
+    cur.geom = std::move(geom);
 
     cur.type = LINE;
     cur.rightPoint = rightPoint;
     cur.meta.numAnchors = lineSize;
-    batch.lines.emplace_back(cur);
+    batch.lines.emplace_back(std::move(cur));
   }
 
   return box;
@@ -1301,12 +1312,13 @@ I32Box GeometryStore::add(const I32Point& point, const std::string& gid,
     cur.type = FOLDED_POINT;
     batch.foldedPoints.emplace_back(cur);
   } else {
+    auto geom = std::make_shared<Point>(Point{gid, subid});
     std::stringstream str;
-    _pointStore.writeTo({gid, subid}, str);
-
+    _pointStore.writeTo(*geom, str);
     cur.raw = str.str();
+    cur.geom = std::move(geom);
 
-    batch.points.emplace_back(cur);
+    batch.points.emplace_back(std::move(cur));
   }
 
   return box;
@@ -1338,11 +1350,11 @@ void GeometryStore::addBatch(WriteBatch& cands, size_t t,
   {
     std::unique_lock<std::mutex> lock(_pointGeomCacheWriteMtx);
     for (auto& cand : cands.points) {
-      cand.meta.id = _pointStore.add(cand.raw);
+      cand.meta.id = _pointStore.add(cand.raw, std::static_pointer_cast<Point>(cand.geom));
     }
     for (auto& multi : cands.multiGeoms) {
       for (auto& cand : multi.members.points) {
-        cand.meta.id = _pointStore.add(cand.raw);
+        cand.meta.id = _pointStore.add(cand.raw, std::static_pointer_cast<Point>(cand.geom));
       }
     }
   }
@@ -1350,11 +1362,11 @@ void GeometryStore::addBatch(WriteBatch& cands, size_t t,
   {
     std::unique_lock<std::mutex> lock(_lineGeomCacheWriteMtx);
     for (auto& cand : cands.lines) {
-      cand.meta.id = _lineStore.add(cand.raw);
+      cand.meta.id = _lineStore.add(cand.raw, std::static_pointer_cast<Line>(cand.geom));
     }
     for (auto& multi : cands.multiGeoms) {
       for (auto& cand : multi.members.lines) {
-        cand.meta.id = _lineStore.add(cand.raw);
+        cand.meta.id = _lineStore.add(cand.raw, std::static_pointer_cast<Line>(cand.geom));
       }
     }
   }
@@ -1363,11 +1375,13 @@ void GeometryStore::addBatch(WriteBatch& cands, size_t t,
     std::unique_lock<std::mutex> lock(_simpleLineGeomCacheWriteMtx);
     for (auto& cand : cands.simpleLines) {
       cand.meta.id =
-          typedId(untypedId(_simpleLineStore.add(cand.raw)), cand.type);
+          typedId(untypedId(_simpleLineStore.add(
+              cand.raw, std::static_pointer_cast<SimpleLine>(cand.geom))), cand.type);
     }
     for (auto& multi : cands.multiGeoms) {
       for (auto& cand : multi.members.simpleLines) {
-        cand.meta.id = typedId(untypedId(_simpleLineStore.add(cand.raw)),
+        cand.meta.id = typedId(untypedId(_simpleLineStore.add(
+              cand.raw, std::static_pointer_cast<SimpleLine>(cand.geom))),
                                cand.type);
       }
     }
@@ -1390,11 +1404,11 @@ void GeometryStore::addBatch(WriteBatch& cands, size_t t,
   {
     std::unique_lock<std::mutex> lock(_simpleAreaGeomCacheWriteMtx);
     for (auto& cand : cands.simpleAreas) {
-      cand.meta.id = _simpleAreaStore.add(cand.raw);
+      cand.meta.id = _simpleAreaStore.add(cand.raw, std::static_pointer_cast<SimpleArea>(cand.geom));
     }
     for (auto& multi : cands.multiGeoms) {
       for (auto& cand : multi.members.simpleAreas) {
-        cand.meta.id = _simpleAreaStore.add(cand.raw);
+        cand.meta.id = _simpleAreaStore.add(cand.raw, std::static_pointer_cast<SimpleArea>(cand.geom));
       }
     }
   }
@@ -1402,11 +1416,11 @@ void GeometryStore::addBatch(WriteBatch& cands, size_t t,
   {
     std::unique_lock<std::mutex> lock(_areaGeomCacheWriteMtx);
     for (auto& cand : cands.areas) {
-      cand.meta.id = _areaStore.add(cand.raw);
+      cand.meta.id = _areaStore.add(cand.raw, std::static_pointer_cast<Area>(cand.geom));
     }
     for (auto& multi : cands.multiGeoms) {
       for (auto& cand : multi.members.areas) {
-        cand.meta.id = _areaStore.add(cand.raw);
+        cand.meta.id = _areaStore.add(cand.raw, std::static_pointer_cast<Area>(cand.geom));
       }
     }
   }
@@ -1415,6 +1429,8 @@ void GeometryStore::addBatch(WriteBatch& cands, size_t t,
   // be written once the IDs of their members are known
   std::vector<std::string> multiRaws;
   multiRaws.reserve(cands.multiGeoms.size());
+  std::vector<std::shared_ptr<MultiGeom>> multiGeoms;
+  multiGeoms.reserve(cands.multiGeoms.size());
 
   for (const auto& multi : cands.multiGeoms) {
     MultiGeom multiGeom{multi.gid, {}};
@@ -1440,12 +1456,14 @@ void GeometryStore::addBatch(WriteBatch& cands, size_t t,
     std::stringstream str;
     _multiStore.writeTo(multiGeom, str);
     multiRaws.push_back(str.str());
+    multiGeoms.push_back(std::make_shared<MultiGeom>(std::move(multiGeom)));
   }
 
   {
     std::unique_lock<std::mutex> lock(_multiGeomCacheWriteMtx);
     for (size_t i = 0; i < cands.multiGeoms.size(); i++) {
-      cands.multiGeoms[i].id = _multiStore.add(multiRaws[i]);
+      cands.multiGeoms[i].id =
+          _multiStore.add(multiRaws[i], std::move(multiGeoms[i]));
     }
     _numMultis += cands.multiGeoms.size();
   }

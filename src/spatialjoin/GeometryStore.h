@@ -87,16 +87,23 @@ struct Point {
 
 const static size_t WRITE_BUFF_SIZE = 1024 * 1024 * 4l;
 
+// default size (in bytes of serialized geometries) up to which a
+// TypedGeometryStore is kept in memory
+const static size_t DEFAULT_MAX_MEM_CACHE_S = 3 * 1024 * 1024 * 20l;
+
 template <typename W>
 class TypedGeometryStore {
  public:
-  // if persistOnDisk is true, flush() writes the geoms to
-  // a file <dir>/<prefix><type>
+  // store is kept in memory until the geometries exceed
+  // maxMemCacheSize bytes. If persistOnDisk is true, flush() writes the geoms
+  // to a file <dir>/<prefix><type>
   TypedGeometryStore(size_t numthreads, const std::string& dir,
-                     const std::string& prefix, bool persistOnDisk = false)
+                     const std::string& prefix, bool persistOnDisk = false,
+                     size_t maxMemCacheSize = DEFAULT_MAX_MEM_CACHE_S)
       : _numThreads(numthreads),
         _dir(dir),
         _prefix(prefix),
+        _maxMemCacheSize(maxMemCacheSize),
         _persistOnDisk(persistOnDisk) {}
 
   TypedGeometryStore(size_t numthreads, const std::string& path);
@@ -109,7 +116,8 @@ class TypedGeometryStore {
     if (_writeBuffer) delete[] _writeBuffer;
   }
 
-  size_t add(const std::string& raw);
+  // may optionally provide a pointer to the processed geom
+  size_t add(const std::string& raw, std::shared_ptr<W> val = nullptr);
   size_t writeTo(const W& val, std::ostream& str) const;
 
   std::pair<size_t, W> getFrom(size_t off, std::istream& str) const;
@@ -176,6 +184,7 @@ class TypedGeometryStore {
     _fName.swap(other._fName);
     _memStore.swap(other._memStore);
     std::swap(_inMemory, other._inMemory);
+    std::swap(_maxMemCacheSize, other._maxMemCacheSize);
     std::swap(_persistOnDisk, other._persistOnDisk);
   }
 
@@ -216,6 +225,8 @@ class TypedGeometryStore {
   std::map<size_t, std::shared_ptr<W>> _memStore;
   bool _inMemory = true;
 
+  size_t _maxMemCacheSize = DEFAULT_MAX_MEM_CACHE_S;
+
   // whether flush() writes the geometries to a file which is kept
   bool _persistOnDisk = false;
 
@@ -223,6 +234,7 @@ class TypedGeometryStore {
 };
 struct WriteCand {
   std::string raw;
+  std::shared_ptr<void> geom;
   std::string gid;
   size_t subid;
   PreparedGeomMeta meta;
@@ -269,16 +281,24 @@ class GeometryStore {
  public:
   // if persistOnDisk is true, flush() writes the geometries to files
   // <cache>/<prefix><type>, which can be read again with
-  // GeometryStore(cfg, cache, prefix)
+  // GeometryStore(cfg, cache, prefix). Each typed store is kept in memory
+  // until its serialized geometries exceed maxMemCacheSize bytes
   GeometryStore(const SpatialJoinCfg& cfg, const std::string& cache,
-                const std::string& prefix, bool persistOnDisk)
+                const std::string& prefix, bool persistOnDisk,
+                size_t maxMemCacheSize = DEFAULT_MAX_MEM_CACHE_S)
       : _cfg(cfg),
-        _pointStore(cfg.numCacheThreads, cache, prefix, persistOnDisk),
-        _areaStore(cfg.numCacheThreads, cache, prefix, persistOnDisk),
-        _simpleAreaStore(cfg.numCacheThreads, cache, prefix, persistOnDisk),
-        _lineStore(cfg.numCacheThreads, cache, prefix, persistOnDisk),
-        _simpleLineStore(cfg.numCacheThreads, cache, prefix, persistOnDisk),
-        _multiStore(cfg.numCacheThreads, cache, prefix, persistOnDisk) {}
+        _pointStore(cfg.numCacheThreads, cache, prefix,
+                    persistOnDisk, maxMemCacheSize),
+        _areaStore(cfg.numCacheThreads, cache, prefix,
+                    persistOnDisk, maxMemCacheSize),
+        _simpleAreaStore(cfg.numCacheThreads, cache, prefix,
+                    persistOnDisk, maxMemCacheSize),
+        _lineStore(cfg.numCacheThreads, cache, prefix,
+                    persistOnDisk, maxMemCacheSize),
+        _simpleLineStore(cfg.numCacheThreads, cache, prefix,
+                    persistOnDisk, maxMemCacheSize),
+        _multiStore(cfg.numCacheThreads, cache, prefix,
+                    persistOnDisk, maxMemCacheSize) {}
 
   // construct a GeometryStore from the files persisted in dir with prefix
   // by a GeometryStore constructed with persistOnDisk
