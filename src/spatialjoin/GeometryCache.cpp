@@ -79,8 +79,8 @@ std::shared_ptr<W> GeometryCache::get(const TypedGeometryStore<W>& store,
 
   if (it == cache.idMap[tid].end()) {
     // if not, load, cache and return
-    const auto& val = store.getFrom(off, tid);
-    return this->cache(cache, off, val.second, val.first, tid);
+    auto val = store.getFrom(off, tid);
+    return this->cache(cache, off, std::move(val.second), val.first, tid);
   }
 
   // if in cache, move to front of list and return
@@ -109,8 +109,8 @@ std::shared_ptr<sj::GeomId> GeometryCache::getId(
 
   if (it == cache.idMap[tid].end()) {
     // if not, load, cache and return
-    const auto& val = store.getId(off, tid);
-    return this->cache(cache, off, val.second, val.first, tid);
+    auto val = store.getId(off, tid);
+    return this->cache(cache, off, std::move(val.second), val.first, tid);
   }
 
   // if in cache, move to front of list and return
@@ -122,7 +122,7 @@ std::shared_ptr<sj::GeomId> GeometryCache::getId(
 // _____________________________________________________________________________
 template <typename W>
 std::shared_ptr<W> GeometryCache::cache(TypedGeometryCache<W>& cache,
-                                        size_t off, const W& val,
+                                        size_t off, W&& val,
                                         size_t estSize, size_t tid) const {
   // if cache is too large, pop last elements until we have space
   while (cache.maxSize > 0 && cache.vals[tid].size() > 0 &&
@@ -134,7 +134,8 @@ std::shared_ptr<W> GeometryCache::cache(TypedGeometryCache<W>& cache,
   }
 
   // push value to front
-  cache.vals[tid].push_front({off, {estSize, std::make_shared<W>(val)}});
+  cache.vals[tid].push_front(
+      {off, {estSize, std::make_shared<W>(std::move(val))}});
 
   // if cache has too many elements, pop last element
   if (cache.maxNumElements > 0 &&

@@ -149,7 +149,7 @@ class GeometryCache {
 
   template <typename W>
   std::shared_ptr<W> cache(TypedGeometryCache<W>& cache, size_t off,
-                           const W& val, size_t estSize, size_t tid) const;
+                           W&& val, size_t estSize, size_t tid) const;
 
   template <typename W>
   static std::pair<size_t, size_t> size(const TypedGeometryCache<W>& cache);

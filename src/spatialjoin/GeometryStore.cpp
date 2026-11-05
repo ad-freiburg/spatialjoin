@@ -78,7 +78,7 @@ sj::TypedGeometryStore<sj::SimpleLine>::getFrom(size_t off,
     str.read(reinterpret_cast<char*>(&ret.id[0]), len * sizeof(char));
   }
 
-  return {sizeof(char) * len, ret};
+  return {sizeof(char) * len, std::move(ret)};
 }
 
 // ____________________________________________________________________________
@@ -111,7 +111,7 @@ std::pair<size_t, sj::MultiGeom> sj::TypedGeometryStore<sj::MultiGeom>::getFrom(
 
   estSize += size * sizeof(BoxVal);
 
-  return {estSize, ret};
+  return {estSize, std::move(ret)};
 }
 
 // ____________________________________________________________________________
@@ -134,7 +134,7 @@ std::pair<size_t, sj::Point> sj::TypedGeometryStore<sj::Point>::getFrom(
   // sub id
   str.read(reinterpret_cast<char*>(&ret.subId), sizeof(size_t));
 
-  return {len * sizeof(char) + sizeof(size_t), ret};
+  return {len * sizeof(char) + sizeof(size_t), std::move(ret)};
 }
 
 // ____________________________________________________________________________
@@ -206,7 +206,7 @@ std::pair<size_t, sj::Line> sj::TypedGeometryStore<sj::Line>::getFrom(
     estSize += sizeof(sj::boxids::BoxId) * numBoxIds;
   }
 
-  return {estSize, ret};
+  return {estSize, std::move(ret)};
 }
 
 // ____________________________________________________________________________
@@ -245,7 +245,7 @@ std::pair<size_t, sj::Area> sj::TypedGeometryStore<sj::Area>::getFrom(
     estSize += sizeof(sj::boxids::BoxId) * numBoxIds;
   }
 
-  return {estSize, ret};
+  return {estSize, std::move(ret)};
 }
 
 // ____________________________________________________________________________
@@ -320,7 +320,7 @@ size_t sj::TypedGeometryStore<W>::add(const std::string& raw) {
   if (_inMemory) {
     // cache for later use
     std::istringstream ss(raw);
-    const auto& val = getFrom(0, ss);
+    auto val = getFrom(0, ss);
     _memStore[ret] = std::make_shared<W>(std::move(val.second));
 
     if (_geomsOffset > MAX_MEM_CACHE_SIZE) {
@@ -504,7 +504,7 @@ std::pair<size_t, sj::GeomId> sj::TypedGeometryStore<W>::getIdFrom(
   // sub id
   if (hasSubId) str.read(reinterpret_cast<char*>(&ret.subId), sizeof(size_t));
 
-  return {len * sizeof(char) + sizeof(size_t), ret};
+  return {len * sizeof(char) + sizeof(size_t), std::move(ret)};
 }
 
 // ____________________________________________________________________________
