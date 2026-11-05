@@ -1205,7 +1205,7 @@ I32Box GeometryStore::add(const I32Line& line, const std::string& gid,
   BoxIdList boxIds;
 
   if (_cfg.useBoxIds) {
-    boxIds = packBoxIds(getBoxIds(line, rawBox));
+    boxIds = packBoxIds(getBoxIds(sline, rawBox));
   }
 
   size_t lineSize = line.size();
