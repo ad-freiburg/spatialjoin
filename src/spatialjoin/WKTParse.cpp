@@ -128,7 +128,8 @@ void WKTParser::parsePoint(util::geo::DPoint point, size_t id) {
 
 // _____________________________________________________________________________
 void WKTParser::parseFd(int fd) {
-  std::vector<unsigned char> buf(READ_BUFF_SIZE);
+  std::vector<unsigned char, util::no_init_allocator<unsigned char>> buf(
+      READ_BUFF_SIZE);
   ssize_t len;
 
   while ((len = util::readAll(fd, buf.data(), buf.size())) > 0) {
@@ -169,7 +170,8 @@ void WKTParser::parseGzFile(const std::string& path) {
     throw std::runtime_error("Could not open input file " + path);
   }
 
-  std::vector<unsigned char> buf(READ_BUFF_SIZE);
+  std::vector<unsigned char, util::no_init_allocator<unsigned char>> buf(
+      READ_BUFF_SIZE);
   ssize_t len;
 
   while ((len = util::zreadAll(f, buf.data(), buf.size())) > 0) {
@@ -198,7 +200,8 @@ void WKTParser::parseBz2File(const std::string& path) {
     throw std::runtime_error("Could not open input file " + path);
   }
 
-  std::vector<unsigned char> buf(READ_BUFF_SIZE);
+  std::vector<unsigned char, util::no_init_allocator<unsigned char>> buf(
+      READ_BUFF_SIZE);
   ssize_t len;
 
   while ((len = util::bz2readAll(f, buf.data(), buf.size())) > 0) {
