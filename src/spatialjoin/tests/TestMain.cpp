@@ -397,26 +397,23 @@ int main(int, char**) {
     TEST(numMultiEvents, ==, 2);
   }
 
-  auto mkCfg = [](bool useBoxIds, bool useArea, bool useDiagBox) {
+  auto mkCfg = [](bool useBoxIds, bool useDiagBox) {
     sj::SpatialJoinCfg cfg;
     cfg.numThreads = NUM_THREADS;
     cfg.numCacheThreads = NUM_THREADS;
     cfg.geomCacheMaxSize = 1000;
     cfg.geomCacheMaxNumElements = 1000;
     cfg.useBoxIds = useBoxIds;
-    cfg.useArea = useArea;
     cfg.useDiagBox = useDiagBox;
     return cfg;
   };
 
-  sj::SpatialJoinCfg baseline = mkCfg(false, false, false);
-  sj::SpatialJoinCfg all = mkCfg(true, true, true);
-  sj::SpatialJoinCfg noSurfaceArea = mkCfg(true, false, true);
-  sj::SpatialJoinCfg noBoxIds = mkCfg(false, true, true);
-  sj::SpatialJoinCfg noDiagBox = mkCfg(true, true, false);
+  sj::SpatialJoinCfg baseline = mkCfg(false, false);
+  sj::SpatialJoinCfg all = mkCfg(true, true);
+  sj::SpatialJoinCfg noBoxIds = mkCfg(false, true);
+  sj::SpatialJoinCfg noDiagBox = mkCfg(true, false);
 
-  std::vector<sj::SpatialJoinCfg> cfgs{baseline, all, noSurfaceArea, noBoxIds,
-                                       noDiagBox};
+  std::vector<sj::SpatialJoinCfg> cfgs{baseline, all, noBoxIds, noDiagBox};
 
   for (auto cfg : cfgs) {
     {

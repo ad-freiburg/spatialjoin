@@ -97,8 +97,6 @@ void printHelp(int argc, char** argv) {
       << "disable box id criteria for contains/covers/intersect\n"
       << std::setw(42) << " "
       << "computation\n"
-      << std::setw(42) << "  --no-surface-area"
-      << "disable surface area criteria for polygon contains/covers\n"
       << std::setw(42) << "  --no-diag-box"
       << "disable diagonal bounding-box based pre-filter\n\n"
       << std::setfill(' ') << std::left << "Misc:\n"
@@ -156,7 +154,6 @@ int main(int argc, char** argv) {
   bool haversineApprox = DEFAULT_CFG.haversineApprox;
 
   bool useBoxIds = DEFAULT_CFG.useBoxIds;
-  bool useArea = DEFAULT_CFG.useArea;
   bool useDiagBox = DEFAULT_CFG.useDiagBox;
   bool noGeometryChecks = DEFAULT_CFG.noGeometryChecks;
   bool computeDE9IM = DEFAULT_CFG.computeDE9IM;
@@ -223,8 +220,6 @@ int main(int argc, char** argv) {
           wktStrict = true;
         } else if (cur == "--no-box-ids") {
           useBoxIds = false;
-        } else if (cur == "--no-surface-area") {
-          useArea = false;
         } else if (cur == "--no-diag-box") {
           useDiagBox = false;
         } else if (cur == "--no-geometry-checks") {
@@ -381,7 +376,6 @@ int main(int argc, char** argv) {
   cfg.sepOverlaps = overlaps;
   cfg.sepCrosses = crosses;
   cfg.useBoxIds = useBoxIds;
-  cfg.useArea = useArea;
   cfg.useDiagBox = useDiagBox;
   cfg.noGeometryChecks = noGeometryChecks;
   cfg.withinDist = withinDist;

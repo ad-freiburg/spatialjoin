@@ -26,7 +26,6 @@ struct SpatialJoinCfg {
   std::string sepOverlaps = " overlaps ";
   std::string sepCrosses = " crosses ";
   bool useBoxIds = true;
-  bool useArea = true;
   bool useDiagBox = true;
   bool noGeometryChecks = false;
   double withinDist = -1;  // < 0: no distance join
