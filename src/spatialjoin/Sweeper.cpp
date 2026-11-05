@@ -493,7 +493,8 @@ RelStats Sweeper::sweep(const SweepEventList* eventsA,
 
   _cancelled = false;
 
-  const size_t batchSize = 100000;
+  const size_t maxBatchSize = 100000;
+  size_t batchSize = 100;
   JobBatch curBatch;
 
   util::geo::IntervalIdx<int32_t, SweepVal> actives[2];
@@ -672,6 +673,7 @@ RelStats Sweeper::sweep(const SweepEventList* eventsA,
           checkPairs += curBatch.size();
           if (!_cfg.noGeometryChecks) _jobs.add(std::move(curBatch));
           curBatch.clear();  // std doesnt guarantee that after move
+          batchSize = std::min(2 * batchSize, maxBatchSize);
           curBatch.reserve(batchSize + 100);
         }
       }
