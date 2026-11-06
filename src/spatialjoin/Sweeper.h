@@ -10,6 +10,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+#include <algorithm>
 #include <atomic>
 #include <condition_variable>
 #include <functional>
@@ -152,7 +153,7 @@ class Sweeper {
   Sweeper(SpatialJoinCfg cfg, const GeometryCache* geomCache)
       : _cfg(cfg),
         _geomCache(geomCache),
-        _jobs(100),
+        _jobs(std::max<size_t>(1, 2 * cfg.numThreads)),
         _dontNeedFullDE9IM(!_cfg.computeDE9IM &&
                            _cfg.de9imFilter == util::geo::FANY) {}
 
