@@ -331,7 +331,7 @@ int main(int, char**) {
     // the metaCb of GeometryStore::addBatch() is called once for each
     // geometry, also for multi geometries
     sj::SpatialJoinCfg cfg;
-    cfg.numThreads = cfg.numCacheThreads = 1;
+    cfg.numThreads = cfg.numCacheBuckets = 1;
     sj::GeometryStore store(cfg, ".", ".spatialjoin", false);
     SweepEventList events(cfg, ".", ".spatialjoin");
 
@@ -400,7 +400,7 @@ int main(int, char**) {
   auto mkCfg = [](bool useBoxIds, bool useDiagBox) {
     sj::SpatialJoinCfg cfg;
     cfg.numThreads = NUM_THREADS;
-    cfg.numCacheThreads = NUM_THREADS;
+    cfg.numCacheBuckets = NUM_THREADS;
     cfg.geomCacheMaxSize = 1000;
     cfg.geomCacheMaxNumElements = 1000;
     cfg.useBoxIds = useBoxIds;
@@ -1234,11 +1234,11 @@ int main(int, char**) {
           fullRun(TEST_DATASET_DIR "/" + dataset, cfg, &singleStats);
 
       cfg.numThreads = 4;
-      cfg.numCacheThreads = 4;
+      cfg.numCacheBuckets = 4;
 
       for (size_t i = 0; i < 3; i++) {
         cfg.numThreads = 4 - i;
-        cfg.numCacheThreads = 4 - i;
+        cfg.numCacheBuckets = 4 - i;
         RunStats multiStats;
         TEST(sortedRels(single) ==
              sortedRels(
@@ -1342,11 +1342,11 @@ int main(int, char**) {
             fullRun(TEST_DATASET_DIR "/" + dataset, cfg, &singleStats);
 
         cfg.numThreads = 4;
-        cfg.numCacheThreads = 4;
+        cfg.numCacheBuckets = 4;
 
         for (size_t i = 0; i < 3; i++) {
           cfg.numThreads = 4 - i;
-          cfg.numCacheThreads = 4 - i;
+          cfg.numCacheBuckets = 4 - i;
           RunStats multiStats;
           TEST(sortedRels(single) ==
                sortedRels(

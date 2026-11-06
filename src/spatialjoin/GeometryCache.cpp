@@ -12,6 +12,8 @@
 #include <algorithm>
 #include <cassert>
 #include <climits>
+#include <iterator>
+#include <tuple>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -70,24 +72,21 @@ std::shared_ptr<W> GeometryCache::get(const TypedGeometryStore<W>& store,
   // completely circumvent cache system
   if (store.inMemory()) return store.getFromMem(off);
 
-  tid = tid % _cfg.numCacheThreads;
+  size_t cid = off % _cfg.numCacheBuckets;
 
-  std::unique_lock<std::mutex> lock(cache.mutexes[tid]);
-
-  // check if value is in cache
-  auto it = cache.idMap[tid].find(off);
-
-  if (it == cache.idMap[tid].end()) {
-    // if not, load, cache and return
-    auto val = store.getFrom(off, tid);
-    return this->cache(cache, off, std::move(val.second), val.first, tid);
+  {
+    SharedLock lock(cache.mutexes[cid]);
+    auto it = cache.idMap[cid].find(off);
+    if (it != cache.idMap[cid].end()) {
+      it->second->second.touched.store(true, std::memory_order_relaxed);
+      return it->second->second.val;
+    }
   }
 
-  // if in cache, move to front of list and return
-  // splice only changes pointers in the linked list, no copying here
-  cache.vals[tid].splice(cache.vals[tid].begin(), cache.vals[tid], it->second);
+  // not in cache!
+  auto val = store.getFrom(off, tid);
 
-  return it->second->second.val;
+  return this->cache(cache, off, std::move(val.second), val.first, cid);
 }
 
 // _____________________________________________________________________________
@@ -100,59 +99,69 @@ std::shared_ptr<sj::GeomId> GeometryCache::getId(
     return std::make_shared<GeomId>(store.getId(off, 0).second);
   }
 
-  tid = tid % _cfg.numCacheThreads;
+  size_t cid = off % _cfg.numCacheBuckets;
 
-  std::unique_lock<std::mutex> lock(cache.mutexes[tid]);
-
-  // check if value is in cache
-  auto it = cache.idMap[tid].find(off);
-
-  if (it == cache.idMap[tid].end()) {
-    // if not, load, cache and return
-    auto val = store.getId(off, tid);
-    return this->cache(cache, off, std::move(val.second), val.first, tid);
+  {
+    SharedLock lock(cache.mutexes[cid]);
+    auto it = cache.idMap[cid].find(off);
+    if (it != cache.idMap[cid].end()) {
+      it->second->second.touched.store(true, std::memory_order_relaxed);
+      return it->second->second.val;
+    }
   }
 
-  // if in cache, move to front of list and return
-  cache.vals[tid].splice(cache.vals[tid].begin(), cache.vals[tid], it->second);
+  // not in cache!
+  auto val = store.getId(off, tid);
 
-  return it->second->second.val;
+  return this->cache(cache, off, std::move(val.second), val.first, cid);
 }
 
 // _____________________________________________________________________________
 template <typename W>
 std::shared_ptr<W> GeometryCache::cache(TypedGeometryCache<W>& cache,
-                                        size_t off, W&& val,
-                                        size_t estSize, size_t tid) const {
-  // if cache is too large, pop last elements until we have space
-  while (cache.maxSize > 0 && cache.vals[tid].size() > 0 &&
-         cache.valSizes[tid] > cache.maxSize) {
-    auto last = cache.vals[tid].rbegin();
-    cache.valSizes[tid] -= last->second.estimatedSize;
-    cache.idMap[tid].erase(last->first);
-    cache.vals[tid].pop_back();
+                                        size_t off, W&& val, size_t estSize,
+                                        size_t cid) const {
+  ExclusiveLock lock(cache.mutexes[cid]);
+
+  // another thread may have inserted the value while we were reading it,
+  // in that case re-use that
+  auto it = cache.idMap[cid].find(off);
+  if (it != cache.idMap[cid].end()) {
+    it->second->second.touched.store(true, std::memory_order_relaxed);
+    return it->second->second.val;
+  }
+
+  auto& vals = cache.vals[cid];
+
+  // while the cache is too large or has too many elements, evict the last
+  // element
+  while (vals.size() > 0 &&
+         ((cache.maxSize > 0 && cache.valSizes[cid] > cache.maxSize) ||
+          (cache.maxNumElements > 0 &&
+           vals.size() >= cache.maxNumElements))) {
+    auto last = std::prev(vals.end());
+    if (last->second.touched.load(std::memory_order_relaxed)) {
+      last->second.touched.store(false, std::memory_order_relaxed);
+      vals.splice(vals.begin(), vals, last);
+      continue;
+    }
+    cache.valSizes[cid] -= last->second.estimatedSize;
+    cache.idMap[cid].erase(last->first);
+    vals.pop_back();
   }
 
   // push value to front
-  cache.vals[tid].push_front(
-      {off, {estSize, std::make_shared<W>(std::move(val))}});
-
-  // if cache has too many elements, pop last element
-  if (cache.maxNumElements > 0 &&
-      cache.vals[tid].size() > cache.maxNumElements) {
-    auto last = cache.vals[tid].rbegin();
-    cache.valSizes[tid] -= last->second.estimatedSize;
-    cache.idMap[tid].erase(last->first);
-    cache.vals[tid].pop_back();
-  }
+  vals.emplace_front(std::piecewise_construct, std::forward_as_tuple(off),
+                     std::forward_as_tuple(
+                         estSize, std::make_shared<W>(std::move(val))));
 
   // set map to front iterator
-  cache.idMap[tid][off] = cache.vals[tid].begin();
+  cache.idMap[cid][off] = vals.begin();
 
   // increase total estimated size
-  cache.valSizes[tid] += estSize;
+  cache.valSizes[cid] += estSize;
 
-  return cache.vals[tid].front().second.val;
+  return vals.front().second.val;
 }
 
 // _____________________________________________________________________________
@@ -162,7 +171,7 @@ std::pair<size_t, size_t> GeometryCache::size(
   size_t numEntries = 0;
   size_t bytes = 0;
   for (size_t tid = 0; tid < cache.vals.size(); tid++) {
-    std::unique_lock<std::mutex> lock(cache.mutexes[tid]);
+    SharedLock lock(cache.mutexes[tid]);
     numEntries += cache.vals[tid].size();
     bytes += cache.valSizes[tid];
   }

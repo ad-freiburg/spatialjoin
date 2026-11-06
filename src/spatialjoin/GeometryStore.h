@@ -12,6 +12,9 @@
 #include <memory>
 #include <mutex>
 #include <string>
+#if __cplusplus >= 201402L
+#include <shared_mutex>
+#endif
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -90,6 +93,16 @@ const static size_t WRITE_BUFF_SIZE = 1024 * 1024 * 4l;
 // default size (in bytes of serialized geometries) up to which a
 // TypedGeometryStore is kept in memory
 const static size_t DEFAULT_MAX_MEM_CACHE_S = 3 * 1024 * 1024 * 20l;
+
+// if available, use a shared_timed_mutex, if not, fall back to a normal mutex
+#if __cplusplus >= 201402L
+typedef std::shared_timed_mutex SharedMutex;
+typedef std::shared_lock<SharedMutex> SharedLock;
+#else
+typedef std::mutex SharedMutex;
+typedef std::unique_lock<SharedMutex> SharedLock;
+#endif
+typedef std::unique_lock<SharedMutex> ExclusiveLock;
 
 template <typename W>
 class TypedGeometryStore {
@@ -287,17 +300,17 @@ class GeometryStore {
                 const std::string& prefix, bool persistOnDisk,
                 size_t maxMemCacheSize = DEFAULT_MAX_MEM_CACHE_S)
       : _cfg(cfg),
-        _pointStore(cfg.numCacheThreads, cache, prefix,
+        _pointStore(cfg.numThreads + 1, cache, prefix,
                     persistOnDisk, maxMemCacheSize),
-        _areaStore(cfg.numCacheThreads, cache, prefix,
+        _areaStore(cfg.numThreads + 1, cache, prefix,
                     persistOnDisk, maxMemCacheSize),
-        _simpleAreaStore(cfg.numCacheThreads, cache, prefix,
+        _simpleAreaStore(cfg.numThreads + 1, cache, prefix,
                     persistOnDisk, maxMemCacheSize),
-        _lineStore(cfg.numCacheThreads, cache, prefix,
+        _lineStore(cfg.numThreads + 1, cache, prefix,
                     persistOnDisk, maxMemCacheSize),
-        _simpleLineStore(cfg.numCacheThreads, cache, prefix,
+        _simpleLineStore(cfg.numThreads + 1, cache, prefix,
                     persistOnDisk, maxMemCacheSize),
-        _multiStore(cfg.numCacheThreads, cache, prefix,
+        _multiStore(cfg.numThreads + 1, cache, prefix,
                     persistOnDisk, maxMemCacheSize) {}
 
   // construct a GeometryStore from the files persisted in dir with prefix
@@ -305,19 +318,19 @@ class GeometryStore {
   GeometryStore(const SpatialJoinCfg& cfg, const std::string& dir,
                 const std::string& prefix)
       : _cfg(cfg),
-        _pointStore(cfg.numCacheThreads,
+        _pointStore(cfg.numThreads + 1,
                     TypedGeometryStore<Point>::persistFName(dir, prefix)),
-        _areaStore(cfg.numCacheThreads,
+        _areaStore(cfg.numThreads + 1,
                    TypedGeometryStore<Area>::persistFName(dir, prefix)),
         _simpleAreaStore(
-            cfg.numCacheThreads,
+            cfg.numThreads + 1,
             TypedGeometryStore<SimpleArea>::persistFName(dir, prefix)),
-        _lineStore(cfg.numCacheThreads,
+        _lineStore(cfg.numThreads + 1,
                    TypedGeometryStore<Line>::persistFName(dir, prefix)),
         _simpleLineStore(
-            cfg.numCacheThreads,
+            cfg.numThreads + 1,
             TypedGeometryStore<SimpleLine>::persistFName(dir, prefix)),
-        _multiStore(cfg.numCacheThreads,
+        _multiStore(cfg.numThreads + 1,
                     TypedGeometryStore<MultiGeom>::persistFName(dir, prefix)) {}
 
   void log(const std::string& msg);

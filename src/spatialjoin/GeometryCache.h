@@ -4,6 +4,7 @@
 #ifndef SPATIALJOINS_GEOMETRYCACHE_H_
 #define SPATIALJOINS_GEOMETRYCACHE_H_
 
+#include <atomic>
 #include <list>
 #include <memory>
 #include <mutex>
@@ -20,18 +21,21 @@ namespace sj {
 
 template <typename W>
 struct ValEntry {
+  ValEntry(size_t estimatedSize, std::shared_ptr<W> val)
+      : estimatedSize(estimatedSize), val(std::move(val)), touched(false) {}
   size_t estimatedSize;
   std::shared_ptr<W> val;
+
+  mutable std::atomic<bool> touched;
 };
 
-// per-thread LRU caches for the geometries of a single GeometryStore
 template <typename W>
 struct TypedGeometryCache {
-  TypedGeometryCache(size_t maxSize, size_t maxNumElements, size_t numThreads)
-      : vals(numThreads),
-        idMap(numThreads),
-        valSizes(numThreads),
-        mutexes(numThreads),
+  TypedGeometryCache(size_t maxSize, size_t maxNumElements, size_t numBuckets)
+      : vals(numBuckets),
+        idMap(numBuckets),
+        valSizes(numBuckets),
+        mutexes(numBuckets),
         maxSize(maxSize),
         maxNumElements(maxNumElements) {}
 
@@ -40,7 +44,7 @@ struct TypedGeometryCache {
       size_t, typename std::list<std::pair<size_t, ValEntry<W>>>::iterator>>
       idMap;
   std::vector<size_t> valSizes;
-  mutable std::vector<std::mutex> mutexes;
+  mutable std::vector<SharedMutex> mutexes;
 
   size_t maxSize, maxNumElements;
 };
@@ -90,7 +94,7 @@ class GeometryCache {
   }
 
   // the gid and sub id of the area / line with id, read without reading the
-  // geometry, and cached in the LRU id cache of thread tid
+  // geometry, and cached in the id cache
   GeomId getAreaId(size_t id, size_t tid, size_t storeId = 0) const {
     return *getId(_stores[storeId]->areaStore(), _caches[storeId]->areaIdCache,
                   id, tid);
@@ -104,23 +108,23 @@ class GeometryCache {
   std::pair<size_t, size_t> size() const;
 
  private:
-  // the LRU caches for the geometries of a single GeometryStore
+  // the caches for the geometries of a single GeometryStore
   struct StoreCaches {
     StoreCaches(const SpatialJoinCfg& cfg)
         : pointCache(cfg.geomCacheMaxSize, cfg.geomCacheMaxNumElements,
-                     cfg.numCacheThreads),
+                     cfg.numCacheBuckets),
           areaCache(cfg.geomCacheMaxSize, cfg.geomCacheMaxNumElements,
-                    cfg.numCacheThreads),
+                    cfg.numCacheBuckets),
           simpleAreaCache(cfg.geomCacheMaxSize, cfg.geomCacheMaxNumElements,
-                          cfg.numCacheThreads),
+                          cfg.numCacheBuckets),
           lineCache(cfg.geomCacheMaxSize, cfg.geomCacheMaxNumElements,
-                    cfg.numCacheThreads),
+                    cfg.numCacheBuckets),
           simpleLineCache(cfg.geomCacheMaxSize, cfg.geomCacheMaxNumElements,
-                          cfg.numCacheThreads),
+                          cfg.numCacheBuckets),
           areaIdCache(cfg.geomCacheMaxSize, cfg.geomCacheMaxNumElements,
-                      cfg.numCacheThreads),
+                      cfg.numCacheBuckets),
           lineIdCache(cfg.geomCacheMaxSize, cfg.geomCacheMaxNumElements,
-                      cfg.numCacheThreads) {}
+                      cfg.numCacheBuckets) {}
 
     TypedGeometryCache<Point> pointCache;
     TypedGeometryCache<Area> areaCache;
@@ -133,15 +137,14 @@ class GeometryCache {
     TypedGeometryCache<GeomId> lineIdCache;
   };
 
-  // returns the geometry stored at off in store, cached in the LRU cache of
-  // thread tid
+  // returns the geometry stored at off in store, cached in the cache bucket of
+  // off
   template <typename W>
   std::shared_ptr<W> get(const TypedGeometryStore<W>& store,
                          TypedGeometryCache<W>& cache, size_t off,
                          size_t tid) const;
 
   // returns the gid and sub id of the geometry stored at off in store, cached
-  // in the LRU id cache of thread tid
   template <typename W>
   std::shared_ptr<GeomId> getId(const TypedGeometryStore<W>& store,
                                 TypedGeometryCache<GeomId>& cache, size_t off,

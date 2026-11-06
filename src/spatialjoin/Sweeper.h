@@ -16,9 +16,6 @@
 #include <functional>
 #include <mutex>
 #include <queue>
-#if __cplusplus >= 201402L
-#include <shared_mutex>
-#endif
 #include <thread>
 #include <unordered_map>
 #include <unordered_set>
@@ -120,16 +117,6 @@ typedef std::vector<Job> JobBatch;
 
 // intersects, contains, covers, touches, crosses / overlaps
 typedef std::tuple<bool, bool, bool, bool, bool> GeomCheckRes;
-
-// if available, use a shared_timed_mutex, if not, fall back to a normal mutex
-#if __cplusplus >= 201402L
-typedef std::shared_timed_mutex SharedMutex;
-typedef std::shared_lock<SharedMutex> SharedLock;
-#else
-typedef std::mutex SharedMutex;
-typedef std::unique_lock<SharedMutex> SharedLock;
-#endif
-typedef std::unique_lock<SharedMutex> ExclusiveLock;
 
 // a position in the sweep events of the multi geometries merged in during the
 // sweep, as (slot of the multi geometry, position of the event)

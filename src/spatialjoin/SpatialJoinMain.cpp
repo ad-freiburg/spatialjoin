@@ -106,18 +106,18 @@ void printHelp(int argc, char** argv) {
       << "  --num-threads (default: " + std::to_string(NUM_THREADS) + ")"
       << "number of threads for geometric computation\n"
       << std::setw(42)
-      << "  --num-caches (default: " + std::to_string(NUM_THREADS) + ")"
-      << "number of geometry caches (if < --num-threads, syncing)\n"
+      << "  --num-cache-buckets (default: " + std::to_string(NUM_THREADS) + ")"
+      << "number of geometry cache buckets\n"
       << std::setw(42)
       << "  --cache-max-size (default: " + std::to_string(DEFAULT_CACHE_SIZE) +
              ")"
       << "maximum approx. size in bytes of cache per type and\n"
       << std::setw(42) << " "
-      << "thread, 0 = unlimited\n"
+      << "bucket, 0 = unlimited\n"
       << std::setw(42)
       << "  --cache-max-elements (default: " +
              std::to_string(DEFAULT_CACHE_NUM_ELEMENTS) + ")"
-      << "maximum number of elements per cache, type and thread,\n"
+      << "maximum number of elements per cache, type and bucket,\n"
       << std::setw(42) << " "
       << "0 = unlimited\n"
       << std::setw(42) << "  --no-geometry-checks"
@@ -163,7 +163,7 @@ int main(int argc, char** argv) {
   bool verbose = false;
 
   size_t numThreads = NUM_THREADS;
-  size_t numCaches = DEFAULT_CFG.numCacheThreads;
+  size_t numCacheBuckets = DEFAULT_CFG.numCacheBuckets;
   size_t geomCacheMaxSizeBytes = DEFAULT_CACHE_SIZE;
   size_t geomCacheMaxNumElements = DEFAULT_CACHE_NUM_ELEMENTS;
   DE9IMFilter de9imFilter = DEFAULT_CFG.de9imFilter;
@@ -200,7 +200,7 @@ int main(int argc, char** argv) {
           state = 10;
         } else if (cur == "--crosses") {
           state = 11;
-        } else if (cur == "--num-caches") {
+        } else if (cur == "--num-cache-buckets") {
           state = 12;
         } else if (cur == "--num-threads") {
           state = 13;
@@ -282,7 +282,7 @@ int main(int argc, char** argv) {
         state = 0;
         break;
       case 12:
-        numCaches = atoi(cur.c_str());
+        numCacheBuckets = atoi(cur.c_str());
         state = 0;
         break;
       case 13:
@@ -365,7 +365,7 @@ int main(int argc, char** argv) {
 
   sj::SpatialJoinCfg cfg;
   cfg.numThreads = numThreads;
-  cfg.numCacheThreads = numCaches;
+  cfg.numCacheBuckets = numCacheBuckets;
   cfg.geomCacheMaxSize = geomCacheMaxSizeBytes;
   cfg.geomCacheMaxNumElements = geomCacheMaxNumElements;
   cfg.sepIsect = intersects;
