@@ -840,8 +840,6 @@ class SweepEventList {
     std::swap(_hasRefs, other._hasRefs);
   }
 
-  // the configuration, the events added via add(meta, storeId) are padded
-  // as given by it
   SpatialJoinCfg _cfg;
 
   // the maximum size of _buffer in bytes
@@ -867,7 +865,7 @@ class SweepEventList {
 
   bool _hasRefs = false;
 
-  // guards add() calls via addCb(), not swapped
+  // guards the addCb()
   std::mutex _addMtx;
 };
 
