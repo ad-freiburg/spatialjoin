@@ -113,6 +113,9 @@ typedef std::function<void(size_t t, const std::string& gid,
 static const size_t DEFAULT_BUFFER_S =
     ((16 * 1024 * 1024 + sizeof(BoxVal)) / sizeof(BoxVal)) * sizeof(BoxVal);
 
+// default max memory used by the sort
+static const size_t DEFAULT_SORT_MEM_S = 512 * 1024 * 1024;
+
 // default size of the read buffer of a SweepEventList::Reader, must be
 // multiple of sizeof(BoxVal)
 static const size_t DEFAULT_RBUF_S = 100000 * sizeof(BoxVal);
@@ -568,7 +571,8 @@ class SweepEventList {
     _onDisk = true;
   }
 
-  void finalize(size_t numThreads = 4) {
+  void finalize(size_t numThreads = 4,
+                size_t maxSortMem = DEFAULT_SORT_MEM_S) {
     if (!_onDisk) {
       // in-memory sort
       std::sort(
@@ -606,7 +610,7 @@ class SweepEventList {
     posix_fadvise(newFile, 0, 0, POSIX_FADV_SEQUENTIAL);
 #endif
     ssize_t r = util::externalSort(_file, newFile, sizeof(BoxVal), _curSweepId,
-                                   numThreads, boxCmp);
+                                   numThreads, maxSortMem, boxCmp);
 
     if (r < 0) {
       std::stringstream ss;
