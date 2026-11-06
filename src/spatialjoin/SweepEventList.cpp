@@ -21,6 +21,22 @@ using sj::GeometryCache;
 using sj::SweepEventList;
 
 // _____________________________________________________________________________
+void sj::padSweepEventForDist(BoxVal* bv, const SpatialJoinCfg& cfg) {
+  const util::geo::I32Box box{{bv->val(), bv->loY()}, {bv->val(), bv->upY()}};
+  const auto padded = padBox(box, box, cfg);
+
+  bv->setVal(bv->out() ? padded.getUpperRight().getX()
+                       : padded.getLowerLeft().getX());
+  bv->setLoY(padded.getLowerLeft().getY());
+  bv->setUpY(padded.getUpperRight().getY());
+
+  if (bv->hasB45())
+    bv->setB45(padBox(bv->b45(), box, cfg));
+  else
+    bv->padB45(boxPadding(box, cfg));
+}
+
+// _____________________________________________________________________________
 void SweepEventList::duplicatesToReferences(GeometryCache& cache) {
   cache.log("Removing duplicates...");
 
@@ -88,7 +104,7 @@ bool SweepEventList::duplicatesToReferences(BoxVal* events, size_t n,
 
   for (size_t i = 0; i < n; i++) {
     auto cur = events + i;
-    const size_t curId = duplicateId(cur->storeId, getId(*cur));
+    const size_t curId = duplicateId(cur->storeId(), getId(*cur));
 
     if (cfg.sweepCancellationCb && state.numEvents % 10000 == 0) {
       cfg.sweepCancellationCb();
@@ -96,8 +112,8 @@ bool SweepEventList::duplicatesToReferences(BoxVal* events, size_t n,
 
     state.numEvents++;
 
-    if (cur->out) {
-      if (cur->getType() == POLYGON) {
+    if (cur->out()) {
+      if (cur->type() == POLYGON) {
         if (state.deletedPolys.erase(curId)) {
           // erase it if present, to avoid unnecessary memory consumption
           cur->setType(DELETED);
@@ -106,7 +122,7 @@ bool SweepEventList::duplicatesToReferences(BoxVal* events, size_t n,
         state.referencedPolys.erase(curId);
       }
 
-      if (cur->getType() == LINE) {
+      if (cur->type() == LINE) {
         if (state.deletedLines.erase(curId)) {
           // erase it if present, to avoid unnecessary memory consumption
           cur->setType(DELETED);
@@ -118,74 +134,74 @@ bool SweepEventList::duplicatesToReferences(BoxVal* events, size_t n,
       continue;
     }
 
-    if (state.curX != cur->val) {
+    if (state.curX != cur->val()) {
       // new equal-X block
       state.duplicatePolys = {};
       state.duplicateLines = {};
-      state.curX = cur->val;
+      state.curX = cur->val();
     }
 
-    if (cur->getType() != POLYGON && cur->getType() != LINE) continue;
+    if (cur->type() != POLYGON && cur->type() != LINE) continue;
 
-    const auto& store = cache.getStore(cur->storeId);
+    const auto& store = cache.getStore(cur->storeId());
 
-    if (cur->getType() == POLYGON &&
-        cur->numAnchors >= store.DUPLICATE_REMOVAL_MIN_SIZE) {
-      size_t h = duplicateId(cur->storeId, cur->numAnchors);
+    if (cur->type() == POLYGON &&
+        cur->numAnchors() >= store.DUPLICATE_REMOVAL_MIN_SIZE) {
+      size_t h = duplicateId(cur->storeId(), cur->numAnchors());
       const auto& existing = state.duplicatePolys.find(h);
 
       if (existing != state.duplicatePolys.end()) {
-        auto a = cache.getArea(getId(*cur), 0, cur->storeId);
-        auto b = cache.getArea(existing->second, 0, cur->storeId);
+        auto a = cache.getArea(getId(*cur), 0, cur->storeId());
+        auto b = cache.getArea(existing->second, 0, cur->storeId());
 
         if (a->geom == b->geom) {
           state.deletedPolys.insert(curId);
           if (state.referencedPolys
-                  .insert(duplicateId(cur->storeId, existing->second))
+                  .insert(duplicateId(cur->storeId(), existing->second))
                   .second) {
             // for the first element referencing this, modify this
             // event to the self check of the referenced geom
             cur->setType(SELF_CHECK_AREA);
             // the self check event references the referenced geom in
             // its store
-            cur->id = typedId(existing->second, cur->getType());
+            cur->setId(typedId(existing->second, cur->type()));
           } else {
             cur->setType(DELETED);
           }
 
           updated = true;
-          addReference(cur->storeId, b->id, b->subId, a->id, a->subId);
+          addReference(cur->storeId(), b->id, b->subId, a->id, a->subId);
         }
       } else {
         state.duplicatePolys[h] = getId(*cur);
       }
     }
 
-    if (cur->getType() == LINE &&
-        cur->numAnchors >= store.DUPLICATE_REMOVAL_MIN_SIZE) {
-      size_t h = duplicateId(cur->storeId, cur->numAnchors);
+    if (cur->type() == LINE &&
+        cur->numAnchors() >= store.DUPLICATE_REMOVAL_MIN_SIZE) {
+      size_t h = duplicateId(cur->storeId(), cur->numAnchors());
       const auto& existing = state.duplicateLines.find(h);
 
       if (existing != state.duplicateLines.end()) {
-        auto a = cache.getLine(getId(*cur), 0, cur->storeId);
-        auto b = cache.getLine(existing->second, 0, cur->storeId);
+        auto a = cache.getLine(getId(*cur), 0, cur->storeId());
+        auto b = cache.getLine(existing->second, 0, cur->storeId());
 
         if (a->geom == b->geom) {
           state.deletedLines.insert(curId);
           if (state.referencedLines
-                  .insert(duplicateId(cur->storeId, existing->second))
+                  .insert(duplicateId(cur->storeId(), existing->second))
                   .second) {
             // for the first element referencing this, modify this
             // event to the self check of the referenced geom
             cur->setType(SELF_CHECK_LINE);
             // the self check event references the referenced geom in
             // its store
-            cur->id = typedId(existing->second, cur->getType());
+            cur->setId(typedId(existing->second, cur->type()));
           } else {
             cur->setType(DELETED);
           }
           updated = true;
-          addReference(cur->storeId, b->id, b->subId, a->id, a->subId);
+          addReference(cur->storeId(), b->id, b->subId, a->id, a->subId);
         }
       } else {
         state.duplicateLines[h] = getId(*cur);

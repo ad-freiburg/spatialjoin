@@ -54,10 +54,6 @@ using util::geo::LineSegment;
 using util::geo::Point;
 using util::geo::webMercToLatLng;
 
-const static double sin45 = 1.0 / sqrt(2);
-const static double cos45 = 1.0 / sqrt(2);
-
-
 // ____________________________________________________________________________
 template <>
 std::pair<size_t, sj::SimpleLine>
@@ -1132,7 +1128,8 @@ I32Box GeometryStore::add(const I32Polygon& poly, const std::string& gid,
 
   I32Box box45;
   if (_cfg.useDiagBox) {
-    auto polyR = util::geo::rotateSinCos(poly, sin45, cos45, I32Point(0, 0));
+    auto polyR =
+        util::geo::rotateSinCos(poly, sj::SIN45, sj::COS45, I32Point(0, 0));
     box45 = util::geo::getBoundingBox(polyR);
   }
 
@@ -1219,7 +1216,8 @@ I32Box GeometryStore::add(const I32Line& line, const std::string& gid,
 
   I32Box box45;
   if (_cfg.useDiagBox) {
-    auto lineR = util::geo::rotateSinCos(line, sin45, cos45, I32Point(0, 0));
+    auto lineR =
+        util::geo::rotateSinCos(line, sj::SIN45, sj::COS45, I32Point(0, 0));
     box45 = util::geo::getBoundingBox(lineR);
   }
 
@@ -1298,7 +1296,8 @@ I32Box GeometryStore::add(const I32Point& point, const std::string& gid,
 
   if (!util::geo::intersects(box, _filterBox)) return {};
 
-  auto pointR = util::geo::rotateSinCos(point, sin45, cos45, I32Point(0, 0));
+  auto pointR =
+      util::geo::rotateSinCos(point, sj::SIN45, sj::COS45, I32Point(0, 0));
   cur.meta.bbox = rawBox;
   cur.type = POINT;
   cur.meta.box45 = util::geo::getBoundingBox(pointR);

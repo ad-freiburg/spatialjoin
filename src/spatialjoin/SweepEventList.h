@@ -10,10 +10,13 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 #include <functional>
+#include <limits>
 #include <mutex>
 #include <sstream>
 #include <string>
+#include <type_traits>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -28,6 +31,8 @@ namespace sj {
 
 class GeometryCache;
 
+// The type of a geometry stored in this SweepEventList, this determines
+// how geometries are reconstructed and/or retrieved from caches and stores
 enum GeomType : uint8_t {
   POLYGON = 0,
   LINE = 1,
@@ -47,10 +52,12 @@ enum GeomType : uint8_t {
   FOLDED_SIMPLE_LINE_FALLING = 15
 };
 
+// ture if a line is folded
 inline bool isFoldedSimpleLine(GeomType t) {
   return t == FOLDED_SIMPLE_LINE_RISING || t == FOLDED_SIMPLE_LINE_FALLING;
 }
 
+// true if a line is simple
 inline bool isSimpleLine(GeomType t) {
   return t == SIMPLE_LINE_RISING || t == SIMPLE_LINE_FALLING ||
          isFoldedSimpleLine(t);
@@ -70,35 +77,168 @@ inline GeomType idType(size_t id) {
 const static size_t FOLD_LEN_SHIFT = ID_TYPE_SHIFT - 8;
 const static size_t FOLD_MAX_LEN = FOLD_LEN_SHIFT / 8;
 
-struct BoxVal {
-  size_t id;  // typed ID, the lower 56 bits are the dist offset returned from
-              // the GeometryStore, bits 57-60 are geometry type
-  int32_t loY;       // the lower Y value of the box
-  int32_t upY;       // the upper Y value of the box
-  int32_t val;       // the left X value of the box
-  bool out : 1;      // whether this is an IN or OUT event
-  uint8_t storeId;   // the store the geometry is in
-  util::geo::I32Point point;
-  size_t numAnchors;      // for polygons and lines: number of anchor points,
-                          // used for DUPLICATE REMOVAL
-                          // for simple lines: the other endpoint, for folded
-                          // box polygons: the other box corner, see
-                          // packPoint()
-  util::geo::I32Box b45;  // oriented bounding box
+// sin and cos of 45 degrees, for the diagonal boxes
+const static double SIN45 = 1.0 / sqrt(2);
+const static double COS45 = 1.0 / sqrt(2);
 
-  GeomType getType() const { return idType(id); }
+// the number of anchor points stored in a BoxVal is capped at this value
+const static size_t MAX_EVENT_NUM_ANCHORS =
+    std::numeric_limits<uint16_t>::max();
 
+// a sweep event (IN or OUT) of a geometry, with various meta informations
+class BoxVal {
+ public:
+  BoxVal() = default;
+  BoxVal(size_t id, int32_t loY, int32_t upY, int32_t val, bool out,
+         uint8_t storeId, const util::geo::I32Point& point)
+      : _id(id),
+        _loY(loY),
+        _upY(upY),
+        _val(val),
+        _point(point),
+        _out(out),
+        _storeId(storeId),
+        _numAnchors(0),
+        _ext{0, 0, 0, 0} {}
+
+  // typed ID, the lower 56 bits are the dist offset returned from the
+  // GeometryStore, bits 57-60 are geometry type
+  size_t id() const { return _id; }
+  void setId(size_t id) { _id = id; }
+
+  // the lower Y value of the box
+  int32_t loY() const { return _loY; }
+  void setLoY(int32_t loY) { _loY = loY; }
+
+  // the upper Y value of the box
+  int32_t upY() const { return _upY; }
+  void setUpY(int32_t upY) { _upY = upY; }
+
+  // the X value of the event (left X of the box for IN events, right X for
+  // OUT events)
+  int32_t val() const { return _val; }
+  void setVal(int32_t val) { _val = val; }
+
+  // the point payload of this event. For simple lines its the endpoint, for
+  // folded box polygons the box corner
+  const util::geo::I32Point& point() const { return _point; }
+
+  // the type if this event's geom
+  GeomType type() const { return idType(_id); }
   void setType(GeomType type) {
-    id = (id & ID_MASK) | (static_cast<size_t>(type) << ID_TYPE_SHIFT);
+    _id = (_id & ID_MASK) | (static_cast<size_t>(type) << ID_TYPE_SHIFT);
   }
+
+  // whether this is an OUT event
+  bool out() const { return _out; }
+
+  // whether this is an IN event
+  bool in() const { return !_out; }
+
+  // the store the geometry is in
+  uint8_t storeId() const { return _storeId; }
+  void setStoreId(uint8_t storeId) { _storeId = storeId; }
+
+  // for polygons and lines: the number of anchor points (capped at
+  // MAX_EVENT_NUM_ANCHORS), 0 for other types.
+  size_t numAnchors() const { return _numAnchors; }
+  void setNumAnchors(size_t numAnchors) {
+    if (!hasB45()) return;
+    _numAnchors = std::min(numAnchors, MAX_EVENT_NUM_ANCHORS);
+  }
+
+  // the other payload point. For simple lines the
+  // second endpoint, for folded box polygons the second box corner
+  util::geo::I32Point otherPoint() const {
+    if (!hasB45()) return {_ext[0], _ext[1]};
+    return {_val, _point.getY() == _loY ? _upY : _loY};
+  }
+  void setOtherPoint(const util::geo::I32Point& p) {
+    if (hasB45()) return;
+    _ext[0] = p.getX();
+    _ext[1] = p.getY();
+  }
+
+  // the bounding box of the geometry rotated by 45 degs
+  util::geo::I32Box b45() const {
+    if (hasB45()) return {{_ext[0], _ext[1]}, {_ext[2], _ext[3]}};
+
+    double pad = b45Pad();
+    if (pad < 0) return {};
+
+    const auto& a = _point;
+    const auto& b = otherPoint();
+    util::geo::I32Box ret;
+    ret = util::geo::extendBox(rot45(a), ret);
+    ret = util::geo::extendBox(rot45(b), ret);
+    if (type() == FOLDED_BOX_POLYGON) {
+      ret = util::geo::extendBox(rot45({a.getX(), b.getY()}), ret);
+      ret = util::geo::extendBox(rot45({b.getX(), a.getY()}), ret);
+    }
+
+    if (pad > 0) return util::geo::pad(ret, pad);
+    return ret;
+  }
+  void setB45(const util::geo::I32Box& b45) {
+    if (!hasB45()) {
+      setB45Pad(b45.isNull() ? -1 : 0);
+      return;
+    }
+    _ext[0] = b45.getLowerLeft().getX();
+    _ext[1] = b45.getLowerLeft().getY();
+    _ext[2] = b45.getUpperRight().getX();
+    _ext[3] = b45.getUpperRight().getY();
+  }
+
+  // pads the rotated bounding box by pad
+  void padB45(double pad) {
+    if (hasB45()) {
+      setB45(util::geo::pad(b45(), pad));
+      return;
+    }
+    // pad only computed boxes, keep a missing box missing
+    if (b45Pad() >= 0) setB45Pad(b45Pad() + pad);
+  }
+
+  bool hasB45() const {
+    return !(isSimpleLine(type()) || type() == FOLDED_BOX_POLYGON);
+  }
+
+ private:
+  static util::geo::I32Point rot45(const util::geo::I32Point& p) {
+    return util::geo::rotateSinCos(p, SIN45, COS45, util::geo::I32Point(0, 0));
+  }
+
+  // the padding of a computed rotated bounding box, < 0 if there is none
+  double b45Pad() const {
+    double pad;
+    memcpy(&pad, &_ext[2], sizeof(double));
+    return pad;
+  }
+
+  void setB45Pad(double pad) { memcpy(&_ext[2], &pad, sizeof(double)); }
+
+  size_t _id;
+  int32_t _loY;
+  int32_t _upY;
+  int32_t _val;
+  util::geo::I32Point _point;
+
+  bool _out;
+  uint8_t _storeId;
+  uint16_t _numAnchors;
+
+  // if not hasB45(): the other point in (_ext[0], _ext[1]) and the padding
+  // of the rotated bounding box in (a double in _ext[2], _ext[3]), else: the
+  // rotated bounding box directly
+  int32_t _ext[4];
 };
 
 struct PreparedGeomMeta {
   size_t id;               // typed ID
   util::geo::I32Box bbox;  // bounding box (unpadded!!)
   util::geo::I32Box box45;  // rotated bounding box (unpadded!!)
-  // number of anchor points (for simple lines and folded box polygons, the
-  // events instead store the packed other point, see packPoint())
+  // number of anchor points (only stored in the events of polygons and lines)
   size_t numAnchors;
 
   GeomType getType() const { return idType(id); }
@@ -107,6 +247,8 @@ struct PreparedGeomMeta {
 typedef std::function<void(size_t t, const std::string& gid,
                            const PreparedGeomMeta&)>
     PreparedGeomMetaCb;
+
+void padSweepEventForDist(BoxVal* bv, const SpatialJoinCfg& cfg);
 
 // default size of the write buffer of a SweepEventList, must be multiple of
 // sizeof(BoxVal)
@@ -129,38 +271,17 @@ inline size_t typedId(size_t id, GeomType type) {
 inline size_t untypedId(size_t id) { return id & ID_MASK; }
 
 // _____________________________________________________________________________
-inline size_t getId(const BoxVal& bv) { return untypedId(bv.id); }
+inline size_t getId(const BoxVal& bv) { return untypedId(bv.id()); }
 
 // _____________________________________________________________________________
-inline size_t packPoint(const util::geo::I32Point& p) {
-  return (static_cast<size_t>(static_cast<uint32_t>(p.getX())) << 32) |
-         static_cast<uint32_t>(p.getY());
-}
-
-// _____________________________________________________________________________
-inline util::geo::I32Point unpackPoint(size_t v) {
-  return {static_cast<int32_t>(static_cast<uint32_t>(v >> 32)),
-          static_cast<int32_t>(static_cast<uint32_t>(v))};
-}
-
-// _____________________________________________________________________________
-inline util::geo::I32Point getOtherPoint(const BoxVal& bv) {
-  // for simple lines the second endpoint, and for folded box polygons the
-  // second box corner cannot be reconstructed from the box because it may be
-  // padded in case withinDist > 0
-  if (isSimpleLine(bv.getType()) || bv.getType() == FOLDED_BOX_POLYGON)
-    return unpackPoint(bv.numAnchors);
-  return {bv.val, bv.point.getY() == bv.loY ? bv.upY : bv.loY};
-}
-
-// _____________________________________________________________________________
-inline util::geo::I32Box padBox(const util::geo::I32Box& box,
-                                const util::geo::I32Box& refBox,
-                                const SpatialJoinCfg& cfg) {
-  if (cfg.withinDist < 0 || box.isNull()) return box;
+inline double boxPadding(const util::geo::I32Box& refBox,
+                         const SpatialJoinCfg& cfg) {
+  // the padding of the boxes of geometries near refBox for within-distance
+  // joins
+  if (cfg.withinDist < 0) return 0;
 
   if (cfg.euclideanDist && !cfg.haversineApprox)
-    return util::geo::pad(box, cfg.withinDist * PREC / 2.0);
+    return cfg.withinDist * PREC / 2.0;
 
   // convert distanceUpperBound (meters) to maximum latitude padding (degrees)
   // we have to "pad" the box by -dy and dy because the distance path could
@@ -181,7 +302,19 @@ inline util::geo::I32Box padBox(const util::geo::I32Box& box,
           util::geo::RAD);
   double scaleFactor = std::min(scaleLatUp, scaleLatLow);
 
-  double pad = (cfg.withinDist / 2.0) / scaleFactor * PREC;
+  return (cfg.withinDist / 2.0) / scaleFactor * PREC;
+}
+
+// _____________________________________________________________________________
+inline util::geo::I32Box padBox(const util::geo::I32Box& box,
+                                const util::geo::I32Box& refBox,
+                                const SpatialJoinCfg& cfg) {
+  if (cfg.withinDist < 0 || box.isNull()) return box;
+
+  double pad = boxPadding(refBox, cfg);
+
+  if (cfg.euclideanDist && !cfg.haversineApprox)
+    return util::geo::pad(box, pad);
 
   double llx = box.getLowerLeft().getX();
   double lly = box.getLowerLeft().getY();
@@ -206,18 +339,7 @@ inline util::geo::I32Box padBox(const util::geo::I32Box& box,
 
 // _____________________________________________________________________________
 inline void padSweepEvent(BoxVal* bv, const SpatialJoinCfg& cfg) {
-  if (cfg.withinDist < 0) return;
-
-  // the event only holds the x of its side of the box, which is padded
-  // independently of the other side
-  const util::geo::I32Box box{{bv->val, bv->loY}, {bv->val, bv->upY}};
-  const auto padded = padBox(box, box, cfg);
-
-  bv->val =
-      bv->out ? padded.getUpperRight().getX() : padded.getLowerLeft().getX();
-  bv->loY = padded.getLowerLeft().getY();
-  bv->upY = padded.getUpperRight().getY();
-  bv->b45 = padBox(bv->b45, box, cfg);
+  if (cfg.withinDist >= 0) padSweepEventForDist(bv, cfg);
 }
 
 // _____________________________________________________________________________
@@ -250,31 +372,19 @@ inline std::pair<BoxVal, BoxVal> getSweepEvents(
       point2 = rightPoint;
   }
 
-  BoxVal in{id,
-            bbox.getLowerLeft().getY(),
-            bbox.getUpperRight().getY(),
-            bbox.getLowerLeft().getX(),
-            false,
-            storeId,
-            point1,
-            numAnchors,
-            box45};
-  BoxVal out{id,
-             bbox.getLowerLeft().getY(),
-             bbox.getUpperRight().getY(),
-             bbox.getUpperRight().getX(),
-             true,
-             storeId,
-             point2,
-             numAnchors,
-             box45};
+  BoxVal in(id, ll.getY(), ur.getY(), ll.getX(), false, storeId, point1);
+  BoxVal out(id, ll.getY(), ur.getY(), ur.getX(), true, storeId, point2);
 
-  // simple lines and folded box polygons store the packed point of the other
-  // event instead of the number of anchors, see getOtherPoint()
-  if (isSimpleLine(in.getType()) || in.getType() == FOLDED_BOX_POLYGON) {
-    in.numAnchors = packPoint(point2);
-    out.numAnchors = packPoint(point1);
-  }
+  in.setNumAnchors(numAnchors);
+  out.setNumAnchors(numAnchors);
+
+  // simple lines and folded box polygons store the point of the other event,
+  // see otherPoint()
+  in.setOtherPoint(point2);
+  out.setOtherPoint(point1);
+
+  in.setB45(box45);
+  out.setB45(box45);
 
   return {in, out};
 }
@@ -291,40 +401,40 @@ inline std::pair<BoxVal, BoxVal> getSweepEvents(
 static int boxCmp(const void* a, const void* b) {
   const auto& boxa = static_cast<const BoxVal*>(a);
   const auto& boxb = static_cast<const BoxVal*>(b);
-  if (boxa->val < boxb->val) return -1;
-  if (boxa->val > boxb->val) return 1;
+  if (boxa->val() < boxb->val()) return -1;
+  if (boxa->val() > boxb->val()) return 1;
 
   // special multi events before everything else
-  if (boxa->getType() == MULTI && boxb->getType() != MULTI) return -1;
-  if (boxa->getType() != MULTI && boxb->getType() == MULTI) return 1;
+  if (boxa->type() == MULTI && boxb->type() != MULTI) return -1;
+  if (boxa->type() != MULTI && boxb->type() == MULTI) return 1;
 
-  if (!boxa->out && boxb->out) return -1;
-  if (boxa->out && !boxb->out) return 1;
+  if (!boxa->out() && boxb->out()) return -1;
+  if (boxa->out() && !boxb->out()) return 1;
 
   // everything before a polygon
-  if (boxa->getType() != POLYGON && boxa->getType() != SIMPLE_POLYGON &&
-      boxa->getType() != FOLDED_BOX_POLYGON &&
-      (boxb->getType() == POLYGON || boxb->getType() == SIMPLE_POLYGON ||
-       boxb->getType() == FOLDED_BOX_POLYGON))
+  if (boxa->type() != POLYGON && boxa->type() != SIMPLE_POLYGON &&
+      boxa->type() != FOLDED_BOX_POLYGON &&
+      (boxb->type() == POLYGON || boxb->type() == SIMPLE_POLYGON ||
+       boxb->type() == FOLDED_BOX_POLYGON))
     return -1;
-  if ((boxa->getType() == POLYGON || boxa->getType() == SIMPLE_POLYGON ||
-       boxa->getType() == FOLDED_BOX_POLYGON) &&
-      boxb->getType() != POLYGON && boxb->getType() != SIMPLE_POLYGON &&
-      boxb->getType() != FOLDED_BOX_POLYGON)
+  if ((boxa->type() == POLYGON || boxa->type() == SIMPLE_POLYGON ||
+       boxa->type() == FOLDED_BOX_POLYGON) &&
+      boxb->type() != POLYGON && boxb->type() != SIMPLE_POLYGON &&
+      boxb->type() != FOLDED_BOX_POLYGON)
     return 1;
 
   // points before lines
-  if ((boxa->getType() == POINT || boxa->getType() == FOLDED_POINT) &&
-      (isSimpleLine(boxb->getType()) || boxb->getType() == LINE))
+  if ((boxa->type() == POINT || boxa->type() == FOLDED_POINT) &&
+      (isSimpleLine(boxb->type()) || boxb->type() == LINE))
     return -1;
-  if ((boxb->getType() == POINT || boxb->getType() == FOLDED_POINT) &&
-      (isSimpleLine(boxa->getType()) || boxa->getType() == LINE))
+  if ((boxb->type() == POINT || boxb->type() == FOLDED_POINT) &&
+      (isSimpleLine(boxa->type()) || boxa->type() == LINE))
     return 1;
 
   // make ordernig of equal geoms deterministic
-  if (boxa->getType() != boxb->getType())
-    return boxa->getType() < boxb->getType() ? -1 : 1;
-  if (boxa->id != boxb->id) return boxa->id < boxb->id ? -1 : 1;
+  if (boxa->type() != boxb->type())
+    return boxa->type() < boxb->type() ? -1 : 1;
+  if (boxa->id() != boxb->id()) return boxa->id() < boxb->id() ? -1 : 1;
 
   return 0;
 }

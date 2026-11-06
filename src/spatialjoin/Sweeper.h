@@ -75,12 +75,12 @@ struct JobVal {
 
   JobVal() : id(typedId(0, POLYGON)), val(0), side(false), storeId(0) {}
   JobVal(const BoxVal& bv, bool side)
-      : id(bv.id),
-        point(bv.point),
-        point2(getOtherPoint(bv)),
-        val(bv.val),
+      : id(bv.id()),
+        point(bv.point()),
+        point2(bv.otherPoint()),
+        val(bv.val()),
         side(side),
-        storeId(bv.storeId){};
+        storeId(bv.storeId()){};
   JobVal(const SweepVal& sv)
       : id(sv.id),
         point(sv.point),

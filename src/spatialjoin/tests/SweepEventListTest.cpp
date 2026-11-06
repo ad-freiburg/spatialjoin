@@ -26,13 +26,7 @@ const size_t SMALL_BUF = 2 * sizeof(BoxVal);
 
 // _____________________________________________________________________________
 BoxVal event(size_t id, int32_t x) {
-  BoxVal ret{};
-  ret.id = sj::typedId(id, sj::POINT);
-  ret.loY = 0;
-  ret.upY = 0;
-  ret.val = x;
-  ret.out = false;
-  return ret;
+  return BoxVal(sj::typedId(id, sj::POINT), 0, 0, x, false, 0, {0, 0});
 }
 
 // _____________________________________________________________________________

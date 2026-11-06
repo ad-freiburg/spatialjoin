@@ -388,11 +388,11 @@ int main(int, char**) {
     auto reader = events.newReader();
     size_t numMultiEvents = 0;
     while (const auto* ev = reader.next()) {
-      if (ev->getType() != sj::MULTI) continue;
+      if (ev->type() != sj::MULTI) continue;
       numMultiEvents++;
-      TEST(ev->val, ==,
-           ev->out ? multiBox.getUpperRight().getX()
-                   : multiBox.getLowerLeft().getX());
+      TEST(ev->val(), ==,
+           ev->out() ? multiBox.getUpperRight().getX()
+                     : multiBox.getLowerLeft().getX());
     }
     TEST(numMultiEvents, ==, 2);
   }

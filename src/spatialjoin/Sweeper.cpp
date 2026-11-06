@@ -78,16 +78,17 @@ void Sweeper::clearMultis(bool force) {
   // note: finishedMultis is sorted by x in asc, the front is the leftmost x,
   // we can clear until we reach an x >= curMinThreadX
   while (!_finishedMultis.empty() &&
-         (force || _finishedMultis.front().first.val < curMinThreadX)) {
+         (force || _finishedMultis.front().first.val() < curMinThreadX)) {
     const auto& multiOut = _finishedMultis.front().first;
     bool side = _finishedMultis.front().second;
     auto& openMultiIDs = _openMultiIDs[side];
-    auto openMultiID = openMultiIDs.find({multiOut.storeId, getId(multiOut)});
+    auto openMultiID =
+        openMultiIDs.find({multiOut.storeId(), getId(multiOut)});
 
     // we can move here, openMulti is deleted in the line below!
     curBatch.push_back({{}, {}, std::move(openMultiID->second)});
     curBatch.back().boxVal.side = side;
-    curBatch.back().boxVal.storeId = multiOut.storeId;
+    curBatch.back().boxVal.storeId = multiOut.storeId();
     openMultiIDs.erase(openMultiID);
     _finishedMultis.pop();
 
@@ -103,7 +104,8 @@ void Sweeper::clearMultis(bool force) {
 
 // _____________________________________________________________________________
 std::vector<sj::BoxVal> Sweeper::multiIn(const BoxVal& multiIn, bool side) {
-  auto multi = store(multiIn.storeId).multiStore().getMulti(getId(multiIn));
+  auto multi =
+      store(multiIn.storeId()).multiStore().getMulti(getId(multiIn));
 
   // the number of members, and the rightmost point of the OUT events
   size_t subSize = 0;
@@ -111,10 +113,10 @@ std::vector<sj::BoxVal> Sweeper::multiIn(const BoxVal& multiIn, bool side) {
   bool hasRightPoint = false;
 
   for (const auto& event : multi.events) {
-    if (!event.out) {
+    if (!event.out()) {
       subSize++;
-    } else if (!hasRightPoint || event.point.getX() > rightPoint.getX()) {
-      rightPoint = event.point;
+    } else if (!hasRightPoint || event.point().getX() > rightPoint.getX()) {
+      rightPoint = event.point();
       hasRightPoint = true;
     }
   }
@@ -125,10 +127,10 @@ std::vector<sj::BoxVal> Sweeper::multiIn(const BoxVal& multiIn, bool side) {
     _multiRightPoint[side][multi.id] = rightPoint;
   }
 
-  _openMultiIDs[side][{multiIn.storeId, getId(multiIn)}] = multi.id;
+  _openMultiIDs[side][{multiIn.storeId(), getId(multiIn)}] = multi.id;
 
   for (auto& event : multi.events) {
-    event.storeId = multiIn.storeId;
+    event.setStoreId(multiIn.storeId());
     padSweepEvent(&event, _cfg);
   }
 
@@ -593,16 +595,16 @@ RelStats Sweeper::sweep(const SweepEventList* eventsA,
 
       if (jj % 200000 == 0) clearMultis(false);
 
-      if (cur->getType() == DELETED) {
+      if (cur->type() == DELETED) {
         continue;
-      } else if (cur->getType() == SELF_CHECK ||
-                 cur->getType() == SELF_CHECK_AREA ||
-                 cur->getType() == SELF_CHECK_LINE ||
-                 cur->getType() == SELF_CHECK_POINT) {
+      } else if (cur->type() == SELF_CHECK ||
+                 cur->type() == SELF_CHECK_AREA ||
+                 cur->type() == SELF_CHECK_LINE ||
+                 cur->type() == SELF_CHECK_POINT) {
         // self checks, required if we have reference geoms
         curBatch.push_back({{*cur, curSide}, {*cur, curSide}, ""});
-      } else if (cur->getType() == MULTI) {
-        if (cur->out) {
+      } else if (cur->type() == MULTI) {
+        if (cur->out()) {
           // special multi-OUT, defer for clearing (all threads must be past it)
           _finishedMultis.push({*cur, curSide});
         } else {
@@ -622,14 +624,16 @@ RelStats Sweeper::sweep(const SweepEventList* eventsA,
             multiHeads.push({slot, 0});
           }
         }
-      } else if (!cur->out) {
+      } else if (!cur->out()) {
         // IN event
-        actives[curSide].insert({cur->loY, cur->upY},
-                                {cur->id, cur->b45, cur->point,
-                                 getOtherPoint(*cur), curSide, cur->storeId});
+        actives[curSide].insert({cur->loY(), cur->upY()},
+                                {cur->id(), cur->b45(), cur->point(),
+                                 cur->otherPoint(), curSide,
+                                 cur->storeId()});
 
         if (jj % 500000 == 0) {
-          auto lon = webMercToLatLng<double>((1.0 * cur->val) / PREC, 0).getX();
+          auto lon =
+              webMercToLatLng<double>((1.0 * cur->val()) / PREC, 0).getX();
           totalCheckCount += checkPairs;
 
           auto cacheSize = _geomCache->size();
@@ -658,7 +662,7 @@ RelStats Sweeper::sweep(const SweepEventList* eventsA,
           _cfg.sweepProgressCb(listEvents / 2);
       } else {
         // OUT event
-        actives[curSide].erase({cur->loY, cur->upY}, SweepVal(cur->id));
+        actives[curSide].erase({cur->loY(), cur->upY()}, SweepVal(cur->id()));
 
         counts++;
 
@@ -2408,12 +2412,13 @@ void Sweeper::processQueue(size_t t) {
 void Sweeper::fillBatch(
     JobBatch* batch, const util::geo::IntervalIdx<int32_t, SweepVal>* actives,
     const BoxVal* cur, bool side) const {
-  const auto& overlaps = actives->overlap_find_all({cur->loY, cur->upY});
+  const auto& overlaps = actives->overlap_find_all({cur->loY(), cur->upY()});
+  const auto& curB45 = cur->b45();
 
   for (const auto& p : overlaps) {
     // check if diagonal boxes intersect, if not, ignore this pair.
-    if (!p.v.b45.isNull() && !cur->b45.isNull() &&
-        !util::geo::intersects(p.v.b45, cur->b45))
+    if (!p.v.b45.isNull() && !curB45.isNull() &&
+        !util::geo::intersects(p.v.b45, curB45))
       continue;
 
     JobVal a(*cur, side);
