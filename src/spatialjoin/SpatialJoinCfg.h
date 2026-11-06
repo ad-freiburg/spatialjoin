@@ -17,7 +17,7 @@ struct SpatialJoinCfg {
   size_t numThreads = std::thread::hardware_concurrency();
   size_t numCacheThreads = std::thread::hardware_concurrency();
   size_t geomCacheMaxSize = 1000 * 1000 * 1000;  // in bytes
-  size_t geomCacheMaxNumElements = 10000;
+  size_t geomCacheMaxNumElements = 1000;
   std::string sepIsect = " intersects ";
   std::string sepContains = " contains ";
   std::string sepCovers = " covers ";
