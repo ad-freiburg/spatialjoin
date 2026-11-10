@@ -621,6 +621,18 @@ class SweepEventList {
     add(id, bbox, util::geo::I32Box(), 0, storeId);
   }
 
+  void add(size_t id, const util::geo::DBox& bbox, util::geo::CRSType boxCrs,
+           uint8_t storeId) {
+    auto ll = util::geo::projectToWebMerc(bbox.getLowerLeft(), boxCrs);
+    auto ur = util::geo::projectToWebMerc(bbox.getUpperRight(), boxCrs);
+    add(id,
+        util::geo::I32Box({static_cast<int>(std::floor(ll.getX() * PREC)),
+                           static_cast<int>(std::floor(ll.getY() * PREC))},
+                          {static_cast<int>(std::ceil(ur.getX() * PREC)),
+                           static_cast<int>(std::ceil(ur.getY() * PREC))}),
+        storeId);
+  }
+
   // add the IN and OUT event of meta (with unpadded boxes) to this list, using
   // store storeId. The boxes are padded for within-distance joins from the cfg
   void add(const PreparedGeomMeta& meta, uint8_t storeId) {

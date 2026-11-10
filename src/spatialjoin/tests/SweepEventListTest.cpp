@@ -7,6 +7,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+#include <cmath>
 #include <stdexcept>
 #include <string>
 #include <type_traits>
@@ -17,6 +18,9 @@
 #include "util/Test.h"
 
 using sj::BoxVal;
+using util::geo::CRSType;
+using util::geo::DBox;
+using util::geo::DPoint;
 using sj::SweepEventList;
 
 namespace {
@@ -42,6 +46,35 @@ std::vector<size_t> ids(const SweepEventList& events) {
   const BoxVal* cur;
   while ((cur = reader.next())) ret.push_back(sj::getId(*cur));
   return ret;
+}
+
+// _____________________________________________________________________________
+std::vector<BoxVal> boxVals(const SweepEventList& events) {
+  std::vector<BoxVal> ret;
+  auto reader = events.newReader();
+  const BoxVal* cur;
+  while ((cur = reader.next())) ret.push_back(*cur);
+  return ret;
+}
+
+// _____________________________________________________________________________
+template <typename F>
+void testAddBox(F add, int32_t llx, int32_t lly, int32_t urx, int32_t ury) {
+  SweepEventList list(sj::SpatialJoinCfg(), ".", ".spatialjoin");
+  add(&list, sj::typedId(1, sj::POLYGON));
+  list.finalize(1);
+
+  auto res = boxVals(list);
+  TEST(res.size(), ==, 2);
+  TEST(res[0].out(), ==, false);
+  TEST(res[0].val(), ==, llx);
+  TEST(res[1].out(), ==, true);
+  TEST(res[1].val(), ==, urx);
+  for (const auto& bv : res) {
+    TEST(sj::getId(bv), ==, 1);
+    TEST(bv.loY(), ==, lly);
+    TEST(bv.upY(), ==, ury);
+  }
 }
 
 // _____________________________________________________________________________
@@ -238,5 +271,60 @@ void sweepEventListTest() {
         TEST(ids(lists[i]) == sorted(i * 10, 3));
       }
     }
+  }
+
+  {
+    testAddBox(
+        [](SweepEventList* l, size_t id) {
+          l->add(id, DBox({100.0, 200.0}, {300.0, 400.0}),
+                 CRSType::WEB_MERCATOR, 0);
+        },
+        100 * PREC, 200 * PREC, 300 * PREC, 400 * PREC);
+    testAddBox(
+        [](SweepEventList* l, size_t id) {
+          l->add(id, DBox({-1.06, -2.01}, {3.01, 4.06}),
+                 CRSType::WEB_MERCATOR, 0);
+        },
+        -11, -21, 31, 41);
+  }
+
+  {
+    auto ll = util::geo::latLngToWebMerc(DPoint(7.8, 47.9));
+    auto ur = util::geo::latLngToWebMerc(DPoint(7.9, 48.1));
+    testAddBox(
+        [](SweepEventList* l, size_t id) {
+          l->add(id, DBox({7.8, 47.9}, {7.9, 48.1}),
+                 CRSType::CRS84, 0);
+        },
+        std::floor(ll.getX() * PREC), std::floor(ll.getY() * PREC),
+        std::ceil(ur.getX() * PREC), std::ceil(ur.getY() * PREC));
+
+    int32_t world = std::ceil(sj::boxids::WORLD_H / 2.0);
+    testAddBox(
+        [](SweepEventList* l, size_t id) {
+          l->add(id, DBox({0.0, 0.0}, {0.0, 90.0}),
+                 CRSType::CRS84, 0);
+        },
+        0, 0, 0, world);
+  }
+
+  {
+    auto ll = util::geo::latLngToWebMerc(DPoint(7.8, 47.9));
+    auto ur = util::geo::latLngToWebMerc(DPoint(7.9, 48.1));
+    testAddBox(
+        [](SweepEventList* l, size_t id) {
+          l->add(id, DBox({47.9, 7.8}, {48.1, 7.9}),
+                 CRSType::WGS84, 0);
+        },
+        std::floor(ll.getX() * PREC), std::floor(ll.getY() * PREC),
+        std::ceil(ur.getX() * PREC), std::ceil(ur.getY() * PREC));
+
+    int32_t world = std::ceil(sj::boxids::WORLD_H / 2.0);
+    testAddBox(
+        [](SweepEventList* l, size_t id) {
+          l->add(id, DBox({-90.0, 0.0}, {0.0, 0.0}),
+                 CRSType::WGS84, 0);
+        },
+        0, -world, 0, 0);
   }
 }
