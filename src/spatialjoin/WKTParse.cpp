@@ -262,12 +262,6 @@ void WKTParser::parse(char* c, size_t size) {
       return;
     }
   }
-
-  if (_curBatch.size()) {
-    _jobs.add(std::move(_curBatch));
-    _curBatch.clear();  // std doesnt guarantee that after move
-    _curBatch.reserve(1000);
-  }
 }
 
 namespace sj {

@@ -53,6 +53,9 @@ class GeometryCache {
  public:
   GeometryCache(SpatialJoinCfg cfg) : _cfg(cfg) {}
 
+  GeometryCache(const GeometryCache&) = delete;
+  GeometryCache& operator=(const GeometryCache&) = delete;
+
   void log(const std::string& msg);
 
   // adds a geometry store, returns its store id

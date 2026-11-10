@@ -169,11 +169,11 @@ class TypedGeometryStore {
   TypedGeometryStore(const TypedGeometryStore&) = delete;
   TypedGeometryStore& operator=(const TypedGeometryStore&) = delete;
 
-  TypedGeometryStore(TypedGeometryStore&& other) : _numThreads(0) {
+  TypedGeometryStore(TypedGeometryStore&& other) noexcept : _numThreads(0) {
     swap(other);
   }
 
-  TypedGeometryStore& operator=(TypedGeometryStore&& other) {
+  TypedGeometryStore& operator=(TypedGeometryStore&& other) noexcept {
     TypedGeometryStore tmp(std::move(other));
     swap(tmp);
     return *this;
@@ -245,6 +245,7 @@ class TypedGeometryStore {
 
   char* _writeBuffer = 0;
 };
+
 struct WriteCand {
   std::string raw;
   std::shared_ptr<void> geom;
@@ -332,6 +333,9 @@ class GeometryStore {
             TypedGeometryStore<SimpleLine>::persistFName(dir, prefix)),
         _multiStore(cfg.numThreads + 1,
                     TypedGeometryStore<MultiGeom>::persistFName(dir, prefix)) {}
+
+  GeometryStore(const GeometryStore&) = delete;
+  GeometryStore& operator=(const GeometryStore&) = delete;
 
   void log(const std::string& msg);
 

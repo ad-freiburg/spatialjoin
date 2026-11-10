@@ -40,7 +40,7 @@ enum GeomType : uint8_t {
   SIMPLE_LINE_RISING = 3,
   SIMPLE_POLYGON = 4,
   FOLDED_POINT = 5,
-  FOLDED_SIMPLE_LINE_RISING = 6,
+  FOLDED_SIMPLE_LINE_RISING = 6,  // line segment goin up
   FOLDED_BOX_POLYGON = 7,
   DELETED = 8,
   SELF_CHECK = 9,
@@ -48,7 +48,7 @@ enum GeomType : uint8_t {
   SELF_CHECK_LINE = 11,
   SELF_CHECK_POINT = 12,
   MULTI = 13,
-  SIMPLE_LINE_FALLING = 14,
+  SIMPLE_LINE_FALLING = 14,  // line segment going down
   FOLDED_SIMPLE_LINE_FALLING = 15
 };
 
@@ -179,6 +179,7 @@ class BoxVal {
     if (pad > 0) return util::geo::pad(ret, pad);
     return ret;
   }
+
   void setB45(const util::geo::I32Box& b45) {
     if (!hasB45()) {
       setB45Pad(b45.isNull() ? -1 : 0);
@@ -242,6 +243,16 @@ struct PreparedGeomMeta {
   size_t numAnchors;
 
   GeomType getType() const { return idType(id); }
+
+  util::geo::DBox getBoundingBox(util::geo::CRSType crs) const {
+    if (bbox.isNull()) return {};
+    util::geo::DPoint ll(bbox.getLowerLeft().getX() * 1.0 / PREC,
+                         bbox.getLowerLeft().getY() * 1.0 / PREC);
+    util::geo::DPoint ur(bbox.getUpperRight().getX() * 1.0 / PREC,
+                         bbox.getUpperRight().getY() * 1.0 / PREC);
+    return {util::geo::projectToCRS(ll, util::geo::CRSType::WEB_MERCATOR, crs),
+            util::geo::projectToCRS(ur, util::geo::CRSType::WEB_MERCATOR, crs)};
+  }
 };
 
 typedef std::function<void(size_t t, const std::string& gid,

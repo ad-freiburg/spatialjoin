@@ -144,6 +144,9 @@ class Sweeper {
         _dontNeedFullDE9IM(!_cfg.computeDE9IM &&
                            _cfg.de9imFilter == util::geo::FANY) {}
 
+  Sweeper(const Sweeper&) = delete;
+  Sweeper& operator=(const Sweeper&) = delete;
+
   void log(const std::string& msg);
 
   RelStats sweep(const SweepEventList* eventsA,

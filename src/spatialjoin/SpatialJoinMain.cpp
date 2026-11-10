@@ -441,8 +441,7 @@ int main(int argc, char** argv) {
     geomCache.log("Note: skipped " + std::to_string(numInvalid) +
                   " invalid WKT literals");
 
-  geomCache.log("Done parsing (" + std::to_string(TOOK(ts) / 1000000000.0) +
-                "s).");
+  geomCache.log("Done parsing (" + std::to_string(TOOK(ts) / 1.0e9) + "s).");
 
   for (auto& store : geomStores) store->flush();
 
@@ -458,7 +457,7 @@ int main(int argc, char** argv) {
   ts = TIME();
   sweeper.sweep(sweepEvents[0].get(),
                 sweepEvents.size() > 1 ? sweepEvents[1].get() : 0);
-  geomCache.log("done (" + std::to_string(TOOK(ts) / 1000000000.0) + "s).");
+  geomCache.log("done (" + std::to_string(TOOK(ts) / 1.0e9) + "s).");
 
   return 0;
 }
