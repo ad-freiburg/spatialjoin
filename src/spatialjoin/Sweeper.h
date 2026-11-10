@@ -243,11 +243,9 @@ class Sweeper {
   util::geo::DE9IMatrix DE9IMCheck(const Line* a, const Area* b,
                                    size_t t) const;
 
-  double getMaxScaleFactor(const util::geo::I32Box& geom) const;
   static std::pair<double, double> getMinMaxLocalScaleFactors(
       const util::geo::I32Box& boxA, const util::geo::I32Box& boxB,
       double distanceUpperBound);
-  double getMaxScaleFactor(const util::geo::I32Point& geom) const;
 
   void multiOut(size_t t, const std::string& gid, GeomOrigin origin);
   void clearMultis(bool force);

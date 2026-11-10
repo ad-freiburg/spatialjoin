@@ -113,7 +113,7 @@ std::vector<sj::BoxVal> Sweeper::multiIn(const BoxVal& multiIn, bool side) {
   bool hasRightPoint = false;
 
   for (const auto& event : multi.events) {
-    if (!event.out()) {
+    if (event.in()) {
       subSize++;
     } else if (!hasRightPoint || event.point().getX() > rightPoint.getX()) {
       rightPoint = event.point();
@@ -624,7 +624,7 @@ RelStats Sweeper::sweep(const SweepEventList* eventsA,
             multiHeads.push({slot, 0});
           }
         }
-      } else if (!cur->out()) {
+      } else if (cur->in()) {
         // IN event
         actives[curSide].insert({cur->loY(), cur->upY()},
                                 {cur->id(), cur->b45(), cur->point(),
@@ -3008,24 +3008,6 @@ double Sweeper::localSearchPadding(double euclideanDistanceUpperBound,
   if (factorNew2 < factorNew3) return factorNew2 * euclideanDistanceUpperBound;
 
   return factorNew3 * euclideanDistanceUpperBound;
-}
-
-// _____________________________________________________________________________
-double Sweeper::getMaxScaleFactor(const I32Box& bbox) const {
-  double invScaleFactor = std::min(
-      util::geo::webMercDistFactor(I32Point{bbox.getLowerLeft().getX() / PREC,
-                                            bbox.getLowerLeft().getY() / PREC}),
-      util::geo::webMercDistFactor(
-          I32Point{bbox.getUpperRight().getX() / PREC,
-                   bbox.getUpperRight().getY() / PREC}));
-
-  return 1.0 / invScaleFactor;
-}
-
-// _____________________________________________________________________________
-double Sweeper::getMaxScaleFactor(const I32Point& p) const {
-  return 1.0 / util::geo::webMercDistFactor(
-                   I32Point{p.getX() / PREC, p.getY() / PREC});
 }
 
 // _____________________________________________________________________________
