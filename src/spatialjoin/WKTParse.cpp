@@ -49,25 +49,37 @@ WKTParser::WKTParser(sj::GeometryStore* store, sj::PreparedGeomMetaCb metaCb,
 void WKTParser::processQueue(size_t t) {
   ParseBatch batch;
   while ((batch = _jobs.get()).size()) {
-    sj::WriteBatch w;
-    for (const auto& job : batch) {
-      if (_cancelled) break;
+    // if cancelled, unspin
+    if (_cancelled) continue;
 
-      if (job.str.size()) {
-        parseLine(job.str.c_str(), job.line, t, w, _encodeIds, _strict);
-      } else {
-        // parse point directly
-        auto mercPoint = latLngToWebMerc(job.point);
+    try {
+      sj::WriteBatch w;
+      for (const auto& job : batch) {
+        if (_cancelled) break;
 
-        util::geo::I32Point addPoint{static_cast<int>(mercPoint.getX() * PREC),
-                                     static_cast<int>(mercPoint.getY() * PREC)};
-        std::string id = std::to_string(job.line);
-        if (_encodeIds) id = idEnhance(id);
-        _store->add(addPoint, id, w);
+        if (job.str.size()) {
+          parseLine(job.str.c_str(), job.line, t, w, _encodeIds, _strict);
+        } else {
+          // parse point directly
+          auto mercPoint = latLngToWebMerc(job.point);
+
+          util::geo::I32Point addPoint{
+              static_cast<int>(mercPoint.getX() * PREC),
+              static_cast<int>(mercPoint.getY() * PREC)};
+          std::string id = std::to_string(job.line);
+          if (_encodeIds) id = idEnhance(id);
+          _store->add(addPoint, id, w);
+        }
       }
-    }
 
-    _store->addBatch(w, t, _metaCb);
+      _store->addBatch(w, t, _metaCb);
+    } catch (...) {
+      {
+        std::lock_guard<std::mutex> lock(_workerExceptionMtx);
+        if (!_workerException) _workerException = std::current_exception();
+      }
+      _cancelled = true;
+    }
   }
 }
 
@@ -220,6 +232,8 @@ void WKTParser::parseBz2File(const std::string& path) {
 
 // _____________________________________________________________________________
 void WKTParser::parse(char* c, size_t size) {
+  if (_cancelled.load(std::memory_order_relaxed)) return;
+
   size_t p = 0;
   size_t batchStart = 0;
 

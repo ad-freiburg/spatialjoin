@@ -6,7 +6,9 @@
 #define SPATIALJOINS_WKTPARSE_H_
 
 #include <atomic>
+#include <exception>
 #include <limits>
+#include <mutex>
 
 #include "GeometryStore.h"
 #include "util/geo/Geo.h"
@@ -111,6 +113,13 @@ class WKTParserBase {
     if (_done) return;
     _done = true;
 
+    // the last line
+    if (_dangling.size()) {
+      _curBatch.push_back({_dangling, _gid, {0, 0}});
+      _dangling.clear();
+      _gid++;
+    }
+
     if (_curBatch.size()) {
       _jobs.add(std::move(_curBatch));
       _curBatch.clear();
@@ -120,6 +129,8 @@ class WKTParserBase {
     _jobs.add({});
     // wait for all workers to finish
     for (auto& thr : _thrds) thr.join();
+
+    if (_workerException) std::rethrow_exception(_workerException);
   };
 
   static util::geo::I32Point projFunc(const util::geo::DPoint& p,
@@ -239,6 +250,9 @@ class WKTParserBase {
   std::vector<size_t> _numInvalid;
 
   std::atomic<bool> _cancelled;
+
+  std::exception_ptr _workerException;
+  std::mutex _workerExceptionMtx;
 
   // whether done() was called
   bool _done = false;

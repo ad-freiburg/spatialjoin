@@ -437,7 +437,7 @@ int main(int argc, char** argv) {
       } else {
         parser.parseFile(inputFiles[i]);
       }
-    } catch (const std::runtime_error& e) {
+    } catch (const std::exception& e) {
       std::cerr << e.what() << std::endl;
       exit(1);
     }
