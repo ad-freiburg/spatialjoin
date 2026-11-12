@@ -466,6 +466,7 @@ int main(int argc, char** argv) {
   try {
     sweeper.sweep(sweepEvents[0].get(),
                   sweepEvents.size() > 1 ? sweepEvents[1].get() : 0);
+    outWriter.flush();
   } catch (const std::exception& e) {
     std::cerr << "libspatialjoin: " << e.what() << std::endl;
     exit(1);

@@ -10,6 +10,9 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+#include <atomic>
+#include <iostream>
+
 #include "util/Misc.h"
 
 #ifndef SPATIALJOIN_NO_BZIP2
@@ -41,11 +44,20 @@ inline uint64_t intFromString(const char* s, size_t n) {
 class OutputWriter {
  public:
   virtual ~OutputWriter() {
-    flushOutputFiles();
+    try {
+      flush();
+    } catch (const std::exception& e) {
+      std::cerr << "libspatialjoin: " << e.what() << std::endl;
+    } catch (...) {
+      std::cerr << "libspatialjoin: Could not write output" << std::endl;
+    }
     for (size_t i = 0; i < _outBuffers.size(); i++) {
       if (_outBuffers[i]) delete[] _outBuffers[i];
     }
   }
+
+  OutputWriter(const OutputWriter&) = delete;
+  OutputWriter& operator=(const OutputWriter&) = delete;
 
   OutputWriter(size_t numThreads, const std::string& prefix,
                const std::string& suffix, const std::string& out,
@@ -94,7 +106,17 @@ class OutputWriter {
 
   OutMode getOutMode() const { return _outMode; }
 
-  void flushOutputFiles() {
+  void flush() {
+    if (_flushed) return;
+    _flushed = true;
+
+    if (_failed) {
+      // writeRelCb() already threw, the output is incomplete
+      cleanup();
+      throw std::runtime_error(
+          "Could not write output, writing a spatial relation failed before");
+    }
+
     if (_outMode == COUT) {
       for (size_t i = 0; i < _numThreads + 1; i++) {
         _outBuffers[i][_outBufPos[i]] = 0;
@@ -274,6 +296,10 @@ class OutputWriter {
 
   virtual void writeRelCb(size_t t, const char* a, size_t an, const char* b,
                           size_t bn, const char* pred, size_t predn) {
+    // a write failed before (and threw), the output is incomplete anyway and
+    // the file of that thread may be closed
+    if (_failed.load(std::memory_order_relaxed)) return;
+
     size_t totSize = _prefix.size() + an + predn + bn + _suffix.size();
 
     if (_outMode == BZ2) {
@@ -282,12 +308,14 @@ class OutputWriter {
         int err = 0;
         BZ2_bzWrite(&err, _bzFiles[t], _outBuffers[t], _outBufPos[t]);
         if (err == BZ_IO_ERROR) {
-          BZ2_bzWriteClose(&err, _bzFiles[t], 0, 0, 0);
           std::string fname = _tmpBase + "-" + std::to_string(t);
           std::stringstream ss;
           ss << "Could not write spatial relation to temporary bzip2 file '"
              << fname << "':\n";
           ss << strerror(errno) << std::endl;
+          BZ2_bzWriteClose(&err, _bzFiles[t], 1, 0, 0);
+          _bzFiles[t] = 0;
+          _failed = true;
           throw std::runtime_error(ss.str());
         }
         _outBufPos[t] = 0;
@@ -300,12 +328,14 @@ class OutputWriter {
       if (_outBufPos[t] + totSize >= BUFFER_S_PAIRS) {
         int r = gzwrite(_gzFiles[t], _outBuffers[t], _outBufPos[t]);
         if (r != (int)_outBufPos[t]) {
-          gzclose(_gzFiles[t]);
           std::string fname = _tmpBase + "-" + std::to_string(t);
           std::stringstream ss;
           ss << "Could not write spatial relation to temporary gzip file '"
              << fname << "':\n";
           ss << strerror(errno) << std::endl;
+          gzclose(_gzFiles[t]);
+          _gzFiles[t] = 0;
+          _failed = true;
           throw std::runtime_error(ss.str());
         }
         _outBufPos[t] = 0;
@@ -323,6 +353,7 @@ class OutputWriter {
           ss << "Could not write spatial relation to temporary file '" << fname
              << "':\n";
           ss << strerror(errno) << std::endl;
+          _failed = true;
           throw std::runtime_error(ss.str());
         }
         _outBufPos[t] = 0;
@@ -390,6 +421,9 @@ class OutputWriter {
   std::string _out, _cache;
 
   std::string _tmpBase;
+
+  bool _flushed = false;
+  std::atomic<bool> _failed{false};
 };
 
 // An OutputWriter which decodes geometry ids encoded by an
