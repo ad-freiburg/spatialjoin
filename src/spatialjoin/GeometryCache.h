@@ -51,7 +51,10 @@ struct TypedGeometryCache {
 
 class GeometryCache {
  public:
-  GeometryCache(SpatialJoinCfg cfg) : _cfg(cfg) {}
+  GeometryCache(SpatialJoinCfg cfg) : _cfg(cfg) {
+    if (cfg.numCacheBuckets == 0)
+      throw std::runtime_error("Need at least one cache bucket");
+  }
 
   GeometryCache(const GeometryCache&) = delete;
   GeometryCache& operator=(const GeometryCache&) = delete;
@@ -154,8 +157,8 @@ class GeometryCache {
                                 size_t tid) const;
 
   template <typename W>
-  std::shared_ptr<W> cache(TypedGeometryCache<W>& cache, size_t off,
-                           W&& val, size_t estSize, size_t tid) const;
+  std::shared_ptr<W> cache(TypedGeometryCache<W>& cache, size_t off, W&& val,
+                           size_t estSize, size_t tid) const;
 
   template <typename W>
   static std::pair<size_t, size_t> size(const TypedGeometryCache<W>& cache);

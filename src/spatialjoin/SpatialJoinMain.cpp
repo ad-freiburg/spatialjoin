@@ -282,6 +282,10 @@ int main(int argc, char** argv) {
         state = 0;
         break;
       case 12:
+        if (atoi(cur.c_str()) < 1) {
+          std::cerr << "--num-cache-buckets must be at least 1" << std::endl;
+          exit(1);
+        }
         numCacheBuckets = atoi(cur.c_str());
         state = 0;
         break;
