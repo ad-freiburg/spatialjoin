@@ -166,6 +166,9 @@ void WKTParser::parseFile(const std::string& path) {
     } catch (const std::runtime_error&) {
       close(f);
       throw std::runtime_error("Could not read input file " + path);
+    } catch (...) {
+      close(f);
+      throw;
     }
 
     close(f);
@@ -177,17 +180,22 @@ void WKTParser::parseFile(const std::string& path) {
 // _____________________________________________________________________________
 void WKTParser::parseGzFile(const std::string& path) {
 #ifndef SPATIALJOIN_NO_ZLIB
+  std::vector<unsigned char, util::no_init_allocator<unsigned char>> buf(
+      READ_BUFF_SIZE);
+  ssize_t len;
+
   gzFile f = gzopen(path.c_str(), "r");
   if (f == Z_NULL) {
     throw std::runtime_error("Could not open input file " + path);
   }
 
-  std::vector<unsigned char, util::no_init_allocator<unsigned char>> buf(
-      READ_BUFF_SIZE);
-  ssize_t len;
-
-  while ((len = util::zreadAll(f, buf.data(), buf.size())) > 0) {
-    parse(reinterpret_cast<char*>(buf.data()), len);
+  try {
+    while ((len = util::zreadAll(f, buf.data(), buf.size())) > 0) {
+      parse(reinterpret_cast<char*>(buf.data()), len);
+    }
+  } catch (...) {
+    gzclose(f);
+    throw;
   }
 
   gzclose(f);
@@ -202,6 +210,10 @@ void WKTParser::parseGzFile(const std::string& path) {
 // _____________________________________________________________________________
 void WKTParser::parseBz2File(const std::string& path) {
 #ifndef SPATIALJOIN_NO_BZIP2
+  std::vector<unsigned char, util::no_init_allocator<unsigned char>> buf(
+      READ_BUFF_SIZE);
+  ssize_t len;
+
   auto fh = fopen(path.c_str(), "r");
   if (!fh) throw std::runtime_error("Could not open input file " + path);
 
@@ -212,12 +224,14 @@ void WKTParser::parseBz2File(const std::string& path) {
     throw std::runtime_error("Could not open input file " + path);
   }
 
-  std::vector<unsigned char, util::no_init_allocator<unsigned char>> buf(
-      READ_BUFF_SIZE);
-  ssize_t len;
-
-  while ((len = util::bz2readAll(f, buf.data(), buf.size())) > 0) {
-    parse(reinterpret_cast<char*>(buf.data()), len);
+  try {
+    while ((len = util::bz2readAll(f, buf.data(), buf.size())) > 0) {
+      parse(reinterpret_cast<char*>(buf.data()), len);
+    }
+  } catch (...) {
+    BZ2_bzReadClose(&err, f);
+    fclose(fh);
+    throw;
   }
 
   BZ2_bzReadClose(&err, f);
