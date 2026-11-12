@@ -10,6 +10,8 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+#include "util/Misc.h"
+
 #ifndef SPATIALJOIN_NO_BZIP2
 #include <bzlib.h>
 #endif
@@ -52,7 +54,8 @@ class OutputWriter {
         _prefix(prefix),
         _suffix(suffix),
         _out(out),
-        _cache(cache) {
+        _cache(cache),
+        _tmpBase(util::getTmpFName(cache, ".rels", "")) {
     if (util::endsWith(out, ".bz2")) {
 #ifndef SPATIALJOIN_NO_BZIP2
       _outMode = BZ2;
@@ -105,8 +108,7 @@ class OutputWriter {
           int err = 0;
           BZ2_bzWrite(&err, _bzFiles[i], _outBuffers[i], _outBufPos[i]);
           if (err == BZ_IO_ERROR) {
-            std::string fname = _cache + "/.rels" + std::to_string(getpid()) +
-                                "-" + std::to_string(i);
+            std::string fname = _tmpBase + "-" + std::to_string(i);
             std::stringstream ss;
             ss << "Could not write spatial relation to temporary bzip2 file '"
                << fname << "':\n";
@@ -125,8 +127,7 @@ class OutputWriter {
         for (size_t i = 0; i < _numThreads + 1; i++) {
           int r = gzwrite(_gzFiles[i], _outBuffers[i], _outBufPos[i]);
           if (r != (int)_outBufPos[i]) {
-            std::string fname = _cache + "/.rels" + std::to_string(getpid()) +
-                                "-" + std::to_string(i);
+            std::string fname = _tmpBase + "-" + std::to_string(i);
             std::stringstream ss;
             ss << "Could not write spatial relation to temporary gzip file '"
                << fname << "':\n";
@@ -143,8 +144,7 @@ class OutputWriter {
           size_t r =
               fwrite(_outBuffers[i], sizeof(char), _outBufPos[i], _rawFiles[i]);
           if (r != _outBufPos[i]) {
-            std::string fname = _cache + "/.rels" + std::to_string(getpid()) +
-                                "-" + std::to_string(i);
+            std::string fname = _tmpBase + "-" + std::to_string(i);
             std::stringstream ss;
             ss << "Could not write spatial relation to temporary file '"
                << fname << "':\n";
@@ -158,12 +158,11 @@ class OutputWriter {
       }
 
       // merge files into first file
-      std::ofstream out(
-          _cache + "/.rels" + std::to_string(getpid()) + "-0",
-          std::ios_base::binary | std::ios_base::app | std::ios_base::ate);
+      std::ofstream out(_tmpBase + "-0", std::ios_base::binary |
+                                             std::ios_base::app |
+                                             std::ios_base::ate);
       for (size_t i = 1; i < _numThreads + 1; i++) {
-        std::string fName = _cache + "/.rels" + std::to_string(getpid()) + "-" +
-                            std::to_string(i);
+        std::string fName = _tmpBase + "-" + std::to_string(i);
         std::ifstream ifCur(fName, std::ios_base::binary);
         if (ifCur.peek() != std::ifstream::traits_type::eof())
           out << ifCur.rdbuf();
@@ -171,8 +170,7 @@ class OutputWriter {
       }
 
       // move first file to output file
-      std::rename((_cache + "/.rels" + std::to_string(getpid()) + "-0").c_str(),
-                  _out.c_str());
+      std::rename((_tmpBase + "-0").c_str(), _out.c_str());
     }
   }
 
@@ -199,8 +197,7 @@ class OutputWriter {
     if (_outMode == BZ2) {
 #ifndef SPATIALJOIN_NO_BZIP2
       for (size_t i = 0; i < _numThreads + 1; i++) {
-        std::string fname = _cache + "/.rels" + std::to_string(getpid()) + "-" +
-                            std::to_string(i);
+        std::string fname = _tmpBase + "-" + std::to_string(i);
         _rawFiles[i] = fopen(fname.c_str(), "w");
 
         if (_rawFiles[i] == NULL) {
@@ -226,8 +223,7 @@ class OutputWriter {
     } else if (_outMode == GZ) {
 #ifndef SPATIALJOIN_NO_ZLIB
       for (size_t i = 0; i < _numThreads + 1; i++) {
-        std::string fname = _cache + "/.rels" + std::to_string(getpid()) + "-" +
-                            std::to_string(i);
+        std::string fname = _tmpBase + "-" + std::to_string(i);
         _gzFiles[i] = gzopen(fname.c_str(), "w");
 
         if (_gzFiles[i] == Z_NULL) {
@@ -242,8 +238,7 @@ class OutputWriter {
 #endif
     } else if (_outMode == PLAIN) {
       for (size_t i = 0; i < _numThreads + 1; i++) {
-        std::string fname = _cache + "/.rels" + std::to_string(getpid()) + "-" +
-                            std::to_string(i);
+        std::string fname = _tmpBase + "-" + std::to_string(i);
         _rawFiles[i] = fopen(fname.c_str(), "w");
 
         if (_rawFiles[i] == NULL) {
@@ -288,8 +283,7 @@ class OutputWriter {
         BZ2_bzWrite(&err, _bzFiles[t], _outBuffers[t], _outBufPos[t]);
         if (err == BZ_IO_ERROR) {
           BZ2_bzWriteClose(&err, _bzFiles[t], 0, 0, 0);
-          std::string fname = _cache + "/.rels" + std::to_string(getpid()) +
-                              "-" + std::to_string(t);
+          std::string fname = _tmpBase + "-" + std::to_string(t);
           std::stringstream ss;
           ss << "Could not write spatial relation to temporary bzip2 file '"
              << fname << "':\n";
@@ -307,8 +301,7 @@ class OutputWriter {
         int r = gzwrite(_gzFiles[t], _outBuffers[t], _outBufPos[t]);
         if (r != (int)_outBufPos[t]) {
           gzclose(_gzFiles[t]);
-          std::string fname = _cache + "/.rels" + std::to_string(getpid()) +
-                              "-" + std::to_string(t);
+          std::string fname = _tmpBase + "-" + std::to_string(t);
           std::stringstream ss;
           ss << "Could not write spatial relation to temporary gzip file '"
              << fname << "':\n";
@@ -325,8 +318,7 @@ class OutputWriter {
         size_t r =
             fwrite(_outBuffers[t], sizeof(char), _outBufPos[t], _rawFiles[t]);
         if (r != _outBufPos[t]) {
-          std::string fname = _cache + "/.rels" + std::to_string(getpid()) +
-                              "-" + std::to_string(t);
+          std::string fname = _tmpBase + "-" + std::to_string(t);
           std::stringstream ss;
           ss << "Could not write spatial relation to temporary file '" << fname
              << "':\n";
@@ -373,9 +365,7 @@ class OutputWriter {
       }
 
       if (_outMode == BZ2 || _outMode == GZ || _outMode == PLAIN) {
-        std::remove((_cache + "/.rels" + std::to_string(getpid()) + "-" +
-                     std::to_string(i))
-                        .c_str());
+        std::remove((_tmpBase + "-" + std::to_string(i)).c_str());
       }
     }
   }
@@ -398,6 +388,8 @@ class OutputWriter {
   std::vector<unsigned char*> _outBuffers;
 
   std::string _out, _cache;
+
+  std::string _tmpBase;
 };
 
 // An OutputWriter which decodes geometry ids encoded by an
