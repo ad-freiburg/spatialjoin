@@ -11,6 +11,7 @@
 #include <map>
 #include <memory>
 #include <mutex>
+#include <stdexcept>
 #include <string>
 #if __cplusplus >= 201402L
 #include <shared_mutex>
@@ -146,7 +147,15 @@ class TypedGeometryStore {
   // reads the geometry at off from disk, using the read stream of thread tid
   // (0 <= tid < numthreads). Not thread-safe for the same tid!
   std::pair<size_t, W> getFrom(size_t off, size_t tid) const {
-    return getFrom(untypedId(off), _geomsFReads[tid]);
+    auto& str = _geomsFReads[tid];
+    str.clear();
+    auto ret = getFrom(untypedId(off), str);
+    if (!str) {
+      throw std::runtime_error("Could not read geometry at offset " +
+                               std::to_string(untypedId(off)) + " from " +
+                               _fName);
+    }
+    return ret;
   }
 
   // if true, all geometries are held in memory and must be retrieved via
@@ -213,7 +222,32 @@ class TypedGeometryStore {
     for (size_t i = 0; i < _geomsFReads.size(); i++) {
       _geomsFReads[i].open(_fName, std::ios::in | std::ios::binary);
     }
+
+    // unlink before checking, to not leave a temporary file behind on error
     if (!_persistOnDisk) unlink(_fName.c_str());
+
+    if (!_geomsF.is_open()) {
+      throw std::runtime_error("Could not open geometry store file " + _fName);
+    }
+
+    for (const auto& read : _geomsFReads) {
+      if (!read.is_open()) {
+        throw std::runtime_error("Could not open geometry store file " +
+                                 _fName);
+      }
+    }
+  }
+
+  std::pair<size_t, GeomId> getIdFromDisk(size_t off, size_t tid) const {
+    auto& str = _geomsFReads[tid];
+    str.clear();
+    auto ret = getIdFrom(untypedId(off), str);
+    if (!str) {
+      throw std::runtime_error("Could not read geometry at offset " +
+                               std::to_string(untypedId(off)) + " from " +
+                               _fName);
+    }
+    return ret;
   }
 
   // the geometry type the IDs returned by add() are tagged with
@@ -412,10 +446,6 @@ class GeometryStore {
   util::geo::I32Box addMembers(const util::geo::I32Collection& col,
                                const std::string& gid, size_t& subId,
                                WriteBatch& target) const;
-
-  // returns the geometry stored at off in store, bypassing any cache
-  template <typename W>
-  static std::shared_ptr<W> get(const TypedGeometryStore<W>& store, size_t off);
 
   const SpatialJoinCfg _cfg;
 
