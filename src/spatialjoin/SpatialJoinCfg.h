@@ -4,6 +4,7 @@
 #ifndef SPATIALJOINS_SPATIALJOINCFG_H_
 #define SPATIALJOINS_SPATIALJOINCFG_H_
 
+#include <algorithm>
 #include <functional>
 #include <string>
 #include <thread>
@@ -14,8 +15,10 @@ namespace sj {
 
 // the defaults are those of the spatialjoin command line tool
 struct SpatialJoinCfg {
-  size_t numThreads = std::thread::hardware_concurrency();
-  size_t numCacheBuckets = std::thread::hardware_concurrency();
+  size_t numThreads =
+      std::max<size_t>(1, std::thread::hardware_concurrency());
+  size_t numCacheBuckets =
+      std::max<size_t>(1, std::thread::hardware_concurrency());
   size_t geomCacheMaxSize = 100 * 1000 * 1000;  // in bytes
   size_t geomCacheMaxNumElements = 10000;
   std::string sepIsect = " intersects ";
