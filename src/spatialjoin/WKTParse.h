@@ -80,6 +80,7 @@ class WKTParserBase {
         _metaCb(std::move(metaCb)),
         _jobs(1000),
         _thrds(numThreads),
+        _bboxes(numThreads),
         _numInvalid(numThreads),
         _cancelled(false){};
   ~WKTParserBase() {
@@ -98,6 +99,9 @@ class WKTParserBase {
   // continue the line numbering across several parsers
   size_t getNextGid() const { return _gid; }
   void setNextGid(size_t gid) { _gid = gid; }
+
+  // full bounding box of all geometries parsed by this
+  util::geo::I32Box getBoundingBox() const { return _bbox; }
 
   // Number of geometries skipped because they were invalid or had an
   // unsupported CRS in strict mode. Only valid after done().
@@ -120,6 +124,9 @@ class WKTParserBase {
     _jobs.add({});
     // wait for all workers to finish
     for (auto& thr : _thrds) thr.join();
+
+    // collect bounding box of parsed geometries
+    for (const auto& box : _bboxes) _bbox = util::geo::extendBox(box, _bbox);
   };
 
   static util::geo::I32Point projFunc(const util::geo::DPoint& p,
@@ -186,44 +193,49 @@ class WKTParserBase {
         const auto& point =
             pointFromWKTProj<int32_t>(c, endr, &projFunc, crsType, strict);
         checkWKTEnd(end);
-        _store->add(point, id, batch);
+        addBox(_store->add(point, id, batch), t);
       } else if (wktType == util::geo::WKTType::MULTIPOINT) {
         const auto& mp =
             multiPointFromWKTProj<int32_t>(c, endr, &projFunc, crsType, strict);
         checkWKTEnd(end);
-        _store->add(mp, id, batch);
+        addBox(_store->add(mp, id, batch), t);
       } else if (wktType == util::geo::WKTType::LINESTRING) {
         const auto& line =
             lineFromWKTProj<int32_t>(c, endr, &projFunc, crsType, strict);
         checkWKTEnd(end);
-        _store->add(line, id, batch);
+        addBox(_store->add(line, id, batch), t);
       } else if (wktType == util::geo::WKTType::MULTILINESTRING) {
         const auto& ml =
             multiLineFromWKTProj<int32_t>(c, endr, &projFunc, crsType, strict);
         checkWKTEnd(end);
-        _store->add(ml, id, batch);
+        addBox(_store->add(ml, id, batch), t);
       } else if (wktType == util::geo::WKTType::POLYGON) {
         const auto& poly =
             polygonFromWKTProj<int32_t>(c, endr, &projFunc, crsType, strict);
         checkWKTEnd(end);
-        _store->add(poly, id, batch);
+        addBox(_store->add(poly, id, batch), t);
       } else if (wktType == util::geo::WKTType::MULTIPOLYGON) {
         const auto& mp = multiPolygonFromWKTProj<int32_t>(c, endr, &projFunc,
                                                           crsType, strict);
         checkWKTEnd(end);
-        _store->add(mp, id, batch);
+        addBox(_store->add(mp, id, batch), t);
       } else if (wktType == util::geo::WKTType::COLLECTION) {
         const auto& col =
             collectionFromWKTProj<int32_t>(c, endr, &projFunc, crsType, strict);
         checkWKTEnd(end);
 
-        _store->add(col, id, batch);
+        addBox(_store->add(col, id, batch), t);
       }
     } catch (const util::geo::WKTParseException&) {
       if (!strict) throw;
       _numInvalid[t]++;
     }
   };
+
+  void addBox(const util::geo::I32Box& box, size_t t) {
+    if (!box.isNull()) _bboxes[t] = util::geo::extendBox(box, _bboxes[t]);
+  }
+
   virtual void processQueue(size_t t) = 0;
   size_t _gid = 1;
   std::string _dangling;
@@ -235,6 +247,11 @@ class WKTParserBase {
 
   util::JobQueue<std::vector<ParseJobT>> _jobs;
   std::vector<std::thread> _thrds;
+
+  // the bounding boxes of the geometries parsed by each thread, and their
+  // union, computed in done()
+  std::vector<util::geo::I32Box> _bboxes;
+  util::geo::I32Box _bbox;
 
   std::vector<size_t> _numInvalid;
 

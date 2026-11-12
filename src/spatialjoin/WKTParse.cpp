@@ -63,7 +63,7 @@ void WKTParser::processQueue(size_t t) {
                                      static_cast<int>(mercPoint.getY() * PREC)};
         std::string id = std::to_string(job.line);
         if (_encodeIds) id = idEnhance(id);
-        _store->add(addPoint, id, w);
+        addBox(_store->add(addPoint, id, w), t);
       }
     }
 

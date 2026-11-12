@@ -255,6 +255,60 @@ int main(int, char**) {
   typedGeometryStoreTest();
 
   {
+    // bounding box of the geometries added by a WKTParser
+    using util::geo::extendBox;
+    using util::geo::I32Box;
+    using util::geo::I32Point;
+
+    auto proj = [](double x, double y) {
+      return sj::WKTParser::projFunc({x, y}, util::geo::CRSType::WGS84);
+    };
+    const I32Box lineBox(proj(1, 1), proj(2, 2));
+    const I32Box pointBox(proj(3, 3), proj(3, 3));
+
+    for (double withinDist : {-1.0, 1000.0}) {
+      for (bool filter : {false, true}) {
+        sj::SpatialJoinCfg cfg;
+        cfg.numThreads = 2;
+        cfg.withinDist = withinDist;
+        sj::GeometryStore store(cfg, ".", ".spatialjointest", false);
+
+        // with the filter, the point is not added
+        if (filter) store.setFilterBox(lineBox);
+
+        sj::WKTParser parser(
+            &store,
+            [](size_t, const std::string&, const sj::PreparedGeomMeta&) {}, 2,
+            true);
+        TEST(parser.getBoundingBox().isNull());
+        parser.parseWKT("LINESTRING(1 1, 2 2)", 1);
+        parser.parseWKT("LINESTRING(1 1, 2 a)", 2);  // invalid
+        parser.parsePoint({3, 3}, 3);                 // added directly
+        parser.done();
+
+        TEST(parser.getNumInvalid(), ==, 1);
+
+        // the union of the padded boxes of the added geometries
+        I32Box expected = store.getPaddedBoundingBox(lineBox);
+        if (!filter) {
+          expected = extendBox(store.getPaddedBoundingBox(pointBox), expected);
+        }
+
+        TEST(parser.getBoundingBox() == expected);
+        if (withinDist > 0) {
+          // the padded box is larger than the unpadded one
+          TEST(util::geo::contains(lineBox, parser.getBoundingBox()));
+          TEST(!util::geo::contains(parser.getBoundingBox(), lineBox));
+        } else {
+          TEST(parser.getBoundingBox() ==
+               (filter ? lineBox : extendBox(pointBox, lineBox)));
+        }
+        store.flush();
+      }
+    }
+  }
+
+  {
     using sj::boxids::GRID_H;
     using sj::boxids::GRID_W;
     using sj::boxids::inCellWithPadding;
