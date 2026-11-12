@@ -63,12 +63,14 @@ void SweepEventList::duplicatesToReferences(GeometryCache& cache) {
 // _____________________________________________________________________________
 void SweepEventList::duplicatesOnDiskToReferences(GeometryCache& cache,
                                                   DuplicateState& state) {
-  std::vector<unsigned char> buf(DEFAULT_RBUF_S);
+  std::vector<BoxVal> buf(DEFAULT_RBUF_S / sizeof(BoxVal));
+  auto bytes = reinterpret_cast<unsigned char*>(buf.data());
 
   ssize_t len;
   size_t pos = 0;
 
-  while ((len = util::preadAll(_file, buf.data(), buf.size(), pos)) != 0) {
+  while ((len = util::preadAll(_file, bytes, buf.size() * sizeof(BoxVal),
+                               pos)) != 0) {
     size_t posOld = pos;
     if (len < 0) {
       std::stringstream ss;
@@ -83,9 +85,9 @@ void SweepEventList::duplicatesOnDiskToReferences(GeometryCache& cache,
       throw std::runtime_error("Corrupted events file");
 
     // if we changed something in this buffer, write it back
-    if (duplicatesToReferences(reinterpret_cast<BoxVal*>(buf.data()),
-                               len / sizeof(BoxVal), cache, state)) {
-      if (util::pwriteAll(_file, buf.data(), len, posOld) < 0) {
+    if (duplicatesToReferences(buf.data(), len / sizeof(BoxVal), cache,
+                               state)) {
+      if (util::pwriteAll(_file, bytes, len, posOld) < 0) {
         std::stringstream ss;
         ss << "Could not write to events file\n";
         ss << strerror(errno) << std::endl;
