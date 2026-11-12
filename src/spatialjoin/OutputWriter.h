@@ -81,7 +81,12 @@ class OutputWriter {
       }
     }
 
-    prepareOutputFiles();
+    try {
+      prepareOutputFiles();
+    } catch (...) {
+      cleanup();
+      throw;
+    }
   }
 
   OutMode getOutMode() const { return _outMode; }
@@ -100,17 +105,19 @@ class OutputWriter {
           int err = 0;
           BZ2_bzWrite(&err, _bzFiles[i], _outBuffers[i], _outBufPos[i]);
           if (err == BZ_IO_ERROR) {
-            BZ2_bzWriteClose(&err, _bzFiles[i], 0, 0, 0);
             std::string fname = _cache + "/.rels" + std::to_string(getpid()) +
                                 "-" + std::to_string(i);
             std::stringstream ss;
             ss << "Could not write spatial relation to temporary bzip2 file '"
                << fname << "':\n";
             ss << strerror(errno) << std::endl;
+            cleanup();
             throw std::runtime_error(ss.str());
           }
           BZ2_bzWriteClose(&err, _bzFiles[i], 0, 0, 0);
+          _bzFiles[i] = 0;
           fclose(_rawFiles[i]);
+          _rawFiles[i] = 0;
         }
 #endif
       } else if (_outMode == GZ) {
@@ -118,16 +125,17 @@ class OutputWriter {
         for (size_t i = 0; i < _numThreads + 1; i++) {
           int r = gzwrite(_gzFiles[i], _outBuffers[i], _outBufPos[i]);
           if (r != (int)_outBufPos[i]) {
-            gzclose(_gzFiles[i]);
             std::string fname = _cache + "/.rels" + std::to_string(getpid()) +
                                 "-" + std::to_string(i);
             std::stringstream ss;
             ss << "Could not write spatial relation to temporary gzip file '"
                << fname << "':\n";
             ss << strerror(errno) << std::endl;
+            cleanup();
             throw std::runtime_error(ss.str());
           }
           gzclose(_gzFiles[i]);
+          _gzFiles[i] = 0;
         }
 #endif
       } else {
@@ -141,9 +149,11 @@ class OutputWriter {
             ss << "Could not write spatial relation to temporary file '"
                << fname << "':\n";
             ss << strerror(errno) << std::endl;
+            cleanup();
             throw std::runtime_error(ss.str());
           }
           fclose(_rawFiles[i]);
+          _rawFiles[i] = 0;
         }
       }
 
@@ -338,6 +348,38 @@ class OutputWriter {
   }
 
  private:
+  void cleanup() {
+    for (size_t i = 0; i < _numThreads + 1; i++) {
+#ifndef SPATIALJOIN_NO_BZIP2
+      if (i < _bzFiles.size() && _bzFiles[i]) {
+        int err = 0;
+        BZ2_bzWriteClose(&err, _bzFiles[i], 1, 0, 0);
+        _bzFiles[i] = 0;
+      }
+#endif
+#ifndef SPATIALJOIN_NO_ZLIB
+      if (i < _gzFiles.size() && _gzFiles[i]) {
+        gzclose(_gzFiles[i]);
+        _gzFiles[i] = 0;
+      }
+#endif
+      if (i < _rawFiles.size() && _rawFiles[i]) {
+        fclose(_rawFiles[i]);
+        _rawFiles[i] = 0;
+      }
+      if (i < _outBuffers.size()) {
+        delete[] _outBuffers[i];
+        _outBuffers[i] = 0;
+      }
+
+      if (_outMode == BZ2 || _outMode == GZ || _outMode == PLAIN) {
+        std::remove((_cache + "/.rels" + std::to_string(getpid()) + "-" +
+                     std::to_string(i))
+                        .c_str());
+      }
+    }
+  }
+
   OutMode _outMode;
   size_t _numThreads;
 
