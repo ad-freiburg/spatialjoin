@@ -179,7 +179,7 @@ std::string fullRun(const std::vector<std::string>& files,
         stats->numReferences += events->numReferences();
     }
 
-    outWriter.flushOutputFiles();
+    outWriter.flush();
   }
 
   std::string ret;
