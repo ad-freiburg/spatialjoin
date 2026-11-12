@@ -290,6 +290,10 @@ int main(int argc, char** argv) {
         state = 0;
         break;
       case 13:
+        if (atoi(cur.c_str()) < 1) {
+          std::cerr << "--num-threads must be at least 1" << std::endl;
+          exit(1);
+        }
         numThreads = atoi(cur.c_str());
         state = 0;
         break;

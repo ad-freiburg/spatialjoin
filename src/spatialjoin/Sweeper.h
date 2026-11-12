@@ -17,6 +17,7 @@
 #include <functional>
 #include <mutex>
 #include <queue>
+#include <stdexcept>
 #include <thread>
 #include <unordered_map>
 #include <unordered_set>
@@ -143,7 +144,10 @@ class Sweeper {
         _geomCache(geomCache),
         _jobs(std::max<size_t>(1, 2 * cfg.numThreads)),
         _dontNeedFullDE9IM(!_cfg.computeDE9IM &&
-                           _cfg.de9imFilter == util::geo::FANY) {}
+                           _cfg.de9imFilter == util::geo::FANY) {
+    if (cfg.numThreads == 0)
+      throw std::runtime_error("Need at least one worker thread");
+  }
 
   Sweeper(const Sweeper&) = delete;
   Sweeper& operator=(const Sweeper&) = delete;

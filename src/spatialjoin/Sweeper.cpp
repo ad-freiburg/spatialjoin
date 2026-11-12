@@ -491,28 +491,36 @@ RelStats Sweeper::sweep(const SweepEventList* eventsA,
   _cancelled = false;
   _workerException = nullptr;
 
+  _jobs.reset();
+  _finishedMultis = {};
+  for (size_t side = 0; side < 2; side++) {
+    _openMultiIDs[side].clear();
+    _subSizes[side].clear();
+    _multiRightPoint[side].clear();
+  }
+
   const size_t maxBatchSize = 100000;
   size_t batchSize = 100;
   JobBatch curBatch;
 
   util::geo::IntervalIdx<int32_t, SweepVal> actives[2];
 
-  _stats.resize(_cfg.numThreads + 1);
-  _relStats.resize(_cfg.numThreads + 1);
-  _checks.resize(_cfg.numThreads);
-  _curX.resize(_cfg.numThreads);
+  _stats.assign(_cfg.numThreads + 1, {});
+  _relStats.assign(_cfg.numThreads + 1, {});
+  _checks.assign(_cfg.numThreads, {});
+  _curX.assign(_cfg.numThreads, {});
   for (size_t side = 0; side < 2; side++) {
-    _subEquals[side].resize(_cfg.numThreads + 1);
-    _subCovered[side].resize(_cfg.numThreads + 1);
-    _subContains[side].resize(_cfg.numThreads + 1);
-    _subDistance[side].resize(_cfg.numThreads + 1);
-    _subDE9IM[side].resize(_cfg.numThreads + 1);
-    _subNotOverlaps[side].resize(_cfg.numThreads + 1);
-    _subOverlaps[side].resize(_cfg.numThreads + 1);
-    _subNotTouches[side].resize(_cfg.numThreads + 1);
-    _subNotCrosses[side].resize(_cfg.numThreads + 1);
-    _subCrosses[side].resize(_cfg.numThreads + 1);
-    _subTouches[side].resize(_cfg.numThreads + 1);
+    _subEquals[side].assign(_cfg.numThreads + 1, {});
+    _subCovered[side].assign(_cfg.numThreads + 1, {});
+    _subContains[side].assign(_cfg.numThreads + 1, {});
+    _subDistance[side].assign(_cfg.numThreads + 1, {});
+    _subDE9IM[side].assign(_cfg.numThreads + 1, {});
+    _subNotOverlaps[side].assign(_cfg.numThreads + 1, {});
+    _subOverlaps[side].assign(_cfg.numThreads + 1, {});
+    _subNotTouches[side].assign(_cfg.numThreads + 1, {});
+    _subNotCrosses[side].assign(_cfg.numThreads + 1, {});
+    _subCrosses[side].assign(_cfg.numThreads + 1, {});
+    _subTouches[side].assign(_cfg.numThreads + 1, {});
   }
 
   _mutsEquals = std::vector<std::mutex>(_cfg.numThreads + 1);
