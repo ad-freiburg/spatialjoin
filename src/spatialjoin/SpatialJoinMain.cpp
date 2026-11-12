@@ -459,8 +459,13 @@ int main(int argc, char** argv) {
 
   geomCache.log("Sweeping...");
   ts = TIME();
-  sweeper.sweep(sweepEvents[0].get(),
-                sweepEvents.size() > 1 ? sweepEvents[1].get() : 0);
+  try {
+    sweeper.sweep(sweepEvents[0].get(),
+                  sweepEvents.size() > 1 ? sweepEvents[1].get() : 0);
+  } catch (const std::exception& e) {
+    std::cerr << "libspatialjoin: " << e.what() << std::endl;
+    exit(1);
+  }
   geomCache.log("done (" + std::to_string(TOOK(ts) / 1.0e9) + "s).");
 
   return 0;

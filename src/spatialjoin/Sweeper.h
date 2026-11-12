@@ -13,6 +13,7 @@
 #include <algorithm>
 #include <atomic>
 #include <condition_variable>
+#include <exception>
 #include <functional>
 #include <mutex>
 #include <queue>
@@ -360,6 +361,9 @@ class Sweeper {
   std::vector<int32_t> _curX;
   std::vector<std::atomic<int32_t>> _atomicCurX;
   std::atomic<bool> _cancelled;
+
+  std::exception_ptr _workerException;
+  std::mutex _workerExceptionMtx;
 
   std::vector<RelStats> _relStats;
 
