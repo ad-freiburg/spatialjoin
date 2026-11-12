@@ -155,11 +155,11 @@ std::shared_ptr<W> GeometryCache::cache(TypedGeometryCache<W>& cache,
                      std::forward_as_tuple(
                          estSize, std::make_shared<W>(std::move(val))));
 
-  // set map to front iterator
-  cache.idMap[cid][off] = vals.begin();
-
   // increase total estimated size
   cache.valSizes[cid] += estSize;
+
+  // set map to front iterator
+  cache.idMap[cid][off] = vals.begin();
 
   return vals.front().second.val;
 }
