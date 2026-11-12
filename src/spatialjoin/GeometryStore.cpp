@@ -1532,15 +1532,6 @@ void GeometryStore::log(const std::string& msg) {
 }
 
 // _____________________________________________________________________________
-template <template <typename> class G1, template <typename> class G2,
-          typename T>
-util::geo::I32Box GeometryStore::getPaddedBoundingBox(
-    const G1<T>& geom, const G2<T>& refGeom) const {
-  return padBox(util::geo::getBoundingBox(geom),
-                util::geo::getBoundingBox(refGeom), _cfg);
-}
-
-// _____________________________________________________________________________
 size_t GeometryStore::foldString(const std::string& s) {
   size_t ret = 0;
   for (size_t i = 0; i < std::min(FOLD_MAX_LEN, s.size()); i++) {

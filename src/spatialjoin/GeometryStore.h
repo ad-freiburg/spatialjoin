@@ -403,7 +403,10 @@ class GeometryStore {
   template <template <typename> class G1, template <typename> class G2,
             typename T>
   util::geo::I32Box getPaddedBoundingBox(const G1<T>& geom,
-                                         const G2<T>& refGeom) const;
+                                         const G2<T>& refGeom) const {
+    return padBox(util::geo::getBoundingBox(geom),
+                  util::geo::getBoundingBox(refGeom), _cfg);
+  }
   static size_t foldString(const std::string& s);
 
   double DUPLICATE_REMOVAL_MIN_SIZE = 500;
