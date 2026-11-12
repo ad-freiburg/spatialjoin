@@ -40,9 +40,29 @@ WKTParser::WKTParser(sj::GeometryStore* store, sj::PreparedGeomMetaCb metaCb,
     : WKTParserBase<ParseJob>(store, std::move(metaCb), numThreads),
       _strict(strict),
       _encodeIds(encodeIds) {
-  for (size_t i = 0; i < _thrds.size(); i++) {
-    _thrds[i] = std::thread(&WKTParser::processQueue, this, i);
+  try {
+    for (size_t i = 0; i < _thrds.size(); i++) {
+      _thrds[i] = std::thread(&WKTParser::processQueue, this, i);
+    }
+  } catch (...) {
+    _cancelled = true;
+    _jobs.add({});
+    for (auto& thr : _thrds)
+      if (thr.joinable()) thr.join();
+    throw;
   }
+}
+
+// _____________________________________________________________________________
+WKTParser::~WKTParser() {
+  _cancelled = true;
+
+  // end event
+  _jobs.add({});
+
+  // wait for all workers to finish
+  for (auto& thr : _thrds)
+    if (thr.joinable()) thr.join();
 }
 
 // _____________________________________________________________________________
@@ -85,6 +105,8 @@ void WKTParser::processQueue(size_t t) {
 
 // _____________________________________________________________________________
 void WKTParser::parseWKT(const char* c, size_t id) {
+  if (_done) throw std::runtime_error("WKTParser: input after done()");
+
   // dont parse empty strings
   if (*c == 0) return;
 
@@ -99,6 +121,8 @@ void WKTParser::parseWKT(const char* c, size_t id) {
 
 // _____________________________________________________________________________
 void WKTParser::parseWKT(const std::string& str, size_t id) {
+  if (_done) throw std::runtime_error("WKTParser: input after done()");
+
   if (str.empty()) return;
 
   _curBatch.reserve(10000);
@@ -113,6 +137,8 @@ void WKTParser::parseWKT(const std::string& str, size_t id) {
 #ifdef __cpp_lib_string_view
 // _____________________________________________________________________________
 void WKTParser::parseWKT(const std::string_view str, size_t id) {
+  if (_done) throw std::runtime_error("WKTParser: input after done()");
+
   // dont parse empty strings
   if (str.empty()) return;
 
@@ -129,6 +155,8 @@ void WKTParser::parseWKT(const std::string_view str, size_t id) {
 
 // _____________________________________________________________________________
 void WKTParser::parsePoint(util::geo::DPoint point, size_t id) {
+  if (_done) throw std::runtime_error("WKTParser: input after done()");
+
   _curBatch.reserve(10000);
   _curBatch.push_back({"", id, point});
 
@@ -153,6 +181,8 @@ void WKTParser::parseFd(int fd) {
 
 // _____________________________________________________________________________
 void WKTParser::parseFile(const std::string& path) {
+  if (_done) throw std::runtime_error("WKTParser: input after done()");
+
   if (util::endsWith(path, ".bz2")) {
     parseBz2File(path);
   } else if (util::endsWith(path, ".gz")) {
@@ -246,6 +276,8 @@ void WKTParser::parseBz2File(const std::string& path) {
 
 // _____________________________________________________________________________
 void WKTParser::parse(char* c, size_t size) {
+  if (_done) throw std::runtime_error("WKTParser: input after done()");
+
   if (_cancelled.load(std::memory_order_relaxed)) return;
 
   size_t p = 0;

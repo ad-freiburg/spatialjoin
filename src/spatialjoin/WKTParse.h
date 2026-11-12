@@ -84,17 +84,6 @@ class WKTParserBase {
         _thrds(numThreads),
         _numInvalid(numThreads),
         _cancelled(false){};
-  ~WKTParserBase() {
-    // graceful shutdown of all threads, should they be still running
-    _cancelled = true;
-
-    // end event
-    _jobs.add({});
-
-    // wait for all workers to finish
-    for (auto& thr : _thrds)
-      if (thr.joinable()) thr.join();
-  };
 
   // the gid given to the next parsed line without an explicit id, used to
   // continue the line numbering across several parsers
@@ -262,6 +251,11 @@ class WKTParser : public WKTParserBase<ParseJob> {
  public:
   WKTParser(sj::GeometryStore* store, sj::PreparedGeomMetaCb metaCb,
             size_t numThreads, bool strict = false);
+
+  ~WKTParser();
+
+  WKTParser(const WKTParser&) = delete;
+  WKTParser& operator=(const WKTParser&) = delete;
   void parse(char* c, size_t size);
 
   void parseFile(const std::string& path);
