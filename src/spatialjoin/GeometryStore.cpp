@@ -857,6 +857,7 @@ size_t sj::TypedGeometryStore<W>::writeLine(
   auto lastPoint = geom.lastPoint();
   str.write(reinterpret_cast<const char*>(&firstPoint), sizeof(uint32_t) * 2);
   str.write(reinterpret_cast<const char*>(&lastPoint), sizeof(uint32_t) * 2);
+  ret += 2 * sizeof(uint32_t) * 2;
 
   uint32_t locSize = geom.rawLine().size();
   str.write(reinterpret_cast<const char*>(&locSize), sizeof(uint32_t));
