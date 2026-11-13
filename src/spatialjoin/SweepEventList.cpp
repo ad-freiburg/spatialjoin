@@ -151,8 +151,8 @@ bool SweepEventList::duplicatesToReferences(BoxVal* events, size_t n,
       const auto& existing = state.duplicatePolys.find(h);
 
       if (existing != state.duplicatePolys.end()) {
-        auto a = cache.getArea(getId(*cur), 0, cur->storeId());
-        auto b = cache.getArea(existing->second, 0, cur->storeId());
+        auto a = cache.getArea(getId(*cur), cur->storeId());
+        auto b = cache.getArea(existing->second, cur->storeId());
 
         if (a->geom == b->geom) {
           state.deletedPolys.insert(curId);
@@ -183,8 +183,8 @@ bool SweepEventList::duplicatesToReferences(BoxVal* events, size_t n,
       const auto& existing = state.duplicateLines.find(h);
 
       if (existing != state.duplicateLines.end()) {
-        auto a = cache.getLine(getId(*cur), 0, cur->storeId());
-        auto b = cache.getLine(existing->second, 0, cur->storeId());
+        auto a = cache.getLine(getId(*cur), cur->storeId());
+        auto b = cache.getLine(existing->second, cur->storeId());
 
         if (a->geom == b->geom) {
           state.deletedLines.insert(curId);

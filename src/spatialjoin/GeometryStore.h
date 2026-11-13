@@ -4,16 +4,23 @@
 #ifndef SPATIALJOINS_GEOMETRYSTORE_H_
 #define SPATIALJOINS_GEOMETRYSTORE_H_
 
+#include <fcntl.h>
+#include <unistd.h>
+
 #include <atomic>
+#include <cstdint>
+#include <cstring>
 #include <fstream>
 #include <functional>
 #include <iostream>
+#include <limits>
 #include <map>
 #include <memory>
 #include <mutex>
 #include <string>
 #if __cplusplus >= 201402L
 #include <shared_mutex>
+#include <stdexcept>
 #endif
 #include <unordered_map>
 #include <utility>
@@ -90,6 +97,16 @@ struct Point {
 
 const static size_t WRITE_BUFF_SIZE = 1024 * 1024 * 4l;
 
+// header of the geometries, rawLen is after decompression, atm no compression
+// is used
+struct RecordHeader {
+  uint32_t storedLen;
+  uint32_t rawLen;
+};
+
+// reads the payload of a single record from a mem buffer
+class RecordReader;
+
 // default size (in bytes of serialized geometries) up to which a
 // TypedGeometryStore is kept in memory
 const static size_t DEFAULT_MAX_MEM_CACHE_S = 3 * 1024 * 1024 * 20l;
@@ -110,44 +127,34 @@ class TypedGeometryStore {
   // store is kept in memory until the geometries exceed
   // maxMemCacheSize bytes. If persistOnDisk is true, flush() writes the geoms
   // to a file <dir>/<prefix><type>
-  TypedGeometryStore(size_t numthreads, const std::string& dir,
-                     const std::string& prefix, bool persistOnDisk = false,
+  TypedGeometryStore(const std::string& dir, const std::string& prefix,
+                     bool persistOnDisk = false,
                      size_t maxMemCacheSize = DEFAULT_MAX_MEM_CACHE_S)
-      : _numThreads(numthreads),
-        _dir(dir),
+      : _dir(dir),
         _prefix(prefix),
         _maxMemCacheSize(maxMemCacheSize),
         _persistOnDisk(persistOnDisk) {}
 
-  TypedGeometryStore(size_t numthreads, const std::string& path);
+  // read the geometries persisted at path
+  explicit TypedGeometryStore(const std::string& path);
 
   ~TypedGeometryStore() {
     if (_geomsF.is_open()) _geomsF.close();
-    for (size_t i = 0; i < _geomsFReads.size(); i++) {
-      if (_geomsFReads[i].is_open()) _geomsFReads[i].close();
-    }
+    if (_readFd >= 0) close(_readFd);
     if (_writeBuffer) delete[] _writeBuffer;
   }
 
-  // may optionally provide a pointer to the processed geom
+  // may optionally be provided a pointer to the processed geom
   size_t add(const std::string& raw, std::shared_ptr<W> val = nullptr);
+
+  // serializes val to str (the payload of a record, without the header)
   size_t writeTo(const W& val, std::ostream& str) const;
 
-  std::pair<size_t, W> getFrom(size_t off, std::istream& str) const;
+  // reads only the gid and sub id of the geometry at off
+  std::pair<size_t, GeomId> getId(size_t off) const;
 
-  // reads only the gid and sub id of the geometry at off from str, returns
-  // the estimated size and the id
-  std::pair<size_t, GeomId> getIdFrom(size_t off, std::istream& str) const;
-
-  // reads only the gid and sub id of the geometry at off (from memory, or
-  // using the read stream of thread tid, see getFrom())
-  std::pair<size_t, GeomId> getId(size_t off, size_t tid) const;
-
-  // reads the geometry at off from disk, using the read stream of thread tid
-  // (0 <= tid < numthreads). Not thread-safe for the same tid!
-  std::pair<size_t, W> getFrom(size_t off, size_t tid) const {
-    return getFrom(untypedId(off), _geomsFReads[tid]);
-  }
+  // reads the geometry at off from disk
+  std::pair<size_t, W> getFrom(size_t off) const;
 
   // if true, all geometries are held in memory and must be retrieved via
   // getFromMem()
@@ -157,8 +164,8 @@ class TypedGeometryStore {
     return _memStore.at(untypedId(off));
   }
 
-  // reads the multi geometry at off, only available for W = MultiGeom. Only to
-  // be used by a single thread (the main sweep thread), as there is no locking!
+  // reads the multi geometry at off, only available for W = MultiGeom.
+  // Thread-safe.
   W getMulti(size_t off) const;
 
   void flush();
@@ -169,9 +176,7 @@ class TypedGeometryStore {
   TypedGeometryStore(const TypedGeometryStore&) = delete;
   TypedGeometryStore& operator=(const TypedGeometryStore&) = delete;
 
-  TypedGeometryStore(TypedGeometryStore&& other) noexcept : _numThreads(0) {
-    swap(other);
-  }
+  TypedGeometryStore(TypedGeometryStore&& other) noexcept { swap(other); }
 
   TypedGeometryStore& operator=(TypedGeometryStore&& other) noexcept {
     TypedGeometryStore tmp(std::move(other));
@@ -180,6 +185,14 @@ class TypedGeometryStore {
   }
 
  private:
+  // deserializes a geometry from the payload of a record, returns (estimated)
+  // size and geom
+  std::pair<size_t, W> decode(RecordReader& str) const;
+
+  // deserializes only the gid and sub id from the payload of a record, returns
+  // the estimated size and the id
+  std::pair<size_t, GeomId> decodeId(RecordReader& str) const;
+
   // string repr of the type this store holds
   static std::string typeName();
 
@@ -189,9 +202,8 @@ class TypedGeometryStore {
   void swap(TypedGeometryStore& other) {
     _geomsF.swap(other._geomsF);
     std::swap(_writeBuffer, other._writeBuffer);
-    _geomsFReads.swap(other._geomsFReads);
+    std::swap(_readFd, other._readFd);
     std::swap(_geomsOffset, other._geomsOffset);
-    std::swap(_numThreads, other._numThreads);
     _dir.swap(other._dir);
     _prefix.swap(other._prefix);
     _fName.swap(other._fName);
@@ -208,29 +220,58 @@ class TypedGeometryStore {
 
     _geomsF.rdbuf()->pubsetbuf(_writeBuffer, WRITE_BUFF_SIZE);
     _geomsF.open(_fName, std::ios::out | std::ios::binary | std::ios::trunc);
-
-    _geomsFReads.resize(_numThreads);
-    for (size_t i = 0; i < _geomsFReads.size(); i++) {
-      _geomsFReads[i].open(_fName, std::ios::in | std::ios::binary);
+    if (!_geomsF.is_open()) {
+      throw std::runtime_error("Could not open geometry store file " + _fName);
     }
+
+    _readFd = open(_fName.c_str(), O_RDONLY);
+    if (_readFd < 0) {
+      throw std::runtime_error("Could not open geometry store file " + _fName);
+    }
+#ifdef __unix__
+    posix_fadvise(_readFd, 0, 0, POSIX_FADV_RANDOM);
+#endif
+
     if (!_persistOnDisk) unlink(_fName.c_str());
   }
 
+  // the maximum payload size of a record that getId() has to read: the gid
+  // (at most 2^16 - 1 chars, with its length) and the sub id are serialized
+  // first, so the full record never has to be read
+  static const size_t MAX_ID_PAYLOAD =
+      sizeof(uint16_t) + std::numeric_limits<uint16_t>::max() + sizeof(size_t);
+
+  // reads the record at off from disk, but at most maxLen bytes of its
+  // payload. The returned reader points into a thread-local buffer, which is
+  // valid until the next call of readRecord() of this thread
+  RecordReader readRecord(size_t off, size_t maxLen) const;
+
+  // writes payload as a record (header followed by payload) to str, returns
+  // the number of bytes written
+  static size_t writeRecord(const std::string& payload, std::ostream& str);
+
+  // writes the records of all geometries held in memory to str, checking that
+  // each record ends up at its offset
+  void writeMemStore(std::ostream& str) const;
+
   // the geometry type the IDs returned by add() are tagged with
   static GeomType geomType();
-  size_t readLine(std::istream& str, util::geo::I32XSortedLine& ret) const;
+  size_t readLine(RecordReader& str, util::geo::I32XSortedLine& ret) const;
   static size_t writeLine(const util::geo::I32XSortedLine& ret,
                           std::ostream& str);
 
-  size_t readPoly(std::istream& str, util::geo::I32XSortedPolygon& ret) const;
+  size_t readPoly(RecordReader& str, util::geo::I32XSortedPolygon& ret) const;
   static size_t writePoly(const util::geo::I32XSortedPolygon& ret,
                           std::ostream& str);
 
   mutable std::fstream _geomsF;
-  mutable std::vector<std::fstream> _geomsFReads;
+
+  // read-only file descriptor of the geometry file, records are read from it
+  // with pread(), which is thread-safe
+  int _readFd = -1;
+
   size_t _geomsOffset = 0;
 
-  size_t _numThreads;
   std::string _dir, _prefix;
   std::string _fName;
 
@@ -301,38 +342,26 @@ class GeometryStore {
                 const std::string& prefix, bool persistOnDisk,
                 size_t maxMemCacheSize = DEFAULT_MAX_MEM_CACHE_S)
       : _cfg(cfg),
-        _pointStore(cfg.numThreads + 1, cache, prefix,
-                    persistOnDisk, maxMemCacheSize),
-        _areaStore(cfg.numThreads + 1, cache, prefix,
-                    persistOnDisk, maxMemCacheSize),
-        _simpleAreaStore(cfg.numThreads + 1, cache, prefix,
-                    persistOnDisk, maxMemCacheSize),
-        _lineStore(cfg.numThreads + 1, cache, prefix,
-                    persistOnDisk, maxMemCacheSize),
-        _simpleLineStore(cfg.numThreads + 1, cache, prefix,
-                    persistOnDisk, maxMemCacheSize),
-        _multiStore(cfg.numThreads + 1, cache, prefix,
-                    persistOnDisk, maxMemCacheSize) {}
+        _pointStore(cache, prefix, persistOnDisk, maxMemCacheSize),
+        _areaStore(cache, prefix, persistOnDisk, maxMemCacheSize),
+        _simpleAreaStore(cache, prefix, persistOnDisk, maxMemCacheSize),
+        _lineStore(cache, prefix, persistOnDisk, maxMemCacheSize),
+        _simpleLineStore(cache, prefix, persistOnDisk, maxMemCacheSize),
+        _multiStore(cache, prefix, persistOnDisk, maxMemCacheSize) {}
 
   // construct a GeometryStore from the files persisted in dir with prefix
   // by a GeometryStore constructed with persistOnDisk
   GeometryStore(const SpatialJoinCfg& cfg, const std::string& dir,
                 const std::string& prefix)
       : _cfg(cfg),
-        _pointStore(cfg.numThreads + 1,
-                    TypedGeometryStore<Point>::persistFName(dir, prefix)),
-        _areaStore(cfg.numThreads + 1,
-                   TypedGeometryStore<Area>::persistFName(dir, prefix)),
+        _pointStore(TypedGeometryStore<Point>::persistFName(dir, prefix)),
+        _areaStore(TypedGeometryStore<Area>::persistFName(dir, prefix)),
         _simpleAreaStore(
-            cfg.numThreads + 1,
             TypedGeometryStore<SimpleArea>::persistFName(dir, prefix)),
-        _lineStore(cfg.numThreads + 1,
-                   TypedGeometryStore<Line>::persistFName(dir, prefix)),
+        _lineStore(TypedGeometryStore<Line>::persistFName(dir, prefix)),
         _simpleLineStore(
-            cfg.numThreads + 1,
             TypedGeometryStore<SimpleLine>::persistFName(dir, prefix)),
-        _multiStore(cfg.numThreads + 1,
-                    TypedGeometryStore<MultiGeom>::persistFName(dir, prefix)) {}
+        _multiStore(TypedGeometryStore<MultiGeom>::persistFName(dir, prefix)) {}
 
   GeometryStore(const GeometryStore&) = delete;
   GeometryStore& operator=(const GeometryStore&) = delete;

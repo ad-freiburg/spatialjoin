@@ -7,9 +7,12 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+#include <atomic>
+#include <fstream>
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <thread>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -22,7 +25,7 @@ using PointStore = sj::TypedGeometryStore<Point>;
 
 namespace {
 
-const size_t NUM_THREADS = 2;
+const size_t NUM_THREADS = 8;
 
 // _____________________________________________________________________________
 std::string raw(const PointStore& store, const std::string& id) {
@@ -52,11 +55,32 @@ std::vector<size_t> fillToDisk(PointStore* store) {
 // _____________________________________________________________________________
 void checkOnDisk(const PointStore& store, const std::vector<size_t>& offs) {
   TEST(!store.inMemory());
-  for (size_t t = 0; t < NUM_THREADS; t++) {
-    for (size_t i : {size_t(0), offs.size() / 2, offs.size() - 1}) {
-      TEST(store.getFrom(offs[i], t).second.id == longId(i));
-    }
+  for (size_t i : {size_t(0), offs.size() / 2, offs.size() - 1}) {
+    TEST(store.getFrom(offs[i]).second.id == longId(i));
+    TEST(store.getId(offs[i]).second.id == longId(i));
   }
+}
+
+// _____________________________________________________________________________
+// all geometries of store, read concurrently by NUM_THREADS threads
+void checkConcurrentReads(const PointStore& store,
+                          const std::vector<size_t>& offs) {
+  std::atomic<size_t> errors{0};
+  std::vector<std::thread> thrds;
+  for (size_t t = 0; t < NUM_THREADS; t++) {
+    thrds.emplace_back([&store, &offs, &errors, t]() {
+      for (size_t round = 0; round < 3; round++) {
+        // each thread starts at a different position
+        for (size_t j = 0; j < offs.size(); j++) {
+          size_t i = (j + t * offs.size() / NUM_THREADS) % offs.size();
+          if (store.getFrom(offs[i]).second.id != longId(i)) errors++;
+          if (store.getId(offs[i]).second.id != longId(i)) errors++;
+        }
+      }
+    });
+  }
+  for (auto& thr : thrds) thr.join();
+  TEST(errors.load(), ==, 0);
 }
 
 // _____________________________________________________________________________
@@ -98,25 +122,23 @@ template <typename W>
 void checkGetId(const std::string& dir, const std::string& fname,
                 const std::vector<W>& vals,
                 const std::vector<sj::GeomId>& expected) {
-  sj::TypedGeometryStore<W> a(NUM_THREADS, dir, ".spatialjoin", true);
+  sj::TypedGeometryStore<W> a(dir, ".spatialjoin", true);
   std::vector<size_t> offs;
   for (const auto& val : vals) offs.push_back(a.add(rawOf(a, val)));
   a.flush();
 
   TEST(a.inMemory());
-  sj::TypedGeometryStore<W> b(NUM_THREADS, dir + "/.spatialjoin" + fname);
+  sj::TypedGeometryStore<W> b(dir + "/.spatialjoin" + fname);
   TEST(!b.inMemory());
 
   for (size_t i = 0; i < vals.size(); i++) {
-    for (size_t t = 0; t < NUM_THREADS; t++) {
-      for (const auto* store : {&a, &b}) {
-        auto id = store->getId(offs[i], t).second;
-        TEST(id.id, ==, expected[i].id);
-        TEST(id.subId, ==, expected[i].subId);
-      }
+    for (const auto* store : {&a, &b}) {
+      auto id = store->getId(offs[i]).second;
+      TEST(id.id, ==, expected[i].id);
+      TEST(id.subId, ==, expected[i].subId);
     }
     // the full geometry still deserializes correctly after the id
-    TEST(b.getFrom(offs[i], 0).second.id, ==, expected[i].id);
+    TEST(b.getFrom(offs[i]).second.id, ==, expected[i].id);
   }
 }
 
@@ -133,9 +155,9 @@ void typedGeometryStoreTest() {
 
   {
     // in memory: move construction and move assignment
-    PointStore a(NUM_THREADS, ".", ".spatialjoin");
+    PointStore a(".", ".spatialjoin");
     auto offA = a.add(raw(a, "a"));
-    PointStore b(NUM_THREADS, ".", ".spatialjoin");
+    PointStore b(".", ".spatialjoin");
     b.add(raw(b, "b"));
 
     b = std::move(a);
@@ -152,17 +174,18 @@ void typedGeometryStoreTest() {
   }
 
   {
-    PointStore a(NUM_THREADS, ".", ".spatialjoin");
+    PointStore a(".", ".spatialjoin");
     PointStore b(std::move(a));
     auto offs = fillToDisk(&b);
     b.flush();
     checkOnDisk(b, offs);
+    checkConcurrentReads(b, offs);
   }
 
   {
-    PointStore a(NUM_THREADS, ".", ".spatialjoin");
+    PointStore a(".", ".spatialjoin");
     auto offs = fillToDisk(&a);
-    PointStore b(NUM_THREADS, ".", ".spatialjoin");
+    PointStore b(".", ".spatialjoin");
     b.add(raw(b, "b"));
 
     b = std::move(a);
@@ -173,7 +196,7 @@ void typedGeometryStoreTest() {
     checkOnDisk(c, offs);
 
     // move assignment of an on-disk store onto an on-disk store
-    PointStore d(NUM_THREADS, ".", ".spatialjoin");
+    PointStore d(".", ".spatialjoin");
     fillToDisk(&d);
     d.flush();
     d = std::move(c);
@@ -188,14 +211,14 @@ void typedGeometryStoreTest() {
     removeDir(dir);
     TEST(mkdir(dir.c_str(), 0777) == 0);
 
-    TEST_THROWS(std::runtime_error, PointStore(NUM_THREADS, path));
+    TEST_THROWS(std::runtime_error, PointStore(path));
 
     {
       // stores which are not persisted leave no file, in memory and on disk
-      PointStore a(NUM_THREADS, dir, ".spatialjoin");
+      PointStore a(dir, ".spatialjoin");
       a.add(raw(a, "a"));
       a.flush();
-      PointStore b(NUM_THREADS, dir, ".spatialjoin");
+      PointStore b(dir, ".spatialjoin");
       fillToDisk(&b);
       b.flush();
       TEST(files(dir).empty());
@@ -203,7 +226,7 @@ void typedGeometryStoreTest() {
 
     {
       // a store held in memory
-      PointStore a(NUM_THREADS, dir, ".spatialjoin", true);
+      PointStore a(dir, ".spatialjoin", true);
       auto offA = a.add(raw(a, "a"));
       auto offB = a.add(raw(a, "b"));
       a.flush();
@@ -213,32 +236,31 @@ void typedGeometryStoreTest() {
       TEST(a.inMemory());
       TEST(a.getFromMem(offB)->id == "b");
 
-      PointStore b(NUM_THREADS, path);
+      PointStore b(path);
       TEST(!b.inMemory());
-      for (size_t t = 0; t < NUM_THREADS; t++) {
-        TEST(b.getFrom(offA, t).second.id == "a");
-        TEST(b.getFrom(offB, t).second.id == "b");
-      }
+      TEST(b.getFrom(offA).second.id == "a");
+      TEST(b.getFrom(offB).second.id == "b");
     }
 
     {
       // the file is kept after the store was destroyed
-      PointStore b(NUM_THREADS, path);
-      TEST(b.getFrom(0, 1).second.id == "a");
+      PointStore b(path);
+      TEST(b.getFrom(0).second.id == "a");
       unlink(path.c_str());
     }
 
     std::vector<size_t> offs;
     {
       // a store held on disk
-      PointStore a(NUM_THREADS, dir, ".spatialjoin", true);
+      PointStore a(dir, ".spatialjoin", true);
       offs = fillToDisk(&a);
       a.flush();
       TEST(files(dir) == std::vector<std::string>{path});
       checkOnDisk(a, offs);
 
-      PointStore b(NUM_THREADS, path);
+      PointStore b(path);
       checkOnDisk(b, offs);
+      checkConcurrentReads(b, offs);
 
       // a loaded store can be moved
       PointStore c(std::move(b));
@@ -247,8 +269,27 @@ void typedGeometryStoreTest() {
 
     {
       // the file is kept after the store was destroyed
-      PointStore b(NUM_THREADS, path);
+      PointStore b(path);
       checkOnDisk(b, offs);
+    }
+
+    {
+      // a corrupted record header is detected, the record is not read past
+      // its end
+      std::fstream f(path, std::ios::in | std::ios::out | std::ios::binary);
+      sj::RecordHeader header;
+      f.read(reinterpret_cast<char*>(&header), sizeof(header));
+      header.storedLen = 1;
+      header.rawLen = 1;
+      f.seekp(0);
+      f.write(reinterpret_cast<const char*>(&header), sizeof(header));
+      f.close();
+
+      PointStore b(path);
+      TEST_THROWS(std::runtime_error, b.getFrom(offs[0]));
+      TEST_THROWS(std::runtime_error, b.getId(offs[0]));
+      // other records are unaffected
+      TEST(b.getFrom(offs[1]).second.id == longId(1));
     }
 
     removeDir(dir);

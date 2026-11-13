@@ -67,45 +67,41 @@ class GeometryCache {
 
   const SpatialJoinCfg& cfg() const { return _cfg; }
 
-  std::shared_ptr<sj::Line> getLine(size_t id, size_t tid,
-                                    size_t storeId = 0) const {
-    return get(_stores[storeId]->lineStore(), _caches[storeId]->lineCache, id,
-               tid);
+  // the geometries with id in store storeId, thread-safe
+  std::shared_ptr<sj::Line> getLine(size_t id, size_t storeId = 0) const {
+    return get(_stores[storeId]->lineStore(), _caches[storeId]->lineCache, id);
   }
-  std::shared_ptr<sj::SimpleLine> getSimpleLine(size_t id, size_t tid,
+  std::shared_ptr<sj::SimpleLine> getSimpleLine(size_t id,
                                                 size_t storeId = 0) const {
     return get(_stores[storeId]->simpleLineStore(),
-               _caches[storeId]->simpleLineCache, id, tid);
+               _caches[storeId]->simpleLineCache, id);
   }
 
-  std::shared_ptr<sj::Area> getArea(size_t id, size_t tid,
-                                    size_t storeId = 0) const {
-    return get(_stores[storeId]->areaStore(), _caches[storeId]->areaCache, id,
-               tid);
+  std::shared_ptr<sj::Area> getArea(size_t id, size_t storeId = 0) const {
+    return get(_stores[storeId]->areaStore(), _caches[storeId]->areaCache, id);
   }
 
-  std::shared_ptr<sj::SimpleArea> getSimpleArea(size_t id, size_t tid,
+  std::shared_ptr<sj::SimpleArea> getSimpleArea(size_t id,
                                                 size_t storeId = 0) const {
     return get(_stores[storeId]->simpleAreaStore(),
-               _caches[storeId]->simpleAreaCache, id, tid);
+               _caches[storeId]->simpleAreaCache, id);
   }
 
-  std::shared_ptr<sj::Point> getPoint(size_t id, size_t tid,
-                                      size_t storeId = 0) const {
-    return get(_stores[storeId]->pointStore(), _caches[storeId]->pointCache, id,
-               tid);
+  std::shared_ptr<sj::Point> getPoint(size_t id, size_t storeId = 0) const {
+    return get(_stores[storeId]->pointStore(), _caches[storeId]->pointCache,
+               id);
   }
 
   // the gid and sub id of the area / line with id, read without reading the
   // geometry, and cached in the id cache
-  GeomId getAreaId(size_t id, size_t tid, size_t storeId = 0) const {
+  GeomId getAreaId(size_t id, size_t storeId = 0) const {
     return *getId(_stores[storeId]->areaStore(), _caches[storeId]->areaIdCache,
-                  id, tid);
+                  id);
   }
 
-  GeomId getLineId(size_t id, size_t tid, size_t storeId = 0) const {
+  GeomId getLineId(size_t id, size_t storeId = 0) const {
     return *getId(_stores[storeId]->lineStore(), _caches[storeId]->lineIdCache,
-                  id, tid);
+                  id);
   }
 
   std::pair<size_t, size_t> size() const;
@@ -144,18 +140,17 @@ class GeometryCache {
   // off
   template <typename W>
   std::shared_ptr<W> get(const TypedGeometryStore<W>& store,
-                         TypedGeometryCache<W>& cache, size_t off,
-                         size_t tid) const;
+                         TypedGeometryCache<W>& cache, size_t off) const;
 
   // returns the gid and sub id of the geometry stored at off in store, cached
   template <typename W>
   std::shared_ptr<GeomId> getId(const TypedGeometryStore<W>& store,
-                                TypedGeometryCache<GeomId>& cache, size_t off,
-                                size_t tid) const;
+                                TypedGeometryCache<GeomId>& cache,
+                                size_t off) const;
 
   template <typename W>
   std::shared_ptr<W> cache(TypedGeometryCache<W>& cache, size_t off,
-                           W&& val, size_t estSize, size_t tid) const;
+                           W&& val, size_t estSize, size_t cid) const;
 
   template <typename W>
   static std::pair<size_t, size_t> size(const TypedGeometryCache<W>& cache);

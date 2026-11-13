@@ -4,6 +4,7 @@
 #include "GeometryStore.h"
 
 #include <errno.h>
+#include <fcntl.h>
 #include <sys/stat.h>
 #include <unistd.h>
 
@@ -12,6 +13,7 @@
 #include <cstring>
 #include <fstream>
 #include <iostream>
+#include <limits>
 #include <sstream>
 #include <stdexcept>
 #include <type_traits>
@@ -54,14 +56,31 @@ using util::geo::LineSegment;
 using util::geo::Point;
 using util::geo::webMercToLatLng;
 
+namespace sj {
+// reads the payload of a single record from a mem buffer
+class RecordReader {
+ public:
+  RecordReader(const char* data, size_t size) : _cur(data), _end(data + size) {}
+
+  void read(char* out, size_t n) {
+    if (n > static_cast<size_t>(_end - _cur)) {
+      throw std::runtime_error("Corrupt geometry store record");
+    }
+    if (n) memcpy(out, _cur, n);
+    _cur += n;
+  }
+
+ private:
+  const char* _cur;
+  const char* _end;
+};
+}  // namespace sj
+
 // ____________________________________________________________________________
 template <>
 std::pair<size_t, sj::SimpleLine>
-sj::TypedGeometryStore<sj::SimpleLine>::getFrom(size_t off,
-                                                std::istream& str) const {
+sj::TypedGeometryStore<sj::SimpleLine>::decode(RecordReader& str) const {
   sj::SimpleLine ret;
-
-  str.seekg(off);
 
   // id
   uint16_t len;
@@ -77,11 +96,9 @@ sj::TypedGeometryStore<sj::SimpleLine>::getFrom(size_t off,
 
 // ____________________________________________________________________________
 template <>
-std::pair<size_t, sj::MultiGeom> sj::TypedGeometryStore<sj::MultiGeom>::getFrom(
-    size_t off, std::istream& str) const {
+std::pair<size_t, sj::MultiGeom> sj::TypedGeometryStore<sj::MultiGeom>::decode(
+    RecordReader& str) const {
   sj::MultiGeom ret;
-
-  str.seekg(off);
 
   // id
   uint16_t len;
@@ -110,11 +127,9 @@ std::pair<size_t, sj::MultiGeom> sj::TypedGeometryStore<sj::MultiGeom>::getFrom(
 
 // ____________________________________________________________________________
 template <>
-std::pair<size_t, sj::Point> sj::TypedGeometryStore<sj::Point>::getFrom(
-    size_t off, std::istream& str) const {
+std::pair<size_t, sj::Point> sj::TypedGeometryStore<sj::Point>::decode(
+    RecordReader& str) const {
   sj::Point ret;
-
-  str.seekg(off);
 
   // id
   uint16_t len;
@@ -134,11 +149,8 @@ std::pair<size_t, sj::Point> sj::TypedGeometryStore<sj::Point>::getFrom(
 // ____________________________________________________________________________
 template <>
 std::pair<size_t, sj::SimpleArea>
-sj::TypedGeometryStore<sj::SimpleArea>::getFrom(size_t off,
-                                                std::istream& str) const {
+sj::TypedGeometryStore<sj::SimpleArea>::decode(RecordReader& str) const {
   sj::SimpleArea ret;
-
-  str.seekg(off);
 
   // id
   uint16_t len;
@@ -166,12 +178,10 @@ sj::TypedGeometryStore<sj::SimpleArea>::getFrom(size_t off,
 
 // ____________________________________________________________________________
 template <>
-std::pair<size_t, sj::Line> sj::TypedGeometryStore<sj::Line>::getFrom(
-    size_t off, std::istream& str) const {
+std::pair<size_t, sj::Line> sj::TypedGeometryStore<sj::Line>::decode(
+    RecordReader& str) const {
   sj::Line ret;
   size_t estSize = 0;
-
-  str.seekg(off);
 
   // id
   uint16_t len;
@@ -205,12 +215,10 @@ std::pair<size_t, sj::Line> sj::TypedGeometryStore<sj::Line>::getFrom(
 
 // ____________________________________________________________________________
 template <>
-std::pair<size_t, sj::Area> sj::TypedGeometryStore<sj::Area>::getFrom(
-    size_t off, std::istream& str) const {
+std::pair<size_t, sj::Area> sj::TypedGeometryStore<sj::Area>::decode(
+    RecordReader& str) const {
   sj::Area ret;
   size_t estSize = 0;
-
-  str.seekg(off);
 
   // id
   uint16_t len;
@@ -309,15 +317,15 @@ template <typename W>
 size_t sj::TypedGeometryStore<W>::add(const std::string& raw,
                                       std::shared_ptr<W> val) {
   size_t ret = _geomsOffset;
-  _geomsOffset += raw.size();
+  _geomsOffset += sizeof(RecordHeader) + raw.size();
 
   if (_inMemory) {
     // cache for later use
     if (val) {
       _memStore[ret] = std::move(val);
     } else {
-      std::istringstream ss(raw);
-      auto des = getFrom(0, ss);
+      RecordReader r(raw.data(), raw.size());
+      auto des = decode(r);
       _memStore[ret] = std::make_shared<W>(std::move(des.second));
     }
 
@@ -325,9 +333,7 @@ size_t sj::TypedGeometryStore<W>::add(const std::string& raw,
       _inMemory = false;
       openFile();
 
-      for (const auto& val : _memStore) {
-        writeTo(*val.second.get(), _geomsF);
-      }
+      writeMemStore(_geomsF);
 
       // clear mem store
       _memStore = {};
@@ -336,7 +342,7 @@ size_t sj::TypedGeometryStore<W>::add(const std::string& raw,
     return typedId(ret, geomType());
   }
 
-  _geomsF.write(raw.c_str(), raw.size());
+  writeRecord(raw, _geomsF);
 
   return typedId(ret, geomType());
 }
@@ -478,8 +484,8 @@ size_t sj::TypedGeometryStore<sj::Area>::writeTo(const sj::Area& val,
 
 // ____________________________________________________________________________
 template <typename W>
-std::pair<size_t, sj::GeomId> sj::TypedGeometryStore<W>::getIdFrom(
-    size_t off, std::istream& str) const {
+std::pair<size_t, sj::GeomId> sj::TypedGeometryStore<W>::decodeId(
+    RecordReader& str) const {
   // all geometry types are serialized starting with the gid, followed by the
   // sub id for those types which have one
   constexpr bool hasSubId = std::is_same<W, sj::Area>::value ||
@@ -487,8 +493,6 @@ std::pair<size_t, sj::GeomId> sj::TypedGeometryStore<W>::getIdFrom(
                             std::is_same<W, sj::Point>::value;
 
   sj::GeomId ret{"", 0};
-
-  str.seekg(off);
 
   // id
   uint16_t len;
@@ -508,56 +512,58 @@ std::pair<size_t, sj::GeomId> sj::TypedGeometryStore<W>::getIdFrom(
 // ____________________________________________________________________________
 template <typename W>
 std::pair<size_t, sj::GeomId> sj::TypedGeometryStore<W>::getId(
-    size_t off, size_t tid) const {
+    size_t off) const {
   if (_inMemory) {
     const auto& val = getFromMem(off);
     return {val->id.size() * sizeof(char) + sizeof(size_t),
             {val->id, val->subId}};
   }
-  return getIdFrom(untypedId(off), _geomsFReads[tid]);
+  auto r = readRecord(untypedId(off), MAX_ID_PAYLOAD);
+  return decodeId(r);
 }
 
 // ____________________________________________________________________________
 template <>
 std::pair<size_t, sj::GeomId> sj::TypedGeometryStore<sj::SimpleArea>::getId(
-    size_t off, size_t tid) const {
+    size_t off) const {
   // no sub id
   if (_inMemory) {
     const auto& val = getFromMem(off);
     return {val->id.size() * sizeof(char) + sizeof(size_t), {val->id, 0}};
   }
-  return getIdFrom(untypedId(off), _geomsFReads[tid]);
+  auto r = readRecord(untypedId(off), MAX_ID_PAYLOAD);
+  return decodeId(r);
 }
 
 // ____________________________________________________________________________
 template <>
 std::pair<size_t, sj::GeomId> sj::TypedGeometryStore<sj::SimpleLine>::getId(
-    size_t off, size_t tid) const {
+    size_t off) const {
   // no sub id
   if (_inMemory) {
     const auto& val = getFromMem(off);
     return {val->id.size() * sizeof(char) + sizeof(size_t), {val->id, 0}};
   }
-  return getIdFrom(untypedId(off), _geomsFReads[tid]);
+  auto r = readRecord(untypedId(off), MAX_ID_PAYLOAD);
+  return decodeId(r);
 }
 
 // ____________________________________________________________________________
 template <>
 std::pair<size_t, sj::GeomId> sj::TypedGeometryStore<sj::MultiGeom>::getId(
-    size_t off, size_t tid) const {
+    size_t off) const {
   // no sub id
   if (_inMemory) {
     const auto& val = getFromMem(off);
     return {val->id.size() * sizeof(char) + sizeof(size_t), {val->id, 0}};
   }
-  return getIdFrom(untypedId(off), _geomsFReads[tid]);
+  auto r = readRecord(untypedId(off), MAX_ID_PAYLOAD);
+  return decodeId(r);
 }
 
 // ____________________________________________________________________________
 template <typename W>
-sj::TypedGeometryStore<W>::TypedGeometryStore(size_t numthreads,
-                                              const std::string& path)
-    : _numThreads(numthreads) {
+sj::TypedGeometryStore<W>::TypedGeometryStore(const std::string& path) {
   _inMemory = false;
 
   struct stat st;
@@ -566,13 +572,93 @@ sj::TypedGeometryStore<W>::TypedGeometryStore(size_t numthreads,
   }
   _geomsOffset = st.st_size;
 
-  _geomsFReads.resize(numthreads);
-  for (auto& read : _geomsFReads) {
-    read.open(path, std::ios::in | std::ios::binary);
-    if (!read.is_open()) {
-      throw std::runtime_error("Could not open geometry store file " + path);
+  _readFd = open(path.c_str(), O_RDONLY);
+  if (_readFd < 0) {
+    throw std::runtime_error("Could not open geometry store file " + path);
+  }
+#ifdef __unix__
+  posix_fadvise(_readFd, 0, 0, POSIX_FADV_RANDOM);
+#endif
+}
+
+// ____________________________________________________________________________
+template <typename W>
+sj::RecordReader sj::TypedGeometryStore<W>::readRecord(size_t off,
+                                                       size_t maxLen) const {
+  // first read for header
+  const size_t READ_AHEAD = 4096;
+  static thread_local std::vector<char> buf;
+  if (buf.size() < READ_AHEAD) buf.resize(READ_AHEAD);
+
+  ssize_t n = preadAll(_readFd, reinterpret_cast<unsigned char*>(buf.data()),
+                       READ_AHEAD, off);
+  if (n < static_cast<ssize_t>(sizeof(RecordHeader))) {
+    throw std::runtime_error("Could not read geometry store record");
+  }
+
+  // read the header to get size
+  RecordHeader header;
+  memcpy(&header, buf.data(), sizeof(RecordHeader));
+
+  const size_t len = std::min<size_t>(header.storedLen, maxLen);
+  const size_t total = sizeof(RecordHeader) + len;
+
+  if (total > static_cast<size_t>(n)) {
+    // note, buf is thread_local and will stay the max size
+    if (buf.size() < total) buf.resize(total);
+
+    // read rest if not part of READ_AHEAD
+    ssize_t m =
+        preadAll(_readFd, reinterpret_cast<unsigned char*>(buf.data()) + n,
+                 total - n, off + n);
+    if (m < 0 || static_cast<size_t>(m) != total - n) {
+      throw std::runtime_error("Could not read geometry store record");
     }
   }
+
+  return RecordReader(buf.data() + sizeof(RecordHeader), len);
+}
+
+// ____________________________________________________________________________
+template <typename W>
+size_t sj::TypedGeometryStore<W>::writeRecord(const std::string& payload,
+                                              std::ostream& str) {
+  if (payload.size() > std::numeric_limits<uint32_t>::max()) {
+    throw std::out_of_range(
+        "Serialized geometry is larger than " +
+        std::to_string(std::numeric_limits<uint32_t>::max()) + " bytes");
+  }
+
+  RecordHeader header{static_cast<uint32_t>(payload.size()),
+                      static_cast<uint32_t>(payload.size())};
+  str.write(reinterpret_cast<const char*>(&header), sizeof(RecordHeader));
+  str.write(payload.data(), payload.size());
+
+  return sizeof(RecordHeader) + payload.size();
+}
+
+// ____________________________________________________________________________
+template <typename W>
+void sj::TypedGeometryStore<W>::writeMemStore(std::ostream& str) const {
+  size_t pos = 0;
+  for (const auto& val : _memStore) {
+    if (val.first != pos) {
+      throw std::logic_error("Error while writing geometry record to disk");
+    }
+    std::ostringstream payload;
+    writeTo(*val.second.get(), payload);
+    pos += writeRecord(payload.str(), str);
+  }
+  if (pos != _geomsOffset) {
+    throw std::logic_error("Error while writing geometry record to disk");
+  }
+}
+
+// ____________________________________________________________________________
+template <typename W>
+std::pair<size_t, W> sj::TypedGeometryStore<W>::getFrom(size_t off) const {
+  auto r = readRecord(untypedId(off), std::numeric_limits<size_t>::max());
+  return decode(r);
 }
 
 // ____________________________________________________________________________
@@ -588,9 +674,7 @@ void sj::TypedGeometryStore<W>::flush() {
     std::ofstream out(fName,
                       std::ios::out | std::ios::binary | std::ios::trunc);
 
-    for (const auto& val : _memStore) {
-      writeTo(*val.second.get(), out);
-    }
+    writeMemStore(out);
     out.close();
 
     if (!out) {
@@ -617,7 +701,7 @@ std::string sj::TypedGeometryStore<W>::persistFName(const std::string& dir,
 // ____________________________________________________________________________
 template <typename W>
 size_t sj::TypedGeometryStore<W>::readPoly(
-    std::istream& str, util::geo::I32XSortedPolygon& ret) const {
+    RecordReader& str, util::geo::I32XSortedPolygon& ret) const {
   size_t estSize = 0;
 
   util::geo::I32Box box;
@@ -789,7 +873,7 @@ size_t sj::TypedGeometryStore<W>::writePoly(
 // ____________________________________________________________________________
 template <typename W>
 size_t sj::TypedGeometryStore<W>::readLine(
-    std::istream& str, util::geo::I32XSortedLine& ret) const {
+    RecordReader& str, util::geo::I32XSortedLine& ret) const {
   size_t estSize = 0;
 
   util::geo::I32Box box;
@@ -905,8 +989,7 @@ sj::MultiGeom sj::TypedGeometryStore<sj::MultiGeom>::getMulti(
     size_t off) const {
   if (_inMemory) return *getFromMem(off);
 
-  // only ever read by a single thread, so we can always use read stream 0
-  return getFrom(off, 0).second;
+  return getFrom(off).second;
 }
 
 // ____________________________________________________________________________
@@ -1559,7 +1642,7 @@ template <typename W>
 std::shared_ptr<W> GeometryStore::get(const sj::TypedGeometryStore<W>& store,
                                       size_t off) {
   if (store.inMemory()) return store.getFromMem(off);
-  return std::make_shared<W>(store.getFrom(off, 0).second);
+  return std::make_shared<W>(store.getFrom(off).second);
 }
 
 template class sj::TypedGeometryStore<sj::Area>;

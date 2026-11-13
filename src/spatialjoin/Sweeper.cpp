@@ -1170,9 +1170,9 @@ void Sweeper::writeIntersect(size_t t, const std::string& a, size_t aSub,
 void Sweeper::selfCheck(const JobVal& cur, size_t t) {
   GeomId ref;
   if (cur.getType() == SELF_CHECK_AREA) {
-    ref = _geomCache->getAreaId(cur.getId(), t, cur.storeId);
+    ref = _geomCache->getAreaId(cur.getId(), cur.storeId);
   } else if (cur.getType() == SELF_CHECK_LINE) {
-    ref = _geomCache->getLineId(cur.getId(), t, cur.storeId);
+    ref = _geomCache->getLineId(cur.getId(), cur.storeId);
   } else {
     throw std::runtime_error("Unsupported self check event type " +
                              std::to_string(cur.getType()));
@@ -1292,7 +1292,7 @@ void Sweeper::doDE9IMCheck(const JobVal cur, const JobVal sv, size_t t) {
       }
     } else {
       auto ts = TIME();
-      auto b = _geomCache->getLine(cur.getId(), t, cur.storeId);
+      auto b = _geomCache->getLine(cur.getId(), cur.storeId);
       _stats[t].timeGeoCacheRetrievalLine += TOOK(ts);
       auto de9im = DE9IMCheck(p, b.get(), t);
 
@@ -1327,7 +1327,7 @@ void Sweeper::doDE9IMCheck(const JobVal cur, const JobVal sv, size_t t) {
       }
     } else {
       auto ts = TIME();
-      auto b = _geomCache->getLine(sv.getId(), t, sv.storeId);
+      auto b = _geomCache->getLine(sv.getId(), sv.storeId);
       _stats[t].timeGeoCacheRetrievalLine += TOOK(ts);
       auto de9im = DE9IMCheck(p, b.get(), t);
 
@@ -1343,8 +1343,8 @@ void Sweeper::doDE9IMCheck(const JobVal cur, const JobVal sv, size_t t) {
     }
   } else if (sv.getType() == LINE && cur.getType() == LINE) {
     auto ts = TIME();
-    auto a = _geomCache->getLine(sv.getId(), t, sv.storeId);
-    auto b = _geomCache->getLine(cur.getId(), t, cur.storeId);
+    auto a = _geomCache->getLine(sv.getId(), sv.storeId);
+    auto b = _geomCache->getLine(cur.getId(), cur.storeId);
     _stats[t].timeGeoCacheRetrievalLine += TOOK(ts);
 
     if (sameGeom(a->id, cur.side, b->id, sv.side))
@@ -1373,7 +1373,7 @@ void Sweeper::doDE9IMCheck(const JobVal cur, const JobVal sv, size_t t) {
     auto a = getSimpleLine(sv, t);
     _stats[t].timeGeoCacheRetrievalSimpleLine += TOOK(ts);
     ts = TIME();
-    auto b = _geomCache->getLine(cur.getId(), t, cur.storeId);
+    auto b = _geomCache->getLine(cur.getId(), cur.storeId);
     _stats[t].timeGeoCacheRetrievalLine += TOOK(ts);
 
     if (sameGeom(a->id, cur.side, b->id, sv.side))
@@ -1387,7 +1387,7 @@ void Sweeper::doDE9IMCheck(const JobVal cur, const JobVal sv, size_t t) {
     }
   } else if (sv.getType() == LINE && isSimpleLine(cur.getType())) {
     auto ts = TIME();
-    auto a = _geomCache->getLine(sv.getId(), t, sv.storeId);
+    auto a = _geomCache->getLine(sv.getId(), sv.storeId);
     _stats[t].timeGeoCacheRetrievalLine += TOOK(ts);
     ts = TIME();
     auto b = getSimpleLine(cur, t);
@@ -1417,7 +1417,7 @@ void Sweeper::doDE9IMCheck(const JobVal cur, const JobVal sv, size_t t) {
     }
   } else if (sv.getType() == LINE && isArea(cur.getType())) {
     auto ts = TIME();
-    auto a = _geomCache->getLine(sv.getId(), t, sv.storeId);
+    auto a = _geomCache->getLine(sv.getId(), sv.storeId);
     _stats[t].timeGeoCacheRetrievalLine += TOOK(ts);
 
     std::shared_ptr<Area> b = getArea(cur, t);
@@ -1435,7 +1435,7 @@ void Sweeper::doDE9IMCheck(const JobVal cur, const JobVal sv, size_t t) {
     std::shared_ptr<Area> a = getArea(sv, t);
 
     auto ts = TIME();
-    auto b = _geomCache->getLine(cur.getId(), t, cur.storeId);
+    auto b = _geomCache->getLine(cur.getId(), cur.storeId);
     _stats[t].timeGeoCacheRetrievalLine += TOOK(ts);
 
     if (sameGeom(a->id, cur.side, b->id, sv.side))
@@ -1556,7 +1556,7 @@ void Sweeper::doDistCheck(const JobVal cur, const JobVal sv, size_t t) {
                   dist);
       }
     } else {
-      auto b = _geomCache->getLine(cur.getId(), t, cur.storeId);
+      auto b = _geomCache->getLine(cur.getId(), cur.storeId);
       auto a = getPoint(sv, t);
       dist = distCheck(p, a.get(), b.get(), sv.origin(), cur.origin(), t);
 
@@ -1580,7 +1580,7 @@ void Sweeper::doDistCheck(const JobVal cur, const JobVal sv, size_t t) {
                   dist);
       }
     } else {
-      auto b = _geomCache->getLine(sv.getId(), t, sv.storeId);
+      auto b = _geomCache->getLine(sv.getId(), sv.storeId);
       auto a = getPoint(cur, t);
 
       dist = distCheck(p, a.get(), b.get(), cur.origin(), sv.origin(), t);
@@ -1591,8 +1591,8 @@ void Sweeper::doDistCheck(const JobVal cur, const JobVal sv, size_t t) {
       }
     }
   } else if (sv.getType() == LINE && cur.getType() == LINE) {
-    auto a = _geomCache->getLine(sv.getId(), t, sv.storeId);
-    auto b = _geomCache->getLine(cur.getId(), t, cur.storeId);
+    auto a = _geomCache->getLine(sv.getId(), sv.storeId);
+    auto b = _geomCache->getLine(cur.getId(), cur.storeId);
 
     // no expensive self checks for multi geoms
     if (sameGeom(a->id, cur.side, b->id, sv.side)) return;
@@ -1613,14 +1613,14 @@ void Sweeper::doDistCheck(const JobVal cur, const JobVal sv, size_t t) {
     }
   } else if (isSimpleLine(sv.getType()) && cur.getType() == LINE) {
     auto a = getSimpleLine(sv, t);
-    auto b = _geomCache->getLine(cur.getId(), t, cur.storeId);
+    auto b = _geomCache->getLine(cur.getId(), cur.storeId);
     auto dist = distCheck({sv.point, sv.point2}, b.get(), t);
 
     if (dist <= _cfg.withinDist) {
       writeDist(t, a->id, 0, sv.origin(), b->id, b->subId, cur.origin(), dist);
     }
   } else if (sv.getType() == LINE && isSimpleLine(cur.getType())) {
-    auto a = _geomCache->getLine(sv.getId(), t, sv.storeId);
+    auto a = _geomCache->getLine(sv.getId(), sv.storeId);
 
     auto dist = distCheck({cur.point, cur.point2}, a.get(), t);
 
@@ -1642,7 +1642,7 @@ void Sweeper::doDistCheck(const JobVal cur, const JobVal sv, size_t t) {
                 dist);
     }
   } else if (sv.getType() == LINE && isArea(cur.getType())) {
-    auto a = _geomCache->getLine(sv.getId(), t, sv.storeId);
+    auto a = _geomCache->getLine(sv.getId(), sv.storeId);
 
     std::shared_ptr<Area> b = getArea(cur, t);
 
@@ -1658,7 +1658,7 @@ void Sweeper::doDistCheck(const JobVal cur, const JobVal sv, size_t t) {
   } else if (isArea(sv.getType()) && cur.getType() == LINE) {
     std::shared_ptr<Area> a = getArea(sv, t);
 
-    auto b = _geomCache->getLine(cur.getId(), t, cur.storeId);
+    auto b = _geomCache->getLine(cur.getId(), cur.storeId);
 
     // no expensive self checks for multi geoms
     if (sameGeom(a->id, cur.side, b->id, sv.side)) return;
@@ -1787,7 +1787,7 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
     std::shared_ptr<Area> b = getArea(sv, t);
 
     auto ts = TIME();
-    auto a = _geomCache->getLine(cur.getId(), t, cur.storeId);
+    auto a = _geomCache->getLine(cur.getId(), cur.storeId);
     _stats[t].timeGeoCacheRetrievalLine += TOOK(ts);
 
     if (sameGeom(a->id, cur.side, b->id, sv.side))
@@ -1899,7 +1899,7 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
     std::shared_ptr<Area> a = getArea(cur, t);
 
     auto ts = TIME();
-    auto b = _geomCache->getLine(sv.getId(), t, sv.storeId);
+    auto b = _geomCache->getLine(sv.getId(), sv.storeId);
     _stats[t].timeGeoCacheRetrievalLine += TOOK(ts);
 
     if (sameGeom(a->id, cur.side, b->id, sv.side))
@@ -2005,8 +2005,8 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
     }
   } else if (cur.getType() == LINE && sv.getType() == LINE) {
     auto ts = TIME();
-    auto a = _geomCache->getLine(cur.getId(), t, cur.storeId);
-    auto b = _geomCache->getLine(sv.getId(), t, sv.storeId);
+    auto a = _geomCache->getLine(cur.getId(), cur.storeId);
+    auto b = _geomCache->getLine(sv.getId(), sv.storeId);
     _stats[t].timeGeoCacheRetrievalLine += TOOK(ts);
 
     if (sameGeom(a->id, cur.side, b->id, sv.side))
@@ -2092,7 +2092,7 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
     }
   } else if (cur.getType() == LINE && isSimpleLine(sv.getType())) {
     auto ts = TIME();
-    auto a = _geomCache->getLine(cur.getId(), t, cur.storeId);
+    auto a = _geomCache->getLine(cur.getId(), cur.storeId);
     auto b = getSimpleLine(sv, t);
     _stats[t].timeGeoCacheRetrievalSimpleLine += TOOK(ts);
 
@@ -2160,7 +2160,7 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
     auto a = getSimpleLine(cur, t);
     _stats[t].timeGeoCacheRetrievalSimpleLine += TOOK(ts);
     ts = TIME();
-    auto b = _geomCache->getLine(sv.getId(), t, sv.storeId);
+    auto b = _geomCache->getLine(sv.getId(), sv.storeId);
     _stats[t].timeGeoCacheRetrievalLine += TOOK(ts);
 
     _stats[t].lineCmps++;
@@ -2328,7 +2328,7 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
   } else if (isPoint(cur.getType()) && sv.getType() == LINE) {
     auto ts = TIME();
     auto a = cur.point;
-    auto b = _geomCache->getLine(sv.getId(), t, sv.storeId);
+    auto b = _geomCache->getLine(sv.getId(), sv.storeId);
     _stats[t].timeGeoCacheRetrievalLine += TOOK(ts);
 
     _stats[t].lineCmps++;
@@ -3572,7 +3572,7 @@ std::shared_ptr<sj::Point> Sweeper::getPoint(const JobVal& j, size_t t) const {
   if (j.getType() == sj::FOLDED_POINT) {
     ret = std::make_shared<sj::Point>(sj::Point{unfoldString(j.getId()), 0});
   } else {
-    ret = _geomCache->getPoint(j.getId(), t, j.storeId);
+    ret = _geomCache->getPoint(j.getId(), j.storeId);
   }
   _stats[t].timeGeoCacheRetrievalPoint += TOOK(ts);
 
@@ -3581,13 +3581,13 @@ std::shared_ptr<sj::Point> Sweeper::getPoint(const JobVal& j, size_t t) const {
 
 // _____________________________________________________________________________
 std::shared_ptr<sj::SimpleLine> Sweeper::getSimpleLine(const JobVal& cur,
-                                                       size_t t) const {
+                                                       size_t) const {
   if (sj::isFoldedSimpleLine(cur.getType())) {
     return std::make_shared<sj::SimpleLine>(
         sj::SimpleLine{unfoldString(cur.getId())});
   }
 
-  return _geomCache->getSimpleLine(cur.getId(), t, cur.storeId);
+  return _geomCache->getSimpleLine(cur.getId(), cur.storeId);
 }
 
 // _____________________________________________________________________________
@@ -3596,7 +3596,7 @@ std::shared_ptr<sj::Area> Sweeper::getArea(const JobVal& sv, size_t t) const {
   std::shared_ptr<Area> asp;
 
   if (sv.getType() == SIMPLE_POLYGON) {
-    auto p = _geomCache->getSimpleArea(sv.getId(), t, sv.storeId);
+    auto p = _geomCache->getSimpleArea(sv.getId(), sv.storeId);
     asp = std::make_shared<sj::Area>(sj::Area(areaFromSimpleArea(p.get())));
   } else if (sv.getType() == FOLDED_BOX_POLYGON) {
     SimpleArea sa;
@@ -3606,7 +3606,7 @@ std::shared_ptr<sj::Area> Sweeper::getArea(const JobVal& sv, size_t t) const {
                   .getOuter();
     asp = std::make_shared<sj::Area>(sj::Area(areaFromSimpleArea(&sa)));
   } else {
-    asp = _geomCache->getArea(sv.getId(), t, sv.storeId);
+    asp = _geomCache->getArea(sv.getId(), sv.storeId);
   }
 
   _stats[t].timeGeoCacheRetrievalArea += TOOK(ts);
