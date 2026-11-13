@@ -1224,7 +1224,7 @@ void Sweeper::doDE9IMCheck(const JobVal cur, const JobVal sv, size_t t) {
   }
 
   if (cur.getType() == sv.getType() && cur.getId() == sv.getId() &&
-      cur.storeId == sv.storeId)
+      cur.storeId == sv.storeId && cur.side == sv.side)
     return;
 
   if (isPoint(cur.getType()) && isPoint(sv.getType())) {
@@ -1501,7 +1501,7 @@ void Sweeper::doDistCheck(const JobVal cur, const JobVal sv, size_t t) {
   }
 
   if (cur.getType() == sv.getType() && cur.getId() == sv.getId() &&
-      cur.storeId == sv.storeId)
+      cur.storeId == sv.storeId && cur.side == sv.side)
     return;
 
   if (isPoint(cur.getType()) && isPoint(sv.getType())) {
@@ -1708,7 +1708,7 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
   }
 
   if (cur.getType() == sv.getType() && cur.getId() == sv.getId() &&
-      cur.storeId == sv.storeId)
+      cur.storeId == sv.storeId && cur.side == sv.side)
     return;
 
   if (isArea(cur.getType()) && isArea(sv.getType())) {
