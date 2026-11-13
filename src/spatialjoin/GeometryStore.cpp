@@ -669,8 +669,13 @@ size_t sj::TypedGeometryStore<W>::readPoly(
     str.read(reinterpret_cast<char*>(&ret.getInnerBoxes()[0]),
              sizeof(util::geo::Box<int32_t>) * numInners);
     estSize += sizeof(util::geo::Box<int32_t>) * numInners;
-    str.read(reinterpret_cast<char*>(&ret.getInnerBoxIdx()[0]),
-             sizeof(std::pair<int32_t, size_t>) * numInners);
+    for (auto& idx : ret.getInnerBoxIdx()) {
+      int32_t first;
+      uint64_t second;
+      str.read(reinterpret_cast<char*>(&first), sizeof(int32_t));
+      str.read(reinterpret_cast<char*>(&second), sizeof(uint64_t));
+      idx = {first, static_cast<size_t>(second)};
+    }
     estSize += sizeof(std::pair<int32_t, size_t>) * numInners;
     str.read(reinterpret_cast<char*>(&ret.getInnerAreas()[0]),
              sizeof(double) * numInners);
@@ -748,9 +753,13 @@ size_t sj::TypedGeometryStore<W>::writePoly(
     ret += sizeof(util::geo::Box<int32_t>) * locSize;
 
     // inner box idx
-    str.write(reinterpret_cast<const char*>(&geom.getInnerBoxIdx()[0]),
-              sizeof(std::pair<int32_t, size_t>) * locSize);
-    ret += sizeof(std::pair<int32_t, size_t>) * locSize;
+    for (const auto& idx : geom.getInnerBoxIdx()) {
+      int32_t first = idx.first;
+      uint64_t second = idx.second;
+      str.write(reinterpret_cast<const char*>(&first), sizeof(int32_t));
+      str.write(reinterpret_cast<const char*>(&second), sizeof(uint64_t));
+    }
+    ret += (sizeof(int32_t) + sizeof(uint64_t)) * locSize;
 
     // inner areas
     str.write(reinterpret_cast<const char*>(&geom.getInnerAreas()[0]),
