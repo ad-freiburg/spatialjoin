@@ -10,6 +10,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+#include <algorithm>
 #include <atomic>
 #include <condition_variable>
 #include <functional>
@@ -20,7 +21,9 @@
 #include <unordered_set>
 
 #include "GeometryCache.h"
+#include "GeometryStore.h"
 #include "Stats.h"
+#include "SweepEventList.h"
 #include "util/JobQueue.h"
 #include "util/geo/Geo.h"
 #include "util/geo/IntervalIdx.h"
@@ -31,142 +34,73 @@
 
 namespace sj {
 
-enum GeomType : uint8_t {
-  POLYGON = 0,
-  LINE = 1,
-  POINT = 2,
-  SIMPLE_LINE = 3,
-  SIMPLE_POLYGON = 4,
-  FOLDED_POINT = 5,
-  FOLDED_SIMPLE_LINE = 6,
-  FOLDED_BOX_POLYGON = 7,
-  DELETED = 8,
-  SELF_CHECK = 9,
-  SELF_CHECK_AREA = 10,
-  SELF_CHECK_LINE = 11,
-  SELF_CHECK_POINT = 12
-};
-
-struct BoxVal {
-  size_t id;
-  int32_t loY;
-  int32_t upY;
-  int32_t val;
-  bool out : 1;
-  GeomType type : 4;
-  double areaOrLen;
-  util::geo::I32Point point;
-  size_t numAnchors;
-  util::geo::I32Box b45;
-  bool side;
-  bool large;
-  int32_t size;
-};
-
-inline std::string toString(const BoxVal& bv) {
-  std::stringstream ret;
-
-  ret << "(id=" << bv.id;
-  ret << " loY=" << bv.loY;
-  ret << " upY=" << bv.upY;
-  ret << " val=" << bv.val;
-  ret << " out=" << bv.out;
-  ret << " type=" << (int)bv.type;
-  ret << " point=" << util::geo::getWKT(bv.point);
-  // ret << " b45=" << util::geo::getWKT(bv.b45);
-  ret << " side=" << bv.side;
-  ret << " large=" << bv.large;
-  ret << ")";
-
-  return ret.str();
-}
-
-struct WriteCand {
-  std::string raw;
-  std::string gid;
-  BoxVal boxvalIn;
-  BoxVal boxvalOut;
-  size_t subid;
-};
-
-struct WriteBatch {
-  std::vector<WriteCand> points;
-  std::vector<WriteCand> foldedPoints;
-  std::vector<WriteCand> simpleLines;
-  std::vector<WriteCand> foldedSimpleLines;
-  std::vector<WriteCand> lines;
-  std::vector<WriteCand> simpleAreas;
-  std::vector<WriteCand> foldedBoxAreas;
-  std::vector<WriteCand> areas;
-  std::vector<WriteCand> refs;
-
-  size_t size() const {
-    return points.size() + foldedSimpleLines.size() + foldedPoints.size() +
-           simpleLines.size() + lines.size() + simpleAreas.size() +
-           areas.size() + refs.size();
-  }
-};
-
-inline bool operator==(const BoxVal& a, const BoxVal& b) {
-  return a.id == b.id && a.loY == b.loY && a.upY == b.upY && a.type == b.type;
-}
-
 struct SweepVal {
-  SweepVal(size_t id, GeomType type)
-      : id(id), type(type), side(false), large(false) {}
-  SweepVal(size_t id, GeomType type, util::geo::I32Box b45,
-           util::geo::I32Point point, util::geo::I32Point point2, bool side,
-           bool large)
+  SweepVal(size_t id) : id(id), side(false), storeId(0) {}
+  SweepVal(size_t id, util::geo::I32Box b45, util::geo::I32Point point,
+           util::geo::I32Point point2, bool side, uint8_t storeId)
       : id(id),
-        type(type),
         b45(b45),
         point(point),
         point2(point2),
         side(side),
-        large(large) {}
-  SweepVal() : id(0), type(POLYGON) {}
-  size_t id;
-  GeomType type : 4;
+        storeId(storeId) {}
+  SweepVal() : id(typedId(0, POLYGON)), side(false), storeId(0) {}
+  size_t id;  // typed ID, see typedId()
   util::geo::I32Box b45;
   util::geo::I32Point point, point2;
+  // the join side, given by the SweepEventList the geometry came from
   bool side;
-  bool large;
+  // the store the geometry is stored in, see GeometryCache::addStore()
+  uint8_t storeId;
+
+  size_t getId() const { return untypedId(id); }
+  GeomType getType() const { return idType(id); }
+};
+
+// where a geometry in a sweep comes from (side and store)
+struct GeomOrigin {
+  bool side;
+  uint8_t storeId;
 };
 
 struct JobVal {
-  size_t id;
-  GeomType type : 4;
+  size_t id;  // typed ID, see typedId()
   util::geo::I32Point point, point2;
-  bool large;
   int32_t val;
+  bool side;
+  uint8_t storeId;
 
-  JobVal() : id(0), type(POLYGON) {}
-  JobVal(const BoxVal& bv)
-      : id(bv.id),
-        type(bv.type),
-        point(bv.point),
-        point2(bv.val, bv.point.getY() == bv.loY ? bv.upY : bv.loY),
-        large(bv.large),
-        val(bv.val){};
+  JobVal() : id(typedId(0, POLYGON)), val(0), side(false), storeId(0) {}
+  JobVal(const BoxVal& bv, bool side)
+      : id(bv.id()),
+        point(bv.point()),
+        point2(bv.otherPoint()),
+        val(bv.val()),
+        side(side),
+        storeId(bv.storeId()){};
   JobVal(const SweepVal& sv)
       : id(sv.id),
-        type(sv.type),
         point(sv.point),
         point2(sv.point2),
-        large(sv.large),
-        val(0){};
+        val(0),
+        side(sv.side),
+        storeId(sv.storeId){};
+
+  size_t getId() const { return untypedId(id); }
+  GeomType getType() const { return idType(id); }
+  GeomOrigin origin() const { return {side, storeId}; }
 };
 
 inline bool operator==(const JobVal& a, const JobVal& b) {
-  return a.id == b.id && a.type == b.type;
+  return a.id == b.id;
 }
 
 inline bool operator==(const SweepVal& a, const SweepVal& b) {
-  return a.id == b.id && a.type == b.type;
+  return a.id == b.id;
 }
 
 inline bool operator<(const SweepVal& a, const SweepVal& b) {
-  return a.id < b.id || (a.id == b.id && a.type < b.type);
+  return a.id < b.id;
 }
 
 struct Job {
@@ -184,258 +118,90 @@ typedef std::vector<Job> JobBatch;
 // intersects, contains, covers, touches, crosses / overlaps
 typedef std::tuple<bool, bool, bool, bool, bool> GeomCheckRes;
 
-struct SweeperCfg {
-  size_t numThreads;
-  size_t numCacheThreads;
-  size_t geomCacheMaxSize;
-  size_t geomCacheMaxNumElements;
-  std::string sepIsect;
-  std::string sepContains;
-  std::string sepCovers;
-  std::string sepTouches;
-  std::string sepEquals;
-  std::string sepOverlaps;
-  std::string sepCrosses;
-  bool useBoxIds;
-  bool useArea;
-  bool useOBB;
-  bool useDiagBox;
-  bool useFastSweepSkip;
-  bool noGeometryChecks;
-  double withinDist;
-  bool euclideanDist;
-  bool haversineApprox;
-  bool computeDE9IM;
-  util::geo::DE9IMFilter de9imFilter;
-  bool forceTwoSided;
-  std::function<void(size_t t, const char* a, size_t an, const char* b,
-                     size_t bn, const char* pred, size_t predn)>
-      writeRelCb;
-  std::function<void(const std::string&)> logCb;
-  std::function<void(const std::string&)> statsCb;
-  std::function<void(size_t)> sweepProgressCb;
-  std::function<void()> sweepCancellationCb;
+// a position in the sweep events of the multi geometries merged in during the
+// sweep, as (slot of the multi geometry, position of the event)
+typedef std::pair<size_t, size_t> MultiEventPos;
+
+struct MultiEventCmp {
+  const std::vector<std::vector<BoxVal>>* events;
+
+  bool operator()(const MultiEventPos& a, const MultiEventPos& b) const {
+    return boxCmp(&(*events)[a.first][a.second],
+                  &(*events)[b.first][b.second]) > 0;
+  }
 };
 
-// buffer size _must_ be multiples of sizeof(BoxVal) and should hold at least
-// one element
-static const ssize_t BUFFER_S =
-    ((16 * 1024 * 1024 + sizeof(BoxVal)) / sizeof(BoxVal)) * sizeof(BoxVal);
-
-static const size_t MAX_OUT_LINE_LENGTH = 1000;
-
-static const size_t POINT_CACHE_MAX_ELEMENTS = 10000;
-static const size_t SIMPLE_LINE_CACHE_MAX_ELEMENTS = 10000;
-
-// only use large geom cache for extreme geometries
-static const size_t GEOM_LARGENESS_THRESHOLD = 1024 * 1024 * 1024;
+typedef std::priority_queue<MultiEventPos, std::vector<MultiEventPos>,
+                            MultiEventCmp>
+    MultiEventQueue;
 
 class Sweeper {
  public:
-  Sweeper(SweeperCfg cfg, const std::string& cache)
-      : Sweeper(cfg, cache, ".spatialjoin") {}
-  Sweeper(SweeperCfg cfg, const std::string& cache,
-          const std::string& tmpPrefix)
+  Sweeper(SpatialJoinCfg cfg, const GeometryCache* geomCache)
       : _cfg(cfg),
-        _obufpos(0),
-        _pointCache({cfg.useOBB}, cfg.geomCacheMaxSize,
-                    POINT_CACHE_MAX_ELEMENTS, cfg.numCacheThreads, cache,
-                    tmpPrefix),
-        _areaCache({cfg.useOBB}, cfg.geomCacheMaxSize,
-                   cfg.geomCacheMaxNumElements, cfg.numCacheThreads, cache,
-                   tmpPrefix),
-        _simpleAreaCache({cfg.useOBB}, cfg.geomCacheMaxSize,
-                         cfg.geomCacheMaxNumElements, cfg.numCacheThreads,
-                         cache, tmpPrefix),
-        _lineCache({cfg.useOBB}, cfg.geomCacheMaxSize,
-                   cfg.geomCacheMaxNumElements, cfg.numCacheThreads, cache,
-                   tmpPrefix),
-        _simpleLineCache({cfg.useOBB}, cfg.geomCacheMaxSize,
-                         SIMPLE_LINE_CACHE_MAX_ELEMENTS, cfg.numCacheThreads,
-                         cache, tmpPrefix),
-        _cache(cache),
-        _jobs(100),
-        _numSides(1),
+        _geomCache(geomCache),
+        _jobs(std::max<size_t>(1, 2 * cfg.numThreads)),
         _dontNeedFullDE9IM(!_cfg.computeDE9IM &&
-                           _cfg.de9imFilter == util::geo::FANY) {
-    // OUTFACTOR 1
-    _fname = util::getTmpFName(_cache, tmpPrefix, "events");
-    _file = open(_fname.c_str(), O_RDWR | O_CREAT | O_TRUNC, 0666);
+                           _cfg.de9imFilter == util::geo::FANY) {}
 
-    if (_file < 0) {
-      throw std::runtime_error("Could not open temporary file " + _fname);
-    }
-
-    // immediately unlink
-    unlink(_fname.c_str());
-
-#ifdef __unix__
-    posix_fadvise(_file, 0, 0, POSIX_FADV_SEQUENTIAL);
-#endif
-
-    // OUTFACTOR 1
-
-    _outBuffer = new unsigned char[BUFFER_S];
-
-    if (_cfg.forceTwoSided) _numSides = 2;
-  };
-
-  ~Sweeper() { close(_file); }
+  Sweeper(const Sweeper&) = delete;
+  Sweeper& operator=(const Sweeper&) = delete;
 
   void log(const std::string& msg);
 
-  util::geo::I32Box add(const util::geo::I32MultiPolygon& a,
-                        const std::string& gid, bool side,
-                        WriteBatch& batch) const;
-  util::geo::I32Box add(const util::geo::I32MultiPolygon& a,
-                        const std::string& gid, size_t, bool side,
-                        WriteBatch& batch) const;
-  util::geo::I32Box add(const util::geo::I32Polygon& a, const std::string& gid,
-                        bool side, WriteBatch& batch) const;
-  util::geo::I32Box add(const util::geo::I32Polygon& a, const std::string& gid,
-                        size_t subId, bool side, WriteBatch& batch) const;
+  RelStats sweep(const SweepEventList* eventsA,
+                 const SweepEventList* eventsB = 0);
 
-  util::geo::I32Box add(const util::geo::I32MultiLine& a,
-                        const std::string& gid, size_t, bool side,
-                        WriteBatch& batch) const;
-  util::geo::I32Box add(const util::geo::I32MultiLine& a,
-                        const std::string& gid, bool side,
-                        WriteBatch& batch) const;
-  util::geo::I32Box add(const util::geo::I32Line& a, const std::string& gid,
-                        bool side, WriteBatch& batch) const;
-  util::geo::I32Box add(const util::geo::I32Line& a, const std::string& gid,
-                        size_t subid, bool side, WriteBatch& batch) const;
-
-  util::geo::I32Box add(const util::geo::I32Point& a, const std::string& gid,
-                        bool side, WriteBatch& batch) const;
-  util::geo::I32Box add(const util::geo::I32Point& a, const std::string& gid,
-                        size_t subid, bool side, WriteBatch& batch) const;
-  util::geo::I32Box add(const util::geo::I32MultiPoint& a,
-                        const std::string& gid, size_t, bool side,
-                        WriteBatch& batch) const;
-  util::geo::I32Box add(const util::geo::I32MultiPoint& a,
-                        const std::string& gid, bool side,
-                        WriteBatch& batch) const;
-
-  void add(const std::string& a, const util::geo::I32Box& box,
-           const std::string& gid, size_t subid, bool side,
-           WriteBatch& batch) const;
-  void add(const std::string& a, size_t parentSubId,
-           const util::geo::I32Box& box, const std::string& gid, size_t subid,
-           bool side, WriteBatch& batch) const;
-
-  void addBatch(WriteBatch& cands);
-
-  void setNumSides(size_t sides) { _numSides = sides; }
-
-  void flush();
-
-  RelStats sweep();
-
-  size_t numElements() const { return _curSweepId / 2; }
-
-  size_t numReferences() const {
-    size_t ret = 0;
-    for (const auto& subs : _refs) {
-      for (const auto& refd : subs.second) {
-        ret += refd.second.size();
-      }
-    }
-    return ret;
-  }
-
-  void setFilterBox(const util::geo::I32Box& filterBox) {
-    _filterBox = filterBox;
-  }
-
-  template <template <typename> class G, typename T>
-  util::geo::I32Box getPaddedBoundingBox(const G<T>& geom) const {
-    return getPaddedBoundingBox(geom, geom);
-  }
-
-  template <template <typename> class G1, template <typename> class G2,
-            typename T>
-  util::geo::I32Box getPaddedBoundingBox(const G1<T>& geom,
-                                         const G2<T>& refGeom) const;
-  static size_t foldString(const std::string& s);
   static std::string unfoldString(size_t folded);
 
-  double DUPLICATE_REMOVAL_MIN_SIZE = 500;
-
  private:
-  const SweeperCfg _cfg;
-  size_t _curSweepId = 0;
-  std::string _fname;
-  int _file;
-  unsigned char* _outBuffer;
-  ssize_t _obufpos;
+  // metadata of the multi geometries, available after their multi-IN event
+  size_t subSize(const std::string& gid, bool side) const {
+    SharedLock lock(_multiMetaMtx);
+    return _subSizes[side].at(gid);
+  }
 
-  std::vector<size_t> _checks;
-  std::vector<int32_t> _curX;
-  std::vector<std::atomic<int32_t>> _atomicCurX;
-  std::atomic<bool> _cancelled;
+  bool isMulti(const std::string& gid, bool side) const {
+    SharedLock lock(_multiMetaMtx);
+    return _subSizes[side].find(gid) != _subSizes[side].end();
+  }
 
-  std::vector<RelStats> _relStats;
+  util::geo::I32Point multiRightPoint(const std::string& gid, bool side) const {
+    SharedLock lock(_multiMetaMtx);
+    auto i = _multiRightPoint[side].find(gid);
+    if (i == _multiRightPoint[side].end()) return {};
+    return i->second;
+  }
 
-  mutable std::vector<Stats> _stats;
+  // whether the event lists of a or b hold references
+  bool hasRefs(GeomOrigin a, GeomOrigin b) const {
+    return _events[a.side]->hasRefs() || _events[b.side]->hasRefs();
+  }
 
-  GeometryCache<Point> _pointCache;
-  GeometryCache<Area> _areaCache;
-  GeometryCache<SimpleArea> _simpleAreaCache;
-  GeometryCache<Line> _lineCache;
-  GeometryCache<SimpleLine> _simpleLineCache;
+  // whether gid a on aSide and gid b on bSide denote the same geometry
+  static bool sameGeom(const std::string& a, bool aSide, const std::string& b,
+                       bool bSide) {
+    return aSide == bSide && a == b;
+  }
 
-  std::vector<std::map<std::string, std::map<std::string, double>>>
-      _subDistance;
-  std::vector<
-      std::map<std::string, std::map<std::string, util::geo::DE9IMatrix>>>
-      _subDE9IM;
-  std::vector<std::map<std::string, std::map<std::string, std::set<size_t>>>>
-      _subContains;
-  std::vector<std::map<std::string, std::map<std::string, std::set<size_t>>>>
-      _subCovered;
-  std::vector<std::map<std::string, std::map<std::string, std::set<size_t>>>>
-      _subEquals;
-  std::vector<std::map<std::string, std::set<std::string>>> _subTouches;
-  std::vector<std::map<std::string, std::set<std::string>>> _subNotTouches;
-  std::vector<std::map<std::string, std::set<std::string>>> _subCrosses;
-  std::vector<std::map<std::string, std::set<std::string>>> _subNotCrosses;
-  std::vector<std::map<std::string, std::set<std::string>>> _subOverlaps;
-  std::vector<std::map<std::string, std::set<std::string>>> _subNotOverlaps;
-  std::map<std::string, size_t> _subSizes;
+  // the store with id storeId
+  const GeometryStore& store(uint8_t storeId) const {
+    return _geomCache->getStore(storeId);
+  }
 
-  std::set<size_t> _activeMultis[2];
-  std::vector<std::string> _multiIds[2];
-  std::vector<int32_t> _multiRightX[2];
-  std::map<std::string, util::geo::I32Point> _multiRightPoint;
-  std::vector<int32_t> _multiLeftX[2];
-  std::map<std::string, size_t> _multiGidToId[2];
+  // fills the metadata of the multi geometry of multiIn on side, and returns
+  // the sorted sweep events of its members
+  std::vector<BoxVal> multiIn(const BoxVal& multiIn, bool side);
 
-  std::string _cache;
-
-  util::JobQueue<JobBatch> _jobs;
-
-  std::atomic<uint8_t> _numSides;
-
-  std::vector<std::mutex> _mutsEquals;
-  std::vector<std::mutex> _mutsCovers;
-  std::vector<std::mutex> _mutsContains;
-  std::vector<std::mutex> _mutsTouches;
-  std::vector<std::mutex> _mutsNotTouches;
-  std::vector<std::mutex> _mutsCrosses;
-  std::vector<std::mutex> _mutsNotCrosses;
-  std::vector<std::mutex> _mutsOverlaps;
-  std::vector<std::mutex> _mutsNotOverlaps;
-  std::vector<std::mutex> _mutsDistance;
-  std::vector<std::mutex> _mutsDE9IM;
+  // the side the partners of a geometry on side are on
+  bool otherSide(bool side) const { return _numSides == 2 ? !side : side; }
 
   Area areaFromSimpleArea(const SimpleArea* sa) const;
-  Line lineFromSimpleLine(const SimpleLine* sl) const;
 
   double distCheck(const util::geo::I32Point& a, const Point* aMeta,
-                   const Area* b, size_t t);
+                   const Area* b, GeomOrigin aOrig, GeomOrigin bOrig, size_t t);
   double distCheck(const util::geo::I32Point& a, const Point* aMeta,
-                   const Line* b, size_t t);
+                   const Line* b, GeomOrigin aOrig, GeomOrigin bOrig, size_t t);
   double distCheck(const util::geo::I32Point& a,
                    const util::geo::LineSegment<int32_t>& b, size_t t);
   double distCheck(const util::geo::LineSegment<int32_t>& a,
@@ -444,13 +210,16 @@ class Sweeper {
                    size_t t);
   double distCheck(const util::geo::LineSegment<int32_t>& a, const Area* b,
                    size_t t);
-  double distCheck(const Line* a, const Line* b, size_t t);
-  double distCheck(const Area* a, const Area* b, size_t t);
-  double distCheck(const Line* a, const Area* b, size_t t);
+  double distCheck(const Line* a, const Line* b, GeomOrigin aOrig,
+                   GeomOrigin bOrig, size_t t);
+  double distCheck(const Area* a, const Area* b, GeomOrigin aOrig,
+                   GeomOrigin bOrig, size_t t);
+  double distCheck(const Line* a, const Area* b, GeomOrigin aOrig,
+                   GeomOrigin bOrig, size_t t);
 
-  double getMaxMultiDist(const std::string& idA, size_t aSub,
+  double getMaxMultiDist(const std::string& idA, size_t aSub, GeomOrigin aOrig,
                          const util::geo::I32Point& leftAPoint,
-                         const std::string& idB, size_t bSub,
+                         const std::string& idB, size_t bSub, GeomOrigin bOrig,
                          const util::geo::I32Point& leftBPoint, size_t t);
 
   util::geo::DE9IMatrix DE9IMCheck(const util::geo::I32Point& a, const Area* b,
@@ -474,71 +243,75 @@ class Sweeper {
   util::geo::DE9IMatrix DE9IMCheck(const Line* a, const Area* b,
                                    size_t t) const;
 
-  double getMaxScaleFactor(const util::geo::I32Box& geom) const;
   static std::pair<double, double> getMinMaxLocalScaleFactors(
       const util::geo::I32Box& boxA, const util::geo::I32Box& boxB,
       double distanceUpperBound);
-  double getMaxScaleFactor(const util::geo::I32Point& geom) const;
 
-  void diskAdd(const BoxVal& bv);
-
-  void multiOut(size_t t, const std::string& gid);
-  void multiAdd(const std::string& gid, bool side, int32_t xLeft,
-                int32_t xRight, const util::geo::I32Point& pointRight);
+  void multiOut(size_t t, const std::string& gid, GeomOrigin origin);
   void clearMultis(bool force);
 
   void writeIntersect(size_t t, const std::string& a, size_t aSub,
-                      const std::string& b, size_t bSub, bool expandB = true,
+                      GeomOrigin aOrig, const std::string& b, size_t bSub,
+                      GeomOrigin bOrig, bool expandB = true,
                       bool selfExp = false);
-  void writeRel(size_t t, const std::string& a, const std::string& b,
-                const std::string& pred);
+  void writeRel(size_t t, const std::string& a, bool aSide,
+                const std::string& b, bool bSide, const std::string& pred);
   void writeContains(size_t t, const std::string& a, size_t aSub,
-                     const std::string& b, size_t bSub, bool expandB = true);
+                     GeomOrigin aOrig, const std::string& b, size_t bSub,
+                     GeomOrigin bOrig, bool expandB = true);
   void writeCovers(size_t t, const std::string& a, size_t aSub,
-                   const std::string& b, size_t bSub, bool expandB = true);
+                   GeomOrigin aOrig, const std::string& b, size_t bSub,
+                   GeomOrigin bOrig, bool expandB = true);
   void writeEquals(size_t t, const std::string& a, size_t aSub,
-                   const std::string& b, size_t bSub, bool expandB = true,
-                   bool selfExp = false);
-  void writeDE9IM(size_t t, const std::string& a, size_t aSub,
-                  const std::string& b, size_t bSub,
+                   GeomOrigin aOrig, const std::string& b, size_t bSub,
+                   GeomOrigin bOrig, bool expandB = true, bool selfExp = false);
+  void writeDE9IM(size_t t, const std::string& a, size_t aSub, GeomOrigin aOrig,
+                  const std::string& b, size_t bSub, GeomOrigin bOrig,
                   util::geo::DE9IMatrix de9im, bool expandB = true,
                   bool selfExp = false);
-  void writeDist(size_t t, const std::string& a, size_t aSub,
-                 const std::string& b, size_t bSub, double dist,
-                 bool expandB = true, bool selfExp = false);
+  void writeDist(size_t t, const std::string& a, size_t aSub, GeomOrigin aOrig,
+                 const std::string& b, size_t bSub, GeomOrigin bOrig,
+                 double dist, bool expandB = true, bool selfExp = false);
   void writeTouches(size_t t, const std::string& a, size_t aSub,
-                    const std::string& b, size_t bSub, bool expandB = true);
+                    GeomOrigin aOrig, const std::string& b, size_t bSub,
+                    GeomOrigin bOrig, bool expandB = true);
   void writeNotTouches(size_t t, const std::string& a, size_t aSub,
-                       const std::string& b, size_t bSub,
-                       bool expandB = true);
+                       GeomOrigin aOrig, const std::string& b, size_t bSub,
+                       GeomOrigin bOrig, bool expandB = true);
 
   void writeOverlaps(size_t t, const std::string& a, size_t aSub,
-                     const std::string& b, size_t bSub, bool expandB = true);
+                     GeomOrigin aOrig, const std::string& b, size_t bSub,
+                     GeomOrigin bOrig, bool expandB = true);
   void writeNotOverlaps(size_t t, const std::string& a, size_t aSub,
-                        const std::string& b, size_t bSub, bool expandB = true,
+                        GeomOrigin aOrig, const std::string& b, size_t bSub,
+                        GeomOrigin bOrig, bool expandB = true,
                         bool expandRefs = true);
 
   void writeCrosses(size_t t, const std::string& a, size_t aSub,
-                    const std::string& b, size_t bSub, bool expandB = true);
+                    GeomOrigin aOrig, const std::string& b, size_t bSub,
+                    GeomOrigin bOrig, bool expandB = true);
   void writeNotCrosses(size_t t, const std::string& a, size_t aSub,
-                       const std::string& b, size_t bSub,
-                       bool expandB = true);
+                       GeomOrigin aOrig, const std::string& b, size_t bSub,
+                       GeomOrigin bOrig, bool expandB = true);
   void writeCrossesOneWay(size_t t, const std::string& a, size_t aSub,
-                          const std::string& b, size_t bSub,
-                          bool expandB = true);
+                          GeomOrigin aOrig, const std::string& b, size_t bSub,
+                          GeomOrigin bOrig, bool expandB = true);
 
   void doCheck(JobVal cur, JobVal sv, size_t t);
   void doDistCheck(JobVal cur, JobVal sv, size_t t);
   void doDE9IMCheck(JobVal cur, JobVal sv, size_t t);
-  void selfCheck(const std::string& a, size_t subId, GeomType type, size_t t);
+  // the self check of the referenced geometry of self check event cur
+  void selfCheck(const JobVal& cur, size_t t);
+  void selfCheck(const std::string& a, size_t subId, GeomOrigin origin,
+                 GeomType type, size_t t);
   void processQueue(size_t t);
 
-  bool notOverlaps(const std::string& a, const std::string& b);
-  bool coversAll(const std::string& a, const std::string& b);
-  bool notTouches(const std::string& a, const std::string& b);
-  bool notCrosses(const std::string& a, const std::string& b);
+  bool notOverlaps(const std::string& a, bool aSide, const std::string& b);
+  bool coversAll(const std::string& a, const std::string& b, bool bSide);
+  bool notTouches(const std::string& a, bool aSide, const std::string& b);
+  bool notCrosses(const std::string& a, bool aSide, const std::string& b);
 
-  std::shared_ptr<sj::Point> getPoint(size_t id, GeomType gt, size_t t) const;
+  std::shared_ptr<sj::Point> getPoint(const JobVal& j, size_t t) const;
   static bool isPoint(GeomType gt) { return gt == POINT || gt == FOLDED_POINT; }
 
   static bool isArea(GeomType gt) {
@@ -549,19 +322,18 @@ class Sweeper {
 
   std::shared_ptr<sj::SimpleLine> getSimpleLine(const JobVal& cur,
                                                 size_t t) const;
-  static bool isLine(GeomType gt) {
-    return gt == LINE || gt == SIMPLE_LINE || gt == FOLDED_SIMPLE_LINE;
-  }
+  static bool isLine(GeomType gt) { return gt == LINE || isSimpleLine(gt); }
 
-  static bool isSimpleLine(GeomType gt) {
-    return gt == SIMPLE_LINE || gt == FOLDED_SIMPLE_LINE;
-  }
+  static bool isSimpleLine(GeomType gt) { return sj::isSimpleLine(gt); }
 
   static double meterDist(const util::geo::I32Point& p1,
                           const util::geo::I32Point& p2, double maxDist);
 
   static double euclideanDist(const util::geo::I32Point& p1,
-                          const util::geo::I32Point& p2, double maxDist);
+                              const util::geo::I32Point& p2, double maxDist);
+
+  static const util::geo::DistFunc<int32_t> EUCLIDEAN_DIST_FUNC;
+  static const util::geo::DistFunc<int32_t> METER_DIST_FUNC;
 
   static double localSearchPadding(double euclideanDistanceUpperBound,
                                    double distanceUpperBound,
@@ -569,105 +341,84 @@ class Sweeper {
                                    const util::geo::I32Box& bBox);
 
   static double noSearchPadding(double euclideanDistanceUpperBound,
-                                   double distanceUpperBound,
-                                   const util::geo::I32Box& aBox,
-                                   const util::geo::I32Box& bBox);
+                                double distanceUpperBound,
+                                const util::geo::I32Box& aBox,
+                                const util::geo::I32Box& bBox);
 
   void fillBatch(JobBatch* batch,
                  const util::geo::IntervalIdx<int32_t, SweepVal>* actives,
-                 const BoxVal* cur) const;
+                 const BoxVal* cur, bool side) const;
 
-  void duplicatesToReferences();
+  const SpatialJoinCfg _cfg;
 
-  static int boxCmp(const void* a, const void* b) {
-    const auto& boxa = static_cast<const BoxVal*>(a);
-    const auto& boxb = static_cast<const BoxVal*>(b);
-    if (boxa->val < boxb->val) return -1;
-    if (boxa->val > boxb->val) return 1;
+  // 1 for a self join, 2 for a non-self join, set in sweep()
+  size_t _numSides = 1;
 
-    if (!boxa->out && boxb->out) return -1;
-    if (boxa->out && !boxb->out) return 1;
+  const SweepEventList* _events[2] = {0, 0};
 
-    // everything before a polygon
-    if (boxa->type != POLYGON && boxa->type != SIMPLE_POLYGON &&
-        boxa->type != FOLDED_BOX_POLYGON &&
-        (boxb->type == POLYGON || boxb->type == SIMPLE_POLYGON ||
-         boxb->type == FOLDED_BOX_POLYGON))
-      return -1;
-    if ((boxa->type == POLYGON || boxa->type == SIMPLE_POLYGON ||
-         boxa->type == FOLDED_BOX_POLYGON) &&
-        boxb->type != POLYGON && boxb->type != SIMPLE_POLYGON &&
-        boxb->type != FOLDED_BOX_POLYGON)
-      return 1;
+  std::vector<size_t> _checks;
+  std::vector<int32_t> _curX;
+  std::vector<std::atomic<int32_t>> _atomicCurX;
+  std::atomic<bool> _cancelled;
 
-    // points before lines
-    if ((boxa->type == POINT || boxa->type == FOLDED_POINT) &&
-        (boxb->type == SIMPLE_LINE || boxb->type == LINE ||
-         boxb->type == FOLDED_SIMPLE_LINE))
-      return -1;
-    if ((boxb->type == POINT || boxb->type == FOLDED_POINT) &&
-        (boxa->type == SIMPLE_LINE || boxa->type == LINE ||
-         boxa->type == FOLDED_SIMPLE_LINE))
-      return 1;
+  std::vector<RelStats> _relStats;
 
-    // smaller polygons before larger
-    if ((boxa->type == POLYGON || boxa->type == SIMPLE_POLYGON ||
-         boxa->type == FOLDED_BOX_POLYGON) &&
-        (boxb->type == POLYGON || boxb->type == SIMPLE_POLYGON ||
-         boxb->type == FOLDED_BOX_POLYGON) &&
-        boxa->areaOrLen < boxb->areaOrLen)
-      return -1;
-    if ((boxa->type == POLYGON || boxa->type == SIMPLE_POLYGON ||
-         boxa->type == FOLDED_BOX_POLYGON) &&
-        (boxb->type == POLYGON || boxb->type == SIMPLE_POLYGON ||
-         boxb->type == FOLDED_BOX_POLYGON) &&
-        boxa->areaOrLen > boxb->areaOrLen)
-      return 1;
+  mutable std::vector<Stats> _stats;
 
-    // shorter lines before longer
-    if ((boxa->type == LINE || boxa->type == SIMPLE_LINE ||
-         boxa->type == FOLDED_SIMPLE_LINE) &&
-        (boxb->type == LINE || boxb->type == SIMPLE_LINE ||
-         boxb->type == FOLDED_SIMPLE_LINE) &&
-        boxa->areaOrLen < boxb->areaOrLen)
-      return -1;
-    if ((boxa->type == LINE || boxa->type == SIMPLE_LINE ||
-         boxa->type == FOLDED_SIMPLE_LINE) &&
-        (boxb->type == LINE || boxb->type == SIMPLE_LINE ||
-         boxb->type == FOLDED_SIMPLE_LINE) &&
-        boxa->areaOrLen > boxb->areaOrLen)
-      return 1;
+  std::vector<std::unordered_map<std::string, std::map<std::string, double>>>
+      _subDistance[2];
+  std::vector<std::unordered_map<std::string,
+                                 std::map<std::string, util::geo::DE9IMatrix>>>
+      _subDE9IM[2];
+  std::vector<
+      std::unordered_map<std::string, std::map<std::string, std::set<size_t>>>>
+      _subContains[2];
+  std::vector<
+      std::unordered_map<std::string, std::map<std::string, std::set<size_t>>>>
+      _subCovered[2];
+  std::vector<
+      std::unordered_map<std::string, std::map<std::string, std::set<size_t>>>>
+      _subEquals[2];
+  std::vector<std::unordered_map<std::string, std::set<std::string>>>
+      _subTouches[2];
+  std::vector<std::unordered_map<std::string, std::set<std::string>>>
+      _subNotTouches[2];
+  std::vector<std::unordered_map<std::string, std::set<std::string>>>
+      _subCrosses[2];
+  std::vector<std::unordered_map<std::string, std::set<std::string>>>
+      _subNotCrosses[2];
+  std::vector<std::unordered_map<std::string, std::set<std::string>>>
+      _subOverlaps[2];
+  std::vector<std::unordered_map<std::string, std::set<std::string>>>
+      _subNotOverlaps[2];
 
-    // make ordernig of equal geoms deterministic
-    if (boxa->type != boxb->type) return boxa->type < boxb->type ? -1 : 1;
-    if (boxa->side != boxb->side) return boxa->side ? 1 : -1;
-    if (boxa->large != boxb->large) return boxa->large ? 1 : -1;
-    if (boxa->id != boxb->id) return boxa->id < boxb->id ? -1 : 1;
+  // multi geometries whose OUT event has been processed, with their side
+  std::queue<std::pair<BoxVal, bool>> _finishedMultis;
 
-    return 0;
-  }
+  // per side, the gids of the multi geometries whose multi-IN event was
+  // processed, keyed by their store and their offset in its multi store
+  std::map<std::pair<uint8_t, size_t>, std::string> _openMultiIDs[2];
 
-  mutable std::mutex _multiAddMtx;
-  mutable std::mutex _sweepEventWriteMtx;
-  mutable std::mutex _pointGeomCacheWriteMtx;
-  mutable std::mutex _lineGeomCacheWriteMtx;
-  mutable std::mutex _simpleLineGeomCacheWriteMtx;
-  mutable std::mutex _areaGeomCacheWriteMtx;
-  mutable std::mutex _simpleAreaGeomCacheWriteMtx;
+  std::unordered_map<std::string, size_t> _subSizes[2];
+  std::unordered_map<std::string, util::geo::I32Point> _multiRightPoint[2];
+  mutable SharedMutex _multiMetaMtx;
 
-  std::unordered_map<std::string, util::geo::I32Box> _selfCheckBounds;
+  const GeometryCache* _geomCache;
 
-  std::unordered_map<
-      std::string,
-      std::unordered_map<size_t, std::unordered_map<std::string, size_t>>>
-      _refs;
+  util::JobQueue<JobBatch> _jobs;
 
-  std::vector<std::pair<std::string, size_t>> _selfChecks;
+  std::vector<std::mutex> _mutsEquals;
+  std::vector<std::mutex> _mutsCovers;
+  std::vector<std::mutex> _mutsContains;
+  std::vector<std::mutex> _mutsTouches;
+  std::vector<std::mutex> _mutsNotTouches;
+  std::vector<std::mutex> _mutsCrosses;
+  std::vector<std::mutex> _mutsNotCrosses;
+  std::vector<std::mutex> _mutsOverlaps;
+  std::vector<std::mutex> _mutsNotOverlaps;
+  std::vector<std::mutex> _mutsDistance;
+  std::vector<std::mutex> _mutsDE9IM;
 
-  util::geo::I32Box _filterBox = {{std::numeric_limits<int32_t>::lowest(),
-                                   std::numeric_limits<int32_t>::lowest()},
-                                  {std::numeric_limits<int32_t>::max(),
-                                   std::numeric_limits<int32_t>::max()}};
   bool _dontNeedFullDE9IM;
 };
 
