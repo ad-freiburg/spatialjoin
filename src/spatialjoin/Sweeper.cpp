@@ -82,8 +82,7 @@ void Sweeper::clearMultis(bool force) {
     const auto& multiOut = _finishedMultis.front().first;
     bool side = _finishedMultis.front().second;
     auto& openMultiIDs = _openMultiIDs[side];
-    auto openMultiID =
-        openMultiIDs.find({multiOut.storeId(), getId(multiOut)});
+    auto openMultiID = openMultiIDs.find({multiOut.storeId(), getId(multiOut)});
 
     // we can move here, openMulti is deleted in the line below!
     curBatch.push_back({{}, {}, std::move(openMultiID->second)});
@@ -104,8 +103,7 @@ void Sweeper::clearMultis(bool force) {
 
 // _____________________________________________________________________________
 std::vector<sj::BoxVal> Sweeper::multiIn(const BoxVal& multiIn, bool side) {
-  auto multi =
-      store(multiIn.storeId()).multiStore().getMulti(getId(multiIn));
+  auto multi = store(multiIn.storeId()).multiStore().getMulti(getId(multiIn));
 
   // the number of members, and the rightmost point of the OUT events
   size_t subSize = 0;
@@ -597,8 +595,7 @@ RelStats Sweeper::sweep(const SweepEventList* eventsA,
 
       if (cur->type() == DELETED) {
         continue;
-      } else if (cur->type() == SELF_CHECK ||
-                 cur->type() == SELF_CHECK_AREA ||
+      } else if (cur->type() == SELF_CHECK || cur->type() == SELF_CHECK_AREA ||
                  cur->type() == SELF_CHECK_LINE ||
                  cur->type() == SELF_CHECK_POINT) {
         // self checks, required if we have reference geoms
@@ -628,8 +625,7 @@ RelStats Sweeper::sweep(const SweepEventList* eventsA,
         // IN event
         actives[curSide].insert({cur->loY(), cur->upY()},
                                 {cur->id(), cur->b45(), cur->point(),
-                                 cur->otherPoint(), curSide,
-                                 cur->storeId()});
+                                 cur->otherPoint(), curSide, cur->storeId()});
 
         if (jj % 500000 == 0) {
           auto lon =
@@ -888,7 +884,7 @@ util::geo::DE9IMatrix Sweeper::DE9IMCheck(const LineSegment<int32_t>& a,
   // datastructures, just unroll the individual checks here
 
   auto r = util::geo::IntersectorLine<int32_t>::check(
-      a, 32767, true, 32767, true, b, 32767, true, 32767, true);
+      b, 32767, true, 32767, true, a, 32767, true, 32767, true);
 
   const bool weakIntersect = r;
 
@@ -2057,11 +2053,16 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
       // both lines were equivalent
       writeEquals(t, a->id, a->subId, cur.origin(), b->id, b->subId,
                   sv.origin());
+    }
 
-      writeContains(t, a->id, a->subId, cur.origin(), b->id, b->subId,
-                    sv.origin());
+    // contains
+    if (res.within()) {
       writeContains(t, b->id, b->subId, sv.origin(), a->id, a->subId,
                     cur.origin());
+    }
+    if (res.contains()) {
+      writeContains(t, a->id, a->subId, cur.origin(), b->id, b->subId,
+                    sv.origin());
     }
 
     // touches
@@ -2126,6 +2127,14 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
       writeEquals(t, a->id, a->subId, cur.origin(), b->id, 0, sv.origin());
     }
 
+    // contains
+    if (res.within()) {
+      writeContains(t, b->id, 0, sv.origin(), a->id, a->subId, cur.origin());
+    }
+    if (res.contains()) {
+      writeContains(t, a->id, a->subId, cur.origin(), b->id, 0, sv.origin());
+    }
+
     // touches
     if (res.touches()) {
       writeTouches(t, a->id, a->subId, cur.origin(), b->id, 0, sv.origin());
@@ -2185,6 +2194,14 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
       writeEquals(t, a->id, 0, cur.origin(), b->id, b->subId, sv.origin());
     }
 
+    // contains
+    if (res.within()) {
+      writeContains(t, b->id, b->subId, sv.origin(), a->id, 0, cur.origin());
+    }
+    if (res.contains()) {
+      writeContains(t, a->id, 0, cur.origin(), b->id, b->subId, sv.origin());
+    }
+
     // touches
     if (res.touches()) {
       writeTouches(t, a->id, 0, cur.origin(), b->id, b->subId, sv.origin());
@@ -2232,9 +2249,16 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
     if (res.covers()) {
       writeCovers(t, a->id, 0, cur.origin(), b->id, 0, sv.origin());
     }
-
     if (res.coveredBy() && res.covers()) {
       writeEquals(t, a->id, 0, cur.origin(), b->id, 0, sv.origin());
+    }
+
+    // contains
+    if (res.within()) {
+      writeContains(t, b->id, 0, sv.origin(), a->id, 0, cur.origin());
+    }
+    if (res.contains()) {
+      writeContains(t, a->id, 0, cur.origin(), b->id, 0, sv.origin());
     }
 
     // touches

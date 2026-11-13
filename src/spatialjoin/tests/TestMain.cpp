@@ -693,6 +693,46 @@ int main(int, char**) {
 
     {
       RunStats stats;
+      auto res = fullRun(TEST_DATASET_DIR "/simplelinefail", cfg, &stats);
+
+      TEST(res.find("$b intersects a$") != std::string::npos);
+      TEST(res.find("$a intersects b$") != std::string::npos);
+      TEST(res.find("$b covers a$") == std::string::npos);
+      TEST(res.find("$b contains a$") == std::string::npos);
+      TEST(res.find("$a covers b$") != std::string::npos);
+      TEST(res.find("$a contains b$") != std::string::npos);
+
+      TEST(res.find("$bb covers a$") == std::string::npos);
+      TEST(res.find("$bb contains a$") == std::string::npos);
+      TEST(res.find("$aa covers b$") != std::string::npos);
+      TEST(res.find("$aa contains b$") != std::string::npos);
+
+      TEST(res.find("$c covers d$") != std::string::npos);
+      TEST(res.find("$c contains d$") != std::string::npos);
+      TEST(res.find("$d covers c$") == std::string::npos);
+      TEST(res.find("$d contains c$") == std::string::npos);
+
+      TEST(res.find("$c intersects dd$") != std::string::npos);
+      TEST(res.find("$c covers dd$") == std::string::npos);
+      TEST(res.find("$c contains dd$") == std::string::npos);
+      TEST(res.find("$dd covers c$") == std::string::npos);
+      TEST(res.find("$dd contains c$") == std::string::npos);
+
+      TEST(res.find("$c equals cc$") != std::string::npos);
+      TEST(countMatches(res, "\\$c contains cc\\$"), ==, 1);
+      TEST(countMatches(res, "\\$cc contains c\\$"), ==, 1);
+
+      TEST(res.find("$a covers f$") != std::string::npos);
+      TEST(res.find("$a contains f$") != std::string::npos);
+      TEST(res.find("$f covers a$") == std::string::npos);
+      TEST(res.find("$f contains a$") == std::string::npos);
+
+      TEST(res.find("$aa contains f$") != std::string::npos);
+      TEST(res.find("$f contains aa$") == std::string::npos);
+    }
+
+    {
+      RunStats stats;
       auto res = fullRun(TEST_DATASET_DIR "/brandenburg", cfg, &stats);
       // TODO: duplicates in multi geometries are not yet removed
       // TEST(stats.numReferences, ==, 7);
