@@ -40,9 +40,10 @@ std::string fullRun(const std::vector<std::string>& files,
                     double dupRemovalMinSize = 0, bool strict = false,
                     bool sharedStore = false, bool singleList = false,
                     size_t eventBufSize = 10 * sizeof(sj::BoxVal),
-                    bool reload = false) {
+                    bool reload = false, bool sameIds = false) {
   // with reload, the geometry stores and the event lists are persisted to disk,
   // and the sweep runs on stores and event lists read back from these files
+
   auto storePrefix = [](size_t i) {
     return ".spatialjoin-store" + std::to_string(i);
   };
@@ -88,11 +89,25 @@ std::string fullRun(const std::vector<std::string>& files,
             eventBufSize, reload));
       }
 
+      auto metaCb = sweepEvents.back()->addCb(storeId);
+
+      if (sameIds) {
+        sweepEvents.emplace_back(new SweepEventList(
+            cfg, ".",
+            reload ? eventsPrefix(sweepEvents.size()) : ".spatialjoin",
+            eventBufSize, reload));
+        auto metaCbB = sweepEvents.back()->addCb(storeId);
+        metaCb = [metaCb, metaCbB](size_t t, const std::string& gid,
+                                   const sj::PreparedGeomMeta& meta) {
+          metaCb(t, gid, meta);
+          metaCbB(t, gid, meta);
+        };
+      }
+
       int f = open(file.c_str(), O_RDONLY);
       TEST(f >= 0);
 
-      sj::WKTParser parser(geomStores.back().get(),
-                           sweepEvents.back()->addCb(storeId), 1, strict);
+      sj::WKTParser parser(geomStores.back().get(), metaCb, 1, strict);
 
       // the gids within a store and within an event list must be unique, so
       // continue the line numbering
@@ -770,6 +785,39 @@ int main(int, char**) {
     }
 
     {
+      // an explicit self-join to simulate a non-self join where
+      // both sides have equivalent IDs
+      RunStats stats;
+      auto res = fullRun(std::vector<std::string>{TEST_DATASET_DIR
+                                                  "/brandenburg",
+                                                  TEST_DATASET_DIR
+                                                  "/brandenburg"},
+                         cfg, &stats);
+
+      // a non-self join on a single, shared store gives the same result
+      RunStats statsShared;
+      auto resShared = fullRun(
+          std::vector<std::string>{
+              TEST_DATASET_DIR "/brandenburg",
+              TEST_DATASET_DIR "/brandenburg"},
+          cfg, &statsShared, 0, false, true);
+      TEST(sortedRels(resShared) == sortedRels(res));
+
+      // a non-self join where both sides hold the same stored geometries
+      // (same store, same IDs) gives the same result
+      RunStats statsSameIds;
+      auto resSameIds =
+          fullRun(std::vector<std::string>{TEST_DATASET_DIR "/brandenburg"},
+                  cfg, &statsSameIds, 0, false, true, false,
+                  10 * sizeof(sj::BoxVal), false, true);
+      TEST(sortedRels(resSameIds) == sortedRels(res));
+
+      TEST(res.find("$Brandenburg covers Brandenburg$") != std::string::npos);
+      TEST(res.find("$Brandenburg equals Brandenburg$") != std::string::npos);
+      TEST(res.find("$Brandenburg intersects Brandenburg$") != std::string::npos);
+    }
+
+    {
       RunStats stats;
       for (const auto& file :
            {TEST_DATASET_DIR "/brandenburg", TEST_DATASET_DIR "/freiburg"}) {
@@ -1321,6 +1369,42 @@ int main(int, char**) {
     }
     {
       RunStats stats;
+      auto res = fullRun(TEST_DATASET_DIR "/brandenburg", cfg, &stats);
+      TEST(res.find("$Brandenburg\t212101212\tHaus$") != std::string::npos);
+    }
+    {
+      // an explicit self-join to simulate a non-self join where
+      // both sides have equivalent IDs
+      RunStats stats;
+      auto res = fullRun(std::vector<std::string>{TEST_DATASET_DIR
+                                                  "/brandenburg",
+                                                  TEST_DATASET_DIR
+                                                  "/brandenburg"},
+                         cfg, &stats);
+
+      // a non-self join on a single, shared store w/o
+      // duplicate removal gives the same result
+      RunStats statsShared;
+      auto resShared = fullRun(
+          std::vector<std::string>{
+              TEST_DATASET_DIR "/brandenburg",
+              TEST_DATASET_DIR "/brandenburg"},
+          cfg, &statsShared, 100000, false, true);
+      TEST(sortedRels(resShared) == sortedRels(res));
+
+      // a non-self join where both sides hold the same stored geometries
+      // (same store, same IDs) gives the same result
+      RunStats statsSameIds;
+      auto resSameIds =
+          fullRun(std::vector<std::string>{TEST_DATASET_DIR "/brandenburg"},
+                  cfg, &statsSameIds, 100000, false, true, false,
+                  10 * sizeof(sj::BoxVal), false, true);
+      TEST(sortedRels(resSameIds) == sortedRels(res));
+
+      TEST(res.find("$Brandenburg\t2FFF1FFF2\tBrandenburg$") != std::string::npos);
+    }
+    {
+      RunStats stats;
       auto res = fullRun(TEST_DATASET_DIR "/multide9im", cfg, &stats);
 
       TEST(countMatches(res, "\\$coll\\t[0-9F]{9}\\tway\\$"), ==, 1);
@@ -1492,6 +1576,24 @@ int main(int, char**) {
     }
 
     cfg.withinDist = 100;
+    {
+      // a non-self join where both sides hold the same stored geometries
+      // (same store, same IDs) gives the same result as one on separate
+      // stores
+      RunStats stats;
+      auto res = fullRun(std::vector<std::string>{TEST_DATASET_DIR
+                                                  "/brandenburg",
+                                                  TEST_DATASET_DIR
+                                                  "/brandenburg"},
+                         cfg, &stats);
+
+      RunStats statsSameIds;
+      auto resSameIds =
+          fullRun(std::vector<std::string>{TEST_DATASET_DIR "/brandenburg"},
+                  cfg, &statsSameIds, 0, false, true, false,
+                  10 * sizeof(sj::BoxVal), false, true);
+      TEST(sortedRels(resSameIds) == sortedRels(res));
+    }
     {
       RunStats stats;
       auto res =
