@@ -466,10 +466,10 @@ int main(int, char**) {
     TEST(numMultiEvents, ==, 2);
   }
 
-  auto mkCfg = [](bool useBoxIds, bool useDiagBox) {
+  auto mkCfg = [](bool useBoxIds, bool useDiagBox, size_t numThreads) {
     sj::SpatialJoinCfg cfg;
-    cfg.numThreads = NUM_THREADS;
-    cfg.numCacheBuckets = NUM_THREADS;
+    cfg.numThreads = numThreads;
+    cfg.numCacheBuckets = numThreads;
     cfg.geomCacheMaxSize = 1000;
     cfg.geomCacheMaxNumElements = 1000;
     cfg.useBoxIds = useBoxIds;
@@ -477,12 +477,18 @@ int main(int, char**) {
     return cfg;
   };
 
-  sj::SpatialJoinCfg baseline = mkCfg(false, false);
-  sj::SpatialJoinCfg all = mkCfg(true, true);
-  sj::SpatialJoinCfg noBoxIds = mkCfg(false, true);
-  sj::SpatialJoinCfg noDiagBox = mkCfg(true, false);
+  sj::SpatialJoinCfg baseline = mkCfg(false, false, NUM_THREADS);
+  sj::SpatialJoinCfg all = mkCfg(true, true, NUM_THREADS);
+  sj::SpatialJoinCfg noBoxIds = mkCfg(false, true, NUM_THREADS);
+  sj::SpatialJoinCfg noDiagBox = mkCfg(true, false, NUM_THREADS);
 
-  std::vector<sj::SpatialJoinCfg> cfgs{baseline, all, noBoxIds, noDiagBox};
+  sj::SpatialJoinCfg baseline4 = mkCfg(false, false, 4);
+  sj::SpatialJoinCfg all4 = mkCfg(true, true, 4);
+  sj::SpatialJoinCfg noBoxIds4 = mkCfg(false, true, 4);
+  sj::SpatialJoinCfg noDiagBox4 = mkCfg(true, false, 4);
+
+  std::vector<sj::SpatialJoinCfg> cfgs{baseline,  all,  noBoxIds,  noDiagBox,
+                                       baseline4, all4, noBoxIds4, noDiagBox4};
 
   for (auto cfg : cfgs) {
     {
