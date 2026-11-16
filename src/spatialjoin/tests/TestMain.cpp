@@ -1778,6 +1778,38 @@ int main(int, char**) {
       }
     }
 
+    cfg.withinDist = 500;
+    {
+      RunStats stats;
+      auto res = fullRun(TEST_DATASET_DIR "/multiissue", cfg, &stats);
+
+      TEST(countMatches(res, "\\$multi1\\t217\\.255\\d*\\tpoint1\\$"), ==, 1);
+      TEST(countMatches(res, "\\$point1\\t217\\.255\\d*\\tmulti1\\$"), ==, 1);
+      TEST(countMatches(res, "\\$multi2\\t172\\.212\\d*\\tpoint2\\$"), ==, 1);
+      TEST(countMatches(res, "\\$point2\\t172\\.212\\d*\\tmulti2\\$"), ==, 1);
+      TEST(countMatches(res, "\\$multi3\\t121\\.493\\d*\\tpoint3\\$"), ==, 1);
+      TEST(countMatches(res, "\\$point3\\t121\\.493\\d*\\tmulti3\\$"), ==, 1);
+      TEST(countMatches(res, "\\$multi4\\t97\\.372\\d*\\tpoint4\\$"), ==, 1);
+      TEST(countMatches(res, "\\$point4\\t97\\.372\\d*\\tmulti4\\$"), ==, 1);
+      TEST(countMatches(res, "\\$multi5\\t184\\.563\\d*\\tpoint5\\$"), ==, 1);
+      TEST(countMatches(res, "\\$point5\\t184\\.563\\d*\\tmulti5\\$"), ==, 1);
+      TEST(countMatches(res, "\\$multi6\\t195\\.421\\d*\\tpoint6\\$"), ==, 1);
+      TEST(countMatches(res, "\\$point6\\t195\\.421\\d*\\tmulti6\\$"), ==, 1);
+      TEST(countMatches(res, "\\$multi7\\t417\\.223\\d*\\tpoint7\\$"), ==, 1);
+      TEST(countMatches(res, "\\$point7\\t417\\.223\\d*\\tmulti7\\$"), ==, 1);
+      TEST(countMatches(res, "\\$[^$]*\\$"), ==, 14);
+    }
+
+    cfg.withinDist = 1002000;
+    {
+      RunStats stats;
+      auto res = fullRun(TEST_DATASET_DIR "/largepointdistance", cfg, &stats);
+
+      TEST(countMatches(res, "\\$a\\t1000021\\.34\\d*\\tb\\$"), ==, 1);
+      TEST(countMatches(res, "\\$b\\t1000021\\.34\\d*\\ta\\$"), ==, 1);
+      TEST(countMatches(res, "\\$[^$]*\\$"), ==, 2);
+    }
+
     cfg.withinDist = 50;
     {
       RunStats stats;
