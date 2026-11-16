@@ -1378,6 +1378,8 @@ I32Box GeometryStore::add(const I32Point& point, const std::string& gid,
                           size_t subid, WriteBatch& batch) const {
   if (_cfg.de9imFilter.maxExteriorDim() < 2) return {};
 
+  if (point.empty()) return {};
+
   WriteCand cur;
 
   const auto& rawBox = getBoundingBox(point);
