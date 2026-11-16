@@ -1872,6 +1872,80 @@ int main(int, char**) {
       TEST(countMatches(res, "\\$[^$]*\\$"), ==, 48);
     }
 
+    {
+      RunStats stats;
+      auto res = fullRun(TEST_DATASET_DIR "/multirightside", cfg, &stats);
+
+      TEST(countMatches(res, "\\$line1\\t380\\.160\\d*\\tmline1\\$"), ==, 1);
+      TEST(countMatches(res, "\\$mline1\\t380\\.160\\d*\\tline1\\$"), ==, 1);
+      TEST(countMatches(res, "\\$line2\\t155\\.400\\d*\\tmpoint2\\$"), ==, 1);
+      TEST(countMatches(res, "\\$mpoint2\\t155\\.400\\d*\\tline2\\$"), ==, 1);
+      TEST(countMatches(res, "\\$line3\\t352\\.495\\d*\\tmpolygon3\\$"), ==, 1);
+      TEST(countMatches(res, "\\$mpolygon3\\t352\\.495\\d*\\tline3\\$"), ==, 1);
+      TEST(countMatches(res, "\\$point4\\t388\\.41\\d*\\tmline4\\$"), ==, 1);
+      TEST(countMatches(res, "\\$mline4\\t388\\.41\\d*\\tpoint4\\$"), ==, 1);
+      TEST(countMatches(res, "\\$point5\\t365\\.953\\d*\\tmpoint5\\$"), ==, 1);
+      TEST(countMatches(res, "\\$mpoint5\\t365\\.953\\d*\\tpoint5\\$"), ==, 1);
+      TEST(countMatches(res, "\\$point6\\t133\\.544\\d*\\tmpolygon6\\$"), ==,
+           1);
+      TEST(countMatches(res, "\\$mpolygon6\\t133\\.544\\d*\\tpoint6\\$"), ==,
+           1);
+      TEST(countMatches(res, "\\$polygon7\\t286\\.869\\d*\\tmline7\\$"), ==, 1);
+      TEST(countMatches(res, "\\$mline7\\t286\\.869\\d*\\tpolygon7\\$"), ==, 1);
+      TEST(countMatches(res, "\\$polygon8\\t238\\.439\\d*\\tmpoint8\\$"), ==,
+           1);
+      TEST(countMatches(res, "\\$mpoint8\\t238\\.439\\d*\\tpolygon8\\$"), ==,
+           1);
+      TEST(countMatches(res, "\\$polygon9\\t112\\.777\\d*\\tmpolygon9\\$"), ==,
+           1);
+      TEST(countMatches(res, "\\$mpolygon9\\t112\\.777\\d*\\tpolygon9\\$"), ==,
+           1);
+      TEST(countMatches(res, "\\$[^$]*\\$"), ==, 18);
+    }
+
+    {
+      RunStats stats;
+      auto res = fullRun(TEST_DATASET_DIR "/multiinterleaved", cfg, &stats);
+
+      TEST(countMatches(res, "\\$multiline1\\t173\\.641\\d*\\tmline1\\$"), ==,
+           1);
+      TEST(countMatches(res, "\\$mline1\\t173\\.641\\d*\\tmultiline1\\$"), ==,
+           1);
+      TEST(countMatches(res, "\\$multiline2\\t181\\.365\\d*\\tmpoint2\\$"), ==,
+           1);
+      TEST(countMatches(res, "\\$mpoint2\\t181\\.365\\d*\\tmultiline2\\$"), ==,
+           1);
+      TEST(countMatches(res, "\\$multiline3\\t176\\.534\\d*\\tmpolygon3\\$"),
+           ==, 1);
+      TEST(countMatches(res, "\\$mpolygon3\\t176\\.534\\d*\\tmultiline3\\$"),
+           ==, 1);
+      TEST(countMatches(res, "\\$multipoint4\\t295\\.145\\d*\\tmline4\\$"), ==,
+           1);
+      TEST(countMatches(res, "\\$mline4\\t295\\.145\\d*\\tmultipoint4\\$"), ==,
+           1);
+      TEST(countMatches(res, "\\$multipoint5\\t417\\.629\\d*\\tmpoint5\\$"), ==,
+           1);
+      TEST(countMatches(res, "\\$mpoint5\\t417\\.629\\d*\\tmultipoint5\\$"), ==,
+           1);
+      TEST(countMatches(res, "\\$multipoint6\\t193\\.872\\d*\\tmpolygon6\\$"),
+           ==, 1);
+      TEST(countMatches(res, "\\$mpolygon6\\t193\\.872\\d*\\tmultipoint6\\$"),
+           ==, 1);
+      TEST(countMatches(res, "\\$multipolygon7\\t235\\.464\\d*\\tmline7\\$"),
+           ==, 1);
+      TEST(countMatches(res, "\\$mline7\\t235\\.464\\d*\\tmultipolygon7\\$"),
+           ==, 1);
+      TEST(countMatches(res, "\\$multipolygon8\\t277\\.911\\d*\\tmpoint8\\$"),
+           ==, 1);
+      TEST(countMatches(res, "\\$mpoint8\\t277\\.911\\d*\\tmultipolygon8\\$"),
+           ==, 1);
+      TEST(countMatches(res, "\\$multipolygon9\\t279\\.917\\d*\\tmpolygon9\\$"),
+           ==, 1);
+      TEST(countMatches(res, "\\$mpolygon9\\t279\\.917\\d*\\tmultipolygon9\\$"),
+           ==, 1);
+      TEST(countMatches(res, "\\$[^$]*\\$"), ==, 18);
+    }
+
     cfg.withinDist = 1002000;
     {
       RunStats stats;
