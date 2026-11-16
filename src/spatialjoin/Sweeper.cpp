@@ -3049,29 +3049,11 @@ double Sweeper::euclideanDist(const I32Point& p1, const I32Point& p2, double) {
 }
 
 // _____________________________________________________________________________
-double Sweeper::meterDist(const I32Point& p1, const I32Point& p2,
-                          double maxDist) {
-  auto fp1 = DPoint{(p1.getX() * 1.0) / (PREC * 1.0),
-                    (p1.getY() * 1.0) / (PREC * 1.0)};
-  auto fp2 = DPoint{(p2.getX() * 1.0) / (PREC * 1.0),
-                    (p2.getY() * 1.0) / (PREC * 1.0)};
-
-  double dX = fp2.getX() - fp1.getX();
-  double dY = fp2.getY() - fp1.getY();
-
-  // get max absolute latitude (distance distortion)
-  double distFactor = std::min(util::geo::webMercDistFactor(fp1),
-                               util::geo::webMercDistFactor(fp2));
-
-  // early abort
-  if (std::abs(dY) > maxDist / distFactor)
-    return std::numeric_limits<double>::max();
-  if (std::abs(dX) > maxDist / distFactor)
-    return std::numeric_limits<double>::max();
-  if ((dX * dX + dY * dY) > (maxDist / distFactor) * (maxDist / distFactor))
-    return std::numeric_limits<double>::max();
-
-  return util::geo::webMercMeterDist(fp1, fp2);
+double Sweeper::meterDist(const I32Point& p1, const I32Point& p2, double) {
+  return util::geo::haversineWebMerc(
+      DPoint{(p1.getX() * 1.0) / (PREC * 1.0), (p1.getY() * 1.0) / (PREC * 1.0)},
+      DPoint{(p2.getX() * 1.0) / (PREC * 1.0),
+             (p2.getY() * 1.0) / (PREC * 1.0)});
 }
 
 // _____________________________________________________________________________
