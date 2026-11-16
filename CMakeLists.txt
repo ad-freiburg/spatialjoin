@@ -24,6 +24,12 @@ set(CMAKE_CXX_FLAGS_MINSIZEREL     "${CMAKE_CXX_FLAGS} -DLOGLEVEL=2")
 set(CMAKE_CXX_FLAGS_RELEASE        "${CMAKE_CXX_FLAGS} -DLOGLEVEL=2")
 set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS} -g -DLOGLEVEL=3")
 
+set(SANITIZE_FLAGS "-fsanitize=undefined -fno-sanitize-recover=undefined -fno-omit-frame-pointer -g")
+set(CMAKE_CXX_FLAGS_SANITIZE           "${SANITIZE_FLAGS} -DLOGLEVEL=3")
+set(CMAKE_C_FLAGS_SANITIZE             "${SANITIZE_FLAGS}")
+set(CMAKE_EXE_LINKER_FLAGS_SANITIZE    "-fsanitize=undefined")
+set(CMAKE_SHARED_LINKER_FLAGS_SANITIZE "-fsanitize=undefined")
+
 find_package(BZip2)
 find_package(ZLIB)
 

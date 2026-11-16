@@ -147,3 +147,45 @@ jobs:
         run: cd build && make
       - name: tests
         run: cd build && ctest --output-on-failure
+  ubuntu-latest-build-gcc-ubsan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository code
+        uses: actions/checkout@v2
+      - name: Checkout submodules
+        run: git submodule update --init --recursive
+      - name: update apt
+        run: sudo apt update
+      - name: install dependencies
+        run: sudo apt install -y cmake gcc g++ libbz2-dev
+      - name: cmake
+        run: mkdir build && cd build && cmake .. -DCMAKE_BUILD_TYPE=Sanitize
+      - name: make
+        run: cd build && make
+      - name: tests
+        run: cd build && ctest --output-on-failure
+        env:
+          UBSAN_OPTIONS: print_stacktrace=1
+  ubuntu-latest-build-clang-ubsan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository code
+        uses: actions/checkout@v2
+      - name: Checkout submodules
+        run: git submodule update --init --recursive
+      - name: update apt
+        run: sudo apt update
+      - name: install dependencies
+        run: sudo apt install -y cmake clang libbz2-dev
+      - name: cmake
+        run: mkdir build && cd build && cmake .. -DCMAKE_BUILD_TYPE=Sanitize
+        shell: bash
+        env:
+          CC: clang
+          CXX: clang++
+      - name: make
+        run: cd build && make
+      - name: tests
+        run: cd build && ctest --output-on-failure
+        env:
+          UBSAN_OPTIONS: print_stacktrace=1
