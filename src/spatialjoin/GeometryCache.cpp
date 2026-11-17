@@ -67,8 +67,8 @@ using util::LogLevel::WARN;
 // _____________________________________________________________________________
 template <typename W>
 std::shared_ptr<W> GeometryCache::get(const TypedGeometryStore<W>& store,
-                                      TypedGeometryCache<W>& cache, size_t off,
-                                      size_t tid) const {
+                                      TypedGeometryCache<W>& cache,
+                                      size_t off) const {
   // completely circumvent cache system
   if (store.inMemory()) return store.getFromMem(off);
 
@@ -84,7 +84,7 @@ std::shared_ptr<W> GeometryCache::get(const TypedGeometryStore<W>& store,
   }
 
   // not in cache!
-  auto val = store.getFrom(off, tid);
+  auto val = store.getFrom(off);
 
   return this->cache(cache, off, std::move(val.second), val.first, cid);
 }
@@ -93,10 +93,10 @@ std::shared_ptr<W> GeometryCache::get(const TypedGeometryStore<W>& store,
 template <typename W>
 std::shared_ptr<sj::GeomId> GeometryCache::getId(
     const TypedGeometryStore<W>& store, TypedGeometryCache<GeomId>& cache,
-    size_t off, size_t tid) const {
+    size_t off) const {
   // completely circumvent cache system
   if (store.inMemory()) {
-    return std::make_shared<GeomId>(store.getId(off, 0).second);
+    return std::make_shared<GeomId>(store.getId(off).second);
   }
 
   size_t cid = off % _cfg.numCacheBuckets;
@@ -111,7 +111,7 @@ std::shared_ptr<sj::GeomId> GeometryCache::getId(
   }
 
   // not in cache!
-  auto val = store.getId(off, tid);
+  auto val = store.getId(off);
 
   return this->cache(cache, off, std::move(val.second), val.first, cid);
 }
@@ -216,24 +216,24 @@ void GeometryCache::log(const std::string& msg) {
 
 template std::shared_ptr<sj::GeomId> GeometryCache::getId(
     const sj::TypedGeometryStore<sj::Area>&,
-    sj::TypedGeometryCache<sj::GeomId>&, size_t, size_t) const;
+    sj::TypedGeometryCache<sj::GeomId>&, size_t) const;
 template std::shared_ptr<sj::GeomId> GeometryCache::getId(
     const sj::TypedGeometryStore<sj::Line>&,
-    sj::TypedGeometryCache<sj::GeomId>&, size_t, size_t) const;
+    sj::TypedGeometryCache<sj::GeomId>&, size_t) const;
 
 template std::shared_ptr<sj::Point> GeometryCache::get(
     const sj::TypedGeometryStore<sj::Point>&,
-    sj::TypedGeometryCache<sj::Point>&, size_t, size_t) const;
+    sj::TypedGeometryCache<sj::Point>&, size_t) const;
 template std::shared_ptr<sj::Area> GeometryCache::get(
     const sj::TypedGeometryStore<sj::Area>&, sj::TypedGeometryCache<sj::Area>&,
-    size_t, size_t) const;
+    size_t) const;
 template std::shared_ptr<sj::SimpleArea> GeometryCache::get(
     const sj::TypedGeometryStore<sj::SimpleArea>&,
-    sj::TypedGeometryCache<sj::SimpleArea>&, size_t, size_t) const;
+    sj::TypedGeometryCache<sj::SimpleArea>&, size_t) const;
 template std::shared_ptr<sj::Line> GeometryCache::get(
     const sj::TypedGeometryStore<sj::Line>&, sj::TypedGeometryCache<sj::Line>&,
-    size_t, size_t) const;
+    size_t) const;
 template std::shared_ptr<sj::SimpleLine> GeometryCache::get(
     const sj::TypedGeometryStore<sj::SimpleLine>&,
-    sj::TypedGeometryCache<sj::SimpleLine>&, size_t, size_t) const;
+    sj::TypedGeometryCache<sj::SimpleLine>&, size_t) const;
 

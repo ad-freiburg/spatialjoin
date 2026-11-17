@@ -5,6 +5,7 @@
 #define SPATIALJOINS_BOXIDS_H_
 
 #include <map>
+#include <type_traits>
 
 #include "util/geo/Geo.h"
 
@@ -24,7 +25,23 @@ const static double GRID_H = WORLD_H / (NUM_GRID_CELLS * 1.0);
 
 const static double GRID_AREA = GRID_W * GRID_H;
 
-typedef std::pair<int32_t, uint8_t> BoxId;
+struct BoxId {
+  BoxId() = default;
+  BoxId(int32_t first, uint8_t second) : first(first), second(second) {}
+
+  int32_t first = 0;
+  uint8_t second = 0;
+
+  // explicit padding, so that BoxId contains no compiler padding (important
+  // for disk serialization)
+  uint8_t _pad[3] = {0, 0, 0};
+};
+
+static_assert(sizeof(BoxId) == 8, "BoxId must not contain padding!");
+#if __cplusplus >= 201703L
+static_assert(std::has_unique_object_representations<BoxId>::value,
+              "BoxId must not contain padding");
+#endif
 
 typedef std::vector<BoxId> BoxIdList;
 
@@ -145,7 +162,8 @@ inline void getBoxIds(const util::geo::I32XSortedPolygon& poly,
           while (a <= (localXWidth + ((255 + 1) - 1)) / (255 + 1)) {
             int r = std::min(
                 255, start + localXWidth - (start + (a - 1) * (255 + 1)) - 1);
-            ret->push_back({start + (a - 1) * (255 + 1) + 1, r});
+            ret->push_back(
+                {start + (a - 1) * (255 + 1) + 1, static_cast<uint8_t>(r)});
             a++;
           }
         }
