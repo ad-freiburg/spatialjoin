@@ -324,6 +324,62 @@ int main(int, char**) {
   }
 
   {
+    // multi geoms only partially inside a filter box must be kept!
+    using util::geo::I32Box;
+
+    auto proj = [](double x, double y) {
+      return sj::WKTParser::projFunc({x, y}, util::geo::CRSType::WGS84);
+    };
+    const I32Box filterBox(proj(1, 1), proj(2, 2));
+
+    for (const std::string wkt :
+         {"MULTIPOINT((1.5 1.5), (5 5))",
+          "MULTILINESTRING((1 1, 2 2), (5 5, 6 6))",
+          "MULTIPOLYGON(((1 1, 2 1, 2 2, 1 2, 1 1)), ((5 5, 6 5, 6 6, 5 6, 5 "
+          "5)))",
+          "GEOMETRYCOLLECTION(POINT(1.5 1.5), POINT(5 5))"}) {
+      sj::SpatialJoinCfg cfg;
+      sj::GeometryStore store(cfg, ".", ".spatialjointest", false);
+      store.setFilterBox(filterBox);
+
+      std::vector<I32Box> boxes;
+      sj::WKTParser parser(
+          &store,
+          [&boxes](size_t, const std::string&,
+                   const sj::PreparedGeomMeta& meta) {
+            boxes.push_back(meta.bbox);
+          },
+          1);
+      parser.parseWKT(wkt, 1);
+      parser.done();
+
+      TEST(boxes.size(), ==, (size_t)1);
+      TEST(util::geo::contains(proj(5, 5), boxes[0]));
+      TEST(util::geo::contains(proj(5, 5), parser.getBoundingBox()));
+      store.flush();
+    }
+
+    // fully outside
+    sj::SpatialJoinCfg cfg;
+    sj::GeometryStore store(cfg, ".", ".spatialjointest", false);
+    store.setFilterBox(filterBox);
+
+    size_t numReported = 0;
+    sj::WKTParser parser(
+        &store,
+        [&numReported](size_t, const std::string&, const sj::PreparedGeomMeta&) {
+          numReported++;
+        },
+        1);
+    parser.parseWKT("MULTIPOINT((5 5), (6 6))", 1);
+    parser.done();
+
+    TEST(numReported, ==, (size_t)0);
+    TEST(parser.getBoundingBox().isNull());
+    store.flush();
+  }
+
+  {
     using sj::boxids::GRID_H;
     using sj::boxids::GRID_W;
     using sj::boxids::inCellWithPadding;
