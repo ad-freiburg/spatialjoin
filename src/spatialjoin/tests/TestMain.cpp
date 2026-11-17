@@ -40,7 +40,8 @@ std::string fullRun(const std::vector<std::string>& files,
                     double dupRemovalMinSize = 0, bool strict = false,
                     bool sharedStore = false, bool singleList = false,
                     size_t eventBufSize = 10 * sizeof(sj::BoxVal),
-                    bool reload = false, bool sameIds = false) {
+                    bool reload = false, bool sameIds = false,
+                    const util::geo::I32Box& filterBox = {}) {
   // with reload, the geometry stores and the event lists are persisted to disk,
   // and the sweep runs on stores and event lists read back from these files
 
@@ -79,6 +80,7 @@ std::string fullRun(const std::vector<std::string>& files,
             cfg, ".", reload ? storePrefix(geomStores.size()) : ".spatialjoin",
             reload));
         geomStores.back()->DUPLICATE_REMOVAL_MIN_SIZE = dupRemovalMinSize;
+        if (!filterBox.isNull()) geomStores.back()->setFilterBox(filterBox);
         storeId = geomCache.addStore(geomStores.back().get());
       }
 
@@ -377,6 +379,26 @@ int main(int, char**) {
     TEST(numReported, ==, (size_t)0);
     TEST(parser.getBoundingBox().isNull());
     store.flush();
+  }
+
+  {
+    // A = (a1, a2) with a2 outside the filter box  and a1 and B intersecting the
+    // filter box must not be contained in B
+    auto proj = [](double x, double y) {
+      return sj::WKTParser::projFunc({x, y}, util::geo::CRSType::WGS84);
+    };
+
+    sj::SpatialJoinCfg cfg;
+    cfg.numThreads = NUM_THREADS;
+    RunStats stats;
+    auto res = fullRun(std::vector<std::string>{TEST_DATASET_DIR "/filterbox"},
+                       cfg, &stats, 0, false, false, false,
+                       10 * sizeof(sj::BoxVal), false, false,
+                       util::geo::I32Box(proj(0, 0), proj(10, 10)));
+
+    TEST(res.find("$B contains A$") == std::string::npos);
+    TEST(res.find("$B covers A$") == std::string::npos);
+    TEST(res.find("$B intersects A$") != std::string::npos);
   }
 
   {
