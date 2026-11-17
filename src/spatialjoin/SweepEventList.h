@@ -456,25 +456,25 @@ class SweepEventList {
   class Reader {
    public:
     Reader() : _file(-1) {}
-    Reader(int file, size_t bufSize) : _file(file), _buf(bufSize) {}
-    // reader for an event list held in memory, in mem with length len
-    Reader(const unsigned char* mem, size_t len)
-        : _file(-1), _mem(mem), _memLen(len) {}
+    // reader for an event file, bufSize is the read buffer size in bytes
+    Reader(int file, size_t bufSize)
+        : _file(file), _buf(bufSize / sizeof(BoxVal)) {}
+    // reader for an event list held in memory, n events starting at mem
+    Reader(const BoxVal* mem, size_t n) : _file(-1), _mem(mem), _memLen(n) {}
 
     // returns 0 at the end of the event list. Returned pointer is
     // valid until a call to next().
     const BoxVal* next() {
       if (_mem) {
         if (_readPtr >= static_cast<ssize_t>(_memLen)) return 0;
-        auto ret = reinterpret_cast<const BoxVal*>(_mem + _readPtr);
-        _readPtr += sizeof(BoxVal);
-        return ret;
+        return _mem + _readPtr++;
       }
 
       if (_file < 0) return 0;
       if (_readPtr >= _readBlockLen) {
-        _readBlockLen =
-            util::preadAll(_file, _buf.data(), _buf.size(), _fileOffset);
+        _readBlockLen = util::preadAll(
+            _file, reinterpret_cast<unsigned char*>(_buf.data()),
+            _buf.size() * sizeof(BoxVal), _fileOffset);
         _readPtr = 0;
 
         if (_readBlockLen == 0) return 0;  // end of file
@@ -490,19 +490,17 @@ class SweepEventList {
           throw std::runtime_error("Corrupted events file");
 
         _fileOffset += _readBlockLen;
+        // from here on, number of events in the read block
+        _readBlockLen /= sizeof(BoxVal);
       }
 
-      auto ret = reinterpret_cast<const BoxVal*>(_buf.data() + _readPtr);
-
-      _readPtr += sizeof(BoxVal);
-
-      return ret;
+      return _buf.data() + _readPtr++;
     }
 
    private:
     int _file;
-    std::vector<unsigned char> _buf;
-    const unsigned char* _mem = 0;
+    std::vector<BoxVal> _buf;
+    const BoxVal* _mem = 0;
     size_t _memLen = 0;
     size_t _fileOffset = 0;
     ssize_t _readPtr = 0;
@@ -518,6 +516,9 @@ class SweepEventList {
       _headA = _readerA.next();
       _headB = _readerB.next();
     }
+
+    CombinedReader(const CombinedReader&) = delete;
+    CombinedReader& operator=(const CombinedReader&) = delete;
 
     // returns 0 at the end of both event lists. Returned pointer is
     // valid until a call to next().
@@ -582,8 +583,13 @@ class SweepEventList {
     posix_fadvise(_file, 0, 0, POSIX_FADV_SEQUENTIAL);
 #endif
 
-    // the references created by duplicatesToReferences(), if any
-    readRefs(refsFName(path));
+    // the references created by duplicatesToReferences(), if any.
+    try {
+      readRefs(refsFName(path));
+    } catch (...) {
+      close(_file);
+      throw;
+    }
   }
 
   SweepEventList(const SweepEventList&) = delete;
@@ -664,8 +670,7 @@ class SweepEventList {
 
   Reader newReader(size_t bufSize = DEFAULT_RBUF_S) const {
     if (!_onDisk) {
-      return Reader(reinterpret_cast<const unsigned char*>(_buffer.data()),
-                    _buffer.size() * sizeof(BoxVal));
+      return Reader(_buffer.data(), _buffer.size());
     }
 
     bufSize = std::max(bufSize / sizeof(BoxVal), size_t(1)) * sizeof(BoxVal);
@@ -729,7 +734,7 @@ class SweepEventList {
 
     // on-disk merge sort
     std::string newFName =
-        _persistOnDisk ? persistFName()
+        _persistOnDisk ? persistFName() + "sorttmp"
                        : util::getTmpFName(_cacheDir, _tmpPrefix, "sorttmp");
     int newFile = open(newFName.c_str(), O_RDWR | O_CREAT | O_TRUNC, 0666);
 
@@ -749,7 +754,18 @@ class SweepEventList {
       std::stringstream ss;
       ss << "Could not sort events file\n";
       ss << strerror(errno) << std::endl;
+      close(newFile);
+      // delete the (maybe only partially) written event list file
+      if (_persistOnDisk) unlink(newFName.c_str());
       throw std::runtime_error(ss.str());
+    }
+
+    if (_persistOnDisk && rename(newFName.c_str(), persistFName().c_str())) {
+      std::string err = strerror(errno);
+      close(newFile);
+      unlink(newFName.c_str());
+      throw std::runtime_error("Could not rename " + newFName + " to " +
+                               persistFName() + ": " + err);
     }
 
     close(_file);

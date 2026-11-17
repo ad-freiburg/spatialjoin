@@ -282,10 +282,18 @@ int main(int argc, char** argv) {
         state = 0;
         break;
       case 12:
+        if (atoi(cur.c_str()) < 1) {
+          std::cerr << "--num-cache-buckets must be at least 1" << std::endl;
+          exit(1);
+        }
         numCacheBuckets = atoi(cur.c_str());
         state = 0;
         break;
       case 13:
+        if (atoi(cur.c_str()) < 1) {
+          std::cerr << "--num-threads must be at least 1" << std::endl;
+          exit(1);
+        }
         numThreads = atoi(cur.c_str());
         state = 0;
         break;
@@ -308,6 +316,9 @@ int main(int argc, char** argv) {
         break;
     }
   }
+
+  sj::IDDecodingOutputWriter outWriter(numThreads, prefix, suffix, output,
+                                       cacheDir);
 
   if (de9imFilter.maxExteriorDim() < 2) {
     if (verbose) {
@@ -349,9 +360,6 @@ int main(int argc, char** argv) {
     }
     return 0;
   }
-
-  sj::IDDecodingOutputWriter outWriter(numThreads, prefix, suffix, output,
-                                       cacheDir);
 
   std::function<void(size_t, const char*, size_t, const char*, size_t,
                      const char*, size_t)>
@@ -418,23 +426,29 @@ int main(int argc, char** argv) {
         new sj::GeometryStore(cfg, cacheDir, ".spatialjoin", false));
     size_t storeId = geomCache.addStore(geomStores.back().get());
 
-    sj::IDEncodingWKTParser parser(geomStores.back().get(),
-                                   sweepEvents.back()->addCb(storeId),
-                                   NUM_THREADS, wktStrict);
+    bool parseFailed = false;
 
-    try {
-      if (inputFiles.empty()) {
-        parser.parseFd(0);
-        parser.done();
-      } else {
-        parser.parseFile(inputFiles[i]);
+    {
+      sj::IDEncodingWKTParser parser(geomStores.back().get(),
+                                     sweepEvents.back()->addCb(storeId),
+                                     numThreads, wktStrict);
+
+      try {
+        if (inputFiles.empty()) {
+          parser.parseFd(0);
+          parser.done();
+        } else {
+          parser.parseFile(inputFiles[i]);
+        }
+      } catch (const std::exception& e) {
+        std::cerr << e.what() << std::endl;
+        parseFailed = true;
       }
-    } catch (const std::runtime_error& e) {
-      std::cerr << e.what() << std::endl;
-      exit(1);
+
+      numInvalid += parser.getNumInvalid();
     }
 
-    numInvalid += parser.getNumInvalid();
+    if (parseFailed) exit(1);
   }
 
   if (numInvalid > 0)
@@ -446,7 +460,7 @@ int main(int argc, char** argv) {
   for (auto& store : geomStores) store->flush();
 
   geomCache.log("Sorting events...");
-  for (auto& events : sweepEvents) events->finalize(NUM_THREADS);
+  for (auto& events : sweepEvents) events->finalize(numThreads);
   geomCache.log("...done");
 
   for (auto& events : sweepEvents) events->duplicatesToReferences(geomCache);
@@ -455,8 +469,14 @@ int main(int argc, char** argv) {
 
   geomCache.log("Sweeping...");
   ts = TIME();
-  sweeper.sweep(sweepEvents[0].get(),
-                sweepEvents.size() > 1 ? sweepEvents[1].get() : 0);
+  try {
+    sweeper.sweep(sweepEvents[0].get(),
+                  sweepEvents.size() > 1 ? sweepEvents[1].get() : 0);
+    outWriter.flush();
+  } catch (const std::exception& e) {
+    std::cerr << "libspatialjoin: " << e.what() << std::endl;
+    exit(1);
+  }
   geomCache.log("done (" + std::to_string(TOOK(ts) / 1.0e9) + "s).");
 
   return 0;

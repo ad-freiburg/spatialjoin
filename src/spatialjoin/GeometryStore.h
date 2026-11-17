@@ -17,10 +17,10 @@
 #include <map>
 #include <memory>
 #include <mutex>
+#include <stdexcept>
 #include <string>
 #if __cplusplus >= 201402L
 #include <shared_mutex>
-#include <stdexcept>
 #endif
 #include <unordered_map>
 #include <utility>
@@ -225,14 +225,16 @@ class TypedGeometryStore {
     }
 
     _readFd = open(_fName.c_str(), O_RDONLY);
+
+    // unlink before checking, to not leave a temporary file behind on error
+    if (!_persistOnDisk) unlink(_fName.c_str());
+
     if (_readFd < 0) {
       throw std::runtime_error("Could not open geometry store file " + _fName);
     }
 #ifdef __unix__
     posix_fadvise(_readFd, 0, 0, POSIX_FADV_RANDOM);
 #endif
-
-    if (!_persistOnDisk) unlink(_fName.c_str());
   }
 
   // the maximum payload size of a record that getId() has to read: the gid
@@ -444,10 +446,6 @@ class GeometryStore {
   util::geo::I32Box addMembers(const util::geo::I32Collection& col,
                                const std::string& gid, size_t& subId,
                                WriteBatch& target) const;
-
-  // returns the geometry stored at off in store, bypassing any cache
-  template <typename W>
-  static std::shared_ptr<W> get(const TypedGeometryStore<W>& store, size_t off);
 
   const SpatialJoinCfg _cfg;
 
