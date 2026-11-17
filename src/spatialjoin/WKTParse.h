@@ -106,12 +106,7 @@ class WKTParserBase {
     if (_done) return;
     _done = true;
 
-    // the last line
-    if (_dangling.size()) {
-      _curBatch.push_back({_dangling, _gid, {0, 0}});
-      _dangling.clear();
-      _gid++;
-    }
+    flushDangling();
 
     if (_curBatch.size()) {
       _jobs.add(std::move(_curBatch));
@@ -237,8 +232,10 @@ class WKTParserBase {
   }
 
   virtual void processQueue(size_t t) = 0;
+
+  virtual void flushDangling() {}
+
   size_t _gid = 1;
-  std::string _dangling;
 
   sj::GeometryStore* _store;
   sj::PreparedGeomMetaCb _metaCb;
@@ -292,10 +289,13 @@ class WKTParser : public WKTParserBase<ParseJob> {
             size_t numThreads, bool strict, bool encodeIds);
 
   void processQueue(size_t t) override;
+  void flushDangling() override;
 
  private:
   bool _strict;
   bool _encodeIds;
+
+  std::string _dangling;
 };
 
 // A WKTParser which encodes the geometry ids with idEnhance()

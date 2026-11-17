@@ -40,7 +40,8 @@ std::string fullRun(const std::vector<std::string>& files,
                     double dupRemovalMinSize = 0, bool strict = false,
                     bool sharedStore = false, bool singleList = false,
                     size_t eventBufSize = 10 * sizeof(sj::BoxVal),
-                    bool reload = false, bool sameIds = false) {
+                    bool reload = false, bool sameIds = false,
+                    const util::geo::I32Box& filterBox = {}) {
   // with reload, the geometry stores and the event lists are persisted to disk,
   // and the sweep runs on stores and event lists read back from these files
 
@@ -79,6 +80,7 @@ std::string fullRun(const std::vector<std::string>& files,
             cfg, ".", reload ? storePrefix(geomStores.size()) : ".spatialjoin",
             reload));
         geomStores.back()->DUPLICATE_REMOVAL_MIN_SIZE = dupRemovalMinSize;
+        if (!filterBox.isNull()) geomStores.back()->setFilterBox(filterBox);
         storeId = geomCache.addStore(geomStores.back().get());
       }
 
@@ -323,6 +325,88 @@ int main(int, char**) {
         store.flush();
       }
     }
+  }
+
+  {
+    // multi geoms only partially inside a filter box must be kept!
+    using util::geo::I32Box;
+
+    auto proj = [](double x, double y) {
+      return sj::WKTParser::projFunc({x, y}, util::geo::CRSType::WGS84);
+    };
+    const I32Box filterBox(proj(1, 1), proj(2, 2));
+
+    for (const std::string wkt :
+         {"MULTIPOINT((1.5 1.5), (5 5))",
+          "MULTILINESTRING((1 1, 2 2), (5 5, 6 6))",
+          "MULTIPOLYGON(((1 1, 2 1, 2 2, 1 2, 1 1)), ((5 5, 6 5, 6 6, 5 6, 5 "
+          "5)))",
+          "GEOMETRYCOLLECTION(POINT(1.5 1.5), POINT(5 5))"}) {
+      sj::SpatialJoinCfg cfg;
+      sj::GeometryStore store(cfg, ".", ".spatialjointest", false);
+      store.setFilterBox(filterBox);
+
+      std::vector<I32Box> boxes;
+      sj::WKTParser parser(
+          &store,
+          [&boxes](size_t, const std::string&,
+                   const sj::PreparedGeomMeta& meta) {
+            boxes.push_back(meta.bbox);
+          },
+          1);
+      parser.parseWKT(wkt, 1);
+      parser.done();
+
+      TEST(boxes.size(), ==, (size_t)1);
+      TEST(util::geo::contains(proj(5, 5), boxes[0]));
+      TEST(util::geo::contains(proj(5, 5), parser.getBoundingBox()));
+      store.flush();
+    }
+
+    // fully outside
+    for (const std::string wkt :
+         {"MULTIPOINT((5 5), (6 6))", "MULTIPOINT((0 1.5), (3 1.5))",
+          "MULTILINESTRING((0 0, 0.5 0.5), (3 3, 4 4))",
+          "MULTIPOLYGON(((0 0, 0.5 0, 0.5 0.5, 0 0.5, 0 0)), ((3 3, 4 3, 4 4, 3 "
+          "4, 3 3)))",
+          "GEOMETRYCOLLECTION(POINT(0 1.5), MULTIPOINT((3 1.5), (4 1.5)))"}) {
+      sj::SpatialJoinCfg cfg;
+      sj::GeometryStore store(cfg, ".", ".spatialjointest", false);
+      store.setFilterBox(filterBox);
+
+      size_t numReported = 0;
+      sj::WKTParser parser(
+          &store,
+          [&numReported](size_t, const std::string&,
+                         const sj::PreparedGeomMeta&) { numReported++; },
+          1);
+      parser.parseWKT(wkt, 1);
+      parser.done();
+
+      TEST(numReported, ==, (size_t)0);
+      TEST(parser.getBoundingBox().isNull());
+      store.flush();
+    }
+  }
+
+  {
+    // A = (a1, a2) with a2 outside the filter box  and a1 and B intersecting the
+    // filter box must not be contained in B
+    auto proj = [](double x, double y) {
+      return sj::WKTParser::projFunc({x, y}, util::geo::CRSType::WGS84);
+    };
+
+    sj::SpatialJoinCfg cfg;
+    cfg.numThreads = NUM_THREADS;
+    RunStats stats;
+    auto res = fullRun(std::vector<std::string>{TEST_DATASET_DIR "/filterbox"},
+                       cfg, &stats, 0, false, false, false,
+                       10 * sizeof(sj::BoxVal), false, false,
+                       util::geo::I32Box(proj(0, 0), proj(10, 10)));
+
+    TEST(res.find("$B contains A$") == std::string::npos);
+    TEST(res.find("$B covers A$") == std::string::npos);
+    TEST(res.find("$B intersects A$") != std::string::npos);
   }
 
   {

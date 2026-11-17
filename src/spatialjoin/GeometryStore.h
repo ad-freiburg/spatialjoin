@@ -447,6 +447,10 @@ class GeometryStore {
                                const std::string& gid, size_t& subId,
                                WriteBatch& target) const;
 
+  template <typename G>
+  bool intersectsFilterBox(const std::vector<G>& members) const;
+  bool intersectsFilterBox(const util::geo::I32Collection& col) const;
+
   const SpatialJoinCfg _cfg;
 
   TypedGeometryStore<Point> _pointStore;
