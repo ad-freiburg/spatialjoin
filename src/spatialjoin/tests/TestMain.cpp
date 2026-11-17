@@ -364,23 +364,29 @@ int main(int, char**) {
     }
 
     // fully outside
-    sj::SpatialJoinCfg cfg;
-    sj::GeometryStore store(cfg, ".", ".spatialjointest", false);
-    store.setFilterBox(filterBox);
+    for (const std::string wkt :
+         {"MULTIPOINT((5 5), (6 6))", "MULTIPOINT((0 1.5), (3 1.5))",
+          "MULTILINESTRING((0 0, 0.5 0.5), (3 3, 4 4))",
+          "MULTIPOLYGON(((0 0, 0.5 0, 0.5 0.5, 0 0.5, 0 0)), ((3 3, 4 3, 4 4, 3 "
+          "4, 3 3)))",
+          "GEOMETRYCOLLECTION(POINT(0 1.5), MULTIPOINT((3 1.5), (4 1.5)))"}) {
+      sj::SpatialJoinCfg cfg;
+      sj::GeometryStore store(cfg, ".", ".spatialjointest", false);
+      store.setFilterBox(filterBox);
 
-    size_t numReported = 0;
-    sj::WKTParser parser(
-        &store,
-        [&numReported](size_t, const std::string&, const sj::PreparedGeomMeta&) {
-          numReported++;
-        },
-        1);
-    parser.parseWKT("MULTIPOINT((5 5), (6 6))", 1);
-    parser.done();
+      size_t numReported = 0;
+      sj::WKTParser parser(
+          &store,
+          [&numReported](size_t, const std::string&,
+                         const sj::PreparedGeomMeta&) { numReported++; },
+          1);
+      parser.parseWKT(wkt, 1);
+      parser.done();
 
-    TEST(numReported, ==, (size_t)0);
-    TEST(parser.getBoundingBox().isNull());
-    store.flush();
+      TEST(numReported, ==, (size_t)0);
+      TEST(parser.getBoundingBox().isNull());
+      store.flush();
+    }
   }
 
   {

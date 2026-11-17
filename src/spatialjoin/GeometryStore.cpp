@@ -1049,14 +1049,49 @@ sj::GeomType sj::TypedGeometryStore<sj::MultiGeom>::geomType() {
 }
 
 // _____________________________________________________________________________
+template <typename G>
+bool GeometryStore::intersectsFilterBox(
+    const std::vector<G>& members) const {
+  for (const auto& m : members) {
+    if (util::geo::intersects(
+            getPaddedBoundingBox(util::geo::getBoundingBox(m)), _filterBox))
+      return true;
+  }
+  return false;
+}
+
+// _____________________________________________________________________________
+bool GeometryStore::intersectsFilterBox(const I32Collection& col) const {
+  auto in = [this](const util::geo::I32Box& box) {
+    return util::geo::intersects(getPaddedBoundingBox(box), _filterBox);
+  };
+
+  for (const auto& a : col) {
+    if (a.getType() == 0 && in(util::geo::getBoundingBox(a.getPoint())))
+      return true;
+    if (a.getType() == 1 && in(util::geo::getBoundingBox(a.getLine())))
+      return true;
+    if (a.getType() == 2 && in(util::geo::getBoundingBox(a.getPolygon())))
+      return true;
+    if (a.getType() == 3 && intersectsFilterBox(a.getMultiLine()))
+      return true;
+    if (a.getType() == 4 && intersectsFilterBox(a.getMultiPolygon()))
+      return true;
+    if (a.getType() == 5 && intersectsFilterBox(a.getCollection()))
+      return true;
+    if (a.getType() == 6 && intersectsFilterBox(a.getMultiPoint()))
+      return true;
+  }
+  return false;
+}
+
+// _____________________________________________________________________________
 I32Box GeometryStore::add(const I32MultiPolygon& a, const std::string& gid,
                           WriteBatch& batch) const {
   // a subid of 0 means "single polygon"
   if (a.size() < 2) return add(a, gid, 0, batch);
 
-  if (!util::geo::intersects(getPaddedBoundingBox(util::geo::getBoundingBox(a)),
-                             _filterBox))
-    return {};
+  if (!intersectsFilterBox(a)) return {};
 
   WriteBatch members;
   auto box = add(a, gid, 1, members);
@@ -1070,9 +1105,7 @@ I32Box GeometryStore::add(const I32MultiLine& a, const std::string& gid,
   // a subid of 0 means "single line"
   if (a.size() < 2) return add(a, gid, 0, batch);
 
-  if (!util::geo::intersects(getPaddedBoundingBox(util::geo::getBoundingBox(a)),
-                             _filterBox))
-    return {};
+  if (!intersectsFilterBox(a)) return {};
 
   WriteBatch members;
   auto box = add(a, gid, 1, members);
@@ -1086,9 +1119,7 @@ I32Box GeometryStore::add(const I32MultiPoint& a, const std::string& gid,
   // a subid of 0 means "single point"
   if (a.size() < 2) return add(a, gid, 0, batch);
 
-  if (!util::geo::intersects(getPaddedBoundingBox(util::geo::getBoundingBox(a)),
-                             _filterBox))
-    return {};
+  if (!intersectsFilterBox(a)) return {};
 
   WriteBatch members;
   auto box = add(a, gid, 1, members);
@@ -1117,10 +1148,7 @@ I32Box GeometryStore::add(const I32Collection& col, const std::string& gid,
   // a subid of 0 means "single geometry"
   size_t subId = numGeoms > 1 ? 1 : 0;
 
-  if (numGeoms > 1 &&
-      !util::geo::intersects(
-          getPaddedBoundingBox(util::geo::getBoundingBox(col)), _filterBox))
-    return {};
+  if (numGeoms > 1 && !intersectsFilterBox(col)) return {};
 
   // the members of a multi collection are kept together
   WriteBatch members;
