@@ -1,0 +1,16 @@
+if(PROJECT_IS_TOP_LEVEL)
+    set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}")
+endif()
+
+foreach(example SelfJoin NonSelfJoin NonSelfJoinSameStorage SelfJoinStorageReuse NonSelfJoinStorageReuse ThreeStoresJoin)
+	add_executable(${example} ${example}.cpp)
+	target_link_libraries(${example} PRIVATE spatialjoin-dev pb_util pb_util_geo -lpthread)
+	if (BZIP2_FOUND)
+		target_link_libraries(${example} PRIVATE ${BZIP2_LIBRARIES})
+	endif()
+	if (ZLIB_FOUND)
+		target_link_libraries(${example} PRIVATE ${ZLIB_LIBRARIES})
+	endif()
+	target_compile_definitions(${example} PRIVATE
+		EXAMPLE_DATASET_DIR="${PROJECT_SOURCE_DIR}/src/spatialjoin/tests/datasets")
+endforeach()

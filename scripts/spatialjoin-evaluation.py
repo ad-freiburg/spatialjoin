@@ -51,13 +51,9 @@ def compute(args: argparse.Namespace):
     `args.combinations`.
     """
 
-    # The six options and a representative letter for each.
+    # The two options and a representative letter for each.
     all_options = [('b', '--no-box-ids'),
-                   ('c', '--no-cutouts'),
-                   ('s', '--no-surface-area'),
-                   ('d', '--no-diag-box'),
-                   ('o', '--no-oriented-envelope'),
-                   ('I', '--use-inner-outer')]
+                   ('d', '--no-diag-box')]
     options = [all_options[int(i)] for i in args.option_indexes.split(",")]
 
     # The combinations from `--combinations` as a set.
@@ -71,7 +67,6 @@ def compute(args: argparse.Namespace):
         log_file.close()
 
     # Try all combinations of the options.
-    sweep_mode = " --no-fast-sweep-skip" if args.no_fast_sweep_skip else ""
     count = 0
     for name, combination in all_combinations(options):
         # Consider only combinations compatible with `args.combinations`.
@@ -80,7 +75,7 @@ def compute(args: argparse.Namespace):
 
         # The command line for this combination.
         cmd = (f"cat {args.basename}.spatialjoin-input.tsv |"
-               f" spatialjoin{sweep_mode} {combination}")
+               f" spatialjoin {combination}")
 
         # Optionally, generate RDF output.
         if args.rdf_output:
@@ -132,12 +127,12 @@ def compute(args: argparse.Namespace):
         parse_time = "[not found]"
         sweep_time = "[not found]"
         for line in result.stderr.decode().split("\n"):
+            match = re.match(".*INFO : Done parsing \\(([0-9.]+)s\\)\\.", line)
+            if match and parse_time == "[not found]":
+                parse_time = f"{float(match.group(1)):.3f}"
             match = re.match(".*INFO : done \\(([0-9.]+)s\\)\\.", line)
-            if match:
-                if parse_time == "[not found]":
-                    parse_time = f"{float(match.group(1)):.3f}"
-                elif sweep_time == "[not found]":
-                    sweep_time = f"{float(match.group(1)):.3f}"
+            if match and sweep_time == "[not found]":
+                sweep_time = f"{float(match.group(1)):.3f}"
 
         print(f"{name}\t{total_time}\t{parse_time}\t{sweep_time}", flush=True)
 
@@ -246,8 +241,7 @@ def analyze_all(args: argparse.Namespace):
     print()
 
     # A short human-readable description for each option.
-    descriptions = {0: "box ids", 1: "surface area", 2: "cutouts",
-                    3: "diagonal boxes", 4: "oriented boxes"}
+    descriptions = {0: "box ids", 1: "diagonal boxes"}
 
     # For each option, compute its maximal and minimal speedup relative
     # to all the other options.
@@ -320,13 +314,10 @@ if __name__ == "__main__":
                         help="Analyze the specifed time"
                         " (reads file produced by previous run)")
     parser.add_argument("--option-indexes", type=str,
-                        default="0,1,2,3,4,5",
+                        default="0,1",
                         help="Comma-separated list of option indexes "
-                        "(default: 0,1,2,3,4,5)")
-    parser.add_argument("--no-fast-sweep-skip", action="store_true",
-                        default=False,
-                        help="Call spatialjoin with --no-fast-sweep-skip")
-    combinations = ["ALL", "bcsdoi,Bcsdoi,BCsdoi,BCSdoi,BCSDoi,BCSdOi,BCSdoI"]
+                        "(default: 0,1)")
+    combinations = ["ALL", "bd,Bd,BD"]
     parser.add_argument("--combinations", type=str,
                         default="ALL",
                         help="Compute / analyze only these "

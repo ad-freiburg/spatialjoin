@@ -5,6 +5,7 @@
 #define SPATIALJOINS_BOXIDS_H_
 
 #include <map>
+#include <type_traits>
 
 #include "util/geo/Geo.h"
 
@@ -24,7 +25,23 @@ const static double GRID_H = WORLD_H / (NUM_GRID_CELLS * 1.0);
 
 const static double GRID_AREA = GRID_W * GRID_H;
 
-typedef std::pair<int32_t, uint8_t> BoxId;
+struct BoxId {
+  BoxId() = default;
+  BoxId(int32_t first, uint8_t second) : first(first), second(second) {}
+
+  int32_t first = 0;
+  uint8_t second = 0;
+
+  // explicit padding, so that BoxId contains no compiler padding (important
+  // for disk serialization)
+  uint8_t _pad[3] = {0, 0, 0};
+};
+
+static_assert(sizeof(BoxId) == 8, "BoxId must not contain padding!");
+#if __cplusplus >= 201703L
+static_assert(std::has_unique_object_representations<BoxId>::value,
+              "BoxId must not contain padding");
+#endif
 
 typedef std::vector<BoxId> BoxIdList;
 
@@ -43,6 +60,23 @@ inline int32_t getBoxId(const util::geo::I32Point& p) {
   int32_t y = floor((1.0 * p.getY() + WORLD_H / 2.0) / GRID_H);
 
   return y * NUM_GRID_CELLS + x + 1;
+}
+
+// ____________________________________________________________________________
+inline bool inCellWithPadding(const util::geo::I32Box& box, double d) {
+  double llX = 1.0 * box.getLowerLeft().getX() + WORLD_W / 2.0;
+  double llY = 1.0 * box.getLowerLeft().getY() + WORLD_H / 2.0;
+  double urX = 1.0 * box.getUpperRight().getX() + WORLD_W / 2.0;
+  double urY = 1.0 * box.getUpperRight().getY() + WORLD_H / 2.0;
+
+  double x = floor(llX / GRID_W);
+  double y = floor(llY / GRID_H);
+
+  double minDist = d + 1;
+
+  return llX - x * GRID_W >= minDist && llY - y * GRID_H >= minDist &&
+         (x + 1) * GRID_W - urX >= minDist &&
+         (y + 1) * GRID_H - urY >= minDist;
 }
 
 // ____________________________________________________________________________
@@ -66,7 +100,7 @@ inline void getBoxIds(const util::geo::I32XSortedLine& line,
 
       if (!util::geo::intersects(box, envelope)) continue;
 
-      const util::geo::I32XSortedPolygon boxPoly{util::geo::I32Polygon(box)};
+      const util::geo::I32XSortedPolygon boxPoly(box);
 
       auto check = util::geo::intersectsContainsCovers(line, boxPoly, &firstInA,
                                                        &firstInB);
@@ -116,7 +150,7 @@ inline void getBoxIds(const util::geo::I32XSortedPolygon& poly,
 
       if (!util::geo::intersects(box, envelope)) continue;
 
-      const util::geo::I32XSortedPolygon boxPoly{util::geo::I32Polygon(box)};
+      const util::geo::I32XSortedPolygon boxPoly(box);
 
       const auto& de9im = util::geo::DE9IM(boxPoly, poly, &firstInA, &firstInB);
 
@@ -128,7 +162,8 @@ inline void getBoxIds(const util::geo::I32XSortedPolygon& poly,
           while (a <= (localXWidth + ((255 + 1) - 1)) / (255 + 1)) {
             int r = std::min(
                 255, start + localXWidth - (start + (a - 1) * (255 + 1)) - 1);
-            ret->push_back({start + (a - 1) * (255 + 1) + 1, r});
+            ret->push_back(
+                {start + (a - 1) * (255 + 1) + 1, static_cast<uint8_t>(r)});
             a++;
           }
         }
@@ -345,6 +380,76 @@ inline std::pair<int32_t, int32_t> boxIdIsect(const BoxIdList& idsA,
   }
 
   return {fullContained, partContained};
+}
+
+// ____________________________________________________________________________
+inline bool boxIdIsectPadded(const BoxIdList& idsA, const BoxIdList& idsB,
+                             double d) {
+  if (idsA.size() < 2 || idsB.size() < 2) return true;
+
+  // pad the smaller list
+  if (idsA.size() > idsB.size()) return boxIdIsectPadded(idsB, idsA, d);
+
+  double kDbl = std::ceil((d + 2) / GRID_W);
+
+  // this is to safe us from large paddings, in that case we simply return
+  // true and it goes to the full geometry check, maybe make this into a
+  // configurable threshold
+  if (kDbl > 10) return true;
+
+  int32_t k = kDbl;
+
+  // basic idea here: go over all rows, offset row by +- k, and padd each row
+  // at both ends by k. note that this produces the same cell ID very often, but
+  // seems to work for now
+  for (int32_t r = -k; r <= k; r++) {
+    int32_t off = r * NUM_GRID_CELLS;
+    size_t i = 1;
+    size_t j = 1;
+
+    while (i < idsA.size() && j < idsB.size()) {
+      int32_t aStart = abs(idsA[i].first) + off - k;
+      int32_t aEnd = abs(idsA[i].first) + idsA[i].second + off + k;
+      int32_t bStart = abs(idsB[j].first);
+      int32_t bEnd = bStart + idsB[j].second;
+
+      const BoxIdList* ids;
+      size_t* pos;
+      int32_t target;
+
+      if (aEnd < bStart) {
+        ids = &idsA;
+        pos = &i;
+        target = bStart - off - k;
+      } else if (bEnd < aStart) {
+        ids = &idsB;
+        pos = &j;
+        target = aStart;
+      } else {
+        return true;
+      }
+
+      size_t step = 1;
+      while (*pos + step < ids->size() &&
+             abs((*ids)[*pos + step].first) < target) {
+        step *= 2;
+      }
+
+      auto it = std::lower_bound(
+          ids->begin() + *pos + step / 2 + 1,
+          ids->begin() + std::min(*pos + step, ids->size()),
+          target, BoxIdCmp());
+
+      if (it - 1 != ids->begin() + *pos &&
+          abs((it - 1)->first) + (it - 1)->second >= target) {
+        it--;
+      }
+
+      *pos = it - ids->begin();
+    }
+  }
+
+  return false;
 }
 
 }  // namespace boxids

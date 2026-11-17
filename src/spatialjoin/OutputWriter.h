@@ -35,9 +35,10 @@ inline uint64_t intFromString(const char* s, size_t n) {
   return id;
 }
 
+// Writes the relations found by the Sweeper
 class OutputWriter {
  public:
-  ~OutputWriter() {
+  virtual ~OutputWriter() {
     flushOutputFiles();
     for (size_t i = 0; i < _outBuffers.size(); i++) {
       if (_outBuffers[i]) delete[] _outBuffers[i];
@@ -266,28 +267,8 @@ class OutputWriter {
     _outBufPos[t] += _suffix.size();
   }
 
-  void writeRelCb(size_t t, const char* a, size_t an, const char* b, size_t bn,
-                  const char* pred, size_t predn) {
-    std::string tmpa, tmpb;
-
-    if (an > 0 && a[0] == 's') {
-      a = &a[1];
-      an--;
-    } else if (an > 0 && a[0] == 'd') {
-      tmpa = std::to_string(intFromString(&a[1], an - 1));
-      a = tmpa.c_str();
-      an = tmpa.size();
-    }
-
-    if (bn > 0 && b[0] == 's') {
-      b = &b[1];
-      bn--;
-    } else if (bn > 0 && b[0] == 'd') {
-      tmpb = std::to_string(intFromString(&b[1], bn - 1));
-      b = tmpb.c_str();
-      bn = tmpb.size();
-    }
-
+  virtual void writeRelCb(size_t t, const char* a, size_t an, const char* b,
+                          size_t bn, const char* pred, size_t predn) {
     size_t totSize = _prefix.size() + an + predn + bn + _suffix.size();
 
     if (_outMode == BZ2) {
@@ -375,6 +356,38 @@ class OutputWriter {
   std::vector<unsigned char*> _outBuffers;
 
   std::string _out, _cache;
+};
+
+// An OutputWriter which decodes geometry ids encoded by an
+// IDEncodingWKTParser
+class IDDecodingOutputWriter : public OutputWriter {
+ public:
+  using OutputWriter::OutputWriter;
+
+  void writeRelCb(size_t t, const char* a, size_t an, const char* b, size_t bn,
+                  const char* pred, size_t predn) override {
+    std::string tmpa, tmpb;
+
+    if (an > 0 && a[0] == 's') {
+      a = &a[1];
+      an--;
+    } else if (an > 0 && a[0] == 'd') {
+      tmpa = std::to_string(intFromString(&a[1], an - 1));
+      a = tmpa.c_str();
+      an = tmpa.size();
+    }
+
+    if (bn > 0 && b[0] == 's') {
+      b = &b[1];
+      bn--;
+    } else if (bn > 0 && b[0] == 'd') {
+      tmpb = std::to_string(intFromString(&b[1], bn - 1));
+      b = tmpb.c_str();
+      bn = tmpb.size();
+    }
+
+    OutputWriter::writeRelCb(t, a, an, b, bn, pred, predn);
+  }
 };
 
 }  // namespace sj

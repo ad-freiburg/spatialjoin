@@ -19,30 +19,17 @@ struct Stats {
   uint64_t timeBoxIdIsectLineLine = 0;
   uint64_t timeBoxIdIsectLinePoint = 0;
 
-  uint64_t timeOBBIsectAreaArea = 0;
-  uint64_t timeOBBIsectAreaLine = 0;
-  uint64_t timeOBBIsectAreaPoint = 0;
-  uint64_t timeOBBIsectLineLine = 0;
-
   uint64_t timeFullGeoCheckAreaArea = 0;
   uint64_t timeFullGeoCheckAreaLine = 0;
   uint64_t timeFullGeoCheckAreaPoint = 0;
   uint64_t timeFullGeoCheckLineLine = 0;
   uint64_t timeFullGeoCheckLinePoint = 0;
 
-  uint64_t timeInnerOuterCheckAreaArea = 0;
-  uint64_t timeInnerOuterCheckAreaLine = 0;
-  uint64_t timeInnerOuterCheckAreaPoint = 0;
-
   size_t fullGeoChecksAreaArea = 0;
   size_t fullGeoChecksAreaLine = 0;
   size_t fullGeoChecksAreaPoint = 0;
   size_t fullGeoChecksLineLine = 0;
   size_t fullGeoChecksLinePoint = 0;
-
-  size_t innerOuterChecksAreaArea = 0;
-  size_t innerOuterChecksAreaLine = 0;
-  size_t innerOuterChecksAreaPoint = 0;
 
   size_t totalComps = 0;
 
@@ -62,13 +49,10 @@ inline std::string Stats::toString() {
       double(timeGeoCacheRetrievalArea + timeGeoCacheRetrievalLine +
              timeGeoCacheRetrievalSimpleLine + timeGeoCacheRetrievalPoint +
              timeWrite + timeBoxIdIsectAreaArea + timeBoxIdIsectAreaLine +
-             timeOBBIsectAreaArea + timeOBBIsectAreaLine +
-             timeOBBIsectAreaPoint + timeOBBIsectLineLine +
              timeBoxIdIsectAreaPoint + timeBoxIdIsectLineLine +
              timeBoxIdIsectLinePoint + timeFullGeoCheckAreaArea +
              timeFullGeoCheckAreaLine + timeFullGeoCheckAreaPoint +
-             timeFullGeoCheckLineLine + timeFullGeoCheckLinePoint +
-             timeInnerOuterCheckAreaArea + timeInnerOuterCheckAreaLine) /
+             timeFullGeoCheckLineLine + timeFullGeoCheckLinePoint) /
       1000000000.0;
 
   std::stringstream ss;
@@ -109,22 +93,6 @@ inline std::string Stats::toString() {
   ss << "time for box ID intersections LINE/POINT: " << t << " s ("
      << ((t / sum) * 100.0) << "%)\n";
 
-  t = double(timeOBBIsectAreaArea) / 1000000000.0;
-  ss << "time for obb intersections AREA/AREA: " << t << " s ("
-     << ((t / sum) * 100.0) << "%)\n";
-
-  t = double(timeOBBIsectAreaLine) / 1000000000.0;
-  ss << "time for obb intersections AREA/LINE: " << t << " s ("
-     << ((t / sum) * 100.0) << "%)\n";
-
-  t = double(timeOBBIsectAreaPoint) / 1000000000.0;
-  ss << "time for obb intersections AREA/POINT: " << t << " s ("
-     << ((t / sum) * 100.0) << "%)\n";
-
-  t = double(timeOBBIsectLineLine) / 1000000000.0;
-  ss << "time for obb intersections LINE/LINE: " << t << " s ("
-     << ((t / sum) * 100.0) << "%)\n";
-
   t = double(timeFullGeoCheckAreaArea) / 1000000000.0;
   ss << "time for " << fullGeoChecksAreaArea
      << " full geom checks AREA/AREA: " << t << " s (" << ((t / sum) * 100.0)
@@ -148,21 +116,6 @@ inline std::string Stats::toString() {
   t = double(timeFullGeoCheckLinePoint) / 1000000000.0;
   ss << "time for " << fullGeoChecksLinePoint
      << " full geom checks LINE/POINT: " << t << " s (" << ((t / sum) * 100.0)
-     << "%)\n";
-
-  t = double(timeInnerOuterCheckAreaArea) / 1000000000.0;
-  ss << "time for " << innerOuterChecksAreaArea
-     << " inner/outer checks AREA/AREA: " << t << " s (" << ((t / sum) * 100.0)
-     << "%)\n";
-
-  t = double(timeInnerOuterCheckAreaLine) / 1000000000.0;
-  ss << "time for " << innerOuterChecksAreaLine
-     << " inner/outer checks AREA/LINE: " << t << " s (" << ((t / sum) * 100.0)
-     << "%)\n";
-
-  t = double(timeInnerOuterCheckAreaPoint) / 1000000000.0;
-  ss << "time for " << innerOuterChecksAreaPoint
-     << " inner/outer checks AREA/POINT: " << t << " s (" << ((t / sum) * 100.0)
      << "%)\n";
 
   t = double(timeWrite) / 1000000000.0;
@@ -195,26 +148,16 @@ inline Stats& operator+=(Stats& a, const Stats& b) {
   a.timeBoxIdIsectAreaPoint += b.timeBoxIdIsectAreaPoint;
   a.timeBoxIdIsectLineLine += b.timeBoxIdIsectLineLine;
   a.timeBoxIdIsectLinePoint += b.timeBoxIdIsectLinePoint;
-  a.timeOBBIsectAreaArea += b.timeOBBIsectAreaArea;
-  a.timeOBBIsectAreaLine += b.timeOBBIsectAreaLine;
-  a.timeOBBIsectAreaPoint += b.timeOBBIsectAreaPoint;
-  a.timeOBBIsectLineLine += b.timeOBBIsectLineLine;
   a.timeFullGeoCheckAreaArea += b.timeFullGeoCheckAreaArea;
   a.timeFullGeoCheckAreaLine += b.timeFullGeoCheckAreaLine;
   a.timeFullGeoCheckAreaPoint += b.timeFullGeoCheckAreaPoint;
   a.timeFullGeoCheckLineLine += b.timeFullGeoCheckLineLine;
   a.timeFullGeoCheckLinePoint += b.timeFullGeoCheckLinePoint;
-  a.timeInnerOuterCheckAreaArea += b.timeInnerOuterCheckAreaArea;
-  a.timeInnerOuterCheckAreaLine += b.timeInnerOuterCheckAreaLine;
-  a.timeInnerOuterCheckAreaPoint += b.timeInnerOuterCheckAreaPoint;
   a.fullGeoChecksAreaArea += b.fullGeoChecksAreaArea;
   a.fullGeoChecksAreaLine += b.fullGeoChecksAreaLine;
   a.fullGeoChecksAreaPoint += b.fullGeoChecksAreaPoint;
   a.fullGeoChecksLineLine += b.fullGeoChecksLineLine;
   a.fullGeoChecksLinePoint += b.fullGeoChecksLinePoint;
-  a.innerOuterChecksAreaArea += b.innerOuterChecksAreaArea;
-  a.innerOuterChecksAreaLine += b.innerOuterChecksAreaLine;
-  a.innerOuterChecksAreaPoint += b.innerOuterChecksAreaPoint;
   a.totalComps += b.totalComps;
   a.areaSizeSum += b.areaSizeSum;
   a.areaCmps += b.areaCmps;
