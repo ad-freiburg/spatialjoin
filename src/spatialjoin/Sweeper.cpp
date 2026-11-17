@@ -487,6 +487,15 @@ RelStats Sweeper::sweep(const SweepEventList* eventsA,
   _events[1] = eventsB ? eventsB : eventsA;
 
   _cancelled = false;
+  _workerException = nullptr;
+
+  _jobs.reset();
+  _finishedMultis = {};
+  for (size_t side = 0; side < 2; side++) {
+    _openMultiIDs[side].clear();
+    _subSizes[side].clear();
+    _multiRightPoint[side].clear();
+  }
 
   const size_t maxBatchSize = 100000;
   size_t batchSize = 100;
@@ -494,22 +503,22 @@ RelStats Sweeper::sweep(const SweepEventList* eventsA,
 
   util::geo::IntervalIdx<int32_t, SweepVal> actives[2];
 
-  _stats.resize(_cfg.numThreads + 1);
-  _relStats.resize(_cfg.numThreads + 1);
-  _checks.resize(_cfg.numThreads);
-  _curX.resize(_cfg.numThreads);
+  _stats.assign(_cfg.numThreads + 1, {});
+  _relStats.assign(_cfg.numThreads + 1, {});
+  _checks.assign(_cfg.numThreads, {});
+  _curX.assign(_cfg.numThreads, {});
   for (size_t side = 0; side < 2; side++) {
-    _subEquals[side].resize(_cfg.numThreads + 1);
-    _subCovered[side].resize(_cfg.numThreads + 1);
-    _subContains[side].resize(_cfg.numThreads + 1);
-    _subDistance[side].resize(_cfg.numThreads + 1);
-    _subDE9IM[side].resize(_cfg.numThreads + 1);
-    _subNotOverlaps[side].resize(_cfg.numThreads + 1);
-    _subOverlaps[side].resize(_cfg.numThreads + 1);
-    _subNotTouches[side].resize(_cfg.numThreads + 1);
-    _subNotCrosses[side].resize(_cfg.numThreads + 1);
-    _subCrosses[side].resize(_cfg.numThreads + 1);
-    _subTouches[side].resize(_cfg.numThreads + 1);
+    _subEquals[side].assign(_cfg.numThreads + 1, {});
+    _subCovered[side].assign(_cfg.numThreads + 1, {});
+    _subContains[side].assign(_cfg.numThreads + 1, {});
+    _subDistance[side].assign(_cfg.numThreads + 1, {});
+    _subDE9IM[side].assign(_cfg.numThreads + 1, {});
+    _subNotOverlaps[side].assign(_cfg.numThreads + 1, {});
+    _subOverlaps[side].assign(_cfg.numThreads + 1, {});
+    _subNotTouches[side].assign(_cfg.numThreads + 1, {});
+    _subNotCrosses[side].assign(_cfg.numThreads + 1, {});
+    _subCrosses[side].assign(_cfg.numThreads + 1, {});
+    _subTouches[side].assign(_cfg.numThreads + 1, {});
   }
 
   _mutsEquals = std::vector<std::mutex>(_cfg.numThreads + 1);
@@ -534,8 +543,18 @@ RelStats Sweeper::sweep(const SweepEventList* eventsA,
 
   // fire up worker threads for geometry checking
   std::vector<std::thread> thrds(_cfg.numThreads);
-  for (size_t i = 0; i < thrds.size(); i++)
-    thrds[i] = std::thread(&Sweeper::processQueue, this, i);
+  try {
+    for (size_t i = 0; i < thrds.size(); i++)
+      thrds[i] = std::thread(&Sweeper::processQueue, this, i);
+  } catch (...) {
+    // if anything goes wrong, set _cancelled to true and let the
+    // threads unspin, only then rethrow
+    _cancelled = true;
+    _jobs.add({});
+    for (auto& thr : thrds)
+      if (thr.joinable()) thr.join();
+    throw;
+  }
 
   // multi-events (guarnateed to be sorted by BoxVal) dynamically streamed in
   // from MULTI IN events
@@ -560,6 +579,10 @@ RelStats Sweeper::sweep(const SweepEventList* eventsA,
 
   try {
     while (next || !multiHeads.empty()) {
+      if (_cancelled.load(std::memory_order_relaxed)) {
+        throw std::runtime_error("Sweep cancelled after worker failure");
+      }
+
       // take the smaller of the next event in the "normal" event list and the
       // next event of the dynamically streamed multi geometries
       if (next && (multiHeads.empty() ||
@@ -686,6 +709,9 @@ RelStats Sweeper::sweep(const SweepEventList* eventsA,
     for (auto& thr : thrds)
       if (thr.joinable()) thr.join();
 
+    // if a worker exception was caught, rethrow it!
+    if (_workerException) std::rethrow_exception(_workerException);
+
     // rethrow exception
     throw;
   }
@@ -699,20 +725,38 @@ RelStats Sweeper::sweep(const SweepEventList* eventsA,
   for (auto& thr : thrds)
     if (thr.joinable()) thr.join();
 
+  // if a worker exception was caught, rethrow it!
+  if (_workerException) std::rethrow_exception(_workerException);
+
   // empty job queue
   _jobs.reset();
-  // fire up new workers to clear multis
-  for (size_t i = 0; i < thrds.size(); i++)
-    thrds[i] = std::thread(&Sweeper::processQueue, this, i);
 
-  // now also clear the multis
-  clearMultis(true);
+  try {
+    // fire up new workers to clear multis
+    for (size_t i = 0; i < thrds.size(); i++)
+      thrds[i] = std::thread(&Sweeper::processQueue, this, i);
+
+    // now also clear the multis
+    clearMultis(true);
+  } catch (...) {
+    // if anything goes wrong, set _cancelled to true and let the
+    // threads unspin, only then rethrow
+    _cancelled = true;
+    _jobs.add({});
+    for (auto& thr : thrds)
+      if (thr.joinable()) thr.join();
+    throw;
+  }
+
   // the DONE element on the job queue to signal all threads to shut down
   _jobs.add({});
 
   // again wait for all workers to finish
   for (auto& thr : thrds)
     if (thr.joinable()) thr.join();
+
+  // if a worker exception was caught, rethrow it!
+  if (_workerException) std::rethrow_exception(_workerException);
 
   // final check count aggregation
   totalCheckCount += checkPairs;
@@ -2403,9 +2447,12 @@ void Sweeper::doCheck(const JobVal cur, const JobVal sv, size_t t) {
 
 // _____________________________________________________________________________
 void Sweeper::processQueue(size_t t) {
-  try {
-    JobBatch batch;
-    while ((batch = _jobs.get()).size()) {
+  JobBatch batch;
+  while ((batch = _jobs.get()).size()) {
+    // if cancelled, unspin without doing anyhting
+    if (_cancelled) continue;
+
+    try {
       for (const auto& job : batch) {
         if (_cancelled) break;
 
@@ -2421,12 +2468,15 @@ void Sweeper::processQueue(size_t t) {
           multiOut(t, job.multiOut, job.boxVal.origin());
         }
       }
+    } catch (...) {
+      // we store the exception, and _cancelled'ize the entire sweep,
+      // the workerException will be later retrhown
+      {
+        std::lock_guard<std::mutex> lock(_workerExceptionMtx);
+        if (!_workerException) _workerException = std::current_exception();
+      }
+      _cancelled = true;
     }
-  } catch (const std::runtime_error& e) {
-    std::stringstream ss;
-    ss << "libspatialjoin: " << e.what();
-    std::cerr << ss.str() << std::endl;
-    std::exit(1);
   }
 
   _atomicCurX[t] = _curX[t];

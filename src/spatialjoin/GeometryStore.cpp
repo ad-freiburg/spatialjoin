@@ -83,7 +83,7 @@ sj::TypedGeometryStore<sj::SimpleLine>::decode(RecordReader& str) const {
   sj::SimpleLine ret;
 
   // id
-  uint16_t len;
+  uint16_t len = 0;
   str.read(reinterpret_cast<char*>(&len), sizeof(uint16_t));
   ret.id.resize(len);
 
@@ -101,7 +101,7 @@ std::pair<size_t, sj::MultiGeom> sj::TypedGeometryStore<sj::MultiGeom>::decode(
   sj::MultiGeom ret;
 
   // id
-  uint16_t len;
+  uint16_t len = 0;
   str.read(reinterpret_cast<char*>(&len), sizeof(uint16_t));
   ret.id.resize(len);
 
@@ -112,7 +112,7 @@ std::pair<size_t, sj::MultiGeom> sj::TypedGeometryStore<sj::MultiGeom>::decode(
   size_t estSize = len * sizeof(char);
 
   // sweep events
-  uint32_t size;
+  uint32_t size = 0;
   str.read(reinterpret_cast<char*>(&size), sizeof(uint32_t));
   ret.events.resize(size);
 
@@ -132,7 +132,7 @@ std::pair<size_t, sj::Point> sj::TypedGeometryStore<sj::Point>::decode(
   sj::Point ret;
 
   // id
-  uint16_t len;
+  uint16_t len = 0;
   str.read(reinterpret_cast<char*>(&len), sizeof(uint16_t));
   ret.id.resize(len);
 
@@ -153,7 +153,7 @@ sj::TypedGeometryStore<sj::SimpleArea>::decode(RecordReader& str) const {
   sj::SimpleArea ret;
 
   // id
-  uint16_t len;
+  uint16_t len = 0;
   str.read(reinterpret_cast<char*>(&len), sizeof(uint16_t));
   ret.id.resize(len);
 
@@ -162,7 +162,7 @@ sj::TypedGeometryStore<sj::SimpleArea>::decode(RecordReader& str) const {
   }
 
   // geom
-  uint32_t size;
+  uint32_t size = 0;
   str.read(reinterpret_cast<char*>(&size), sizeof(uint32_t));
   ret.geom.resize(size);
 
@@ -184,7 +184,7 @@ std::pair<size_t, sj::Line> sj::TypedGeometryStore<sj::Line>::decode(
   size_t estSize = 0;
 
   // id
-  uint16_t len;
+  uint16_t len = 0;
   str.read(reinterpret_cast<char*>(&len), sizeof(uint16_t));
   ret.id.resize(len);
 
@@ -201,7 +201,7 @@ std::pair<size_t, sj::Line> sj::TypedGeometryStore<sj::Line>::decode(
   estSize += readLine(str, ret.geom);
 
   // boxIds
-  uint32_t numBoxIds;
+  uint32_t numBoxIds = 0;
   str.read(reinterpret_cast<char*>(&numBoxIds), sizeof(uint32_t));
   ret.boxIds.resize(numBoxIds);
   if (numBoxIds > 0) {
@@ -221,7 +221,7 @@ std::pair<size_t, sj::Area> sj::TypedGeometryStore<sj::Area>::decode(
   size_t estSize = 0;
 
   // id
-  uint16_t len;
+  uint16_t len = 0;
   str.read(reinterpret_cast<char*>(&len), sizeof(uint16_t));
   ret.id.resize(len);
 
@@ -238,7 +238,7 @@ std::pair<size_t, sj::Area> sj::TypedGeometryStore<sj::Area>::decode(
   estSize += readPoly(str, ret.geom);
 
   // boxIds
-  uint32_t numBoxIds;
+  uint32_t numBoxIds = 0;
   str.read(reinterpret_cast<char*>(&numBoxIds), sizeof(uint32_t));
   ret.boxIds.resize(numBoxIds);
   if (numBoxIds > 0) {
@@ -316,6 +316,11 @@ size_t sj::TypedGeometryStore<sj::MultiGeom>::writeTo(const sj::MultiGeom& val,
 template <typename W>
 size_t sj::TypedGeometryStore<W>::add(const std::string& raw,
                                       std::shared_ptr<W> val) {
+  if (!_inMemory && !_geomsF.is_open()) {
+    throw std::runtime_error("Geometry store file " + _fName +
+                             " is not open (anymore) for writing");
+  }
+
   size_t ret = _geomsOffset;
   _geomsOffset += sizeof(RecordHeader) + raw.size();
 
@@ -343,6 +348,9 @@ size_t sj::TypedGeometryStore<W>::add(const std::string& raw,
   }
 
   writeRecord(raw, _geomsF);
+  if (!_geomsF) {
+    throw std::runtime_error("Could not write geometry store file " + _fName);
+  }
 
   return typedId(ret, geomType());
 }
@@ -495,7 +503,7 @@ std::pair<size_t, sj::GeomId> sj::TypedGeometryStore<W>::decodeId(
   sj::GeomId ret{"", 0};
 
   // id
-  uint16_t len;
+  uint16_t len = 0;
   str.read(reinterpret_cast<char*>(&len), sizeof(uint16_t));
   ret.id.resize(len);
 
@@ -563,7 +571,8 @@ std::pair<size_t, sj::GeomId> sj::TypedGeometryStore<sj::MultiGeom>::getId(
 
 // ____________________________________________________________________________
 template <typename W>
-sj::TypedGeometryStore<W>::TypedGeometryStore(const std::string& path) {
+sj::TypedGeometryStore<W>::TypedGeometryStore(const std::string& path)
+    : _fName(path) {
   _inMemory = false;
 
   struct stat st;
@@ -667,6 +676,11 @@ void sj::TypedGeometryStore<W>::flush() {
   if (_geomsF.is_open()) {
     _geomsF.flush();
     _geomsF.close();
+
+    if (!_geomsF) {
+      throw std::runtime_error("Could not write geometry store file " +
+                               _fName);
+    }
   }
 
   if (_inMemory && _persistOnDisk) {
@@ -708,18 +722,18 @@ size_t sj::TypedGeometryStore<W>::readPoly(
   str.read(reinterpret_cast<char*>(&box), sizeof(util::geo::I32Box));
   estSize += sizeof(util::geo::I32Box);
 
-  double maxSegLen;
+  double maxSegLen = 0;
   str.read(reinterpret_cast<char*>(&maxSegLen), sizeof(double));
   estSize += sizeof(double);
   ret.getOuter().setMaxSegLen(maxSegLen);
 
   // outer area
-  double area;
+  double area = 0;
   str.read(reinterpret_cast<char*>(&area), sizeof(double));
   estSize += sizeof(double);
   ret.getOuter().setArea(area);
 
-  uint32_t sizeOuter;
+  uint32_t sizeOuter = 0;
   str.read(reinterpret_cast<char*>(&sizeOuter), sizeof(uint32_t));
 
   // TODO: careful, resize initializes entire vector!
@@ -733,11 +747,11 @@ size_t sj::TypedGeometryStore<W>::readPoly(
     ret.getOuter().setBoundingBox(box);
   }
 
-  uint32_t numInners;
+  uint32_t numInners = 0;
   str.read(reinterpret_cast<char*>(&numInners), sizeof(uint32_t));
   estSize += sizeof(uint32_t);
 
-  double innerMaxSegLen;
+  double innerMaxSegLen = 0;
   str.read(reinterpret_cast<char*>(&innerMaxSegLen), sizeof(double));
   estSize += sizeof(double);
 
@@ -767,12 +781,12 @@ size_t sj::TypedGeometryStore<W>::readPoly(
   }
 
   for (uint32_t j = 0; j < numInners; j++) {
-    double maxSegLen;
+    double maxSegLen = 0;
     str.read(reinterpret_cast<char*>(&maxSegLen), sizeof(double));
     ret.getInners()[j].setMaxSegLen(maxSegLen);
     estSize += sizeof(double);
 
-    uint32_t sizeInner;
+    uint32_t sizeInner = 0;
     str.read(reinterpret_cast<char*>(&sizeInner), sizeof(uint32_t));
     estSize += sizeof(uint32_t);
 
@@ -882,12 +896,12 @@ size_t sj::TypedGeometryStore<W>::readLine(
   ret.setBoundingBox(box);
 
   // length
-  double length;
+  double length = 0;
   str.read(reinterpret_cast<char*>(&length), sizeof(double));
   estSize += sizeof(double);
   ret.setLength(length);
 
-  double maxSegLen;
+  double maxSegLen = 0;
   str.read(reinterpret_cast<char*>(&maxSegLen), sizeof(double));
   estSize += sizeof(double);
   ret.setMaxSegLen(maxSegLen);
@@ -901,7 +915,7 @@ size_t sj::TypedGeometryStore<W>::readLine(
   ret.setFirstPoint(firstPoint);
   ret.setLastPoint(lastPoint);
 
-  uint32_t sizeOuter;
+  uint32_t sizeOuter = 0;
   str.read(reinterpret_cast<char*>(&sizeOuter), sizeof(uint32_t));
   estSize += sizeof(uint32_t);
 
@@ -1655,13 +1669,6 @@ size_t GeometryStore::foldString(const std::string& s) {
   ret |= (s.size() << FOLD_LEN_SHIFT);
 
   return ret;
-}
-// _____________________________________________________________________________
-template <typename W>
-std::shared_ptr<W> GeometryStore::get(const sj::TypedGeometryStore<W>& store,
-                                      size_t off) {
-  if (store.inMemory()) return store.getFromMem(off);
-  return std::make_shared<W>(store.getFrom(off).second);
 }
 
 template class sj::TypedGeometryStore<sj::Area>;

@@ -195,6 +195,8 @@ std::string fullRun(const std::vector<std::string>& files,
       for (auto& events : sweepEvents)
         stats->numReferences += events->numReferences();
     }
+
+    outWriter.flush();
   }
 
   std::string ret;

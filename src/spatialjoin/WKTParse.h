@@ -6,7 +6,9 @@
 #define SPATIALJOINS_WKTPARSE_H_
 
 #include <atomic>
+#include <exception>
 #include <limits>
+#include <mutex>
 
 #include "GeometryStore.h"
 #include "util/geo/Geo.h"
@@ -83,17 +85,6 @@ class WKTParserBase {
         _bboxes(numThreads),
         _numInvalid(numThreads),
         _cancelled(false){};
-  ~WKTParserBase() {
-    // graceful shutdown of all threads, should they be still running
-    _cancelled = true;
-
-    // end event
-    _jobs.add({});
-
-    // wait for all workers to finish
-    for (auto& thr : _thrds)
-      if (thr.joinable()) thr.join();
-  };
 
   // the gid given to the next parsed line without an explicit id, used to
   // continue the line numbering across several parsers
@@ -115,6 +106,13 @@ class WKTParserBase {
     if (_done) return;
     _done = true;
 
+    // the last line
+    if (_dangling.size()) {
+      _curBatch.push_back({_dangling, _gid, {0, 0}});
+      _dangling.clear();
+      _gid++;
+    }
+
     if (_curBatch.size()) {
       _jobs.add(std::move(_curBatch));
       _curBatch.clear();
@@ -127,6 +125,8 @@ class WKTParserBase {
 
     // collect bounding box of parsed geometries
     for (const auto& box : _bboxes) _bbox = util::geo::extendBox(box, _bbox);
+
+    if (_workerException) std::rethrow_exception(_workerException);
   };
 
   static util::geo::I32Point projFunc(const util::geo::DPoint& p,
@@ -257,6 +257,9 @@ class WKTParserBase {
 
   std::atomic<bool> _cancelled;
 
+  std::exception_ptr _workerException;
+  std::mutex _workerExceptionMtx;
+
   // whether done() was called
   bool _done = false;
 };
@@ -265,6 +268,11 @@ class WKTParser : public WKTParserBase<ParseJob> {
  public:
   WKTParser(sj::GeometryStore* store, sj::PreparedGeomMetaCb metaCb,
             size_t numThreads, bool strict = false);
+
+  ~WKTParser();
+
+  WKTParser(const WKTParser&) = delete;
+  WKTParser& operator=(const WKTParser&) = delete;
   void parse(char* c, size_t size);
 
   void parseFile(const std::string& path);
