@@ -66,6 +66,16 @@ WKTParser::~WKTParser() {
 }
 
 // _____________________________________________________________________________
+void WKTParser::flushDangling() {
+  // the last line
+  if (_dangling.size()) {
+    _curBatch.push_back({_dangling, _gid, {0, 0}});
+    _dangling.clear();
+    _gid++;
+  }
+}
+
+// _____________________________________________________________________________
 void WKTParser::processQueue(size_t t) {
   ParseBatch batch;
   while ((batch = _jobs.get()).size()) {
