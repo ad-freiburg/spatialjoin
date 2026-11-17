@@ -114,21 +114,6 @@ For non-self joins, you can give the left and right side as two file arguments:
 $ spatialjoin example_left.txt example_right.txt
 ```
 
-Alternatively, you may specify a "side" (either 0 or 1) per geometry, as an additional tab-separated field after the custom geometry ID. If sides are defined, only geometries from different sides are compared. Note that a custom geometry ID *must* be given, otherwise the side will be interpreted as the custom geometry ID. The default side is 0.
-
-```
-$ cat example_nonself.txt
-polygon1	0	POLYGON((0 0, 10  0 ,10 10, 0 10, 0 0))
-polygon2	0	POLYGON((0 0, 10 0, 10 10, 0 10, 0 0), (1 1, 9 1, 9 9, 1 9, 1 1))
-multipolygon3	0	MULTIPOLYGON(((0 0, 10 0, 10 10, 0 10, 0 0), (1 1, 9 1, 9 9, 1 9, 1 1)))
-polygon4	1	POLYGON((4 4, 5 4, 5 5, 4 5, 4 4))
-polygon5	1	POLYGON((4 4, 5 4, 5 11, 4 11, 4 4))
-linestring6	1	LINESTRING(1 1, 1 2)
-linestring7	1	LINESTRING(0.5 1.5, 1.5 1.5)
-linestring8	0	LINESTRING(-10 1, 100 1)
-point9	1	POINT(0.5 0.5)
-```
-
 ### `within-distance` queries
 
 To compute a spatial join on a `within-distance` predicate, use the `--within-distance <METER>` option. `spatialjoin` will output all pairs of geometries which are within `<METER>` meters of each other. Note that your input geometries **must be** WGS 84 coordinates (longitude/latitude pairs) for correct meter distance computation.
