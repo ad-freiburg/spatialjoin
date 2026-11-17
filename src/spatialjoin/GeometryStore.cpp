@@ -1040,6 +1040,10 @@ I32Box GeometryStore::add(const I32MultiPolygon& a, const std::string& gid,
   // a subid of 0 means "single polygon"
   if (a.size() < 2) return add(a, gid, 0, batch);
 
+  if (!util::geo::intersects(getPaddedBoundingBox(util::geo::getBoundingBox(a)),
+                             _filterBox))
+    return {};
+
   WriteBatch members;
   auto box = add(a, gid, 1, members);
   addMulti(std::move(members), box, gid, batch);
@@ -1052,6 +1056,10 @@ I32Box GeometryStore::add(const I32MultiLine& a, const std::string& gid,
   // a subid of 0 means "single line"
   if (a.size() < 2) return add(a, gid, 0, batch);
 
+  if (!util::geo::intersects(getPaddedBoundingBox(util::geo::getBoundingBox(a)),
+                             _filterBox))
+    return {};
+
   WriteBatch members;
   auto box = add(a, gid, 1, members);
   addMulti(std::move(members), box, gid, batch);
@@ -1063,6 +1071,10 @@ I32Box GeometryStore::add(const I32MultiPoint& a, const std::string& gid,
                           WriteBatch& batch) const {
   // a subid of 0 means "single point"
   if (a.size() < 2) return add(a, gid, 0, batch);
+
+  if (!util::geo::intersects(getPaddedBoundingBox(util::geo::getBoundingBox(a)),
+                             _filterBox))
+    return {};
 
   WriteBatch members;
   auto box = add(a, gid, 1, members);
@@ -1090,6 +1102,11 @@ I32Box GeometryStore::add(const I32Collection& col, const std::string& gid,
 
   // a subid of 0 means "single geometry"
   size_t subId = numGeoms > 1 ? 1 : 0;
+
+  if (numGeoms > 1 &&
+      !util::geo::intersects(
+          getPaddedBoundingBox(util::geo::getBoundingBox(col)), _filterBox))
+    return {};
 
   // the members of a multi collection are kept together
   WriteBatch members;
@@ -1204,7 +1221,7 @@ I32Box GeometryStore::add(const I32Polygon& poly, const std::string& gid,
   I32XSortedPolygon spoly(densePoly);
   const auto& rawBox = spoly.boundingBox();
   const auto& box = getPaddedBoundingBox(rawBox);
-  if (!util::geo::intersects(box, _filterBox)) return {};
+  if (subid == 0 && !util::geo::intersects(box, _filterBox)) return {};
 
   if (spoly.empty()) return box;
 
@@ -1296,7 +1313,7 @@ I32Box GeometryStore::add(const I32Line& line, const std::string& gid,
   const auto& rawBox = sline.boundingBox();
   const auto& box = getPaddedBoundingBox(rawBox);
 
-  if (!util::geo::intersects(box, _filterBox)) return {};
+  if (subid == 0 && !util::geo::intersects(box, _filterBox)) return {};
   BoxIdList boxIds;
 
   if (_cfg.useBoxIds) {
@@ -1387,7 +1404,7 @@ I32Box GeometryStore::add(const I32Point& point, const std::string& gid,
 
   cur.subid = subid;
 
-  if (!util::geo::intersects(box, _filterBox)) return {};
+  if (subid == 0 && !util::geo::intersects(box, _filterBox)) return {};
 
   auto pointR =
       util::geo::rotateSinCos(point, sj::SIN45, sj::COS45, I32Point(0, 0));
